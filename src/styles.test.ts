@@ -21,6 +21,13 @@ import { all as KNOWN_CSS_PROPERTIES } from 'known-css-properties';
 import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
 import { MAX_TABULATED_FIELDS } from './components/record-set';
+import {
+	FALLBACK_FIT_TIER,
+	GAP_PX,
+	MAX_FIT_TIER,
+	MIN_FIT_TIER,
+	STEP_PX,
+} from './components/record-line-fit';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -89,8 +96,12 @@ const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current|-select)\b/;
  * anchored panel's own `CONTROLS` list below is the same idea for a surface
  * that cannot carry `.sheetsmith-view` at all; this is for a control that
  * can and should, but was named outside `FIELD_CLASS`'s own pattern.
+ *
+ * `sheetsmith-pool-adjust-amount` is the pool's adjust field, a real text
+ * `<input>` named for what it holds. It was scoped all along and simply never
+ * listed; the phone-width guard below found it (`docs/features/phone-input-width.md`).
  */
-const NAMED_FIELD_CLASSES = ['sheetsmith-canvas-overlay'];
+const NAMED_FIELD_CLASSES = ['sheetsmith-canvas-overlay', 'sheetsmith-pool-adjust-amount'];
 
 /**
  * The one family of rules that may not carry the scope, and the reason it cannot
@@ -2459,6 +2470,27 @@ function selectorList(selector: string): string[] {
 	return found;
 }
 
+/** (ids, classes and attributes and pseudo-classes, types) of one selector. */
+function specificity(selector: string): [number, number, number] {
+	const bare = selector.replace(/::[\w-]+/g, ' ');
+	const ids = (bare.match(/#[\w-]+/g) ?? []).length;
+	const classes =
+		(bare.match(/\.[\w-]+/g) ?? []).length +
+		(bare.match(/\[[^\]]*\]/g) ?? []).length +
+		(bare.match(/:(?!:)[\w-]+/g) ?? []).length;
+	const types = bare
+		.replace(/\[[^\]]*\]/g, ' ')
+		.split(/[\s>+~]+/)
+		.filter((one) => /^[a-z]/i.test(one)).length;
+	return [ids, classes, types];
+}
+
+/** Whether `a` beats `b` on weight alone. */
+const heavier = (a: [number, number, number], b: [number, number, number]) =>
+	a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+const same = (a: [number, number, number], b: [number, number, number]) =>
+	a.join() === b.join();
+
 describe('no two rules declare the same body', () => {
 	/*
 	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
@@ -2570,7 +2602,7 @@ describe('no two rules declare the same body', () => {
 		{
 			rules: [
 				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
-				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-pool-modifier-button, .sheetsmith-view .sheetsmith-note-mark',
 			],
 			reason: 'a glyph-only reset whose family is unruled',
 		},
@@ -2651,6 +2683,139 @@ describe('no two rules declare the same body', () => {
 		expect(unshared('', shared)).toEqual(['planted']);
 		// And an exemption whose pair went is reported rather than kept.
 		expect(staleExemptions([])).toHaveLength(SAME_ON_PURPOSE.length);
+	});
+});
+
+describe('faint text on a sheet is a placeholder or a disabled control', () => {
+	/*
+	 * `--text-faint` measures **2.12:1 light and 2.57:1 dark on a card**, 2.20 and
+	 * 2.74 on a table or a placed box, and 2.30 and 2.97 on `--background-primary`
+	 * — under `legibility.md` §3's 4.5:1 for small text and its 3:1 for large text,
+	 * on every surface a sheet has, in both themes. So text a reader reads back is
+	 * never faint (`docs/UI.md` §6, `docs/features/text-faint-audit.md`).
+	 *
+	 * It stays in two kinds of place, and the selector says which: a
+	 * placeholder, which is a hint standing in for a value and is the app's own
+	 * `--input-placeholder-color`; and a disabled control, which WCAG 1.4.3
+	 * exempts and which carries its state in `disabled` besides. Twenty-three
+	 * faint text colours sat in `sheet.css` before the audit, each landing
+	 * silently, because nothing here distinguishes a quiet gloss from an
+	 * illegible one. This is that distinction.
+	 *
+	 * **`sheet.css` alone**, read from its source rather than from the assembled
+	 * file: the editor's and the shared part's faint text were outside the audit,
+	 * and the editor's disabled selects state their own reason at the rule.
+	 *
+	 * **The `color` property only.** A faint border or fill is a different bar —
+	 * 3:1 for a mark that alone carries a state — and a track segment's resting
+	 * outline is one, measured where it is drawn.
+	 */
+	const SHEET = readFileSync(
+		new URL('./styles/sheet.css', import.meta.url),
+		'utf8',
+	).replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+	/**
+	 * A faint text colour on a selector the rule above does not cover, each with
+	 * the reason it stays. Empty: the audit lifted everything else. An entry is the
+	 * whole selector list of one rule, as `selectorList` joins it.
+	 */
+	const FAINT_ON_PURPOSE: { selector: string; reason: string }[] = [];
+
+	/** Every rule declaring a faint text colour, by its joined selector list. */
+	function faintRules(text: string): string[] {
+		return rules(text)
+			.filter((rule) =>
+				declarations(rule.body).some((one) =>
+					/^color: .*--text-faint\b/.test(one),
+				),
+			)
+			.map((rule) => selectorList(rule.selector).join(', '));
+	}
+
+	/**
+	 * True where every selector in the list is a placeholder or a disabled
+	 * control. Both anchored at the end, so the subject is the placeholder or the
+	 * disabled control itself: a bare `includes` would pass `:not(:disabled)`,
+	 * which is the enabled control, and `.x:disabled + .label`, which is text
+	 * beside it.
+	 */
+	function keepsFaint(list: string): boolean {
+		return selectorList(list).every(
+			(one) => /::placeholder$/.test(one) || /:disabled$/.test(one),
+		);
+	}
+
+	function unexplained(
+		text: string,
+		exemptions: { selector: string }[] = FAINT_ON_PURPOSE,
+	): string[] {
+		return faintRules(text).filter(
+			(list) =>
+				!keepsFaint(list) &&
+				!exemptions.some((entry) => entry.selector === list),
+		);
+	}
+
+	/** Each exemption that no longer names a faint rule this stylesheet holds. */
+	function stale(
+		text: string,
+		exemptions: { selector: string; reason: string }[] = FAINT_ON_PURPOSE,
+	): string[] {
+		const found = faintRules(text);
+		return exemptions
+			.filter((entry) => !found.includes(entry.selector))
+			.map(({ reason }) => reason);
+	}
+
+	it('finds the faint rules it is meant to be checking', () => {
+		// Both kinds, so a parse that stopped reading bodies, or a stylesheet
+		// that lost the file, cannot pass by finding nothing to object to.
+		const found = faintRules(SHEET);
+		expect(found.some((list) => list.includes('::placeholder'))).toBe(true);
+		expect(found.some((list) => list.includes(':disabled'))).toBe(true);
+	});
+
+	it('keeps faint to placeholders and disabled controls, past the ones kept on purpose', () => {
+		expect(unexplained(SHEET)).toEqual([]);
+	});
+
+	it('holds each exemption to a faint rule that still exists', () => {
+		expect(stale(SHEET)).toEqual([]);
+	});
+
+	it('would catch a faint gloss, in a list or alone', () => {
+		const faint = 'color: var(--text-faint);';
+		expect(unexplained(`.sheetsmith-view .sheetsmith-x { ${faint} }`)).toEqual([
+			'.sheetsmith-view .sheetsmith-x',
+		]);
+		// One read-back selector in a list of placeholders is still reported.
+		expect(unexplained(`.a::placeholder, .b { ${faint} }`)).toEqual([
+			'.a::placeholder, .b',
+		]);
+		// Inside a query too, which is where a flat parse goes blind.
+		expect(
+			unexplained(`@media (prefers-contrast: more) { .b { ${faint} } }`),
+		).toEqual(['.b']);
+		// `:disabled` counts only as the subject: not negated, not a neighbour's.
+		expect(unexplained(`.a:not(:disabled) { ${faint} }`)).toEqual([
+			'.a:not(:disabled)',
+		]);
+		expect(unexplained(`.x:disabled + .label { ${faint} }`)).toEqual([
+			'.x:disabled + .label',
+		]);
+		// The two kinds pass, a `:not()` inside a placeholder included.
+		expect(
+			unexplained(
+				`.a:not(.b, .c)::placeholder, .d:disabled { ${faint} }`,
+			),
+		).toEqual([]);
+		// A faint border is not a text colour.
+		expect(unexplained(`.e { border-color: var(--text-faint); }`)).toEqual([]);
+		// An exemption covers its own list, and is stale once its rule goes.
+		const planted = [{ selector: '.b', reason: 'planted' }];
+		expect(unexplained(`.b { ${faint} }`, planted)).toEqual([]);
+		expect(stale('', planted)).toEqual(['planted']);
 	});
 });
 
@@ -2817,7 +2982,8 @@ describe("a Record set's strip of field names", () => {
 			all.some(
 				(rule) =>
 					rule.context[0] === '@container (max-width: 320px)' &&
-					rule.selector === '.sheetsmith-record-summary',
+					rule.selector ===
+						'.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-summary',
 			),
 		).toBe(true);
 		const under = thresholds()
@@ -3007,6 +3173,209 @@ describe("a Record set's strip of field names", () => {
 	});
 });
 
+describe("a Record set's stacking tiers", () => {
+	/*
+	 * `docs/features/record-set-stacking-tiers.md`. A summary line stacks (name
+	 * and delete on a row, the fields under the name) below the width its declared
+	 * fields fit at, which the component stamps as a whole number of ems,
+	 * `-fit-N`, and `sheet.css` tabulates because a container query can neither
+	 * add widths nor take a threshold from a selector. Held here: that each entry
+	 * is its rule, that the stacked layout is the 320px fallback's own, and that a
+	 * list under its strip is never also stacked.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const STACK_QUERY = '@container style(--sheetsmith-record-stack: on)';
+	const GATE = '@supports (grid-template-columns: subgrid)';
+	const FALLBACK = '@container (max-width: 320px)';
+	const OPT_OUT = '.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) ';
+	const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+	/** The per-tier entries, `[N, px, index in the file]`. */
+	function tiers(): [number, number, number][] {
+		const out: [number, number, number][] = [];
+		all.forEach((rule, at) => {
+			const query = rule.context.length === 1
+				? rule.context[0]?.match(/^@container \(max-width: ([\d.]+)px\)$/)
+				: null;
+			const tier = rule.selector.match(
+				/^\.sheetsmith-record-set-fit-(\d+) \.sheetsmith-record-set-box$/,
+			);
+			if (!query || !tier) return;
+			expect(collapse(rule.body)).toBe('--sheetsmith-record-stack: on;');
+			out.push([Number(tier[1]), Number(query[1]), at]);
+		});
+		return out;
+	}
+
+	/** The strip's per-count entries, `[N, em, index in the file, body]`. */
+	function strips(): [number, number, number, string][] {
+		const out: [number, number, number, string][] = [];
+		all.forEach((rule, at) => {
+			const query = rule.context[1]?.match(
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+			);
+			const count = rule.selector.match(
+				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,
+			);
+			if (rule.context[0] !== GATE || !query || !count) return;
+			out.push([Number(count[1]), Number(query[1]), at, collapse(rule.body)]);
+		});
+		return out;
+	}
+
+	it('tabulates every tier the component can stamp, once each', () => {
+		expect(tiers().map(([tier]) => tier)).toEqual(
+			Array.from(
+				{ length: MAX_FIT_TIER - MIN_FIT_TIER + 1 },
+				(_, at) => at + MIN_FIT_TIER,
+			),
+		);
+	});
+
+	it('stacks tier N up to N steps of 16px, the estimated fit rounded up', () => {
+		// In px, because every width on the line is a fixed-px token: an `em` table
+		// stacked Traits to 792px at the harness's `text=24`, where it fits at 509.5.
+		const off = tiers()
+			.filter(([tier, px]) => px !== tier * STEP_PX)
+			.map(([tier, px]) => `tier ${tier} at ${px}px`);
+		expect(off).toEqual([]);
+	});
+
+	it('puts the fallback at its tier’s own threshold, in the same unit', () => {
+		expect(FALLBACK).toBe(`@container (max-width: ${FALLBACK_FIT_TIER * STEP_PX}px)`);
+	});
+
+	it('holds the copied widths to the rules they were measured off', () => {
+		const find = (selector: string) =>
+			all
+				.filter((rule) => rule.context.length === 0 && rule.selector === selector)
+				.map((rule) => collapse(rule.body))
+				.join(' ');
+		expect(find('.sheetsmith-record-fields'), 'GAP_PX is --size-4-5').toMatch(
+			/gap: var\(--size-4-5\)/,
+		);
+		expect(GAP_PX, 'GAP_PX is Obsidian’s --size-4-5, 20px').toBe(20);
+		const text = find(
+			'.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input.sheetsmith-record-input-text',
+		);
+		expect(text, 'TEXT_PX was measured at the input’s 14ch').toMatch(/max-width: 14ch/);
+	});
+
+	it('gives the plain line’s fields their width before the name grows', () => {
+		/*
+		 * `docs/features/record-summary-fields-first.md`. `lineFitPx` is a plain
+		 * sum only while the plain line's fields' track is `max-content`; under the
+		 * base `auto` it would grow with the name and every fit would come out up
+		 * to 73px short. The rule is gated on a style query, so an engine without
+		 * one keeps the base `auto` line, and it must sit after the base rule (to
+		 * win over it) and before the stack block (so a stacked line's template,
+		 * which it cannot reach anyway, and the strip's subgrid follow it).
+		 */
+		const GATED = '@container not style(--sheetsmith-record-stack: on)';
+		const gated = all
+			.map((rule, at) => ({ rule, at }))
+			.filter(
+				({ rule }) =>
+					rule.context.length === 1 &&
+					rule.context[0] === GATED &&
+					rule.selector === '.sheetsmith-record-summary',
+			);
+		expect(gated.length).toBe(1);
+		const [{ rule, at }] = gated as [{ rule: (typeof all)[number]; at: number }];
+		expect(collapse(rule.body)).toBe(
+			'grid-template-columns: auto minmax(0, var(--sheetsmith-record-name, 13em)) max-content 1fr auto;',
+		);
+		const base = all.findIndex(
+			(one) =>
+				one.context.length === 0 &&
+				one.selector === '.sheetsmith-record-summary' &&
+				/grid-template-columns/.test(one.body),
+		);
+		expect(base).toBeGreaterThanOrEqual(0);
+		expect(
+			collapse((all[base] as (typeof all)[number]).body),
+			'the base keeps `auto`, for an engine with no style queries',
+		).toContain(
+			'grid-template-columns: auto minmax(0, var(--sheetsmith-record-name, 13em)) auto 1fr auto;',
+		);
+		const firstStacked = all.findIndex(
+			(one) => one.context.length === 1 && one.context[0] === STACK_QUERY,
+		);
+		expect(base).toBeLessThan(at);
+		expect(at).toBeLessThan(firstStacked);
+		// The strip keeps its own tracks: each field `auto`, as measured.
+		expect(
+			all.some((one) =>
+				/repeat\(var\(--sheetsmith-record-fields\), auto\)/.test(collapse(one.body)),
+			),
+		).toBe(true);
+	});
+
+	it('draws the fallback’s stacked line, and nothing else', () => {
+		// The fallback's selectors carry the opt-out a line that fits by 320px
+		// wears; past that prefix the two blocks are the same five rules.
+		const narrow = all
+			.filter(
+				(rule) =>
+					rule.context[0] === FALLBACK &&
+					/sheetsmith-record/.test(rule.selector) &&
+					!/sheetsmith-record-set-fit-/.test(rule.selector),
+			)
+			.map((rule) => [rule.selector.replace(OPT_OUT, ''), collapse(rule.body)]);
+		const stacked = all
+			.filter((rule) => rule.context.length === 1 && rule.context[0] === STACK_QUERY)
+			.map((rule) => [rule.selector, collapse(rule.body)]);
+		expect(narrow.length).toBe(5);
+		expect(stacked).toEqual(narrow);
+	});
+
+	it('passes by a line that fits by 320px in every fallback rule', () => {
+		const unscoped = all
+			.filter(
+				(rule) =>
+					rule.context[0] === FALLBACK &&
+					/sheetsmith-record/.test(rule.selector) &&
+					!/sheetsmith-record-set-fit-/.test(rule.selector),
+			)
+			.filter((rule) => !rule.selector.includes(OPT_OUT))
+			.map((rule) => rule.selector);
+		expect(unscoped).toEqual([]);
+	});
+
+	it('writes the stacked line twice and only twice', () => {
+		// The fallback, for an engine with no style queries, and the block under
+		// the style query. Any third copy is one the equality test above misses.
+		const placing = all.filter(
+			(rule) =>
+				/sheetsmith-record-fields$/.test(rule.selector) &&
+				/grid-row:\s*2/.test(rule.body),
+		);
+		expect(placing.map((rule) => rule.context[0])).toEqual([FALLBACK, STACK_QUERY]);
+	});
+
+	it('turns the stacked line off with every strip entry', () => {
+		const missing = strips()
+			.filter(([, , , body]) => !body.includes('--sheetsmith-record-stack: off;'))
+			.map(([count]) => count);
+		expect(strips().length).toBe(MAX_TABULATED_FIELDS);
+		expect(missing).toEqual([]);
+	});
+
+	it('puts every strip entry after every tier entry, which is what lets it win', () => {
+		// `@container` adds no specificity and the selectors weigh the same, so
+		// source order alone decides between `on` and `off`.
+		const lastTier = Math.max(...tiers().map(([, , at]) => at));
+		const firstStrip = Math.min(...strips().map(([, , at]) => at));
+		expect(lastTier).toBeLessThan(firstStrip);
+	});
+
+	it('keeps no stacking entry keyed on a text field, which the tiers now size', () => {
+		expect(
+			all.filter((rule) => /sheetsmith-record-set-(text|stack-)/.test(rule.selector)),
+		).toEqual([]);
+	});
+});
+
 describe('a field its condition hid is hidden', () => {
 	/*
 	 * `docs/features/conditional-field-visibility.md`. The component sets
@@ -3021,27 +3390,6 @@ describe('a field its condition hid is hidden', () => {
 		/\.sheetsmith-record-field(?![\w-])/,
 		/\.sheetsmith-record-body-fields(?![\w-])/,
 	];
-
-	/** (ids, classes and attributes and pseudo-classes, types) of one compound selector. */
-	function specificity(selector: string): [number, number, number] {
-		const bare = selector.replace(/::[\w-]+/g, ' ');
-		const ids = (bare.match(/#[\w-]+/g) ?? []).length;
-		const classes =
-			(bare.match(/\.[\w-]+/g) ?? []).length +
-			(bare.match(/\[[^\]]*\]/g) ?? []).length +
-			(bare.match(/:(?!:)[\w-]+/g) ?? []).length;
-		const types = bare
-			.replace(/\[[^\]]*\]/g, ' ')
-			.split(/[\s>+~]+/)
-			.filter((one) => /^[a-z]/i.test(one)).length;
-		return [ids, classes, types];
-	}
-
-	/** Whether `a` beats `b` on weight alone. */
-	const heavier = (a: [number, number, number], b: [number, number, number]) =>
-		a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
-	const same = (a: [number, number, number], b: [number, number, number]) =>
-		a.join() === b.join();
 
 	/**
 	 * Every selector giving one of the hideable classes a `display` other than
@@ -3127,5 +3475,303 @@ describe('a field its condition hid is hidden', () => {
 		expect(placed[0]?.body).toMatch(
 			/grid-column:\s*var\(--sheetsmith-record-track\)/,
 		);
+	});
+});
+
+describe("a sheet input's width outranks Obsidian's phone rule", () => {
+	/*
+	 * `docs/features/phone-input-width.md`. On a phone Obsidian adds
+	 * `.is-mobile input[type='text'] { width: 100% }`, at (0,2,1). The scope rule
+	 * above buys (0,2,0), which clears the desktop `input[type='text']` at (0,1,1)
+	 * and loses to this one, so on a phone every text field the sheet sizes took
+	 * the whole width it was offered: a record's number field went from 52px to
+	 * 177px and its name to 11, a pool's reading to the width of its card. Nothing
+	 * in vitest or the harness could see it, since neither carries `.is-mobile` or
+	 * the app's mobile rules, so this scan is the guard.
+	 *
+	 * **Every rule giving a sheet text field a width must weigh more than (0,2,1)**,
+	 * and the stylesheet buys (0,3,0) by doubling the field's class on a rule that
+	 * declares the width and nothing else: doubling a whole rule would also lift its
+	 * padding and background over the field's own `:hover` and `:focus`.
+	 * `width: 100%` is exempt, because losing to the app's `100%` changes nothing.
+	 *
+	 * Which classes are text fields is `FIELD_CLASS`'s naming, less `-select`, plus
+	 * the text inputs in `NAMED_FIELD_CLASSES`. So the guard is only as complete as
+	 * that naming: a text input sized through a class outside both, or through an
+	 * element selector, gets past it. A `<textarea>` under the pattern is
+	 * swept in too, which costs a doubled class it does not need and nothing else;
+	 * today both, `-rich-text-input` and `-record-body-input`, are `100%` and exempt.
+	 */
+	const PHONE_RULE: [number, number, number] = [0, 2, 1];
+	// The named controls that are text inputs: the canvas overlay is a button,
+	// which Obsidian's phone rule does not select.
+	const TEXT_FIELDS_OUTSIDE_THE_PATTERN = NAMED_FIELD_CLASSES.filter(
+		(cls) => cls !== 'sheetsmith-canvas-overlay',
+	);
+
+	const isTextField = (selector: string): boolean => {
+		const subject = subjectOf(selector);
+		const classes = (subject.match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+		return classes.some(
+			(cls) =>
+				(FIELD_CLASS.test(`.${cls}`) && !cls.endsWith('-select')) ||
+				TEXT_FIELDS_OUTSIDE_THE_PATTERN.includes(cls),
+		);
+	};
+
+	/** Every selector giving a text field a width the phone rule would replace, and those too light. */
+	function sized(text: string): { found: string[]; light: string[] } {
+		const found: string[] = [];
+		const light: string[] = [];
+		for (const rule of rules(text)) {
+			const width = declarations(rule.body)
+				.filter((one) => /^width\s*:/.test(one))
+				.map((one) => one.slice(one.indexOf(':') + 1).trim());
+			if (width.length === 0 || width.every((value) => value === '100%')) continue;
+			for (const selector of selectorList(rule.selector)) {
+				if (!isTextField(selector)) continue;
+				found.push(selector);
+				if (!heavier(specificity(selector), PHONE_RULE)) light.push(selector);
+			}
+		}
+		return { found, light };
+	}
+
+	it('gives every text field its width at more than (0,2,1)', () => {
+		const { found, light } = sized(CSS_WITHOUT_COMMENTS);
+		// A record's number field, a table's, a pool's three, a track's name and
+		// a passport's, with their field-sizing answers: a scan that matched
+		// nothing would pass on an empty list.
+		expect(found.length).toBeGreaterThanOrEqual(12);
+		expect(light).toEqual([]);
+	});
+
+	/**
+	 * Every rule that narrows a doubled width rule to a case and ties with it.
+	 *
+	 * Doubling a field's width to (0,3,0) lifts it to the weight its own
+	 * overrides already had: `.sheetsmith-table-text .sheetsmith-table-input` and
+	 * `.sheetsmith-record-input.sheetsmith-record-input-text` used to beat their
+	 * (0,2,0) base on weight and would win only by coming later. So a rule giving
+	 * the same field a width under a narrower selector must outweigh the doubled
+	 * one. The same selector restated, as a `@supports` override is, is exempt: it
+	 * is the base itself, answered by order on purpose.
+	 */
+	function tied(text: string): { bases: string[]; tied: string[] } {
+		const widths = rules(text)
+			.filter((rule) => declarations(rule.body).some((one) => /^width\s*:/.test(one)))
+			.flatMap((rule) => selectorList(rule.selector));
+		const classesOf = (selector: string) =>
+			(subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+		// The doubled rule's own shape, and only it: an override may double the
+		// class too, and is then a narrower rule, not a second base.
+		const DOUBLED = /^\.sheetsmith-view \.([\w-]+)\.\1$/;
+		const doubled = widths.filter((selector) => DOUBLED.test(selector));
+		const out: string[] = [];
+		for (const base of doubled) {
+			const field = DOUBLED.exec(base)?.[1] ?? '';
+			for (const other of widths) {
+				if (other === base || !classesOf(other).includes(field)) continue;
+				if (!heavier(specificity(other), specificity(base))) out.push(other);
+			}
+		}
+		// The fields it found a doubled base for, so a base respelled out of
+		// `DOUBLED`'s exact shape cannot pass the check by leaving it nothing to do.
+		const bases = [...new Set(doubled.map((base) => DOUBLED.exec(base)?.[1] ?? ''))];
+		return { bases, tied: [...new Set(out)] };
+	}
+
+	it('gives every narrower width on a doubled field more weight than the doubled rule', () => {
+		const { bases, tied: open } = tied(CSS_WITHOUT_COMMENTS);
+		// The nine fields the phone fix doubled, each recognised as a base.
+		expect(bases.length).toBeGreaterThanOrEqual(9);
+		expect(open).toEqual([]);
+	});
+
+	it('would catch an override that ties with its doubled base', () => {
+		const base = '.sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input { width: 4em; }\n';
+		expect(
+			tied(base + '.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input { width: 100%; }').tied,
+		).toEqual(['.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input']);
+		expect(
+			tied(
+				base +
+					'@supports (field-sizing: content) { .sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input { width: auto; } }\n' +
+					'.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input.sheetsmith-table-input { width: 100%; }',
+			),
+		).toEqual({ bases: ['sheetsmith-table-input'], tied: [] });
+	});
+
+	it('would catch a width the phone rule outranks', () => {
+		// Driven over the shapes it exists to reject: the scoped rule that shipped,
+		// one at exactly (0,2,1) that wins only on load order, and the text field
+		// named outside the pattern. And it passes the doubled answer and a `100%`.
+		expect(
+			sized('.sheetsmith-view .sheetsmith-record-input { width: 3.5em; }').light,
+		).toEqual(['.sheetsmith-view .sheetsmith-record-input']);
+		expect(
+			sized('.sheetsmith-view input.sheetsmith-table-input { width: 4em; }').light,
+		).toHaveLength(1);
+		expect(
+			sized('.sheetsmith-view .sheetsmith-pool-adjust-amount { width: 5ch; }').light,
+		).toHaveLength(1);
+		expect(
+			sized(
+				'.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input { width: 3.5em; }\n' +
+					'.sheetsmith-view .sheetsmith-card-input { width: 100%; }\n' +
+					'.sheetsmith-view .sheetsmith-card-select { width: auto; }',
+			),
+		).toEqual({
+			found: ['.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input'],
+			light: [],
+		});
+	});
+});
+
+describe('the add control pinned to the foot of the card', () => {
+	const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+	const all = rules(stripped);
+	const control = all.find(
+		(rule) =>
+			rule.context.length === 0 &&
+			rule.selector.includes('.sheetsmith-table-add-button') &&
+			rule.selector.includes('.sheetsmith-record-add') &&
+			/margin-top:\s*auto/.test(rule.body),
+	);
+
+	it('is one rule for both components, pinned and a finger tall', () => {
+		expect(control).toBeDefined();
+		// Pinned to the foot of a box taller than its rows.
+		expect(control?.body).toMatch(/margin-top:\s*auto/);
+		// Its height is the level ring's own token, which the coarse-pointer
+		// block raises on `body`, so it grows to a finger with the marks beside it.
+		expect(control?.body).toMatch(
+			/min-height:\s*var\(--sheetsmith-inline-control,\s*1\.6em\)/,
+		);
+		const coarse = all.filter(
+			(rule) =>
+				rule.context.includes('@media (pointer: coarse)') &&
+				/--sheetsmith-inline-control:\s*2\.2em/.test(rule.body),
+		);
+		expect(coarse.length).toBeGreaterThan(0);
+	});
+
+	it('is not sticky, and a table row no longer carries it', () => {
+		expect(stripped).not.toMatch(/\.sheetsmith-table-add-label[^{]*\{[^}]*sticky/);
+		expect(stripped).not.toMatch(/\.sheetsmith-table-add\s*[ ,{]/);
+	});
+
+	it('keeps exactly one line between the last row, the foot and the control', () => {
+		// Without a foot the last row drops its rule and the control's top rule is
+		// the line; with one, the last row keeps its rule and the foot's is dropped.
+		const body = (selector: string) =>
+			all.find((rule) => rule.selector === selector)?.body ?? '';
+		expect(
+			body('.sheetsmith-view .sheetsmith-table tbody tr:last-child th,\n.sheetsmith-view .sheetsmith-table tbody tr:last-child td'),
+		).toMatch(/border-bottom:\s*none/);
+		expect(
+			body('.sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child th,\n.sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child td'),
+		).toMatch(/border-bottom:\s*1px solid/);
+		expect(
+			body('.sheetsmith-view .sheetsmith-table tfoot th,\n.sheetsmith-view .sheetsmith-table tfoot td'),
+		).toMatch(/border-bottom:\s*none/);
+		expect(control?.body).toMatch(/border-top:\s*1px solid/);
+	});
+
+	it('escalates its rule under more contrast with the rest of the card', () => {
+		const more = all.filter((rule) =>
+			rule.context.includes('@media (prefers-contrast: more)'),
+		);
+		const listed = more.find(
+			(rule) =>
+				rule.selector.includes('.sheetsmith-table-add-button') &&
+				/border-color:\s*var\(--text-muted\)/.test(rule.body),
+		);
+		expect(listed?.selector).toContain('.sheetsmith-record-add');
+		expect(listed?.selector).toContain('.sheetsmith-table-box');
+	});
+});
+
+describe('the note mark (docs/features/modifier-notes.md)', () => {
+	const ruleFor = (selector: string) =>
+		rules(CSS_WITHOUT_COMMENTS).find((rule) =>
+			selectorList(rule.selector).includes(selector),
+		);
+
+	it('sits out of flow on a card, labelled or not, so the number keeps its centre', () => {
+		const body = ruleFor('.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark')?.body ?? '';
+		expect(declarations(body)).toContain('position: absolute');
+		// The face's own last-flex-item rule skips it, so the value keeps the
+		// auto margin that centres the run.
+		expect(CSS_WITHOUT_COMMENTS).toContain('.sheetsmith-note-mark)');
+	});
+
+	it('centres the mark after a number on the digits’ cap height, not the number’s box', () => {
+		// Layout is not measurable here; the harness measured the result (mark
+		// centre = baseline − cap / 2). What is pinned is the construction: the
+		// number keeps its baseline, and the mark is raised from x-height middle
+		// to cap middle with the cell's own metrics.
+		const marks = rules(CSS_WITHOUT_COMMENTS)
+			.filter((rule) =>
+				selectorList(rule.selector).includes(
+					'.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark',
+				),
+			)
+			.flatMap((rule) => declarations(rule.body));
+		expect(marks).toContain(
+			'top: calc((var(--sheetsmith-note-ex) - var(--sheetsmith-note-cap)) / 2)',
+		);
+		// And it takes no height from the line, or the number it follows is lifted
+		// off its row by the taller line the cell then centres.
+		expect(marks).toContain(
+			'margin-block: calc(-0.5 * var(--sheetsmith-inline-control, 1.6em))',
+		);
+		const cell = ruleFor('.sheetsmith-view .sheetsmith-table-has-note')?.body ?? '';
+		expect(declarations(cell)).toEqual(
+			expect.arrayContaining(['--sheetsmith-note-cap: 1cap', '--sheetsmith-note-ex: 1ex']),
+		);
+		const value = ruleFor('.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-value')?.body ?? '';
+		expect(declarations(value)).toContain('vertical-align: baseline');
+		expect(CSS_WITHOUT_COMMENTS).toContain('@property --sheetsmith-note-cap');
+		// Guarded on `cap` support: without it `1cap` falls back to the registered
+		// 0px and the raise would lower the mark instead.
+		const guarded = CSS_WITHOUT_COMMENTS.slice(CSS_WITHOUT_COMMENTS.indexOf('@supports (top: 1cap)'));
+		expect(CSS_WITHOUT_COMMENTS).toContain('@supports (top: 1cap)');
+		expect(guarded.slice(0, guarded.indexOf('}\n}'))).toContain('--sheetsmith-note-cap: 1cap');
+		expect(guarded.slice(0, guarded.indexOf('}\n}'))).toContain('top: calc(');
+	});
+
+	it('reserves in an unmarked cell of a noted column exactly what the mark takes', () => {
+		// A slot the mark's own size and gap, so every cell's content is the same
+		// shape and a centred value or ring lines up with the noted one.
+		const slot = ruleFor('.sheetsmith-view td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after')?.body ?? '';
+		expect(declarations(slot)).toEqual(
+			expect.arrayContaining([
+				'width: var(--sheetsmith-inline-control, 1.6em)',
+				'font-size: var(--font-ui-small)',
+				'margin-inline-start: var(--size-2-1)',
+			]),
+		);
+		const mark =
+			rules(CSS_WITHOUT_COMMENTS).find(
+				(rule) => rule.selector.trim() === '.sheetsmith-view .sheetsmith-note-mark',
+			)?.body ?? '';
+		expect(declarations(mark)).toContain('font-size: var(--font-ui-small)');
+		const after = ruleFor('.sheetsmith-view td > .sheetsmith-note-mark')?.body ?? '';
+		expect(declarations(after)).toContain('margin-inline-start: var(--size-2-1)');
+		// After a ring, the slot takes the ring's gap, as the mark does.
+		const ringSlot = ruleFor('.sheetsmith-view td.sheetsmith-note-column.sheetsmith-table-level:not(.sheetsmith-table-has-note)::after')?.body ?? '';
+		expect(declarations(ringSlot)).toContain('margin-inline-start: var(--size-4-2)');
+	});
+
+	it('keeps clear of a level ring’s expanded target beside it', () => {
+		// The ring's `::after` reaches `--size-4-2` sideways; the gap after it
+		// must be at least that, or a press on the mark changes the level.
+		const reach = ruleFor('.sheetsmith-view .sheetsmith-level-ring::after')?.body ?? '';
+		expect(declarations(reach)).toContain(
+			'inset: calc(-1 * var(--size-2-2)) calc(-1 * var(--size-4-2))',
+		);
+		const gap = ruleFor('.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark')?.body ?? '';
+		expect(declarations(gap)).toContain('margin-inline-start: var(--size-4-2)');
 	});
 });

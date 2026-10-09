@@ -126,6 +126,7 @@ function sheet(
 		published: components.map((one) => ({ name: one.id, label: one.id })),
 		bonusTypes: [],
 		accepting: new Set(components.map((one) => one.id)),
+		marked: new Set(components.map((one) => one.id)),
 	});
 }
 
@@ -1942,5 +1943,134 @@ describe('buildModifierTable over a definition naming several changes', () => {
 		const saves = table('saving_throws');
 		expect('error' in armour ? null : armour.lines).toEqual([]);
 		expect('error' in saves ? null : saves.lines).toEqual([]);
+	});
+});
+
+describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () => {
+	const boots = define({
+		name: 'Boots of Elvenkind',
+		target: 'skills.stealth',
+		note: 'Advantage on Dexterity (Stealth) checks',
+		when: 'Worn',
+	});
+	const notesAt = (
+		pushes: readonly ModifierPush[],
+		definitions = [boots],
+		name = 'skills.stealth',
+	) => {
+		const result = buildModifierTable(
+			[{ id: 'items', pushes: () => pushes }],
+			definitions,
+		)(name);
+		return result.notes ?? [];
+	};
+
+	it('lists a note wherever its condition holds, and nothing where it does not', () => {
+		expect(
+			notesAt([
+				enrol('Boots of Elvenkind', 'Boots, worn', { Worn: true }),
+				enrol('Boots of Elvenkind', 'Boots, stowed', { Worn: false }),
+			]),
+		).toEqual([
+			{
+				label: 'Boots, worn',
+				source: 'Magic items',
+				definition: 'Boots of Elvenkind',
+				text: 'Advantage on Dexterity (Stealth) checks',
+				suppressed: null,
+			},
+		]);
+	});
+
+	it('a note never reaches the stacking rule', () => {
+		// A note-only change and an amount of zero with a note: neither is a
+		// contributor, so the stacking rule's two zero skips stay true unedited
+		// and the arithmetic is the empty result it always was — with the notes
+		// beside it.
+		const result = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [
+						enrol('skills.stealth += note: Quiet'),
+						enrol('skills.stealth += 0 note: Quieter'),
+					],
+				},
+			],
+			[],
+		)('skills.stealth');
+		expect(result).toEqual({
+			override: null,
+			total: 0,
+			resultTotal: 0,
+			lines: [],
+			notes: [
+				{ label: 'A row', source: 'Magic items', text: 'Quiet', suppressed: null },
+				{ label: 'A row', source: 'Magic items', text: 'Quieter', suppressed: null },
+			],
+		});
+	});
+
+	it('lists identical notes from two sources twice, never combined', () => {
+		const notes = notesAt([
+			enrol('Boots of Elvenkind', 'Boots', { Worn: true }),
+			enrol('skills.stealth += note: Advantage on Dexterity (Stealth) checks', 'Cloak'),
+		]);
+		expect(notes.map((note) => [note.label, note.text])).toEqual([
+			['Boots', 'Advantage on Dexterity (Stealth) checks'],
+			['Cloak', 'Advantage on Dexterity (Stealth) checks'],
+		]);
+	});
+
+	it('lists a note whose condition will not resolve as not applying, and refuses no slot', () => {
+		const result = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [enrol('skills.stealth += when Cloaked note: Quiet')],
+				},
+			],
+			[],
+		)('skills.stealth');
+		expect('error' in result).toBe(false);
+		expect(result.notes?.map((note) => note.text)).toEqual(['Quiet']);
+		expect(result.notes?.[0]?.suppressed).toContain('Cloaked');
+	});
+
+	it('refuses the slot for an amount whose condition fails, and its note says why', () => {
+		const result = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [enrol('armour_class += 1 when Cloaked note: Warm')],
+				},
+			],
+			[],
+		)('armour_class');
+		expect('error' in result).toBe(true);
+		// An arithmetic refusal does not hide the note.
+		expect(result.notes?.[0]?.suppressed).toEqual(expect.stringContaining('Cloaked'));
+	});
+
+	it('keeps a note applying where only its amount will not resolve', () => {
+		const result = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [enrol('armour_class += Missing note: Warm')],
+				},
+			],
+			[],
+		)('armour_class');
+		expect('error' in result).toBe(true);
+		expect(result.notes?.[0]?.suppressed).toBeNull();
+	});
+
+	it('adds no notes key to a result with no note, so every old answer is the old object', () => {
+		const result = buildModifierTable(
+			[{ id: 'items', pushes: () => [enrol('armour_class += 2')] }],
+			[],
+		)('armour_class');
+		expect('notes' in result).toBe(false);
 	});
 });

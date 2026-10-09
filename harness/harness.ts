@@ -55,6 +55,11 @@ import {
 	Sample,
 	SAMPLES,
 	unmodifiedSamples,
+	pinnedAddSamples,
+	recordGroupSamples,
+	textGroupSamples,
+	notesSamples,
+	NOTE_DEFINITIONS,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
@@ -64,7 +69,11 @@ type StateName =
 	| 'empty'
 	| 'unmodified'
 	| 'effective'
-	| 'broken';
+	| 'broken'
+	| 'pinned-add'
+	| 'record-groups'
+	| 'text-groups'
+	| 'notes';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -89,7 +98,25 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'unmodified') return unmodifiedSamples();
 	if (name === 'effective') return effectiveSamples();
 	if (name === 'broken') return brokenSamples();
+	if (name === 'pinned-add') return pinnedAddSamples();
+	if (name === 'record-groups') return recordGroupSamples();
+	if (name === 'text-groups') return textGroupSamples();
+	if (name === 'notes') return notesSamples();
 	return SAMPLES;
+}
+
+/**
+ * The layout a state draws: the harness layout over its samples, with the
+ * `notes` state's note-bearing definitions ahead of the layout's own, so the
+ * editor opens on them (`docs/features/modifier-notes.md`).
+ */
+function layoutFor(name: StateName): Layout {
+	const built = harnessLayout(samplesFor(name));
+	if (name !== 'notes') return built;
+	return {
+		...built,
+		modifiers: [...NOTE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+	};
 }
 
 /** Reset stored values to the chosen state, and take its configs as the layout. */
@@ -104,7 +131,7 @@ function loadState(name: StateName): void {
 			] as [string, string | null]),
 		),
 	);
-	layout = harnessLayout(samples);
+	layout = layoutFor(name);
 	prepare();
 }
 
@@ -341,6 +368,13 @@ function resource(target: string): string | null {
 const activeTab = new Map<string, number>();
 
 /**
+ * Which groups the reader has collapsed where, exactly as the view holds them
+ * (`types.ts`, `collapsedGroups`): the *collapsed* keys, so an untouched group is
+ * open. Empty to begin with — "every group open" is the default a shot should show.
+ */
+const collapsedGroups = new Map<string, Set<string>>();
+
+/**
  * Which records the reader has opened where, exactly as the view holds them.
  *
  * **Seeded, which nothing else in this map's shape is, and the reason is what a
@@ -406,6 +440,13 @@ function renderSheet(into: HTMLElement): void {
 				// The same answer for a record set's disclosure, and held the same
 				// way: a record left open has to survive an edit anywhere on the
 				// sheet, because a commit re-renders everything.
+				collapsedGroups: [...(collapsedGroups.get(config.id) ?? [])],
+				onToggleGroup: (key: string, collapsed: boolean) => {
+					const held = collapsedGroups.get(config.id) ?? new Set<string>();
+					if (collapsed) held.add(key);
+					else held.delete(key);
+					collapsedGroups.set(config.id, held);
+				},
 				openRecords: [...(openRecords.get(config.id) ?? [])],
 				onToggleRecord: (index: number, open: boolean) => {
 					const held = openRecords.get(config.id) ?? new Set<number>();
@@ -517,7 +558,7 @@ async function ensureEditor(): Promise<HTMLElement> {
 		file === 'outside' ||
 		file === 'no-file'
 			? file
-			: harnessLayout(samplesFor(state)),
+			: layoutFor(state),
 		{
 			open: params.get('open') ?? undefined,
 			// Only ever off: a pane opens with sample values on, so the state
@@ -755,7 +796,11 @@ function applyQuery(): void {
 		wanted === 'empty' ||
 			wanted === 'unmodified' ||
 			wanted === 'effective' ||
-			wanted === 'broken'
+			wanted === 'broken' ||
+			wanted === 'pinned-add' ||
+			wanted === 'record-groups' ||
+			wanted === 'text-groups' ||
+			wanted === 'notes'
 			? wanted
 			: 'populated',
 	);
@@ -856,6 +901,22 @@ function applyQuery(): void {
 					target.offsetTop - box.offsetTop - (box.clientHeight - target.offsetHeight) / 2;
 				break;
 			}
+		}
+	};
+
+	/**
+	 * `&scrollx=<selector>|<left|right>` — scroll that element sideways to one
+	 * end, `&scroll=`'s sibling for the other axis. The add control is outside
+	 * the table's scroller, so a claim that its label stays in view with the table
+	 * scrolled to both ends needs a still of each end.
+	 */
+	const scrolledSideways = params.getAll('scrollx');
+	const scrollSidewaysWanted = () => {
+		for (const wanted of scrolledSideways) {
+			const [selector, end] = wanted.split('|');
+			const target = document.querySelector<HTMLElement>(selector ?? '');
+			if (target === null) continue;
+			target.scrollLeft = end === 'right' ? target.scrollWidth : 0;
 		}
 	};
 
@@ -960,6 +1021,7 @@ function applyQuery(): void {
 		typeWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
+		scrollSidewaysWanted();
 		if (scrolled.length > 0) focusWanted();
 		// The component picker, once the pane is on screen: opening it scrolls
 		// the search field clear of the pinned bar, which reads real geometry.

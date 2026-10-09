@@ -161,7 +161,7 @@ than corrected (§10). Criterion 6's scan over the offered types proves `text` i
 refused and does not reach this, which is why it needed its own case.
 
 **The types themselves, which is the half that was right.** The fields are `number`, `toggle`, `level`,
-`computed` and `modifier`. A `text` field is **refused** as a configuration error, and
+`computed` and `modifier`. A `text` field is **refused** as a configuration error *unless it is the field Group by names* (`docs/features/free-text-group-key.md` reversed the refusal for that one job), and
 the refusal is not a cut: §5's language has no strings, so a text field could publish
 nothing, be compared to nothing and be handed to no builtin — it could only be
 display, and display words are what the record's body is for, where they hold links
@@ -463,8 +463,9 @@ evidence for the model answer.
   the rendered layer is hidden rather than left transparent, the caret is not placed
   from the click, and the two layers scroll separately. `renderMarkdown` draws it where
   there is an app and `paintParagraphs` where there is not.
-- **Add** is a control in the last position of the list, reading as the next record
-  rather than as chrome beside it — and wearing `.sheetsmith-table-add`'s own
+- **Add** is a control at the foot of the card, outside the scrolling list
+  (`table-add-row-pinned-bottom.md` moved it there; it was the list's last child,
+  reading as the next record) — and wearing `.sheetsmith-table-add-button`'s own
   *treatment* and not merely its vocabulary: a rule across the top and a centred
   label, which is what Table renders and what UI §9's shared row now names. The two
   had drifted before the first release, with only Table's reading as pressable. The press
@@ -669,7 +670,7 @@ prose is the one sample a reader could mistake for their own data.
 | Key | Kind | Label | Description |
 | --- | --- | --- | --- |
 | `recordName` | `text` | Record name | What one record is called. Names the **Add** control, the accessible name of a record's name field, and the filler in the layout editor's preview. Defaults to "Record". |
-| `fields` | `columns` | Fields | The typed values every record holds, each an entry in that record's fenced block. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A `max` on a `number` field is a uses counter's ceiling: a reset restores to it, and the field draws it beside the value. |
+| `fields` | `columns` | Fields | The typed values every record holds, each an entry in that record's fenced block. Text is offered only for the field Group by names, as a word that heads a group; other words a reader reads belong in the record's body, where they may hold links. A `max` on a `number` field is a uses counter's ceiling: a reset restores to it, and the field draws it beside the value. |
 | `hideLabel` | `boolean` | Hide the heading | Draws the list with no name over it, for a list whose surroundings already say what it is. |
 
 `formulaFields`: `fields.*.formula` and `reset.to`.
@@ -792,12 +793,17 @@ working exactly as written, and the migration cost named in the model question.
       criterion.*
 - [x] Deleting a record above an open one leaves the right record open: the set is
       keyed by position, so a delete shifts it.
-- [ ] Committing an edit inside an open record leaves that record open across the
+- [x] Committing an edit inside an open record leaves that record open across the
       re-render.
       *Moved to the vault-fixture press list, for the reason the criterion below is
       there.* The component's half is driven — rendered with an open set supplied,
       the record is open — and the half that survives is the view's `Map`, which
       needs a `SheetView` a test can render (`docs/PATTERNS.md` §11).
+      In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol: Crimson
+      Rite in `Records.md`'s Homebrew in the body, opened by a real click, had its
+      body **Class** retyped and committed with Enter; the note was written, and the
+      record was still open with focus on the same field. Method:
+      `record-summary-fields-first.md` § In the app, 2026-10-08.
 - [x] ~~Opening a note, closing it and opening a second note leaves the second
       note's records closed.~~ **Moved to the vault fixture**, below: it is the
       view's `clear()`, which needs a `SheetView` a test can render
@@ -980,7 +986,7 @@ implementation and every round of findings.
 - **Two views over one collection**, which CSB 549 and 519 are asking for together — an
   inventory list and an equipped list over one set of records. It needs a record to
   appear in two components, which needs an identity a position does not have.
-- **A `text` field.** Refused with a message. §5 has no strings, so it could publish
+- **A `text` field**, except as the group key (`docs/features/free-text-group-key.md`). Elsewhere it is refused with a message. §5 has no strings, so it could publish
   nothing; the body is where words go.
 - **Multiply and override operators on modifiers, grouped conditional modifiers, a
   record naming two targets, dice-changing modifiers.** All deferred already, each with

@@ -39,6 +39,7 @@
  */
 
 import { Layout } from './layout';
+import { NOTE_CLAUSE } from './modifier-cell';
 
 /** Something wrong with a bonus type or with a definition naming one. */
 export interface ModifierTypeProblem {
@@ -80,6 +81,22 @@ export function parseModifierTypes(layout: Layout): ParsedModifierTypes {
 			// means untyped — so a blank line here would offer a second spelling
 			// of "no type" in the select.
 			problems.push({ message: 'A bonus type needs a name.' });
+			continue;
+		}
+		/*
+		 * **A type spelled with the note keyword is refused, and dropped from the
+		 * select.** A cell's `as` clause comes before its note clause, and the note
+		 * is taken off first at the leftmost ` note:`, so a type holding that text
+		 * would be cut in two in every cell naming it (`docs/features/
+		 * modifier-notes.md` G). Read with a space in front because the clause
+		 * spells one: `as note: x` holds the keyword even though the type starts
+		 * with it. A definition still naming it gets the undeclared sentence below,
+		 * and a cell already holding it keeps its bytes.
+		 */
+		if (` ${name}`.includes(NOTE_CLAUSE)) {
+			problems.push({
+				message: `"${name}" cannot be a bonus type, because a row's modifier spells its note after "note:". Rename it without that text.`,
+			});
 			continue;
 		}
 		if (seen.has(name)) {

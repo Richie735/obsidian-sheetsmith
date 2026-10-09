@@ -130,11 +130,12 @@ export function moveItem<T>(
 }
 
 /**
- * Reorder and remove controls, and the drop target that goes with them.
+ * Reorder and remove controls, and the drop target that goes with them —
+ * every list field's, named for the item they act on (`docs/UI.md` §6).
  *
- * Focus ids follow the same two schemes as the entry list: inputs are
- * keyed by index so focus holds its position while typing, buttons by the
- * entry's own name so focus follows the item through a reorder.
+ * Every button's focus id is `token` plus its role, and `token` carries the
+ * item's own name, so focus follows the item through a reorder. A caller keys
+ * its inputs by index instead, so focus holds its position while typing.
  */
 export function addControls<T>(
 	row: HTMLElement,
@@ -265,10 +266,10 @@ export function listField(row: HTMLElement, name: string): HTMLElement {
  * because reserving a fixed three would leave desktop with a track nothing
  * ever fills.
  *
- * Exported again for the modifier definitions list, which is a fourth header of
- * this shape and lives in its own module — the same reason `addControls` and
- * `listField` below it are: the four lists share the geometry and only this file
- * knows how many controls a row draws.
+ * Exported for the list fields in their own modules — the modifier definitions
+ * list among them — for the reason `addControls` and `listField` are: every
+ * list field shares the geometry and only this file knows how many controls a
+ * row draws.
  */
 export function addControlSpacers(header: HTMLElement): void {
 	// Keep in step with addControls: a handle and a trash on desktop, up,
@@ -924,13 +925,14 @@ export function renderColumnsEditor(
 		return named.length === 0 ? COLUMN_TYPES : named;
 	})();
 	/**
-	 * What a new column is created as, and what an unrecognised stored type
-	 * falls back to on screen.
+	 * What an unset or unrecognised stored type is on screen. A new column is
+	 * created as the first *offered* type instead (the Add handler), which is
+	 * the same answer for Table and Roster and not for a Record set.
 	 *
-	 * The *shared* default where this list offers it, so a Table goes on storing
-	 * a text column as no type at all; the first offered type otherwise, written
-	 * out — which is what keeps `DEFAULT_COLUMN_TYPE` meaning one thing rather
-	 * than one thing per component (`types.ts`, `columnOptions`).
+	 * The *shared* default where this list offers it, so an untyped column is
+	 * what `read` takes it for; the first offered type otherwise — which is what
+	 * keeps `DEFAULT_COLUMN_TYPE` meaning one thing rather than one thing per
+	 * component (`types.ts`, `columnOptions`).
 	 */
 	const fallback = offered.some((id) => id === DEFAULT_COLUMN_TYPE)
 		? DEFAULT_COLUMN_TYPE
@@ -1223,9 +1225,11 @@ export function renderColumnsEditor(
 		 * shows `fallback` for an unset type, so resolving it to the shared
 		 * default here would draw **Number** in the select and a *text* column's
 		 * detail line under it — the exact disagreement this comment forbids,
-		 * one level in. Not reachable from a fixture, because a list that does
-		 * not offer text writes its type out; reachable from a hand-edited
-		 * layout, which is what these two lines exist for.
+		 * one level in. Reachable from a hand-edited layout only: a list writes
+		 * its first offered type out. A Record set now offers text, so for it the
+		 * select shows **Text** for an untyped field, which is what `read` has
+		 * always meant by one (it used to draw **Number** over a field the
+		 * component refused as text).
 		 */
 		const effective = column.type ?? fallback;
 
@@ -1896,13 +1900,15 @@ export function renderColumnsEditor(
 		let counter = 2;
 		while (taken.has(next)) next = `New ${unit} ${counter++}`;
 		context.focusAfterRedraw(`${prefix}-col-${columns.length}-key`);
-		// The type is written out unless it *is* the shared default, so a list
-		// that does not offer text never stores a column as "no type" — which
-		// the component would read back as text and refuse.
+		// The first *offered* type, written out unless it *is* the shared
+		// default. Not `fallback`, which is the shared default wherever it is
+		// offered: a Record set offers text (last, as a group key) and would
+		// otherwise store every new field as "no type", read it back as text and
+		// refuse it on the first field an author created. For Table the first
+		// offered type is the shared default, so it still stores `{ key }`.
+		const first = offered[0] as string;
 		columns.push(
-			fallback === DEFAULT_COLUMN_TYPE
-				? { key: next }
-				: { key: next, type: fallback },
+			first === DEFAULT_COLUMN_TYPE ? { key: next } : { key: next, type: first },
 		);
 		context.persist();
 		context.redraw();
@@ -1960,12 +1966,11 @@ type EntryRecord = {
  * focus holds its position while typing, buttons by the entry's own name
  * so focus follows the item through a reorder.
  *
- * **Its reorder and remove controls are its own, not `addControls`**, and the
- * difference is what a screen reader says: this list's buttons are named "Move
- * up" and "Remove entry" where a row's and a column's name the item they act on,
- * and nothing here asks before removing. Sharing them would change three
- * accessible names, which is a decision about the interface rather than about
- * where the code lives — `docs/PATTERNS.md` §11 carries it as its own row.
+ * **Its reorder and remove controls are `addControls`'**, so they name the
+ * entry they act on as every list field's do (`docs/UI.md` §6). Removing asks
+ * only where it would lose a Segments formula: the rest of an entry is a
+ * couple of short words and a select or a checkbox, retyped in seconds, and a
+ * character's values under it are kept by the note and come back with it.
  */
 export function renderEntriesEditor(
 	listEl: HTMLElement,
@@ -2096,31 +2101,6 @@ export function renderEntriesEditor(
 
 	list.forEach((entry, index) => {
 		const row = listEl.createDiv('sheetsmith-entry-row');
-		row.addEventListener('dragover', (event) => {
-			if (context.drag.index === null) return;
-			event.preventDefault();
-			// moveEntry lands the row above the target on upward
-			// drags and below it on downward ones; the indicator must
-			// say so, not always point above.
-			row.toggleClass(
-				'sheetsmith-entry-drop-below',
-				index > context.drag.index,
-			);
-			row.toggleClass('sheetsmith-entry-drop', index < context.drag.index);
-		});
-		row.addEventListener('dragleave', () => {
-			row.removeClass('sheetsmith-entry-drop');
-			row.removeClass('sheetsmith-entry-drop-below');
-		});
-		row.addEventListener('drop', (event) => {
-			event.preventDefault();
-			row.removeClass('sheetsmith-entry-drop');
-			row.removeClass('sheetsmith-entry-drop-below');
-			if (context.drag.index === null || context.drag.index === index) return;
-			moveItem(list, context.drag.index, index, context);
-			context.drag.index = null;
-		});
-
 		const primaryInput = row.createEl('input', {
 			type: 'text',
 			// The heading, not "Attribute key": that word was the D&D term
@@ -2324,66 +2304,31 @@ export function renderEntriesEditor(
 			checkField(row, entryFlag.label, entry, entryFlag.key, context);
 		}
 
-		if (Platform.isMobile) {
-			// HTML5 drag-and-drop is inert on touch, and there is no
-			// keyboard — reordering needs real buttons there.
-			const up = row.createEl('button', {
-				cls: 'clickable-icon',
-				attr: { 'aria-label': 'Move up' },
-			});
-			setIcon(up, 'arrow-up');
-			up.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-up`;
-			up.addEventListener('click', () =>
-				moveItem(list, index, index - 1, context),
-			);
-			const down = row.createEl('button', {
-				cls: 'clickable-icon',
-				attr: { 'aria-label': 'Move down' },
-			});
-			setIcon(down, 'arrow-down');
-			down.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-down`;
-			down.addEventListener('click', () =>
-				moveItem(list, index, index + 1, context),
-			);
-		} else {
-			const handle = row.createEl('button', {
-				cls: 'clickable-icon sheetsmith-entry-handle',
-				attr: {
-					'aria-label': 'Reorder: drag, or press the arrow keys',
-					draggable: 'true',
-				},
-			});
-			setIcon(handle, 'grip-vertical');
-			handle.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-handle`;
-			handle.addEventListener('dragstart', (event) => {
-				context.drag.index = index;
-				event.dataTransfer?.setData('text/plain', nameOf(entry));
-			});
-			handle.addEventListener('dragend', () => {
-				context.drag.index = null;
-			});
-			handle.addEventListener('keydown', (event) => {
-				if (event.key === 'ArrowUp') {
-					event.preventDefault();
-					moveItem(list, index, index - 1, context);
-				} else if (event.key === 'ArrowDown') {
-					event.preventDefault();
-					moveItem(list, index, index + 1, context);
+		const name = nameOf(entry);
+		// A blank name only arrives from a hand-edited file, already flagged as
+		// required; the list's own noun keeps "Remove " from naming nothing.
+		const label = name || (withCount ? 'row' : 'entry');
+		addControls(
+			row,
+			list,
+			index,
+			`attr-${prefix}-${name}`,
+			label,
+			context,
+			() => {
+				// A bare number is stored as a number (the Segments commit above),
+				// so a string here is an expression somebody wrote.
+				if (typeof entry.count !== 'string' || entry.count.trim() === '') {
+					return null;
 				}
-			});
-		}
-
-		const remove = row.createEl('button', {
-			cls: 'clickable-icon',
-			attr: { 'aria-label': 'Remove entry' },
-		});
-		setIcon(remove, 'trash');
-		remove.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-remove`;
-		remove.addEventListener('click', () => {
-			list.splice(index, 1);
-			context.persist();
-			context.redraw();
-		});
+				// The blank case says "this row" and drops the notes clause: a
+				// nameless entry addresses no section, so there is nothing to keep.
+				if (name === '') {
+					return `Remove this ${label}? Its segments formula is lost.`;
+				}
+				return `Remove the row "${name}"? Its segments formula is lost. Character notes keep their "${name}" data either way.`;
+			},
+		);
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');

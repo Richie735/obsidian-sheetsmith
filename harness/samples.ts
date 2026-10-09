@@ -1371,8 +1371,13 @@ export const SAMPLES: Sample[] = [
 			// segments rather than the bonus-type contest one table over. Two
 			// rows rather than five, each naming several targets, because one
 			// item lengthening three runs is also the shape a reader meets.
-			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2 |',
-			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2 |',
+			// The pools' ceilings ride on the same two rows, for the same reason:
+			// one item raising a run and a maximum is the shape a reader meets
+			// (`docs/features/pool-ceiling-modifier-door.md`). `rolled_health.max`
+			// is the push that moves nothing — a typed ceiling has no formula to
+			// read its slot — and the row's own line says so.
+			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3; grit.count += 2; carried += 3; halved.count += 2 |',
+			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2; ward.max += -2; rolled_health.max += -4 |',
 		].join('\n'),
 	},
 	/*
@@ -1509,7 +1514,9 @@ export const SAMPLES: Sample[] = [
 	 * **And every state a reader-set ceiling has**, since `Uses` is this
 	 * component's `maxSource: 'record'` subject: a ceiling above the value, one
 	 * the value has passed, one written with no spaces around the slash, one at
-	 * its ceiling, and a record with none at all showing the `—` placeholder.
+	 * its ceiling, and a record with none at all showing the `—` placeholder —
+	 * and a ceiling that is a formula, beside typed ones, and one that will not
+	 * work out (`docs/features/record-ceiling-formula.md`).
 	 */
 	{
 		config: {
@@ -1596,7 +1603,10 @@ export const SAMPLES: Sample[] = [
 			'',
 			'### [[Ring of Protection]]',
 			'```sheet',
-			'Uses: 0 / 1',
+			// **A ceiling that is a formula** (`docs/features/record-ceiling-formula.md`):
+			// `abilities.CON` is 1 on this sheet, so the slot reads `0 / 1` exactly
+			// as a typed 1 would, between two records whose ceilings are typed.
+			'Uses: 0 / abilities.CON',
 			'Attuned: yes',
 			'Rank: 2',
 			// Untyped on purpose. `as item` would contest with the Magic items
@@ -1646,6 +1656,27 @@ export const SAMPLES: Sample[] = [
 			'Uses: 3 / 3',
 			'```',
 			'A record with no modifier field filled in, which is the ordinary state on a list like this, and a counter sitting at its own ceiling.',
+			'',
+			'### Dragon’s Breath',
+			'```sheet',
+			// A formula naming nothing the sheet publishes: `?` in the slot and the
+			// line under the record. Last, so every record above keeps its place.
+			'Uses: 2 / prfo',
+			'```',
+			'A ceiling that cannot be worked out, which says so on its own record and nowhere else.',
+			'',
+			// **A name wider than the name's track at every width**
+			// (`docs/features/record-summary-fields-first.md`): 24 W's are about
+			// 312px against a 169px cap, and `W` is the widest letter the estimate
+			// undercounts. On a fields-first line the name is the track that gives,
+			// so this is the record that shows it clipping with an ellipsis and
+			// revealing on hover, never overlapping its fields. Last, so every record
+			// above keeps its place.
+			'### WWWWWWWWWWWWWWWWWWWWWWWW',
+			'```sheet',
+			'Uses: 1 / 1',
+			'```',
+			'A name of 24 W’s, so a reviewer can see the name clip beside fields that keep their full width.',
 			'',
 		].join('\n'),
 	},
@@ -1745,6 +1776,76 @@ export const SAMPLES: Sample[] = [
 			fields: [{ key: 'Level', type: 'number', max: 9 }],
 		} as ComponentConfig,
 		body: null,
+	},
+	/*
+	 * **A Pool's ceiling a modifier moved** (`docs/features/pool-ceiling-modifier-door.md`),
+	 * pushed at from the Worn items table above, on the row the record sets
+	 * left free, the nearest free row to that table, so no placement above moves.
+	 *
+	 * - **Stamina reserve** is raised by the talisman: the numeral after the slash takes
+	 *   the dotted rule and the card its corner door.
+	 * - **Ward** is lowered by the shackles, because the mark says *moved* in
+	 *   either direction — dotted, not a Track's dashed "granted".
+	 * - **Rolled HP** is a typed ceiling the shackles also push at, and draws
+	 *   neither: no formula reads its slot, so the number the character typed is
+	 *   the ceiling, and a mark on it would claim otherwise. It sits in the free
+	 *   three columns beside the six-field Passport rather than in this row,
+	 *   because two columns is all this row has left and a two-column pool clips
+	 *   its own reading at a 520px container, which is a pool's width limit and
+	 *   not this feature's to photograph.
+	 */
+	{
+		config: {
+			id: 'stamina',
+			type: 'pool',
+			// Two words, so at a 520px container — a 115px card, under the 200px
+			// the label's reserve gives way at — it wraps under the door rather
+			// than running beneath it, which a one-word label could not show.
+			label: 'Stamina reserve',
+			position: { col: 5, row: 38, width: 3, height: 1 },
+			max: '12 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 9\n```',
+	},
+	{
+		config: {
+			id: 'ward',
+			type: 'pool',
+			label: 'Ward',
+			position: { col: 8, row: 38, width: 3, height: 1 },
+			max: '8 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 5\n```',
+	},
+	/*
+	 * **A run whose formula transforms its push**
+	 * (`docs/features/breakdown-measured-effect.md`). `floor((3 + mod.self) / 2)`
+	 * with the talisman's `+2` draws two segments where it would draw one, so one
+	 * is granted, and the door's total reads `Total +2, run +1`: the push, then
+	 * what it did to the run on screen. The two columns this row had left after
+	 * the pools, the nearest free placement to the granted runs above, so no
+	 * placement moves; a two-segment run fits two columns where a pool's reading
+	 * does not.
+	 */
+	{
+		config: {
+			id: 'halved',
+			type: 'track',
+			label: 'Halved',
+			position: { col: 11, row: 38, width: 2, height: 1 },
+			count: 'floor((3 + mod.self) / 2)',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 1\n```',
+	},
+	{
+		config: {
+			id: 'rolled_health',
+			type: 'pool',
+			label: 'Rolled HP',
+			position: { col: 10, row: 46, width: 3, height: 1 },
+			maxSource: 'character',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 14\nmax: 22\n```',
 	},
 	/*
 	 * **Fields shown only for some values of another**
@@ -3008,6 +3109,56 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 30\n```',
 	},
+	/*
+	 * **Which number a push marks: the one whose own formula reads it**
+	 * (SPEC §13, settled). All three are pushed at by the Talisman of Endurance
+	 * row in Worn items.
+	 *
+	 * - **Grit** reads its slot by the absolute spelling in its own field,
+	 *   `3 + mod.grit.count`, and keeps its door: the run really is two longer,
+	 *   with no granted dashes, since the dashes are `mod.self`'s alone.
+	 * - **Carried** is pushed at and draws **no** underline: its own formula reads
+	 *   no slot, so its number does not move. It accepts a modifier only because
+	 *   Load, beside it, reads `mod.carried` — which used to be enough to draw the
+	 *   mark and list the Talisman over a 10 that stayed 10.
+	 * - **Load** is the number that did move, 10 + 3, and draws no mark either.
+	 *   That one is deliberate and not settled here: no set marks a component for
+	 *   a push aimed at another name it reads.
+	 */
+	{
+		config: {
+			id: 'grit',
+			type: 'track',
+			label: 'Grit',
+			position: { col: 5, row: 77, width: 4, height: 1 },
+			count: '3 + mod.grit.count',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 2\n```',
+	},
+	{
+		config: {
+			id: 'carried',
+			type: 'card',
+			label: 'Carried',
+			position: { col: 9, row: 77, width: 2, height: 1 },
+			key: 'Carried',
+			derived: 'value',
+			signed: false,
+		} as ComponentConfig,
+		body: '```sheet\nCarried: 10\n```',
+	},
+	{
+		config: {
+			id: 'load',
+			type: 'card',
+			label: 'Load',
+			position: { col: 11, row: 77, width: 2, height: 1 },
+			key: 'Load',
+			derived: 'carried + mod.carried',
+			signed: false,
+		} as ComponentConfig,
+		body: '```sheet\nLoad: 0\n```',
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
@@ -3566,3 +3717,761 @@ export const CLIPBOARD_FIXTURES: Readonly<Record<string, () => string>> = {
 	many: manyCopy,
 	pool: poolCopy,
 };
+
+/**
+ * **The add control pinned to the foot of the card**
+ * (`docs/features/table-add-row-pinned-bottom.md`), and every state the spec's
+ * acceptance section names, on a sheet of its own.
+ *
+ * A state rather than a change to `SAMPLES`: the populated sheet's tables sit
+ * beside cards that never make their row taller than the rows, which is exactly
+ * the case the feature is *not* visible in. A control pinned to the bottom of a
+ * cell can only be seen in a cell taller than its rows, and a Table has no
+ * placement floor, so the height here comes from a tall neighbour (a Rich text
+ * block, whose floor is its placement) that stretches the grid row.
+ *
+ * Rows 1-3, a tall band (each Table spans all three, so its cell is taller than its rows): an open Table with totals, an open Table without, a closed
+ * Table (which must not move) and the tall neighbour. Row 4: the same two open
+ * Tables with more rows than the placement. Rows 5-8: Record set with few records
+ * in a tall placement, one with many in a short one, and an empty open Table.
+ * Row 9: a wide open Table, for the sideways scroll.
+ */
+export function pinnedAddSamples(): Sample[] {
+	const table = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+		extra: Record<string, unknown>,
+		body: string | null,
+	): Sample => ({
+		config: {
+			id,
+			type: 'table',
+			label,
+			position,
+			rowHeader: 'Item',
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Weight', type: 'number', total: extra.total === true },
+			],
+			...(extra.config as object),
+		} as ComponentConfig,
+		body,
+	});
+	const rows = (count: number) =>
+		[
+			'| Item | Qty | Weight |',
+			'| --- | --- | --- |',
+			...Array.from(
+				{ length: count },
+				(_, i) => `| Thing ${i + 1} | ${i + 1} | ${i + 2} |`,
+			),
+		].join('\n');
+	const records = (count: number) =>
+		[
+			'',
+			...Array.from({ length: count }, (_, i) =>
+				[`### Spell ${i + 1}`, '```sheet', `Level: ${i % 9}`, '```', 'A line of prose.', ''].join('\n'),
+			),
+		].join('\n');
+	return [
+		table('tall_totals', 'Tall with totals', { col: 1, row: 1, width: 3, height: 3 }, { total: true, config: { openRows: true } }, rows(2)),
+		table('tall_plain', 'Tall without totals', { col: 4, row: 1, width: 3, height: 3 }, { config: { openRows: true } }, rows(2)),
+		table('tall_closed', 'Closed in a tall cell', { col: 7, row: 1, width: 3, height: 3 }, { total: true, config: { rows: [{ label: 'Rope' }, { label: 'Torch' }] } }, rows(2)),
+		{
+			config: {
+				id: 'tall_neighbour',
+				type: 'rich-text',
+				label: 'Tall neighbour',
+				position: { col: 10, row: 1, width: 3, height: 3 },
+			},
+			body: '\nThis block makes its grid row tall, which is the only thing it is for.\n',
+		},
+		table('many_totals', 'Many with totals', { col: 1, row: 4, width: 6, height: 1 }, { total: true, config: { openRows: true } }, rows(9)),
+		table('many_plain', 'Many without totals', { col: 7, row: 4, width: 6, height: 1 }, { config: { openRows: true } }, rows(9)),
+		{
+			config: {
+				id: 'few_records',
+				type: 'record-set',
+				label: 'Few records, tall',
+				position: { col: 1, row: 5, width: 4, height: 4 },
+				recordName: 'Spell',
+				fields: [{ key: 'Level', type: 'number', max: 9 }],
+			} as ComponentConfig,
+			body: records(2),
+		},
+		{
+			config: {
+				id: 'many_records',
+				type: 'record-set',
+				label: 'Many records, short',
+				position: { col: 5, row: 5, width: 4, height: 3 },
+				recordName: 'Spell',
+				fields: [{ key: 'Level', type: 'number', max: 9 }],
+			} as ComponentConfig,
+			body: records(9),
+		},
+		table('empty_open', 'Empty and open', { col: 9, row: 5, width: 4, height: 4 }, { config: { openRows: true } }, null),
+		{
+			config: {
+				id: 'wide_open',
+				type: 'table',
+				label: 'Wide, scrolls sideways',
+				position: { col: 1, row: 9, width: 12, height: 1 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [
+					{ key: 'Qty', type: 'number' },
+					{ key: 'Weight', type: 'number', total: true },
+					{ key: 'Value', type: 'text' },
+					{ key: 'Source', type: 'text' },
+					{ key: 'Notes', type: 'text' },
+					{ key: 'Where kept', type: 'text' },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Item | Qty | Weight | Value | Source | Notes | Where kept |',
+				'| --- | --- | --- | --- | --- | --- | --- |',
+				'| Rope | 1 | 10 | 1 gp | the cart | fifty feet of hempen rope | pack |',
+				'| Lantern | 1 | 2 | 5 gp | the market | bullseye, with a spare shutter | belt |',
+			].join('\n'),
+		},
+	];
+}
+
+/**
+ * **A Record set's groups** (`docs/features/record-set-groups.md`), on a sheet of
+ * their own, so that the one measurement the feature owes — that a collapse moves
+ * nothing outside the list — has neighbours above, below and beside the list to
+ * move.
+ *
+ * A state rather than a change to `SAMPLES`, on `pinnedAddSamples`' own argument:
+ * the populated sheet is every component's own reading, and what this one is for
+ * is a handful of grouped lists whose records are chosen to meet every rule the
+ * spec names. Row 1: a Card over each of the two grouped lists. Rows 2-5: Class
+ * features (a level key drawn as a dropdown in the opened record, the class case)
+ * four columns wide, Grouped spells (a number key under the strip) six wide, and
+ * a Card beside them. Row 6: a Pool under each. Row 7: Spells by name (a level
+ * key with names, so a header says `Cantrip`) and the two bad keys. Row 10: a Tab
+ * set holding a grouped list, for a collapse inside a container.
+ *
+ * Class features holds the seven records the spec's fixture names: three Fighter,
+ * two Wizard, one with no `Class` entry (Unassigned), one with `Class: 9`, past
+ * the list, which lands in Other. One has a body and one has no fence.
+ */
+export function recordGroupSamples(): Sample[] {
+	const record = (name: string, fence: string[] | null, prose = ''): string =>
+		[
+			`### ${name}`,
+			...(fence === null ? [] : ['```sheet', ...fence, '```']),
+			prose,
+			'',
+		].join('\n');
+	const card = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+		key: string,
+		value: string,
+	): Sample => ({
+		config: { id, type: 'card', label, position, key } as ComponentConfig,
+		body: `\`\`\`sheet\n${key}: ${value}\n\`\`\``,
+	});
+	const pool = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+	): Sample => ({
+		config: { id, type: 'pool', label, position, max: '10' } as ComponentConfig,
+		body: '```sheet\ncurrent: 6\nmax: 10\n```',
+	});
+	const spellFields = [
+		{ key: 'Level', type: 'number' },
+		{ key: 'Prepared', type: 'toggle' },
+	];
+	const spells = [
+		['Light', '0'],
+		['Mage Hand', '0'],
+		['Shield', '1'],
+		['Sleep', '1'],
+		['Fireball', '3'],
+		['Counterspell', '03'],
+		['Wish', 'two'],
+		['Blank', ''],
+	];
+	const spellBody = (rows: string[][]): string =>
+		[
+			'',
+			...rows.map(([name, level], at) =>
+				record(name as string, [`Level: ${level}`, `Prepared: ${at % 2 === 0 ? 'yes' : 'no'}`], 'A line of prose.'),
+			),
+		].join('\n');
+	const classFields = [
+		{
+			key: 'Class',
+			type: 'level',
+			levels: ['Unassigned', 'Fighter', 'Wizard', 'Cleric'],
+			input: 'select',
+			placement: 'body',
+		},
+		{ key: 'Uses', type: 'number', max: 3 },
+	];
+	return [
+		card('groups_above_features', 'Above features', { col: 1, row: 1, width: 4, height: 1 }, 'AC', '16'),
+		card('groups_above_spells', 'Above spells', { col: 5, row: 1, width: 6, height: 1 }, 'DC', '14'),
+		{
+			config: {
+				id: 'class_features',
+				type: 'record-set',
+				label: 'Class features',
+				position: { col: 1, row: 2, width: 4, height: 4 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: classFields,
+			} as ComponentConfig,
+			body: [
+				'',
+				record('Second Wind', ['Class: 1', 'Uses: 2'], 'A bonus action: regain 1d10 plus your level in hit points.'),
+				record('Fireball', ['Class: 2', 'Uses: 1']),
+				record('Action Surge', ['Class: 1', 'Uses: 1']),
+				record('Lucky', ['Uses: 3']),
+				record('Old homebrew', ['Class: 9', 'Uses: 0']),
+				record('Arcane Recovery', ['Class: 2', 'Uses: 1']),
+				record('Fighting Style', null),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'grouped_spells',
+				type: 'record-set',
+				label: 'Grouped spells',
+				position: { col: 5, row: 2, width: 6, height: 4 },
+				recordName: 'Spell',
+				fieldHeadings: true,
+				groupBy: 'Level',
+				fields: spellFields,
+			} as ComponentConfig,
+			body: spellBody(spells),
+		},
+		card('groups_beside', 'Beside', { col: 11, row: 2, width: 2, height: 4 }, 'XP', '300'),
+		pool('groups_below_features', 'Below features', { col: 1, row: 6, width: 4, height: 1 }),
+		pool('groups_below_spells', 'Below spells', { col: 5, row: 6, width: 6, height: 1 }),
+		{
+			config: {
+				id: 'spells_by_name',
+				type: 'record-set',
+				label: 'Spells by name',
+				position: { col: 1, row: 7, width: 6, height: 3 },
+				recordName: 'Spell',
+				groupBy: 'Level',
+				fields: [
+					{
+						key: 'Level',
+						type: 'level',
+						levels: ['Cantrip', '1st', '2nd', '3rd'],
+						input: 'select',
+					},
+					{ key: 'Prepared', type: 'toggle' },
+				],
+			} as ComponentConfig,
+			body: spellBody([
+				['Light', '0'],
+				['Shield', '1'],
+				['Misty Step', '2'],
+				['Fireball', '3'],
+				['Mage Hand', '0'],
+			]),
+		},
+		{
+			config: {
+				id: 'bad_group_missing',
+				type: 'record-set',
+				label: 'Group by nothing',
+				position: { col: 7, row: 7, width: 3, height: 3 },
+				recordName: 'Spell',
+				groupBy: 'Nope',
+				fields: spellFields,
+			} as ComponentConfig,
+			body: spellBody([
+				['Light', '0'],
+				['Shield', '1'],
+			]),
+		},
+		{
+			config: {
+				id: 'bad_group_toggle',
+				type: 'record-set',
+				label: 'Group by a toggle',
+				position: { col: 10, row: 7, width: 3, height: 3 },
+				recordName: 'Spell',
+				groupBy: 'Prepared',
+				fields: spellFields,
+			} as ComponentConfig,
+			body: spellBody([
+				['Light', '0'],
+				['Shield', '1'],
+			]),
+		},
+		{
+			config: {
+				id: 'grouped_tabs',
+				type: 'tab-set',
+				label: 'Grouped tabs',
+				position: { col: 1, row: 10, width: 8, height: 4 },
+				children: [
+					{
+						id: 'grouped_tab_one',
+						type: 'group',
+						label: 'Features tab',
+						position: { col: 1, row: 1, width: 8, height: 4 },
+						children: [
+							{
+								id: 'tabbed_features',
+								type: 'record-set',
+								label: 'Tabbed features',
+								position: { col: 1, row: 1, width: 8, height: 4 },
+								recordName: 'Feature',
+								groupBy: 'Class',
+								fields: classFields,
+							},
+						],
+					},
+					{
+						id: 'grouped_tab_two',
+						type: 'group',
+						label: 'Notes tab',
+						position: { col: 1, row: 1, width: 8, height: 1 },
+						children: [
+							{
+								id: 'tabbed_note',
+								type: 'rich-text',
+								label: 'Tabbed note',
+								position: { col: 1, row: 1, width: 8, height: 1 },
+							},
+						],
+					},
+				],
+			} as unknown as ComponentConfig,
+			body: null,
+			children: {
+				tabbed_features: [
+					'',
+					record('Second Wind', ['Class: 1', 'Uses: 1']),
+					record('Fireball', ['Class: 2', 'Uses: 1']),
+					record('Action Surge', ['Class: 1', 'Uses: 1']),
+				].join('\n'),
+				tabbed_note: '\nA second tab, so this is a real tab set.\n',
+			},
+		},
+	];
+}
+
+/**
+ * **A Record set grouped by what the player types**
+ * (`docs/features/free-text-group-key.md`), on a sheet of its own for the reason
+ * `recordGroupSamples` has one: the measurement the feature owes, that a collapse
+ * moves nothing outside the list, needs neighbours above, below and beside it.
+ *
+ * Row 1: a Card over each of the two lists. Rows 2-5: Homebrew features, four
+ * columns wide, whose key is a text field on the summary line, over the eight
+ * records the spec names (three Fighter, two Blood Hunter of which one is spelled
+ * `blood hunter`, one Wizard, one blank, one `Other`), and Homebrew strip, six
+ * wide with the strip of field names over a text column and the odd values a
+ * hand-edited note can hold (a colon, a link, ninety characters). Row 6: a Pool
+ * under each. Row 7: Homebrew in the body (the key inside the opened record), and
+ * the two half-valid configurations, a text field with no Group by and a second
+ * text field. Row 10: a Tab set holding a text-keyed list.
+ */
+export function textGroupSamples(): Sample[] {
+	const record = (name: string, fence: string[] | null, prose = ''): string =>
+		[
+			`### ${name}`,
+			...(fence === null ? [] : ['```sheet', ...fence, '```']),
+			prose,
+			'',
+		].join('\n');
+	const card = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+		key: string,
+		value: string,
+	): Sample => ({
+		config: { id, type: 'card', label, position, key } as ComponentConfig,
+		body: `\`\`\`sheet\n${key}: ${value}\n\`\`\``,
+	});
+	const pool = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+	): Sample => ({
+		config: { id, type: 'pool', label, position, max: '10' } as ComponentConfig,
+		body: '```sheet\ncurrent: 6\nmax: 10\n```',
+	});
+	const features = [
+		['Hunter\'s Bane', 'Blood Hunter', '1'],
+		['Second Wind', 'Fighter', '2'],
+		['Crimson Rite', 'blood hunter', '1'],
+		['Action Surge', 'Fighter', '1'],
+		['Arcane Recovery', 'Wizard', '1'],
+		['Lucky', '', '3'],
+		['Fighting Style', 'Fighter', ''],
+		['Odd one', 'Other', '0'],
+	];
+	const featureBody = [
+		'',
+		...features.map(([name, klass, uses]) =>
+			record(
+				name as string,
+				[...(klass === '' ? [] : [`Class: ${klass}`]), ...(uses === '' ? [] : [`Uses: ${uses}`])],
+				'A line of prose.',
+			),
+		),
+	].join('\n');
+	// Ninety characters exactly, the spec's hand-edited case.
+	const longName = 'The Order of the Seventh Lantern and the Wandering Keepers of the Hollow Archive and Halls';
+	const stripFields = [{ key: 'Class' }, { key: 'Prepared', type: 'toggle' }];
+	return [
+		card('text_above_features', 'Above features', { col: 1, row: 1, width: 4, height: 1 }, 'AC', '16'),
+		card('text_above_strip', 'Above strip', { col: 5, row: 1, width: 6, height: 1 }, 'DC', '14'),
+		{
+			config: {
+				id: 'homebrew_features',
+				type: 'record-set',
+				label: 'Homebrew features',
+				position: { col: 1, row: 2, width: 4, height: 4 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: [{ key: 'Class' }, { key: 'Uses', type: 'number', max: 3 }],
+			} as ComponentConfig,
+			body: featureBody,
+		},
+		{
+			config: {
+				id: 'homebrew_strip',
+				type: 'record-set',
+				label: 'Homebrew strip',
+				position: { col: 5, row: 2, width: 6, height: 4 },
+				recordName: 'Feature',
+				fieldHeadings: true,
+				groupBy: 'Class',
+				fields: stripFields,
+			} as ComponentConfig,
+			body: [
+				'',
+				record('Sunblade', ['Class: [[Sunblade]]', 'Prepared: yes']),
+				record('Colon', ['Class:   Blood: Hunter  ', 'Prepared: no']),
+				record('Ninety', [`Class: ${longName}`, 'Prepared: yes']),
+				record('Fireball', ['Class: Wizard', 'Prepared: no']),
+				record('Shield', ['Class: wizard', 'Prepared: yes']),
+				record('Cantrip', ['Prepared: no']),
+			].join('\n'),
+		},
+		card('text_beside', 'Beside', { col: 11, row: 2, width: 2, height: 4 }, 'XP', '300'),
+		pool('text_below_features', 'Below features', { col: 1, row: 6, width: 4, height: 1 }),
+		pool('text_below_strip', 'Below strip', { col: 5, row: 6, width: 6, height: 1 }),
+		{
+			config: {
+				id: 'homebrew_body',
+				type: 'record-set',
+				label: 'Homebrew in the body',
+				position: { col: 1, row: 7, width: 6, height: 3 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: [{ key: 'Class', placement: 'body' }, { key: 'Uses', type: 'number', max: 3 }],
+			} as ComponentConfig,
+			body: [
+				'',
+				record('Hunter\'s Bane', ['Class: Blood Hunter', 'Uses: 1'], 'Sets a mark on one creature you can see.'),
+				record('Crimson Rite', ['Class: Blood Hunter', 'Uses: 2']),
+				record('Second Wind', ['Class: Fighter', 'Uses: 1']),
+				record('Action Surge', ['Class: Fighter', 'Uses: 1']),
+				record('Lucky', ['Uses: 3']),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'bad_text_plain',
+				type: 'record-set',
+				label: 'Text with no Group by',
+				position: { col: 7, row: 7, width: 3, height: 3 },
+				recordName: 'Feature',
+				fields: [{ key: 'Class' }],
+			} as ComponentConfig,
+			body: record('Second Wind', ['Class: Fighter']),
+		},
+		{
+			config: {
+				id: 'bad_text_second',
+				type: 'record-set',
+				label: 'Two text fields',
+				position: { col: 10, row: 7, width: 3, height: 3 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: [{ key: 'Class' }, { key: 'Subclass' }],
+			} as ComponentConfig,
+			body: record('Second Wind', ['Class: Fighter', 'Subclass: Champion']),
+		},
+		{
+			config: {
+				id: 'text_tabs',
+				type: 'tab-set',
+				label: 'Text tabs',
+				position: { col: 1, row: 10, width: 8, height: 4 },
+				children: [
+					{
+						id: 'text_tab_one',
+						type: 'group',
+						label: 'Features tab',
+						position: { col: 1, row: 1, width: 8, height: 4 },
+						children: [
+							{
+								id: 'text_tabbed_features',
+								type: 'record-set',
+								label: 'Tabbed features',
+								position: { col: 1, row: 1, width: 8, height: 4 },
+								recordName: 'Feature',
+								groupBy: 'Class',
+								fields: [{ key: 'Class' }, { key: 'Uses', type: 'number', max: 3 }],
+							},
+						],
+					},
+					{
+						id: 'text_tab_two',
+						type: 'group',
+						label: 'Notes tab',
+						position: { col: 1, row: 1, width: 8, height: 1 },
+						children: [
+							{
+								id: 'text_tabbed_note',
+								type: 'rich-text',
+								label: 'Tabbed note',
+								position: { col: 1, row: 1, width: 8, height: 1 },
+							},
+						],
+					},
+				],
+			} as unknown as ComponentConfig,
+			body: null,
+			children: {
+				text_tabbed_features: [
+					'',
+					record('Second Wind', ['Class: Fighter', 'Uses: 1']),
+					record('Fireball', ['Class: Wizard', 'Uses: 1']),
+					record('Action Surge', ['Class: fighter', 'Uses: 1']),
+				].join('\n'),
+				text_tabbed_note: '\nA second tab, so this is a real tab set.\n',
+			},
+		},
+	];
+}
+
+/**
+ * The definitions the `notes` state adds ahead of the layout's own
+ * (`docs/features/modifier-notes.md`), so the editor's Modifiers list opens on a
+ * note-bearing change inside the frame `editor-notes` captures (the editor
+ * alone, 2600px tall, which reaches the third of these).
+ *
+ * Two note-only definitions, which the sheet's rows enrol in, and one carrying
+ * an amount *and* a note, which nothing enrols in: it exists so the change line
+ * draws its **Note** field beside a filled **Amount**.
+ */
+export const NOTE_DEFINITIONS = [
+	{
+		name: 'Boots of Elvenkind',
+		target: 'skills.stealth',
+		note: 'Advantage on Dexterity (Stealth) checks',
+		when: 'Worn',
+	},
+	{
+		name: 'War Caster',
+		target: 'checks.concentration',
+		note: 'Advantage to maintain concentration',
+	},
+	{
+		name: 'Ring of Warmth',
+		target: 'armour_class',
+		amount: '1',
+		bonusType: 'item',
+		note: 'Resistance to cold',
+	},
+];
+
+/**
+ * A modifier saying something without changing a number, on every surface that
+ * draws one (`docs/features/modifier-notes.md`): a Card with its own note line
+ * filled, a Card with both marks, a note-only Card, a Card with its label hidden,
+ * a Table's published computed cell, its stored level cell and a column total,
+ * and a Roster's computed row, band head, stat card and stored level cell.
+ *
+ * Every note arrives from one modifier table at the foot, typed on its rows or
+ * named from `NOTE_DEFINITIONS`, so each row's line says what it is for.
+ */
+export function notesSamples(): Sample[] {
+	const card = (
+		id: string,
+		label: string,
+		col: number,
+		over: Record<string, unknown>,
+		body: string,
+	): Sample => ({
+		config: {
+			id,
+			type: 'card',
+			label,
+			position: { col, row: 1, width: 3, height: 1 },
+			...over,
+		},
+		body,
+	});
+	return [
+		card(
+			'initiative',
+			'Initiative',
+			1,
+			{ derived: 'value + mod.self', notePlaceholder: 'advantage?' },
+			'```sheet\nvalue: 2\nnote: advantage\n```',
+		),
+		card(
+			'armour_class',
+			'Armour class',
+			4,
+			{ derived: '10 + mod.self', signed: false, hideValue: true, hideNote: true },
+			'',
+		),
+		card(
+			'passive',
+			'Passive perception',
+			7,
+			{ derived: '12', signed: false, hideValue: true, hideNote: true },
+			'',
+		),
+		card(
+			'speed',
+			'Speed',
+			10,
+			{ hideLabel: true, hideNote: true },
+			'```sheet\nvalue: 30\n```',
+		),
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 2, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				rows: [
+					{ label: 'Perception', key: 'perception' },
+					{ label: 'Stealth', key: 'stealth' },
+				],
+				columns: [
+					{ key: 'Training', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: '1 + Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+			} as ComponentConfig,
+			body: '| Skill | Training |\n| --- | --- |\n| Perception | 1 |\n| Stealth | 0 |\n',
+		},
+		{
+			config: {
+				id: 'saves',
+				type: 'table',
+				label: 'Saving throws',
+				position: { col: 7, row: 2, width: 6, height: 2 },
+				rowHeader: 'Save',
+				rows: [
+					{ label: 'Constitution', key: 'CON' },
+					{ label: 'Dexterity', key: 'DEX' },
+				],
+				columns: [
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], publish: true },
+					{ key: 'Bonus', type: 'number', total: true },
+				],
+			} as ComponentConfig,
+			body: '| Save | Prof | Bonus |\n| --- | --- | --- |\n| Constitution | 1 | 2 |\n| Dexterity | 0 | 1 |\n',
+		},
+		{
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 1, row: 4, width: 6, height: 3 },
+				rowHeader: 'Check',
+				stats: [
+					{ key: 'CON', name: 'Constitution' },
+					{ key: 'DEX', name: 'Dexterity' },
+				],
+				derived: 'mod(value)',
+				columns: [
+					{ key: 'Bonus', type: 'number' },
+					{ key: 'Total', type: 'computed', formula: 'stat + Bonus', signed: true, publish: true },
+				],
+				rows: [
+					{ label: 'Concentration', stat: 'CON', key: 'concentration' },
+					{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+				],
+			} as ComponentConfig,
+			body: '```sheet\nCON: 14\nDEX: 16\n```\n\n| Check | Bonus |\n| --- | --- |\n| Concentration | 2 |\n| Stealth | 0 |\n',
+		},
+		{
+			config: {
+				id: 'checks_cards',
+				type: 'roster',
+				label: 'Checks as cards',
+				position: { col: 7, row: 4, width: 6, height: 3 },
+				rowHeader: 'Check',
+				cardLayout: true,
+				stats: [
+					{ key: 'STR', name: 'Strength' },
+					{ key: 'WIS', name: 'Wisdom' },
+				],
+				derived: 'mod(value)',
+				columns: [
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], publish: true },
+				],
+				rows: [
+					{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+					{ label: 'Insight', stat: 'WIS', key: 'insight' },
+				],
+			} as ComponentConfig,
+			body: '```sheet\nSTR: 16\nWIS: 12\n```\n\n| Check | Prof |\n| --- | --- |\n| Athletics | 1 |\n| Insight | 0 |\n',
+		},
+		{
+			config: {
+				id: 'noting_items',
+				type: 'table',
+				label: 'Magic items',
+				position: { col: 1, row: 7, width: 12, height: 3 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+					{ key: 'Worn', type: 'toggle' },
+					{ key: 'Notes', type: 'text' },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers | Worn | Notes |',
+				'| --- | --- | --- | --- |',
+				'| Lucky | initiative += note: Roll twice, take the higher | yes | a note at a card with its own note line |',
+				'| Cloak of Warding | armour_class += 1 as item note: Resistance to cold | yes | an amount and a note, so both marks |',
+				'| Keen senses | passive += note: Advantage on smell-based checks | yes | a note at a card reading no modifier |',
+				'| Swift | speed += note: Ignores difficult terrain | yes | a note at a card with no label |',
+				'| Boots of Elvenkind | Boots of Elvenkind | yes | a note at a published computed cell |',
+				'| Resilience | saves.CON += note: Advantage against poison | yes | a note at a stored level cell |',
+				'| Pack | saves.Bonus += note: Includes the shield | yes | a note at a column total |',
+				'| War Caster | War Caster | yes | a note at a roster row |',
+				'| Spellguard | checks.concentration += note: Advantage to maintain concentration | yes | the same words twice |',
+				'| Belt | checks.CON += note: Advantage on Constitution checks | yes | a note at a band head |',
+				'| Gauntlets | checks_cards.STR += note: Advantage on grapples | yes | a note at a stat card |',
+				'| Athlete | checks_cards.athletics += note: Climbing costs no extra movement | yes | a note at a roster level cell |',
+				'| Torn charm | checks.stealth += when Hidden note: Reroll a failed check | yes | a condition that will not resolve |',
+			].join('\n'),
+		},
+	];
+}

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
 	acceptingTargets,
+	markedTargets,
 	modifierTargetSource,
 	ModifierTargetSource,
 	publishedSuffixes,
 } from './modifier-targets';
 import { buildSheetScope, publishedComponent } from './sheet';
 import { table, TableConfig } from '../components/table';
+import { track, TrackConfig } from '../components/track';
 import { ScopeEntry } from '../types';
 
 /*
@@ -104,6 +106,89 @@ describe('acceptingTargets', () => {
 				}),
 			]).map((target) => target.name),
 		).toEqual(['skills.perception', 'skills.Bonus']);
+	});
+});
+
+/*
+ * The narrow set a mark follows (SPEC §13, settled): a name whose own
+ * component's formulas mention `mod.self` or `mod.<a name it publishes>`.
+ *
+ * Each case states the wide set beside it, because the claim is the difference
+ * between the two and a case asserting the narrow set alone could pass on a set
+ * that had simply become the wide one again.
+ */
+describe('markedTargets', () => {
+	const card = (id: string, formula: string): ModifierTargetSource =>
+		source({ id, label: id, values: { self: { value: '1' } }, formulas: [formula] });
+	const names = (targets: readonly { name: string }[]) =>
+		targets.map((target) => target.name);
+
+	it('marks a name whose own component reads mod.self', () => {
+		const layout = [card('armour_class', '10 + mod.self')];
+		expect(names(markedTargets(layout))).toEqual(['armour_class']);
+		expect(names(acceptingTargets(layout))).toEqual(['armour_class']);
+	});
+
+	it('keeps a Track whose own count reads its name absolutely', () => {
+		/*
+		 * The counter-example that kept §13 open: `3 + mod.exhaustion.count` in
+		 * the Track's own field genuinely lengthens the run, so a set built on
+		 * `mod.self` alone would take the door off a run whose length moved.
+		 * Driven through the real component, so the name it publishes is the one
+		 * the formula spells.
+		 */
+		const run: TrackConfig = {
+			id: 'exhaustion',
+			type: 'track',
+			label: 'Exhaustion',
+			position: { col: 1, row: 1, width: 1, height: 1 },
+			count: '3 + mod.exhaustion.count',
+		};
+		const sources = [modifierTargetSource(run, track)];
+		expect(names(markedTargets(sources))).toEqual(['exhaustion.count']);
+		expect(names(acceptingTargets(sources))).toEqual(['exhaustion.count']);
+	});
+
+	it('drops a name only another component reads absolutely', () => {
+		// The defect: `shield` reads `mod.armour_class`, which puts armour_class
+		// in the wide set while nothing a push does can move its own number.
+		const layout = [card('armour_class', '10'), card('shield', 'mod.armour_class')];
+		expect(names(acceptingTargets(layout))).toEqual(['armour_class']);
+		expect(markedTargets(layout)).toEqual([]);
+	});
+
+	it('marks nothing on the component that reads another name', () => {
+		// Left deliberately: a push at armour_class moves shield, and neither set
+		// marks shield. Pinned so a change to it is a decision and not a drift.
+		const layout = [card('armour_class', '10'), card('shield', '2 + mod.armour_class')];
+		expect(names(markedTargets(layout))).not.toContain('shield');
+		expect(names(acceptingTargets(layout))).not.toContain('shield');
+	});
+
+	it('is coarse for mod.self and exact for the absolute spelling, as the wide set is', () => {
+		/*
+		 * Name by name a subset of the wide set, which is what stops a mark
+		 * landing on a name whose enrolment says "does not take modifiers":
+		 * `mod.skills.perception` reaches perception and not stealth.
+		 */
+		const skills = (formula: string) => [
+			source({
+				id: 'skills',
+				label: 'Skills',
+				values: { named: { perception: { value: 1 }, stealth: { value: 1 } } },
+				formulas: [formula],
+			}),
+		];
+		expect(names(markedTargets(skills('ability + mod.skills.perception')))).toEqual(
+			['skills.perception'],
+		);
+		expect(names(acceptingTargets(skills('ability + mod.skills.perception')))).toEqual(
+			['skills.perception'],
+		);
+		expect(names(markedTargets(skills('ability + mod.self')))).toEqual([
+			'skills.perception',
+			'skills.stealth',
+		]);
 	});
 });
 

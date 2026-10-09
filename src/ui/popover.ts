@@ -85,7 +85,13 @@ export function showPopover(anchor: HTMLElement, text: string): void {
 	el.id = `sheetsmith-popover-${++counter}`;
 	el.setAttribute('role', 'tooltip');
 
-	// Named by what it explains, for as long as it is explaining it.
+	// Named by what it explains, for as long as it is explaining it — and then
+	// given back whatever described it before. A glyph door or a ring that points
+	// at a `.sheetsmith-sr-only` twin of its own would otherwise lose that twin
+	// after one press, which is a reader with no pointer losing the account the
+	// moment they asked for it once. Each caller used to re-set it on focus; one
+	// restore here is the policy applied once (`PATTERNS.md` §1).
+	const previous = anchor.getAttribute('aria-describedby');
 	anchor.setAttribute('aria-describedby', el.id);
 
 	placeAnchored(el, anchor);
@@ -104,7 +110,8 @@ export function showPopover(anchor: HTMLElement, text: string): void {
 		doc.removeEventListener('pointerdown', dismiss, true);
 		doc.removeEventListener('keydown', onKey, true);
 		view?.removeEventListener('scroll', dismiss, true);
-		anchor.removeAttribute('aria-describedby');
+		if (previous === null) anchor.removeAttribute('aria-describedby');
+		else anchor.setAttribute('aria-describedby', previous);
 	};
 	openEl = el;
 }

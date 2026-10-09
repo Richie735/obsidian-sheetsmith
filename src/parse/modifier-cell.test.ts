@@ -9,6 +9,7 @@ import {
 	spellTypedEffect,
 	storedParts,
 	unspellableName,
+	unspellableNote,
 	withoutPart,
 } from './modifier-cell';
 import { TypedEffect } from '../types';
@@ -498,5 +499,169 @@ describe('the phase a typed effect applies to', () => {
 		expect(read.effect.applies).toBeUndefined();
 		expect(read.effect.amount).toBe('Bonus to Hit');
 		expect(spellTypedEffect(read.effect)).toBe(part);
+	});
+});
+
+describe('a typed part carrying a note (docs/features/modifier-notes.md)', () => {
+	it('reads the note as the last clause, and a blank amount with it as complete', () => {
+		expect(
+			typed('skills.stealth += note: Advantage on Dexterity (Stealth) checks'),
+		).toEqual({
+			target: 'skills.stealth',
+			operator: 'add',
+			amount: '',
+			note: 'Advantage on Dexterity (Stealth) checks',
+		});
+		expect(
+			typed('armour_class += 1 as item when Worn note: and resistance to cold'),
+		).toEqual({
+			target: 'armour_class',
+			operator: 'add',
+			amount: '1',
+			bonusType: 'item',
+			when: 'Worn',
+			note: 'and resistance to cold',
+		});
+	});
+
+	it('keeps an override as stored when the amount is blank', () => {
+		expect(typed('initiative = note: Roll twice')).toEqual({
+			target: 'initiative',
+			operator: 'override',
+			amount: '',
+			note: 'Roll twice',
+		});
+		expect(
+			spellTypedEffect({
+				target: 'initiative',
+				operator: 'override',
+				amount: '',
+				note: 'Roll twice',
+			}),
+		).toBe('initiative = note: Roll twice');
+	});
+
+	it('takes the note off first, at its leftmost keyword, so its own text survives', () => {
+		// Every clause keyword the right-to-left scans look for, inside the note,
+		// and a second keyword: none of them may be read as a clause.
+		const tricky = [
+			'counts as magic when worn',
+			'only to result in a reroll',
+			'see note: the second one',
+			'(when raging) as a bonus action',
+			'Advantage on Dexterity (Stealth) checks',
+		];
+		for (const note of tricky) {
+			const effect: TypedEffect = {
+				target: 'skills.stealth',
+				operator: 'add',
+				amount: '2',
+				applies: 'result',
+				bonusType: 'item',
+				when: 'Worn',
+				note,
+			};
+			const spelt = spellTypedEffect(effect);
+			expect(typed(spelt), spelt).toEqual(effect);
+			expect(spellTypedEffect(typed(spelt))).toBe(spelt);
+		}
+	});
+
+	it('spells then parses to the identity for every clause combination with a note', () => {
+		for (const amount of ['', '2', 'max(1, Level)']) {
+			for (const applies of [undefined, 'result'] as const) {
+				for (const bonusType of [undefined, 'item']) {
+					for (const when of [undefined, 'Worn && Attuned']) {
+						const effect: TypedEffect = {
+							target: 'abilities.STR',
+							operator: 'add',
+							amount,
+							...(applies === undefined ? {} : { applies }),
+							...(bonusType === undefined ? {} : { bonusType }),
+							...(when === undefined ? {} : { when }),
+							note: 'Advantage when it matters',
+						};
+						expect(typed(spellTypedEffect(effect))).toEqual(effect);
+					}
+				}
+			}
+		}
+	});
+
+	it('reads every combination without a note exactly as it always did', () => {
+		// The path a cell with no ` note:` takes is today's, so no clause gains a
+		// note and every spelling round-trips byte for byte.
+		for (const amount of ['', '2', '(when)']) {
+			for (const to of ['', ' to result']) {
+				for (const as of ['', ' as item']) {
+					for (const when of ['', ' when Worn']) {
+						const cell = `armour_class +=${amount === '' ? '' : ` ${amount}`}${amount === '' ? '' : to}${as}${when}`;
+						const effect = typed(cell);
+						expect(effect.note, cell).toBeUndefined();
+						expect(spellTypedEffect(effect), cell).toBe(cell);
+					}
+				}
+			}
+		}
+	});
+
+	it('keeps a column called note in an amount, because the keyword is spelled with a colon', () => {
+		// `note` is a legal name and a column may be headed with it, so a keyword
+		// without the colon would have captured both of these.
+		expect(typed('x += note + 1')).toEqual({
+			target: 'x',
+			operator: 'add',
+			amount: 'note + 1',
+		});
+		expect(typed('x += 1 when note > 0')).toEqual({
+			target: 'x',
+			operator: 'add',
+			amount: '1',
+			when: 'note > 0',
+		});
+	});
+
+	it('treats a blank note after the keyword as no note', () => {
+		expect(typed('armour_class += 2 note:')).toEqual({
+			target: 'armour_class',
+			operator: 'add',
+			amount: '2',
+		});
+	});
+
+	it('spells no clause for a blank note', () => {
+		expect(
+			spellTypedEffect({
+				target: 'armour_class',
+				operator: 'add',
+				amount: '2',
+				note: '  ',
+			}),
+		).toBe('armour_class += 2');
+	});
+
+	it('reads a hand-typed semicolon in a note as the start of the next part', () => {
+		// The cell's own separator wins, as it does everywhere: the tail is a part
+		// of its own, rendered as a stray by its own sentence.
+		expect(storedParts('x += note: Roll twice; take the higher')).toEqual([
+			'x += note: Roll twice',
+			'take the higher',
+		]);
+	});
+});
+
+describe('why a note a cell cannot spell is refused', () => {
+	it('refuses a semicolon and a line break, each with the fix', () => {
+		expect(unspellableNote('Roll twice; take the higher')).toBe(
+			'A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.',
+		);
+		expect(unspellableNote('Roll twice\ntake the higher')).toBe(
+			'A note cannot hold a line break, because a row keeps each modifier on one line. Reword it on one line.',
+		);
+	});
+
+	it('takes every other note, a pipe and a colon included', () => {
+		expect(unspellableNote('Advantage: on | Stealth checks')).toBeNull();
+		expect(unspellableNote('')).toBeNull();
 	});
 });

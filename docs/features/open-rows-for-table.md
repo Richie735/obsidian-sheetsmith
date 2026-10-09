@@ -399,10 +399,19 @@ never had.
 
 ### Adding a row
 
-The last row of the table is a single cell spanning its width, holding a button
-reading **Add row**. A row-shaped control in the row position, so it reads as "the
-next row" rather than as chrome parked beside the table, and it picks up the row
-hover treatment the rows already have.
+A button reading **Add row** sits at the foot of the card, below the rows and below
+any totals row, at the bottom of the cell when the cell is taller than the rows. It
+is a sibling of the table's scroller rather than a row of it, so a sideways scroll
+never moves it. It wears the rule, the centred label and the hover surface Record
+set's add record wears.
+
+*Amended 2026-10-01, by `table-add-row-pinned-bottom.md`.* This used to read "The
+last row of the table is a single cell spanning its width ... A row-shaped control in
+the row position, so it reads as 'the next row' ... and it picks up the row hover
+treatment the rows already have." **That is reversed**: the control marks the card's
+foot, and it stops being a row the moment the cell is taller than the rows, when the
+card ends at the last row and the control with it. The argument elsewhere in this
+file about the control being a row is shipped history.
 
 The press reports the addition and the sheet re-renders from the fresh note. This
 is the one place `PATTERNS` §5's optimistic paint cannot apply, and the reason is
@@ -413,7 +422,8 @@ Nothing else in the gesture waits on the round trip.
 Focus lands in the new row's name field. That falls out of how the view restores
 focus — by control index within the cell, and the new row's controls sit
 immediately before the add button that was focused — which makes it an accident
-rather than a design, so it gets a test of its own.
+rather than a design, so it gets a test of its own. The button is still after every
+row control in document order, below the table rather than inside it.
 
 ### Removing a row
 

@@ -1282,3 +1282,78 @@ describe('a binding naming no field beside one naming a field', () => {
 		expect(section(text, 'Conditions')).toContain('| Poisoned | no |');
 	});
 });
+
+/*
+ * A record whose ceiling is a formula, at a rest
+ * (`docs/features/record-ceiling-formula.md`): each record refilled to what its
+ * own ceiling comes to on this sheet, a record whose ceiling will not work out
+ * left alone, and the report after Apply saying how many were skipped — in the
+ * same list, under the same heading, as a component that failed.
+ */
+describe('a rest over ceilings that are formulas', () => {
+	const WITH_FEATURES = variant((shape) => {
+		shape.components.push({
+			id: 'features',
+			type: 'record-set',
+			label: 'Features',
+			position: { col: 1, row: 3, width: 6, height: 3 },
+			recordName: 'Feature',
+			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+			reset: [{ trigger: 'Long rest', action: 'full' }],
+		});
+	});
+
+	const FEATURED = NOTE.replace(
+		'## Backstory',
+		[
+			'## Features',
+			'',
+			'### Constitution feat',
+			'```sheet',
+			'Uses: 0 / abilities.CON',
+			'```',
+			'',
+			'### Misspelled',
+			'```sheet',
+			'Uses: 1 / prfo',
+			'```',
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Uses: 0 / 1',
+			'```',
+			'',
+			'## Backstory',
+		].join('\n'),
+	);
+
+	it('refills each record to its own ceiling and leaves the one that will not work out', () => {
+		const { text } = applyTrigger(FEATURED, WITH_FEATURES, 'Long rest');
+		const body = getSection(parseCharacter(text), 'Features')?.body ?? '';
+		// CON 16 is +3 through the layout's own `mod`.
+		expect(body).toContain('Uses: 3 / abilities.CON');
+		expect(body).toContain('Uses: 1 / prfo');
+		expect(body).toContain('Uses: 1 / 1');
+	});
+
+	it('lists the skipped record under the report, beside any failure, and in the confirmation', () => {
+		const { failed, plan } = applyTrigger(FEATURED, WITH_FEATURES, 'Long rest');
+		expect(failed).toEqual([
+			'Features — 1 feature skipped, its maximum could not be worked out',
+		]);
+		const features = plan.components.find((one) => one.config.id === 'features');
+		if (features === undefined) throw new Error('the plan reached the list');
+		expect(resetSummary('Long rest', features)).toBe(
+			'Features — 1 feature skipped, its maximum could not be worked out',
+		);
+	});
+
+	it('reports nothing where every ceiling works out', () => {
+		const { failed } = applyTrigger(
+			FEATURED.replace('1 / prfo', '1 / 2'),
+			WITH_FEATURES,
+			'Long rest',
+		);
+		expect(failed).toEqual([]);
+	});
+});

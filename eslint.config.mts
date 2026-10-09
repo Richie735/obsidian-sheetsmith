@@ -286,6 +286,32 @@ export default defineConfig(
 								 * about the layout rather than about a character.
 								 */
 								'!./ring-control',
+								/*
+								 * **The mark on a value something has noted**, and the
+								 * door onto its account, shared by Card (through
+								 * `card-face.ts`), Table and Roster
+								 * (`docs/features/modifier-notes.md`). In no registry,
+								 * declaring no `ComponentDefinition`, touching no file,
+								 * and taking only `setIcon` from `obsidian`. On the list
+								 * for *reuse* at three consumers, which is PATTERNS §1's
+								 * extraction line met exactly: the glyph, the count in the
+								 * name and the twin are one control on three surfaces.
+								 */
+								'!./note-mark',
+								/*
+								 * **How wide a Record set's summary line is before it
+								 * fits**, estimated from its declared fields
+								 * (`docs/features/record-set-stacking-tiers.md`). On
+								 * `modifier-form.ts`'s terms, for atomicity at one
+								 * consumer: in no registry, declaring no
+								 * `ComponentDefinition`, importing nothing at all and
+								 * touching no file. It is a width model with its own
+								 * measured constants and unit tests, which is a second job
+								 * in `record-set.ts` (PATTERNS §1), and it is pure so that
+								 * its estimate can be held against the harness's numbers
+								 * without a DOM.
+								 */
+								'!./record-line-fit',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -300,6 +326,8 @@ export default defineConfig(
 								'!../components/fenced-link',
 								'!../components/picture-frame',
 								'!../components/ring-control',
+								'!../components/note-mark',
+								'!../components/record-line-fit',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',

@@ -19,6 +19,7 @@ import { SheetView } from './sheet-view';
 import { App, TextFileView } from '../test/obsidian-stub';
 import { fakePlugin } from '../test/plugin';
 import { openView } from '../test/workspace';
+import { note, settle, sheetOn as sheetOnNote } from '../test/sheet-on-note';
 
 
 /*
@@ -181,3 +182,281 @@ describe('whether the sheet may write', () => {
 	});
 });
 
+
+/*
+ * The groups a reader has collapsed, which the view holds for the same reasons it
+ * holds a tab and an open record: the sheet rebuilds on every committed edit, and
+ * a collapse is this reader's posture rather than the character's data. The other
+ * two members of that category stay untested here (`docs/BACKLOG.md`); this is the
+ * case for the third alone, and it is the reason the view's own six lines are not
+ * the part nobody drives: forget the `clear` and a reopened note inherits the last
+ * note's collapsed groups.
+ */
+describe('the groups a reader collapsed', () => {
+	const fence = (...lines: string[]): string =>
+		['```sheet', ...lines, '```', ''].join('\n');
+	const FEATURES = {
+		id: 'features',
+		type: 'record-set',
+		label: 'Features',
+		position: { col: 1, row: 1, width: 6, height: 3 },
+		groupBy: 'Class',
+		fields: [
+			{ key: 'Class', type: 'level', levels: ['None', 'Fighter', 'Wizard'] },
+		],
+	};
+	const EXTRAS = {
+		id: 'extras',
+		type: 'record-set',
+		label: 'Extras',
+		position: { col: 1, row: 4, width: 6, height: 3 },
+		fields: [{ key: 'Uses', type: 'number' }],
+	};
+	const TEXT = note(
+		[
+			'Features',
+			['', '### Second Wind', fence('Class: 1'), '### Fireball', fence('Class: 2'), ''].join(
+				'\n',
+			),
+		],
+		['Extras', ['', '### Torch', fence('Uses: 1'), ''].join('\n')],
+	);
+
+	const toggle = (view: SheetView, at: number): HTMLButtonElement =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		)[at] as HTMLButtonElement;
+	const expanded = (view: SheetView): (string | null)[] =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		).map((one) => one.getAttribute('aria-expanded'));
+
+	/** Rename the first record of the list named, which commits on blur. */
+	async function rename(view: SheetView, list: number, to: string): Promise<void> {
+		const input = Array.from(
+			view.containerEl.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-record-name-input',
+			),
+		)[list] as HTMLInputElement;
+		input.value = to;
+		input.dispatchEvent(new Event('blur'));
+		await settle();
+	}
+
+	it('survive a rebuild from an edit in the same list, and in another component', async () => {
+		const { view } = await sheetOnNote([FEATURES, EXTRAS], TEXT);
+		expect(expanded(view)).toEqual(['true', 'true']);
+		toggle(view, 0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(expanded(view)).toEqual(['false', 'true']);
+
+		const before = toggle(view, 0);
+		await rename(view, 1, 'Fireball II');
+		// The sheet really was rebuilt, and the collapse came back with it.
+		expect(toggle(view, 0)).not.toBe(before);
+		expect(expanded(view)).toEqual(['false', 'true']);
+
+		await rename(view, 2, 'Torch II');
+		expect(expanded(view)).toEqual(['false', 'true']);
+	});
+
+	it('are dropped when the leaf moves to another file', async () => {
+		const { view } = await sheetOnNote([FEATURES, EXTRAS], TEXT);
+		toggle(view, 0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(expanded(view)).toEqual(['false', 'true']);
+
+		view.clear();
+		view.setViewData(TEXT, true);
+		await settle();
+		expect(expanded(view)).toEqual(['true', 'true']);
+	});
+});
+
+describe('a text field as a list’s group key', () => {
+	const fence = (...lines: string[]): string =>
+		['```sheet', ...lines, '```', ''].join('\n');
+	const LIST = {
+		id: 'features',
+		type: 'record-set',
+		label: 'Features',
+		recordName: 'Feature',
+		position: { col: 1, row: 1, width: 6, height: 3 },
+		groupBy: 'Class',
+		fields: [{ key: 'Class' }],
+	};
+	const TEXT = note([
+		'Features',
+		[
+			'',
+			'### Hunter\'s Bane',
+			fence('Class: Blood Hunter'),
+			'### Second Wind',
+			fence('Class: Fighter'),
+			'### Crimson Rite',
+			fence('Class: blood hunter'),
+			'',
+		].join('\n'),
+	]);
+	const toggles = (view: SheetView): HTMLButtonElement[] =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		);
+	const classField = (view: SheetView, record: string): HTMLInputElement =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-record-input-text',
+			),
+		).find(
+			(one) => one.getAttribute('aria-label') === `${record} Class`,
+		) as HTMLInputElement;
+
+	it('keeps a group collapsed across a rebuild when a member is retyped in another case', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		expect(toggles(view).map((one) => one.textContent)).toEqual([
+			'Blood Hunter',
+			'Fighter',
+		]);
+		toggles(view)[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(toggles(view)[0]?.getAttribute('aria-expanded')).toBe('false');
+
+		const field = classField(view, 'Crimson Rite');
+		field.value = 'BLOOD HUNTER';
+		field.dispatchEvent(new Event('blur'));
+		await settle();
+		// The sheet was rebuilt from the written note, and the match key kept the state.
+		expect(toggles(view).map((one) => one.getAttribute('aria-expanded'))).toEqual([
+			'false',
+			'true',
+		]);
+		expect(view.containerEl.textContent).not.toContain('Not saved');
+	});
+
+	it('writes what was typed to the note, in the record’s own fence', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		const field = classField(view, 'Second Wind');
+		field.value = '  Rogue ';
+		field.dispatchEvent(new Event('blur'));
+		await settle();
+		await view.save();
+		expect(
+			(view as unknown as { data: string }).data,
+		).toContain('### Second Wind\n```sheet\nClass: Rogue\n```');
+	});
+
+	it('offers the names in use as the reader types, and a pick writes the note', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		const field = classField(view, 'Second Wind');
+		field.focus();
+		field.value = 'bl';
+		field.dispatchEvent(new Event('input'));
+		const offered = (): string[] =>
+			Array.from(
+				document.body.querySelectorAll('.suggestion-container .suggestion-item'),
+			).map((one) => one.textContent ?? '');
+		expect(offered()).toEqual(['Blood Hunter']);
+		document.body
+			.querySelector<HTMLElement>('.suggestion-item')
+			?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await settle();
+		expect(
+			(view as unknown as { data: string }).data,
+		).toContain('### Second Wind\n```sheet\nClass: Blood Hunter\n```');
+		// The rebuild closed what it had bound.
+		expect(offered()).toEqual([]);
+	});
+
+	it('closes a popup left open by a rebuild', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		const field = classField(view, 'Second Wind');
+		field.focus();
+		field.value = 'bl';
+		field.dispatchEvent(new Event('input'));
+		expect(document.body.querySelector('.suggestion-item')).not.toBeNull();
+		// A rebuild from another record's edit: the focused input is removed
+		// without a blur, so the view has to be what closes the list.
+		const other = classField(view, 'Crimson Rite');
+		other.value = 'Blood Hunter2';
+		other.dispatchEvent(new Event('blur'));
+		await settle();
+		expect(document.body.querySelector('.suggestion-item')).toBeNull();
+	});
+
+	it('draws the configuration error in place when the text field is not the key', async () => {
+		const { view } = await sheetOnNote([{ ...LIST, groupBy: undefined }], TEXT);
+		const error = view.containerEl.querySelector('.sheetsmith-error');
+		expect(error?.textContent).toContain(
+			'The field "Class" holds text, which a list can hold only as the field it is grouped by. Set Group by to "Class"',
+		);
+		expect(view.containerEl.querySelector('.sheetsmith-record-group')).toBeNull();
+	});
+});
+
+/*
+ * A record's ceiling offers the sheet's names as a formula is typed into it, and
+ * the view closes what it bound when it rebuilds
+ * (`docs/features/record-ceiling-formula.md`).
+ */
+describe('a record ceiling’s formula suggester', () => {
+	const LIST = {
+		id: 'features',
+		type: 'record-set',
+		label: 'Features',
+		recordName: 'Feature',
+		fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+	};
+	const PROF = {
+		id: 'prof',
+		type: 'card',
+		label: 'Proficiency bonus',
+	};
+	const TEXT = note(
+		['Proficiency bonus', '```sheet\nvalue: 2\n```\n'],
+		['Features', '\n### Rage\n```sheet\nUses: 1 / prof\n```\n\n### Dash\n```sheet\nUses: 1\n```\n'],
+	);
+	const ceilings = (view: SheetView) =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-pool-ceiling input',
+			),
+		);
+	const offered = () =>
+		Array.from(
+			document.body.querySelectorAll('.suggestion-container .suggestion-item'),
+		).map((one) => one.textContent ?? '');
+
+	it('draws what the ceiling came to and offers the sheet’s names when typed into', async () => {
+		const { view } = await sheetOnNote([PROF, LIST], TEXT);
+		expect(
+			view.containerEl.querySelector('.sheetsmith-record-worked-out-layer')
+				?.textContent,
+		).toBe('2');
+		const field = ceilings(view)[1] as HTMLInputElement;
+		field.focus();
+		field.value = 'pr';
+		field.dispatchEvent(new Event('input'));
+		expect(offered().some((one) => one.includes('prof'))).toBe(true);
+	});
+
+	it('closes a popup left open by a rebuild', async () => {
+		const { view } = await sheetOnNote([PROF, LIST], TEXT);
+		const field = ceilings(view)[1] as HTMLInputElement;
+		field.focus();
+		field.value = 'pr';
+		field.dispatchEvent(new Event('input'));
+		expect(document.body.querySelector('.suggestion-item')).not.toBeNull();
+		const other = ceilings(view)[0] as HTMLInputElement;
+		other.value = 'prof + 1';
+		other.dispatchEvent(new Event('blur'));
+		await settle();
+		expect(document.body.querySelector('.suggestion-item')).toBeNull();
+		expect(
+			view.containerEl.querySelector('.sheetsmith-record-worked-out-layer')
+				?.textContent,
+		).toBe('3');
+	});
+});

@@ -361,9 +361,9 @@ describe('the canvas filled with sample values', () => {
 		// The declared row is static text; a row the character owns is drawn as
 		// an editable name, so the two are read off different things.
 		expect(el.textContent).toContain('Rope');
-		// One declared row, two the sample added, and the add-row control's own
-		// line, which an open table draws whatever is in it.
-		expect(el.querySelectorAll('tbody tr')).toHaveLength(4);
+		// One declared row and two the sample added; the add-row control is below
+		// the table, not a row of it.
+		expect(el.querySelectorAll('tbody tr')).toHaveLength(3);
 		const cells = Array.from(el.querySelectorAll<HTMLInputElement>('tbody input'));
 		expect(cells.map((input) => input.value)).toContain('Item 1');
 		const weights = cells
@@ -657,5 +657,50 @@ describe('selecting inside a Tab set', () => {
 
 		const overlay = el.querySelector('[data-sheetsmith-focus="preview-spells"]');
 		expect(overlay?.closest('[inert]')).not.toBeNull();
+	});
+});
+
+describe('a Record set keyed by a text field', () => {
+	/*
+	 * `docs/features/free-text-group-key.md`. The canvas renders through the
+	 * component's own `render` and `read`, so the half-valid configuration (a
+	 * text field that is not the Group by field) must arrive in place here as it
+	 * does on a sheet, and the valid one must draw its two sample groups.
+	 */
+	const list = (overrides: Record<string, unknown>): ComponentConfig =>
+		component({
+			id: 'features',
+			type: 'record-set',
+			label: 'Features',
+			position: { col: 1, row: 1, width: 6, height: 3 },
+			recordName: 'Feature',
+			fields: [{ key: 'Class' }, { key: 'Uses', type: 'number' }],
+			...overrides,
+		});
+
+	it('draws two sample groups when the text field is the key', () => {
+		const el = document.createElement('div');
+		new Canvas(fakeHost('', true)).draw(el, layoutOf(list({ groupBy: 'Class' })));
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-record-group-toggle')).map(
+				(one) => one.textContent,
+			),
+		).toEqual(['Fighter', 'Wizard']);
+		expect(el.querySelector('.sheetsmith-error')).toBeNull();
+	});
+
+	it('draws the configuration error in place when the text field is not the key', () => {
+		for (const samples of [false, true]) {
+			for (const groupBy of [undefined, 'Uses']) {
+				const el = document.createElement('div');
+				new Canvas(fakeHost('', samples)).draw(el, layoutOf(list({ groupBy })));
+				const error = el.querySelector('.sheetsmith-error');
+				expect(error?.textContent).toContain('Features');
+				expect(error?.textContent).toContain(
+					'The field "Class" holds text, which a list can hold only as the field it is grouped by. Set Group by to "Class"',
+				);
+				expect(el.querySelector('.sheetsmith-record-group')).toBeNull();
+			}
+		}
 	});
 });

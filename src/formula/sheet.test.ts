@@ -12,11 +12,14 @@ import {
 import {
 	buildSheetEnv,
 	buildSheetScope,
+	noteCandidates,
 	PublishedComponent,
 	sheetModifierInput,
 	sheetModifiers,
 } from './sheet';
 import { ModifierTargetSource } from './modifier-targets';
+import { parseModifierDefinitions } from '../parse/modifier-definitions';
+import { Layout } from '../parse/layout';
 import {
 	ComponentConfig,
 	FieldValue,
@@ -773,6 +776,53 @@ describe('sheetModifiers', () => {
 		expect(outcome.applies).toBe(false);
 	});
 
+	it('breaks down a name its own formula reads absolutely', () => {
+		// `mod.armour_class` in armour_class's own formula is `mod.self` spelt
+		// out, and moves the number exactly as much.
+		expect(
+			sheet('10 + mod.armour_class').breakdown('armour_class').lines,
+		).toHaveLength(1);
+	});
+
+	it('gives no breakdown for a name only another formula reads, though the push applies', () => {
+		/*
+		 * The narrow set's whole point. `speed` reads `mod.armour_class`, so
+		 * armour_class is in the wide set and the Ring's outcome still applies —
+		 * it moves speed — but armour_class's own number never moves, so its
+		 * breakdown lists nothing and no mark is drawn on it.
+		 */
+		const components: PublishedComponent[] = [
+			{ id: 'armour_class', values: { self: { value: 10 } } },
+			{
+				id: 'items',
+				values: {},
+				modifiers: () => [
+					{ part: 'Ring', source: 'Magic items', row: { label: 'Ring', values: {} } },
+				],
+			},
+		];
+		const input = sheetModifierInput(DEFINITIONS, [
+			source({
+				id: 'armour_class',
+				label: 'Armour class',
+				values: { self: { value: 1 } },
+				formulas: ['10'],
+			}),
+			source({
+				id: 'speed',
+				label: 'Speed',
+				values: { self: { value: 1 } },
+				formulas: ['30 + mod.armour_class'],
+			}),
+		]);
+		expect(input.accepting.has('armour_class')).toBe(true);
+		expect(input.marked.has('armour_class')).toBe(false);
+		const context = sheetModifiers(input, buildSheetEnv(components, undefined, input));
+		expect(context.breakdown('armour_class').lines).toEqual([]);
+		const outcome = context.outcomes('Ring', { label: 'Ring', values: {} })[0] as ModifierOutcome;
+		expect(outcome.applies).toBe(true);
+	});
+
 	it('gives no breakdown where the slot itself was refused', () => {
 		// The refusal is already on the card as "?" with the row named under it,
 		// through the formula that read the slot. There is no number to take apart.
@@ -996,5 +1046,209 @@ describe('the accepting set has one assembly', () => {
 		// written against rather than trusted to.
 		const rebuilt = `values: definition?.scopeValues?.(null, entry.config) ?? {}`;
 		expect(rebuilt).toContain('scopeValues?.(');
+	});
+});
+
+describe('sheetModifiers over notes (docs/features/modifier-notes.md)', () => {
+	/**
+	 * Three published names: an accepting card that draws notes, a card that reads
+	 * no modifier and draws notes, and a card set entry that draws none.
+	 */
+	const SOURCES: readonly ModifierTargetSource[] = [
+		source({
+			id: 'armour_class',
+			label: 'Armour class',
+			values: { self: { value: 10 } },
+			formulas: ['10 + mod.self'],
+			drawsNotes: true,
+		}),
+		source({
+			id: 'passive',
+			label: 'Passive perception',
+			values: { self: { value: 12 } },
+			drawsNotes: true,
+		}),
+		source({
+			id: 'abilities',
+			label: 'Abilities',
+			values: { named: { STR: { value: 3 } } },
+			formulas: ['floor((value - 10) / 2) + mod.self'],
+		}),
+		// Neither accepting nor drawing notes: a name nothing could note.
+		source({ id: 'speed', label: 'Speed', values: { self: { value: 30 } } }),
+	];
+
+	/** The live resolver the walk is handed, so a scan can be told from a walk. */
+	const live = (): null => null;
+
+	/**
+	 * A sheet whose one enrolling component pushes `parts`, recording every time
+	 * the modifier walk is entered — which is every call its source gets with the
+	 * live resolver, since the walk is memoised and a refusal-free walk runs once.
+	 */
+	function sheet(
+		parts: readonly string[],
+		definitions: readonly ModifierDefinitionView[] = [],
+	) {
+		const walks: string[] = [];
+		let asking = '';
+		const components: PublishedComponent[] = [
+			{ id: 'armour_class', values: { self: { value: 10 } } },
+			{ id: 'passive', values: { self: { value: 12 } } },
+			{ id: 'abilities', values: { named: { STR: { value: 3 } } } },
+			{ id: 'speed', values: { self: { value: 30 } } },
+			{
+				id: 'items',
+				values: {},
+				resolver: () => live,
+				modifiers: (resolve) => {
+					if (resolve === live) walks.push(asking);
+					return parts.map((part) => ({
+						part,
+						source: 'Magic items',
+						row: { label: 'Boots', values: { Worn: true } },
+					}));
+				},
+			},
+		];
+		const input = sheetModifierInput(definitions, SOURCES);
+		const env = buildSheetEnv(components, undefined, input);
+		const context = sheetModifiers(input, env, undefined, () =>
+			noteCandidates(components, definitions),
+		);
+		const breakdown = (name: string) => {
+			asking = name;
+			return context.breakdown(name);
+		};
+		return { context, breakdown, walks };
+	}
+
+	it('gives a note target that reads no modifier its notes, and no arithmetic', () => {
+		const { breakdown } = sheet(['passive += note: Advantage on sight']);
+		expect(breakdown('passive')).toEqual({
+			lines: [],
+			override: null,
+			total: 0,
+			resultTotal: 0,
+			notes: [
+				{
+					label: 'Boots',
+					source: 'Magic items',
+					text: 'Advantage on sight',
+					suppressed: null,
+				},
+			],
+		});
+	});
+
+	it('never hands a note to a name whose component draws none', () => {
+		const { breakdown } = sheet(['abilities.STR += note: Advantage']);
+		expect(breakdown('abilities.STR')).toEqual({
+			lines: [],
+			override: null,
+			total: 0,
+			resultTotal: 0,
+		});
+	});
+
+	it('keeps the notes where the arithmetic is refused', () => {
+		const { breakdown } = sheet(['armour_class += Missing note: Warm']);
+		const result = breakdown('armour_class');
+		expect(result.lines).toEqual([]);
+		expect(result.notes?.map((note) => note.text)).toEqual(['Warm']);
+	});
+
+	it('enters the walk at exactly the accepting names on a sheet with no notes', () => {
+		// The bound (F), recorded rather than inferred: a note target outside the
+		// accepting set, asked first, sets nothing going, and neither does a name
+		// nothing could note. The one entry is the accepting name's, as before.
+		const { breakdown, walks, context } = sheet(['armour_class += 2']);
+		breakdown('passive');
+		breakdown('speed');
+		expect(context.notable?.('passive')).toBe(false);
+		expect(walks).toEqual([]);
+		breakdown('armour_class');
+		expect(walks).toEqual(['armour_class']);
+	});
+
+	it('enters the walk at a note target only where a part could note it', () => {
+		const { breakdown, walks } = sheet(['passive += note: Advantage on sight']);
+		breakdown('speed');
+		expect(walks).toEqual([]);
+		breakdown('passive');
+		expect(walks).toEqual(['passive']);
+	});
+
+	it('finds a definition with a note as a candidate, read rather than evaluated', () => {
+		const boots = definitionView({
+			name: 'Boots',
+			target: 'passive',
+			note: 'Advantage on sight',
+		});
+		const { breakdown, walks, context } = sheet(['Boots'], [boots]);
+		expect(context.notable?.('passive')).toBe(true);
+		// The scan read the cells without the walk being entered.
+		expect(walks).toEqual([]);
+		expect(breakdown('passive').notes?.map((note) => note.definition)).toEqual([
+			'Boots',
+		]);
+	});
+
+	it('says a note-only part at a note target is applying, and one at another name is not', () => {
+		const { context } = sheet([]);
+		const row = { label: 'Boots', values: {} };
+		const noted = context.outcomes('passive += note: Advantage', row)[0];
+		expect(noted?.applies).toBe(true);
+		expect(noted?.suppressed).toBeNull();
+		const refused = context.outcomes('abilities.STR += note: Advantage', row)[0];
+		expect(refused?.applies).toBe(false);
+		expect(refused?.suppressed).toBe(
+			'Abilities · STR cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
+		);
+	});
+
+	it('judges an amount at a value that reads no modifier as before, and says its note shows', () => {
+		const { context } = sheet([]);
+		const outcome = context.outcomes('passive += 1 note: Advantage', {
+			label: 'Boots',
+			values: {},
+		})[0];
+		expect(outcome?.applies).toBe(false);
+		expect(outcome?.suppressed).toBe(
+			'Passive perception does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.',
+		);
+		expect(outcome?.noteLine).toBe('Its note still shows.');
+	});
+
+	it('carries a note refusal beside an amount that applies', () => {
+		const { context } = sheet([]);
+		const outcome = context.outcomes('abilities.STR += 1 note: Strong', {
+			label: 'Belt',
+			values: {},
+		})[0];
+		expect(outcome?.applies).toBe(true);
+		expect(outcome?.noteLine).toBe(
+			'Abilities · STR cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
+		);
+	});
+
+	it('takes the editor report and the sheet sentence from one set of note targets', () => {
+		// One layout, driven through both: the definition the report refuses is
+		// the one the sheet refuses to show, and the one it accepts is the one the
+		// sheet hands its note to.
+		const layout = {
+			name: 'L',
+			components: [],
+			modifiers: [
+				{ name: 'Belt', target: 'abilities.STR', note: 'Strong' },
+				{ name: 'Keen', target: 'passive', note: 'Sharp' },
+			],
+		} as unknown as Layout;
+		const parsed = parseModifierDefinitions(layout, SOURCES);
+		expect(parsed.problems.map((problem) => problem.definition)).toEqual(['Belt']);
+		const { context } = sheet(['Belt', 'Keen'], parsed.definitions);
+		const row = { label: 'Row', values: {} };
+		expect(context.outcomes('Belt', row)[0]?.applies).toBe(false);
+		expect(context.outcomes('Keen', row)[0]?.applies).toBe(true);
 	});
 });

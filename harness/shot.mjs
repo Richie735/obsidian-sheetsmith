@@ -219,6 +219,14 @@ mkdirSync(outDir, { recursive: true });
 const SHEET_FRAME = '1400,8500';
 
 /**
+ * The `pinned-add` state at a 520px container with its wide Table scrolled to one
+ * end; the caller appends `left` or `right`. `:has()` picks the one table with a
+ * text column, which is the wide one.
+ */
+const WIDE =
+	'surface=sheet&theme=dark&state=pinned-add&width=520&scrollx=.sheetsmith-table-wrapper:has(.sheetsmith-table-has-text)%7C';
+
+/**
  * The editor pane's frame, tall because the tree is the whole layout.
  *
  * The pane lists every component the layout holds, one settings row each, under
@@ -397,9 +405,19 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the scoped reset: measured 17433
 		// against 17300. 17300 to **17800**.
+		//
+		// Raised again for the three Pools whose ceiling a modifier moved
+		// (`docs/features/pool-ceiling-modifier-door.md`), and alone of the four
+		// this time: two share Rituals' row and the third the six-field
+		// Passport's, so at the default, at 520 and at `text=24` they add only what
+		// a pool is taller than the component beside it (8193,
+		// 9343 and 10302, all inside their frames by more than 250px),
+		// while at one column each is a full-width row of its own. Measured
+		// 17893 against 17800, so the last cards on the sheet were the ones
+		// cropped. 17800 to **18300**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,17800',
+		size: '520,18300',
 	},
 	{
 		/*
@@ -690,6 +708,24 @@ const DEFAULTS = [
 		name: 'sheet-breakdown-track',
 		query:
 			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The fourth door onto one builder, and the first in a corner**
+		 * (`docs/features/pool-ceiling-modifier-door.md`). A Pool's numeral has no
+		 * press of its own, so the breakdown opens from a glyph button — Track's
+		 * door — but a Pool is centred like a Card, so it sits in the note mark's
+		 * corner rather than in a heading row that would push the label off centre.
+		 *
+		 * What to look at: the dotted rule under the raised ceiling and nothing
+		 * else under the reading, the label still centred over it, and the bubble
+		 * listing the talisman. The lowered Ward beside it is dotted again; the
+		 * typed Rolled HP, beside the six-field Passport further down, draws nothing.
+		 */
+		name: 'sheet-breakdown-pool',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Stamina%20reserve'%5D",
 		size: SHEET_FRAME,
 	},
 	{
@@ -2524,6 +2560,238 @@ const DEFAULTS = [
 			'surface=sheet&theme=light&type=.sheetsmith-track-row-name-input%7Cd6',
 		size: SHEET_FRAME,
 		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The add control pinned to the foot of the card**
+		 * (`docs/features/table-add-row-pinned-bottom.md`), on the `pinned-add`
+		 * state's own sheet rather than the populated one: the control can only be
+		 * seen at a cell's foot in a cell taller than its rows, and nothing on the
+		 * populated sheet makes one. Tall open Tables with and without a totals row
+		 * beside a closed one that must not have moved, the same two with more rows
+		 * than their placement, two Record sets, an empty open Table and a wide one.
+		 *
+		 * Its own frame, 1500 against a measured 1460: it is a fixture sheet, not
+		 * the populated one, so SHEET_FRAME's number does not apply.
+		 */
+		name: 'sheet-pinned-add',
+		query: 'surface=sheet&theme=light&state=pinned-add',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-pinned-add-dark',
+		query: 'surface=sheet&theme=dark&state=pinned-add',
+		size: '1400,1500',
+	},
+	{
+		/*
+		 * Forced colors, where the rule is one system colour, the hover is dropped
+		 * and the inset focus ring is the one signal the control has. Focused so the
+		 * ring is in the picture.
+		 */
+		name: 'sheet-pinned-add-forced-colors',
+		query: 'surface=sheet&theme=light&state=pinned-add&focus=.sheetsmith-table-add-button',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **A container narrower than the wide Table, scrolled to each end.** The
+		 * control is outside the scroller, so its label has to be fully in view at
+		 * both. 520 is the narrowest a shot can honestly show (the 500px floor, UI.md
+		 * §12), so the table is made wide enough to scroll at it.
+		 */
+		name: 'sheet-pinned-add-scrolled-left',
+		query: `${WIDE}left`,
+		size: '620,1500',
+	},
+	{
+		name: 'sheet-pinned-add-scrolled-right',
+		query: `${WIDE}right`,
+		size: '620,1500',
+	},
+	{
+		/*
+		 * **Grouped Record sets** (`docs/features/record-set-groups.md`), on the
+		 * `record-groups` state's own sheet: lists with neighbours above, below and
+		 * beside them, so a collapse that moved anything would show. Every group
+		 * open, then the first header drawn pressed shut. The frame is the fixture
+		 * sheet's, not the populated one's.
+		 */
+		name: 'sheet-record-groups',
+		query: 'surface=sheet&theme=light&state=record-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-record-groups-dark',
+		query: 'surface=sheet&theme=dark&state=record-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-record-groups-collapsed',
+		query:
+			'surface=sheet&theme=light&state=record-groups&press=.sheetsmith-record-group-toggle',
+		size: '1400,1900',
+	},
+	{
+		/*
+		 * The editor's canvas beside the sheet: it draws the layout's own components
+		 * through the same render path, so the grouped lists (groups open, on sample
+		 * values) and the problem line for a key naming nothing or a toggle show here.
+		 */
+		name: 'editor-record-groups',
+		query: 'surface=both&theme=light&state=record-groups&open=bad_group_missing',
+		size: '1500,2400',
+	},
+	{
+		name: 'sheet-record-groups-narrow',
+		query: 'surface=sheet&theme=light&state=record-groups&width=520',
+		size: '620,3200',
+	},
+	{
+		/*
+		 * **A Record set grouped by what the player types**
+		 * (`docs/features/free-text-group-key.md`), on the `text-groups` state's
+		 * own sheet: a text key on the summary line (headed and unheaded) and
+		 * inside the opened record, a case-variant pair under one header, a blank
+		 * and an `Other` sharing one **Other**, a hand-edited link, a colon and a
+		 * ninety-character value in the strip list, and the two half-valid
+		 * configurations drawn in place.
+		 */
+		name: 'sheet-text-groups',
+		query: 'surface=sheet&theme=light&state=text-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-text-groups-dark',
+		query: 'surface=sheet&theme=dark&state=text-groups',
+		size: '1400,1900',
+	},
+	{
+		/*
+		 * **A modifier saying something without changing a number**
+		 * (`docs/features/modifier-notes.md`), on the `notes` state's own sheet:
+		 * the note mark on a Card with its own note line filled, on a Card with
+		 * both marks, on a note-only Card and on a Card with its label hidden; on
+		 * a Table's computed cell, its stored level cell and a column total; and
+		 * on a Roster's computed row, band head, stat card and stored level cell.
+		 * What to look at: the glyph reads as distinct from the underline, sits on
+		 * the label's line without moving a card's number off centre, and widens
+		 * no stored cell enough to clip at the threshold width.
+		 */
+		name: 'sheet-notes',
+		query: 'surface=sheet&theme=light&state=notes',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-notes-dark',
+		query: 'surface=sheet&theme=dark&state=notes',
+		size: '1400,1500',
+	},
+	{
+		// The glyph is an SVG in `currentColor`, so this mode keeps it; the
+		// underline beside it is the arithmetic's, and both must still read.
+		name: 'sheet-notes-forced-colors',
+		query: 'surface=sheet&theme=light&state=notes',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// One tab stop per noted value, on the Track door's own ring.
+		name: 'sheet-notes-focus',
+		query: 'surface=sheet&theme=light&state=notes&focus=.sheetsmith-note-mark',
+		size: '1400,1500',
+	},
+	{
+		// A computed cell's mark opens the cell's own popover text: the formula,
+		// a blank line, then the notes.
+		name: 'sheet-notes-cell',
+		query:
+			'surface=sheet&theme=light&state=notes&bar=off&press=td.sheetsmith-table-computed .sheetsmith-note-mark',
+		size: '1400,1500',
+	},
+	{
+		// The card with both marks: arithmetic, the total, then `Notes`.
+		name: 'sheet-notes-both',
+		query:
+			'surface=sheet&theme=dark&state=notes&bar=off&press=.sheetsmith-card-has-note .sheetsmith-modified',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-notes-narrow',
+		query: 'surface=sheet&theme=light&state=notes&width=520',
+		size: '620,3200',
+	},
+	{
+		// The editor opening on note-bearing changes: the **Note** field on a
+		// change line's second row, beside a blank **Amount** on the two
+		// note-only definitions and a filled one on Ring of Warmth. The editor
+		// alone, and tall enough to reach the third definition: beside the sheet
+		// the column ended at Reset triggers and no Note field was in frame.
+		name: 'editor-notes',
+		query: 'surface=editor&theme=light&state=notes',
+		size: '1500,2600',
+	},
+	{
+		name: 'sheet-text-groups-collapsed',
+		query:
+			'surface=sheet&theme=light&state=text-groups&press=.sheetsmith-record-group-toggle',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-text-groups-narrow',
+		query: 'surface=sheet&theme=light&state=text-groups&width=520',
+		size: '620,3200',
+	},
+	{
+		// The editor's canvas on sample values: two groups from the first two
+		// sample records for a key, the configuration error in place for the two
+		// half-valid lists.
+		name: 'editor-text-groups',
+		query: 'surface=both&theme=light&state=text-groups&open=bad_text_plain',
+		size: '1500,2400',
+	},
+	{
+		// A refused commit, which exists only after somebody types and looks away:
+		// a link is kept in the field under the shared sentence.
+		name: 'sheet-text-groups-refused-link',
+		query:
+			'surface=sheet&theme=light&state=text-groups&type=.sheetsmith-record-input-text%7C%5B%5BWizard%5D%5D',
+		size: '1400,1900',
+	},
+	{
+		// And a name over the 40-character limit, 57 characters.
+		name: 'sheet-text-groups-refused-length',
+		query:
+			'surface=sheet&theme=light&state=text-groups&type=.sheetsmith-record-input-text%7CThe%20Order%20of%20the%20Seventh%20Lantern%20and%20the%20Wanderers',
+		size: '1400,1900',
+	},
+	{
+		// The **Other** group of the first list, scrolled to: below the fold of a
+		// four-row box in every other frame. It holds the blank record (the `—`
+		// placeholder on an empty text field) and the `Other` typed by hand, which
+		// share the one group.
+		name: 'sheet-text-groups-other',
+		query:
+			'surface=sheet&theme=light&state=text-groups&scroll=.sheetsmith-record-group-toggle%5Baria-controls%3D%22sheetsmith-record-group-homebrew_features-3%22%5D',
+		size: '1400,1900',
+	},
+	{
+		// A text key inside an **opened** record: "Homebrew in the body", whose
+		// Class is placed in the body. Shot closed everywhere else.
+		name: 'sheet-text-groups-body-open',
+		query:
+			'surface=sheet&theme=light&state=text-groups&press=%5Baria-controls%3D%22sheetsmith-record-homebrew_body-0%22%5D',
+		size: '1400,1900',
+	},
+	{
+		// The shared hover a transparent field takes, on a text field. A clipped
+		// group name's reveal is a native `title`, which no still captures; that is
+		// measured by `harness/measure-groups.mjs` check 6 instead.
+		name: 'sheet-text-groups-hover',
+		query: 'surface=sheet&theme=light&state=text-groups',
+		size: '1400,1900',
+		hover: '.sheetsmith-record-input-text',
 	},
 ];
 

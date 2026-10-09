@@ -66,7 +66,7 @@ import { paintLinkedText } from './linked-text';
 import {
 	MODIFIED_CLASS,
 	applying,
-	modifierBreakdown,
+	modifierAccount,
 	modifierRowName,
 	modifierRowText,
 	rowModifiers,
@@ -83,6 +83,7 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
+import { renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
 import { flagText } from './stored-flag';
 import {
@@ -1461,6 +1462,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		return writeTable(body, headers(config), { rows, added, removed });
 	},
 
+	/*
+	 * A published row's cell and a column total draw the note mark, after the
+	 * number or the control (`docs/features/modifier-notes.md`).
+	 */
+	drawsNotes: true,
+
 	resetColumns(config): readonly ResetColumn[] {
 		return resetColumnsOf(config);
 	},
@@ -1643,7 +1650,25 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER;
 		// The table scrolls inside its own box: a sheet must never scroll
 		// sideways because one component grew a column.
-		const wrapper = element('div', 'sheetsmith-table-wrapper', container);
+		//
+		// **An open table gets a box around the scroller, and a closed one does
+		// not.** The box is the card — border, radius, fill — and it stretches to
+		// the cell the table was placed in, so the add control below can sit at the
+		// card's foot rather than under the last row. The scroller inside it carries
+		// the sideways scroll alone, which is what keeps the control out of it. A
+		// closed table has no control to pin, and stays the scroller it always was
+		// so a closed card in a tall cell does not move.
+		const box = open
+			? element('div', 'sheetsmith-table-box', container)
+			: container;
+		if (open) container.addClass('sheetsmith-table-open');
+		const wrapper = element(
+			'div',
+			open
+				? 'sheetsmith-table-wrapper sheetsmith-table-wrapper-boxed'
+				: 'sheetsmith-table-wrapper',
+			box,
+		);
 		const grid = element('table', 'sheetsmith-table', wrapper);
 		// Two facts the stylesheet needs about the whole table, stamped here
 		// because both were `:has()` selectors and Obsidian's review asks for
@@ -2071,10 +2096,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						name === undefined || column.formula === undefined
 							? null
 							: noteRow().values[column.key];
-					const pushed =
+					const account =
 						name === undefined || column.formula === undefined
 							? null
-							: modifierBreakdown(
+							: modifierAccount(
 									context.modifiers?.breakdown(name),
 									typeof shown === 'number' ? shown : null,
 									// This breakdown is read inside a table, so every
@@ -2083,7 +2108,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 									// rows the reader is looking at.
 									true,
 								);
-					if (pushed !== null) {
+					/*
+					 * **The whole account opens on the cell's press; the underline
+					 * and the in-cell twin follow the arithmetic alone**, so a
+					 * note-only cell underlines no number nothing moved. Its notes
+					 * have their own mark and twin after the number, below.
+					 */
+					const pushed = account?.text ?? null;
+					if (account?.arithmetic === true && pushed !== null) {
 						cell.classList.add(MODIFIED_CLASS);
 						/*
 						 * The same text where there is no pointer, in a span inside
@@ -2117,6 +2149,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						 */
 						element('span', 'sheetsmith-sr-only', td, pushed);
 					}
+					renderAccountNotes(td, account, 'sheetsmith-table-has-note');
 					if (column.formula !== undefined) {
 						// The title says this on a desktop and says nothing on a
 						// phone. A read-only cell has no other use for a tap, so
@@ -2371,6 +2404,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							definitions: context.modifiers?.definitions ?? [],
 							targets: context.modifiers?.targets ?? [],
 							published: context.modifiers?.published ?? [],
+							noteTargets: context.modifiers?.noteTargets ?? [],
 							bonusTypes: context.modifiers?.bonusTypes ?? [],
 							// The one import from `obsidian` in this folder, passed on
 							// rather than taken again: the allowlist stays one name long.
@@ -2498,6 +2532,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						}
 						select.value = String(initial);
 						select.setAttribute('aria-label', label);
+						renderNotesAt(
+							td,
+							context.modifiers,
+							publishedName(config, rowView, index),
+							'sheetsmith-table-has-note',
+						);
 						let shown = initial;
 						// **The guard is kept, and it is dead.** A native `change`
 						// does not fire on re-picking the option already chosen, so
@@ -2551,6 +2591,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						nameOnScreen: column.hideHeading !== true,
 						onSet: store,
 					});
+					// After the control, as the cell's door: the ring's press is the
+					// ring's, so the notes need a control of their own.
+					renderNotesAt(
+						td,
+						context.modifiers,
+						publishedName(config, rowView, index),
+						'sheetsmith-table-has-note',
+					);
 					return;
 				}
 
@@ -2564,6 +2612,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				input.value = raw;
 				input.setAttribute('aria-label', label);
 				if (type === 'number') input.inputMode = 'numeric';
+				renderNotesAt(
+					td,
+					context.modifiers,
+					publishedName(config, rowView, index),
+					'sheetsmith-table-has-note',
+				);
 				bindEditable(input, {
 					initial: raw,
 					step: type === 'number',
@@ -2656,6 +2710,36 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// is given the value with the name, so qualifying it would announce
 				// the same word twice.
 				input.setAttribute('aria-label', nameHeading);
+				/*
+				 * **The column's floor** (`docs/UI.md` §4): a hidden copy of what the
+				 * cell shows at rest, laid out as text. A field with a percentage
+				 * width contributes only its `min-width` to the table's layout, so
+				 * with a prose column beside it the name was cut to `6em`; a cell's
+				 * min-content is its widest in-flow child, so this floors each cell
+				 * at its own name and the column at the longest, with no length
+				 * computed here. Not `input.size`, Passport's spelling, which
+				 * measures average advances rather than these glyphs, and not
+				 * `field-sizing: content`, which moves the row's other cells while
+				 * the reader types: this is painted per render, so it moves only
+				 * on the rebuild a commit produces.
+				 *
+				 * `displayText`, the one spelling of what a link shows, so an alias
+				 * floors at what is drawn rather than at its source — and plain text
+				 * passes through it unchanged, so there is no second decision here
+				 * about whether the name is linked. Not `rowLabel`, which names an
+				 * empty row for a listener: an empty name floors at nothing and the
+				 * field's `min-width` holds. **One text node**, never anchors: the
+				 * view restores focus by counting a cell's controls, `a[href]`
+				 * among them. `aria-hidden` because the field already gives the name
+				 * to assistive tech.
+				 */
+				const sizer = element(
+					'span',
+					'sheetsmith-table-name-sizer',
+					cell,
+					displayText(rowView.label),
+				);
+				sizer.setAttribute('aria-hidden', 'true');
 				bindEditable(input, {
 					initial: rowView.label,
 					announceCommit: (next) => {
@@ -2689,27 +2773,19 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		});
 
 		if (open) {
-			// A row-shaped control in the row position, so it reads as "the next
-			// row" rather than as chrome parked beside the table, and it picks up
-			// the row hover the rows already have.
-			const tr = element('tr', 'sheetsmith-table-add', body);
-			const cell = element('td', '', tr);
-			cell.colSpan = width;
-			const add = element('button', 'sheetsmith-table-add-button', cell);
+			// The control is the last thing in the card, below the rows and below
+			// any totals row, and it is a sibling of the scroller rather than a row
+			// of the table. That is what pins it: in a cell taller than the rows the
+			// box fills the cell and `margin-top: auto` puts the control at its foot,
+			// and because it is outside the scroller a sideways scroll never moves
+			// it, so its label needs no `position: sticky`. It reverses
+			// `open-rows-for-table.md`'s "a row in the row position", for the reason
+			// recorded in `table-add-row-pinned-bottom.md`: the control marks the
+			// card's foot, and a row stops being one the moment the cell is taller.
+			const add = element('button', 'sheetsmith-table-add-button', box);
 			add.type = 'button';
-			// The label is in a span so it can hold its place while the table scrolls
-			// sideways: the button spans the table's full width, and its text would
-			// otherwise scroll out and leave a wide empty band with nothing saying
-			// what it is.
-			//
-			// **The CSS beside this used to claim the label sits "left, under the
-			// name column, because that is where the row it adds begins", and that
-			// described an intent the cascade never delivered**: the cell centres its
-			// inline content, so what has always shipped is a centred label under a
-			// rule. Recorded rather than corrected in either direction — a design
-			// review measured the rendered pair, ruled that the centred row is what
-			// reads as pressable, and `docs/UI.md` §9 now names that as the shared
-			// treatment, which is what Record set's add control was brought to.
+			// A span rather than the button's own text, so the hover and focus
+			// treatments reach the label without reaching the rule above it.
 			element('span', 'sheetsmith-table-add-label', add, 'Add row');
 			add.addEventListener('click', () => {
 				// The one place PATTERNS §5's optimistic paint cannot apply: a new
@@ -2721,7 +2797,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// the view restores focus — by control index within the cell, and
 				// the new row's controls sit immediately before the add button
 				// that was focused. That makes it an accident rather than a
-				// design, so it has a test of its own.
+				// design, so it has a test of its own. It survives the control
+				// moving out of the table because the button is still after every
+				// row control in document order.
 				status.textContent = 'Row added';
 				context.onChange({
 					rows: {},
@@ -2763,6 +2841,13 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					column,
 					el: element('div', 'sheetsmith-table-value', cell),
 				});
+				// After the sum, where a note was pushed at the total's own name.
+				renderNotesAt(
+					cell,
+					context.modifiers,
+					`${config.id}.${column.key}`,
+					'sheetsmith-table-has-note',
+				);
 			}
 			if (open) element('td', 'sheetsmith-table-remove', foot);
 
@@ -2815,5 +2900,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			};
 			paintTotals(true);
 		}
+		// Last, once every cell that will hold a mark holds it: a noted column
+		// reserves the mark's slot in its other cells, so its values line up.
+		reserveNoteSlots(grid);
 	},
 };

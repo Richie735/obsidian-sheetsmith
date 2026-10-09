@@ -52,13 +52,16 @@ import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
 import {
 	acceptingTargets,
+	markedTargets,
 	modifierTargetSource,
 	ModifierTargetSource,
+	noteTargets,
 	publishedTargets,
 } from './modifier-targets';
 import {
 	definitionTable,
 	resolveEnrolments,
+	typedNoteTarget,
 } from './modifier-definitions';
 import {
 	buildModifierTable,
@@ -300,14 +303,14 @@ export interface SheetModifiers {
 	 */
 	bonusTypes: readonly string[];
 	/**
-	 * The published names whose own formula reads a modifier.
+	 * The published names some formula reads a modifier for: the wide set
+	 * (`acceptingTargets`).
 	 *
-	 * What `ModifierContext`'s two questions are bounded by, and nothing more. A
-	 * name that accepts no modifier gets no breakdown, which keeps a card from
-	 * drawing a mark over a change that is not being applied; and an enrolment
+	 * What an enrolment's outcome is bounded by, and nothing more: an enrolment
 	 * whose target accepts none reports that it changes nothing, which keeps a
 	 * modifier cell's glyph from claiming an effect and is the only bound on the
-	 * one query that enters the modifier walk from the sheet.
+	 * one query that enters the modifier walk from the sheet. A breakdown, and so
+	 * a mark, is bounded by `marked` below, which is narrower.
 	 *
 	 * **The override step is bounded elsewhere and more tightly** — by the slot
 	 * actually having been read on the path an evaluation took (`resolve.ts`) — so
@@ -316,6 +319,35 @@ export interface SheetModifiers {
 	 * under this bound instead of that one.
 	 */
 	accepting: ReadonlySet<string>;
+	/**
+	 * The published names a modifier can move: those whose *own* component's
+	 * formulas mention `mod.self` or `mod.<that name>` (`markedTargets`).
+	 *
+	 * **What a breakdown's arithmetic, and so every mark on a number, is bounded
+	 * by.** A subset of `accepting`, which also admits a name some *other*
+	 * formula reads through `mod.<name>` — that name's own number never moves, so
+	 * bounding the mark on the wide set drew it, and listed contributors, over a
+	 * value nothing changed. `accepting` keeps the outcomes, because a push at
+	 * such a name does move the component reading it; this keeps the mark, which
+	 * is about the number on the card.
+	 */
+	marked: ReadonlySet<string>;
+	/**
+	 * Every published name a note may be aimed at, with its label: the names
+	 * whose component draws notes (`noteTargets`). The form's **Value** select
+	 * offers the ones outside `targets` under **Notes only**.
+	 *
+	 * Optional together with `notable`, and absent means none: a pair assembled
+	 * by hand before notes existed bounds notes to nothing, which is the truth
+	 * for it (`sheetModifierInput` always sets both).
+	 */
+	noteTargets?: readonly ModifierTarget[];
+	/**
+	 * The same set as a bare index, which is what bounds notes the way
+	 * `accepting` bounds arithmetic: a name outside it is never handed a note,
+	 * and the outcome of a note aimed at one says so.
+	 */
+	notable?: ReadonlySet<string>;
 }
 
 /** A layout with no modifiers, and the paths with no layout at all. */
@@ -325,6 +357,9 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	published: [],
 	bonusTypes: [],
 	accepting: new Set(),
+	marked: new Set(),
+	noteTargets: [],
+	notable: new Set(),
 };
 
 /**
@@ -357,13 +392,61 @@ export function sheetModifierInput(
 	bonusTypes: readonly string[] = [],
 ): SheetModifiers {
 	const targets = acceptingTargets(sources);
+	const notes = noteTargets(sources);
 	return {
 		definitions,
 		targets,
 		published: publishedTargets(sources),
 		bonusTypes,
 		accepting: new Set(targets.map((target) => target.name)),
+		marked: new Set(markedTargets(sources).map((target) => target.name)),
+		noteTargets: notes,
+		notable: new Set(notes.map((target) => target.name)),
 	};
+}
+
+/**
+ * Every name some part on this sheet could carry a note to, found by reading
+ * text and never by evaluating it (`docs/features/modifier-notes.md` F).
+ *
+ * **What bounds a breakdown's entry into the modifier walk at a name outside
+ * `marked`.** `marked` bounds that entry for the arithmetic, and
+ * `sheetModifiers` argues why the bound matters; notes need a wider set, and
+ * asking at every note target on every render would move the walk's first
+ * entry on sheets carrying no note at all. With this, a sheet with no note
+ * anywhere enters the walk from a breakdown at the `marked` names alone.
+ *
+ * **A static scan, because gathering pushes is not one.** The spec's first
+ * choice was to read the pushes themselves; it does not hold, since a Table's
+ * and a Record set's sources build each row's `RowValues` eagerly, and that
+ * evaluates every computed column through the resolver they are handed. So the
+ * sources are called here with a resolver that finds nothing, which reads
+ * every part's own text and evaluates no formula, and the definitions are read
+ * as declared. A named part's note is its definition's, so a definition noting
+ * a target makes it a candidate whether or not a row enrols — a superset, which
+ * only means the walk is entered and finds nothing.
+ */
+export function noteCandidates(
+	components: readonly PublishedComponent[],
+	definitions: readonly ModifierDefinitionView[],
+): ReadonlySet<string> {
+	const found = new Set<string>();
+	for (const definition of definitions) {
+		for (const change of definition.changes) {
+			const target = change.target.trim();
+			if ((change.note ?? '').trim() !== '' && target !== '') found.add(target);
+		}
+	}
+	// A resolver that resolves nothing: the scan reads text and must not reach
+	// the name table, the row table or the walk.
+	const inert: FieldResolver = () => null;
+	for (const component of components) {
+		for (const push of component.modifiers?.(inert) ?? []) {
+			const target = typedNoteTarget(push.part);
+			if (target !== null) found.add(target);
+		}
+	}
+	return found;
 }
 
 /**
@@ -435,8 +518,19 @@ export function buildSheet(
 		// question.
 		parseModifierTypes(layout).names,
 	);
-	const env = buildSheetEnv(prepared.map(publishedComponent), library, input);
-	return { env, modifiers: sheetModifiers(input, env, promote) };
+	const published = prepared.map(publishedComponent);
+	const env = buildSheetEnv(published, library, input);
+	/** Memoised, and taken only when a breakdown first needs it. */
+	let candidates: ReadonlySet<string> | null = null;
+	return {
+		env,
+		modifiers: sheetModifiers(
+			input,
+			env,
+			promote,
+			() => (candidates ??= noteCandidates(published, input.definitions)),
+		),
+	};
 }
 
 /**
@@ -451,12 +545,17 @@ export function buildSheet(
  * decide what a component may draw and are too load-bearing to state inside a
  * five-line sequence.
  *
- * **Nothing at all for a name that accepts no modifier**, and that is a rule
- * rather than an optimisation. It is what keeps a card from drawing a mark over an
- * enrolment that is not being applied — a definition aimed at a value whose
- * formula reads no slot changes nothing, and the place that says so is the
- * editor's report beside the target picker that chose it. It also means a name
- * nothing could read never sets the walk going.
+ * **No arithmetic for a name a push cannot move**, and that is a rule rather
+ * than an optimisation. Three sets bound three things: an enrolment's outcome
+ * by `accepting`, the wide set, since a push there moves *something*; a
+ * breakdown's arithmetic, and so every mark, by `marked`, the names whose own
+ * formula reads the push, so a name read only through another component's
+ * `mod.<name>` lists nothing; and notes by `notable`, because a note needs no
+ * slot. A name outside all three gets nothing. It is what keeps a card from
+ * drawing a mark over an enrolment that is not moving its number — a definition
+ * aimed at a value whose formula reads no slot changes nothing, and the place
+ * that says so is the editor's report beside the target picker that chose it.
+ * It also means a name nothing could read never sets the walk going.
  *
  * **A refused slot has no breakdown either.** The refusal is already on the card
  * as `?` with the row named under it, through the formula that read the slot; a
@@ -468,9 +567,17 @@ export function sheetModifiers(
 	env: FormulaEnv,
 	/** The host's layout write (§8), or nothing where this host has none. */
 	promote?: (name: string, effect: TypedEffect) => Promise<PromoteResult>,
+	/**
+	 * The names some part could carry a note to (`noteCandidates`), which is what
+	 * lets a breakdown enter the walk at a note target outside `marked`.
+	 * Absent offers none: notes then reach `marked` names only, which is never
+	 * a wider walk than the one a breakdown enters for its arithmetic.
+	 */
+	candidates: () => ReadonlySet<string> = () => new Set(),
 ): ModifierContext {
 	const table = definitionTable(modifiers.definitions);
 	const calls = callsFrom(env);
+	const notable = modifiers.notable ?? new Set<string>();
 	/**
 	 * The reader's own word for a published name.
 	 *
@@ -485,14 +592,32 @@ export function sheetModifiers(
 	for (const target of modifiers.published) labels.set(target.name, target.label);
 	for (const target of modifiers.targets) labels.set(target.name, target.label);
 	const label = (name: string): string => labels.get(name) ?? name;
+	/**
+	 * Why a note aimed at this name will not be shown, or null where it will.
+	 *
+	 * The reader's sentence, in the split the arithmetic one below argues for:
+	 * the author's sentence is in `parse/modifier-definitions.ts` beside the
+	 * picker that chose the target. Both read `notable`, which is the one
+	 * derivation (`noteTargets`). **One sentence for every name outside it**,
+	 * published or a typo: a second wording for an unpublished name would put two
+	 * different lines under one misspelt part with an amount, and "cannot show a
+	 * note" is true of both.
+	 */
+	const noteRefusal = (target: string): string | null => {
+		if (target === '' || notable.has(target)) return null;
+		return `${label(target)} cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.`;
+	};
 	return {
 		definitions: modifiers.definitions,
 		targets: modifiers.targets,
 		published: modifiers.published,
+		noteTargets: modifiers.noteTargets ?? [],
 		bonusTypes: modifiers.bonusTypes,
 		/*
-		 * **Bounded by the accepting set, on the same terms `breakdown` is**, and
-		 * that bound is doing two jobs.
+		 * **Bounded by the accepting set**, which is wider than `breakdown`'s
+		 * bound on purpose: a push at a name another component reads through
+		 * `mod.<name>` moves that component, so saying it changes nothing would
+		 * be false. That bound is doing two jobs.
 		 *
 		 * It is the *only* bound on this query, and this query is what enters the
 		 * modifier walk from the sheet: a modifier cell asks it **once per modifier
@@ -540,11 +665,33 @@ export function sheetModifiers(
 			// it. The gate below is per change for the same reason the walk's is:
 			// one of a definition's values may read no modifier while another does.
 			resolveEnrolments(table, part, row, calls).map((found) => {
+				/*
+				 * **A note's own verdict, beside the arithmetic's.** A note-only part
+				 * at a name that can show it applies — it needs no slot, so the
+				 * accepting set has nothing to say about it — and one that cannot is
+				 * not applying, saying why. **A part with an amount *and* a note keeps
+				 * its amount's verdict exactly as before notes existed** — the spec's
+				 * "judged as today" — and carries what its note is doing beside it in
+				 * `noteLine`: refused where the target cannot show it, or still shown
+				 * where the amount changes nothing.
+				 */
+				const refused =
+					found.kind === 'unknown' || found.fields.note === null
+						? null
+						: noteRefusal(found.fields.target);
+				const withRefusal = refused === null ? {} : { noteLine: refused };
+				if (found.kind === 'noted') {
+					const outcome = enrolmentOutcome(found, (target) => env.modifiers(target), label);
+					return refused === null
+						? outcome
+						: { ...outcome, applies: false, suppressed: refused };
+				}
 				if (
 					found.kind === 'applies' &&
 					!modifiers.accepting.has(found.contribution.target)
 				) {
 					const named = label(found.contribution.target);
+					const noteShows = found.fields.note !== null && refused === null;
 					return {
 						definition: found.definition,
 						change: found.change,
@@ -555,24 +702,50 @@ export function sheetModifiers(
 						amount: found.contribution.amount,
 						condition: found.conditional ? true : null,
 						suppressed: `${named} does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.`,
+						...(noteShows ? { noteLine: 'Its note still shows.' } : withRefusal),
 					};
 				}
-				return enrolmentOutcome(found, (target) => env.modifiers(target), label);
+				return {
+					...enrolmentOutcome(found, (target) => env.modifiers(target), label),
+					...withRefusal,
+				};
 			}),
+		/*
+		 * **Two bounds, one per group.** The arithmetic is bounded by `marked`,
+		 * the names whose own formula reads a modifier for them, and not by the
+		 * accepting set: a name reaching that set only through another
+		 * component's `mod.<name>` has no number a push moves, so listing
+		 * contributors there was listing contributors with no effect. Every
+		 * arithmetic mark is drawn from this answer, so the mark follows too.
+		 * Notes come for every note target — a note needs no slot — but a name
+		 * outside `marked` enters the walk only where some part on the sheet
+		 * could carry a note to it (`candidates`), which keeps the walk's first
+		 * entry no wider than it was on a sheet with none. An arithmetic refusal
+		 * does not hide a note: the card draws `?` and the notes group still says
+		 * what was noted.
+		 */
 		breakdown: (name) => {
-			if (!modifiers.accepting.has(name)) {
+			const accepts = modifiers.marked.has(name);
+			const notesHere = notable.has(name);
+			if (!accepts && !(notesHere && candidates().has(name))) {
 				return { lines: [], override: null, total: 0, resultTotal: 0 };
 			}
 			const result = env.modifiers(name);
-			return 'error' in result
-				? { lines: [], override: null, total: 0, resultTotal: 0 }
+			const notes =
+				notesHere && result.notes !== undefined && result.notes.length > 0
+					? { notes: result.notes }
+					: {};
+			return 'error' in result || !accepts
+				? { lines: [], override: null, total: 0, resultTotal: 0, ...notes }
 				: {
 						lines: result.lines,
 						override: result.override,
 						total: result.total,
 						resultTotal: result.resultTotal,
+						...notes,
 					};
 		},
+		notable: (name) => notable.has(name) && candidates().has(name),
 		/*
 		 * **Refused rather than absent where the host has no writer**, so the form
 		 * is one surface however it was drawn: a member that came and went would

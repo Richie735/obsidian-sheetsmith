@@ -45,6 +45,7 @@
 import {
 	ModifierDefinitionView,
 	ModifierLine,
+	ModifierNote,
 	ModifierOperator,
 	ModifierOutcome,
 	ModifierPhase,
@@ -52,6 +53,7 @@ import {
 	phaseOf,
 } from '../types';
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
+import { isNoteOnly } from '../parse/modifier-cell';
 import {
 	Contribution,
 	definitionTable,
@@ -139,8 +141,20 @@ export type ModifierResult =
 			 */
 			resultTotal: number;
 			lines: readonly ModifierLine[];
+			/**
+			 * The notes pushed at this name, where there are any. Absent means
+			 * none, so a sheet with no notes produces exactly the results it always
+			 * did, and `stackModifiers` never sets it: a note never reaches the
+			 * stacking rule.
+			 */
+			notes?: readonly ModifierNote[];
 	  }
-	| { error: string };
+	/**
+	 * A refused slot. **Its notes survive the refusal**, because a note moves no
+	 * number and so cannot be what stopped one: a card drawing `?` still lists
+	 * what was noted at it.
+	 */
+	| { error: string; notes?: readonly ModifierNote[] };
 
 /**
  * Ask what has been pushed at one published name.
@@ -229,6 +243,13 @@ interface Refused {
 interface Walked {
 	applied: Map<string, Contributor[]>;
 	refused: Map<string, Refused>;
+	/**
+	 * The notes, kept apart from the arithmetic from the walk onward
+	 * (`docs/features/modifier-notes.md` E): only a change with an amount becomes a
+	 * `Contributor`, so the stacking rule and both of its zero skips never see a
+	 * note, and every claim they make stays true without an edit.
+	 */
+	noted: Map<string, ModifierNote[]>;
 }
 
 /**
@@ -303,6 +324,7 @@ export function buildModifierTable(
 	const walk = (): Walked => {
 		const applied = new Map<string, Contributor[]>();
 		const refused = new Map<string, Refused>();
+		const noted = new Map<string, ModifierNote[]>();
 		for (const component of components) {
 			for (const push of component.pushes?.() ?? []) {
 				// A blank part enrols in nothing and is not an error: on an
@@ -343,7 +365,39 @@ export function buildModifierTable(
 					}
 					const target = found.fields.target;
 					if (target === '') continue;
+					/*
+					 * **The note first, and listed whatever the arithmetic does.** A
+					 * condition that will not resolve lists it as not applying, with
+					 * the reason; an amount that will not resolve under a condition
+					 * that holds leaves the note applying, because the note's own
+					 * condition is all that governs it. In walk order and never
+					 * combined: two rows noting the same words are two lines.
+					 */
+					const { note } = found.fields;
+					if (note !== null) {
+						const said: ModifierNote = {
+							label: push.row.label,
+							source: push.source,
+							...(found.definition === null
+								? {}
+								: { definition: found.definition.name }),
+							text: note,
+							suppressed:
+								found.kind === 'unreadable' && found.condition
+									? found.reason
+									: null,
+						};
+						const already = noted.get(target);
+						if (already === undefined) noted.set(target, [said]);
+						else already.push(said);
+					}
+					// A note-only change contributes nothing to the arithmetic.
+					if (found.kind === 'noted') continue;
 					if (found.kind === 'unreadable') {
+						// A note-only change never refuses a slot, even where its
+						// condition will not resolve: it moves no number, so it cannot
+						// be what stops one.
+						if (isNoteOnly(found.fields)) continue;
 						// The first refusal wins, so the message names one row rather
 						// than however many the reader has to read past.
 						if (!refused.has(target)) {
@@ -371,7 +425,7 @@ export function buildModifierTable(
 				}
 			}
 		}
-		return { applied, refused };
+		return { applied, refused, noted };
 	};
 
 	return (name) => {
@@ -397,17 +451,23 @@ export function buildModifierTable(
 			}
 			if (found.refused.size === 0) held = found;
 		}
+		// Attached only where there are any, so every result on a sheet with no
+		// notes is the object it always was.
+		const notes = found.noted.get(name);
+		const withNotes = notes === undefined ? {} : { notes };
 		const stopped = found.refused.get(name);
 		if (stopped !== undefined) {
 			// One unreadable amount refuses the whole slot, and the message names
 			// the row: that is the aggregate's rule exactly — a quietly wrong number
 			// is worse than a missing one — and it is why this is an error rather
 			// than a contribution worth zero.
-			return { error: inRowMessage(stopped.label, stopped.reason) };
+			return { error: inRowMessage(stopped.label, stopped.reason), ...withNotes };
 		}
 		const contributions = found.applied.get(name);
-		if (contributions === undefined) return EMPTY;
-		const result = stackModifiers(contributions);
+		if (contributions === undefined) {
+			return notes === undefined ? EMPTY : { ...EMPTY, notes };
+		}
+		const result = { ...stackModifiers(contributions), ...withNotes };
 		stacked.set(name, result);
 		return result;
 	};
@@ -707,6 +767,18 @@ export function enrolmentOutcome(
 			amount: null,
 			condition: null,
 			suppressed: 'it needs an amount.',
+		};
+	}
+	if (found.kind === 'noted') {
+		// A note-only change applies wherever its condition holds. Whether its
+		// target can show a note is the sheet's to say (`sheet.ts`), which holds the
+		// set that decides it; nothing here has the layout.
+		return {
+			...named,
+			applies: true,
+			amount: null,
+			condition: found.conditional ? true : null,
+			suppressed: null,
 		};
 	}
 	if (found.kind === 'inactive') {

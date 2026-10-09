@@ -631,13 +631,18 @@
    larger than the name it glosses, so only colour and weight were holding
    the hierarchy up while size argued against it. Small tracking is positive
    here — the opposite of the headline number, and the reason neither can
-   share one letter-spacing value. */
+   share one letter-spacing value.
+
+   Muted, the label's own colour, so size and tracking alone hold the rank
+   under the name: a gloss is read back, and `--text-faint` measured 2.12:1
+   light and 2.57:1 dark on a card against 4.5:1 (docs/UI.md §6,
+   docs/features/text-faint-audit.md). */
 .sheetsmith-card-abbreviation {
 	/* The published slot, in the units it was defined in. */
 	min-height: var(--sheetsmith-card-abbr-space);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Six abilities across a narrow pane gives each card about 110px, and
@@ -857,7 +862,9 @@
 }
 
 .sheetsmith-card-single
-	> :nth-last-child(1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note)) {
+	> :nth-last-child(
+		1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note, .sheetsmith-note-mark)
+	) {
 	margin-bottom: auto;
 }
 
@@ -921,13 +928,6 @@
 	clip: rect(0, 0, 0, 0);
 	white-space: nowrap;
 	border: 0;
-}
-
-/* Unresolved formula is a status, not a value — and not the same glyph
-   as an empty input. */
-.sheetsmith-card-derived-unresolved {
-	color: var(--text-faint);
-	font-weight: var(--font-normal);
 }
 
 /* A number something has been pushed at, on a card or in a cell (SPEC §5).
@@ -1110,11 +1110,6 @@
 		border-color: var(--text-muted);
 	}
 
-.sheetsmith-card-abbreviation,
-.sheetsmith-card-derived-unresolved {
-		color: var(--text-muted);
-	}
-
 /* One step further for someone who asked for it, since the default is
 	   already what this block would otherwise raise it to. */
 .sheetsmith-card-dropdown::after {
@@ -1146,6 +1141,42 @@
 		16px 100%;
 	background-repeat: no-repeat;
 	background-attachment: local, scroll;
+}
+
+/* **An open table's card is a box around its scroller, and the box fills the
+   cell.** The add control is the card's foot, so the card has to reach the foot
+   of the cell it was placed in: a grid item stretches, and the container is a
+   flex column in which the box takes whatever the label leaves, so in a cell
+   taller than the rows the space falls between the last row and the control
+   rather than under the control. A table's height is still a floor and never a
+   cap: nothing here scrolls vertically and nothing is given a `min-height`.
+
+   **Only an open table.** A closed one has no control to pin, so it keeps the
+   bare scroller above and is the card it always was in a tall cell, unchanged.
+
+   The border, radius and fill move from the scroller to the box so the
+   scroller's right-edge shadow is clipped by the box's corner rather than
+   painted over it, and the box clips so the control's hover surface takes the
+   box's bottom corners. */
+.sheetsmith-table-open {
+	display: flex;
+	flex-direction: column;
+}
+
+.sheetsmith-table-box {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary-alt);
+}
+
+.sheetsmith-table-wrapper-boxed {
+	flex: none;
+	border: none;
+	border-radius: 0;
 }
 
 .sheetsmith-view .sheetsmith-table {
@@ -1182,7 +1213,8 @@
 	color: var(--text-muted);
 }
 
-/* The last row's rule would be a second line against the container border. */
+/* The last row's rule would be a second line against the add control's rule, or
+   against the container border where there is no control. */
 .sheetsmith-view .sheetsmith-table tbody tr:last-child th,
 .sheetsmith-view .sheetsmith-table tbody tr:last-child td {
 	border-bottom: none;
@@ -1248,7 +1280,6 @@
 }
 
 .sheetsmith-view .sheetsmith-table-input {
-	width: 4em;
 	padding: var(--size-2-1) var(--size-2-2);
 	border: 1px solid transparent;
 	border-radius: var(--radius-s);
@@ -1256,6 +1287,20 @@
 	text-align: center;
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+}
+
+/* **A field's width is given alone, at (0,3,0), and that is every sheet text
+   field's rule** (docs/features/phone-input-width.md). On a phone Obsidian adds
+   `.is-mobile input[type='text'] { width: 100% }` at (0,2,1), which beats the
+   (0,2,0) that `.sheetsmith-view` scoping buys, so a field sized here took the
+   whole width it was offered: a record's number field went from 52px to 177px
+   and squeezed its name to 11. Doubling the class clears it without an
+   `!important` and without restyling the app's selector. Only the width moves
+   to the doubled rule, because doubling the whole rule would also lift its
+   border and background over the field's own `:hover` and `:focus`, which sit
+   at (0,3,0) above. `styles.test.ts` holds every text field's width to this. */
+.sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input {
+	width: 4em;
 }
 
 /* A text column holds prose, and prose wants the room, the left edge, and
@@ -1266,19 +1311,28 @@
 }
 
 /* Where the table has a prose column, that column is the one that should
-   grow and the name falls back to its own width. Row names are a fixed
-   vocabulary — "Sleight of hand" is as long as a skill gets — so slack given
-   to that column is room it can never use, while a note is open-ended. With
-   no prose column the rule above still applies and the name takes the slack,
-   which is what keeps a ring or a checkbox from being handed a third of the
-   sheet to sit in the middle of. */
+   grow and the name falls back to its own width. A declared row's name is a
+   fixed vocabulary — "Sleight of hand" is as long as a skill gets — so slack
+   given to that column is room it can never use, while a note is open-ended.
+   With no prose column the rule above still applies and the name takes the
+   slack, which is what keeps a ring or a checkbox from being handed a third of
+   the sheet to sit in the middle of.
+
+   **That premise is false on an `openRows` table**, where the character types
+   the names, so falling back to its own width must still mean the *longest*
+   name: a character row's name is a field, and a field with a percentage width
+   has no content width to fall back to. `.sheetsmith-table-name-sizer` below is
+   what gives it one (`docs/UI.md` §4). */
 .sheetsmith-view
 	.sheetsmith-table-has-text
 	.sheetsmith-table-name {
 	width: auto;
 }
 
-.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input {
+/* Doubled for (0,4,0), one class past the doubled 4em above: the base is at
+   (0,3,0) for Obsidian's phone rule (see its comment), and a prose cell's width
+   must win on weight rather than on coming later. */
+.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input.sheetsmith-table-input {
 	width: 100%;
 	min-width: 8em;
 	text-align: left;
@@ -1288,14 +1342,26 @@
    behind a skill, the source of an item. The same clothes the abbreviation
    wears under a card's name, and for the same reason: two things of
    equal weight per row leave the eye deciding which one the row is. Opt-in
-   per column, because muted user data otherwise reads as disabled. */
-.sheetsmith-view .sheetsmith-table-input-secondary {
+   per column, because a quieter column of user data otherwise reads as
+   disabled.
+
+   Muted, like the abbreviation, so size and tracking carry the rank: a gloss is
+   read back, and faint measured 2.20:1 light and 2.74:1 dark on a table
+   (`docs/features/text-faint-audit.md`).
+
+   **A gloss that is also a link** takes the same size and tracking on its
+   display layer, and the link colour on the anchor inside it: the rank says
+   "this qualifies the row", the link colour says "this can be followed", and
+   only one of those is discoverable by looking. One selector list, because the
+   two bodies were one. */
+.sheetsmith-view .sheetsmith-table-input-secondary,
+.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
-/* Faint is for reading past; the cell being edited is the one being read.
+/* A quieter column is for reading past; the cell being edited is the one being read.
    Colour only — a size change here would reflow the row under the cursor. */
 .sheetsmith-view .sheetsmith-table-input-secondary:hover,
 .sheetsmith-view .sheetsmith-table-input-secondary:focus {
@@ -1554,7 +1620,6 @@
 	   a printed one are two rows of one list and must not read as two lists,
 	   which four pixels of indent is enough to do. */
 	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
-	width: calc(100% + 2 * var(--sheetsmith-field-inset));
 	min-width: 6em;
 	/* And at the size the names beside it are. The other cells are a size down
 	   because they are data beside the row; this one is the row. */
@@ -1563,6 +1628,72 @@
 	/* A name longer than its column is truncated rather than cut mid-glyph: a
 	   hard cut with room to spare inside the field reads as damaged data. */
 	text-overflow: ellipsis;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-table-name-input.sheetsmith-table-name-input {
+	width: calc(100% + 2 * var(--sheetsmith-field-inset));
+}
+
+/* **The name column's floor**, for the field above that cannot give one
+   (`docs/UI.md` §4). A field with a percentage width is compressible: its
+   min-content is its `min-width` and nothing else, so beside a prose column
+   the table cut a character's name to `6em`. This is a copy of the name the
+   cell shows at rest, laid out as text, so the cell's min-content is the name's
+   own width and the column, the widest of its cells, floors at the longest.
+
+   No height and no paint, so it takes no room in the row and nothing is read
+   twice; `aria-hidden` in the markup says the same to assistive tech. **No
+   inline padding either, and that is the arithmetic rather than an omission**:
+   the field above is pulled into the cell's padding by exactly its own padding
+   and border, so its text area is the cell's content box — and the sizer, in
+   that same box, is the width the text needs. The name's own size, since the
+   field takes `inherit` too. `pre` so a name's spaces neither collapse nor
+   wrap.
+
+   **And a floor with a ceiling: never so wide that the sticky name covers the
+   scroller.** The name cell is pinned at the left edge with an opaque fill, so a
+   name as wide as the scroller hides every cell that scrolls under it, and in a
+   narrow card no scroll position reached a row's modifier or remove control. The
+   other cells need not all fit beside the name, only one at a time, since
+   scrolling brings each into the band left over in turn — so the band is one
+   constant and not a sum over each table's trailing cells: one number cell,
+   which takes a glyph, the remove control or a number field whole, and a text
+   field in part. Wide cards never reach the cap, so the floor is unchanged
+   there; in a narrow one the field's own `6em` minimum takes over again.
+
+   **`cqi`, against the box**, because nothing else can say how wide the
+   scroller is. A percentage `max-width` inside a table cell resolves against
+   the column the cell is being sized for, so it is ignored for min-content and
+   caps nothing; an `em` cap is a fixed length, so it cuts a long name on a wide
+   card too, which is the clip this floor removes. **On the box rather than the
+   scroller**, because `.sheetsmith-table-wrapper` is Roster's scroller as well,
+   and a container there would become the nearest one for every unnamed query
+   inside a Roster; the box exists only on an open table, which is the only
+   table that draws a sizer, and its content box is the scroller's width. */
+.sheetsmith-view .sheetsmith-table-box {
+	container-type: inline-size;
+}
+
+.sheetsmith-view .sheetsmith-table-name-sizer {
+	/* One number cell: `.sheetsmith-table-input`'s `width: 4em` at its own
+	   `--font-ui-small` (border-box, so padding and border are inside it), plus
+	   its cell's inline padding. */
+	--sheetsmith-table-name-band: calc(
+		4 * var(--font-ui-small) + 2 * var(--size-4-2)
+	);
+	display: block;
+	/* The name cell's own inline padding comes off too, since the cap is on
+	   the sizer and the cell is what has to leave the band. */
+	max-width: calc(
+		100cqi - 2 * var(--size-4-2) - var(--sheetsmith-table-name-band)
+	);
+	height: 0;
+	overflow: hidden;
+	visibility: hidden;
+	white-space: pre;
+	font-size: inherit;
 }
 
 /* A link to a note that does not exist yet, and this rule is not a preference —
@@ -1710,6 +1841,12 @@
 	color: transparent;
 }
 
+/* In forced colors this cell takes the record name's departure: the layer goes
+   and the field's raw `[[Target]]` shows, at the cost of the link's press. One
+   rule for every stack that does this, after the last of their `transparent`
+   rules, which is the record set's worked-out ceiling; the argument is the
+   record name's, and the Table's own half of it is written there. */
+
 /* The name field pulls itself back by its own inset so its text lines up with a
    declared row's plain name. The layer stacked over it has to make the same
    move, and take the name's own size, or the rendered link sits a few pixels
@@ -1718,15 +1855,6 @@
 	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
 	width: calc(100% + 2 * var(--sheetsmith-field-inset));
 	font-size: inherit;
-}
-
-/* A gloss that is also a link takes the link colour and keeps the secondary size
-   and tracking. Faintness says "this qualifies the row"; the link colour says
-   "this can be followed", and only one of those two is discoverable by looking. */
-.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
-	font-size: calc(var(--font-ui-smaller) * 0.85);
-	letter-spacing: 0.06em;
-	color: var(--text-faint);
 }
 
 /* The delete column is as wide as its glyph, like every other column holding
@@ -1742,8 +1870,11 @@
    invent one — two consumers earn duplication, not a module (PATTERNS §1), and
    UI.md §9 gains a row when a third appears.
 
-   It is always rendered, and faint: UI.md §7 rules out a hover-only
-   affordance, and a phone has no hover to reveal one with. */
+   It is always rendered, and muted at rest: UI.md §7 rules out a hover-only
+   affordance, and a phone has no hover to reveal one with, so the resting
+   colour is the only one a touch reader ever gets. Faint measured 2.20:1 light
+   and 2.74:1 dark on a table; muted is 6.41:1 and 7.50:1. What guards the press
+   is arming, not faintness (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-table-remove-button {
 	display: inline-flex;
 	align-items: center;
@@ -1761,7 +1892,7 @@
 	box-shadow: none;
 	font-size: var(--font-ui-small);
 	line-height: 1;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	/* Anchors the hit target below. */
 	position: relative;
@@ -1774,7 +1905,7 @@
 
 /* The icon takes the app's small icon size rather than the 24px a Lucide SVG
    carries by default, which would overflow a control sized to a level ring. It
-   paints in `currentColor`, so the faint, full-contrast and armed states all
+   paints in `currentColor`, so the resting, full-contrast and armed states all
    reach it without a rule of their own. */
 .sheetsmith-view .sheetsmith-table-remove-button .svg-icon {
 	width: var(--icon-s);
@@ -1782,7 +1913,7 @@
 }
 
 /* Full contrast for the row being looked at, and for the control a keyboard is
-   on. Faint is for reading past, which is every other row.
+   on. Every other row keeps the resting muted.
 
    **Both state rules stand down for an armed control**, and that is the whole
    cascade problem in this block rather than a nicety. An armed control is one
@@ -1858,59 +1989,75 @@
 	background-color: inherit;
 }
 
-/* The add control is a row, in the row position: it reads as "the next row"
-   rather than as chrome parked beside the table, and it picks up the row hover
-   the rows already have. The cell gives its padding to the button, so the whole
-   width of the row is the target. */
-.sheetsmith-view .sheetsmith-table-add td {
-	padding: 0;
-}
+/* ---------------------------------------------------------------------------
+   The add control: the foot of the card, for Table and for Record set.
 
-.sheetsmith-view .sheetsmith-table-add-button {
+   **One recipe, one rule**, which is what `docs/UI.md` §9 listing the two as one
+   row asks for and what `styles.test.ts`'s duplicate-body scan refuses to see
+   written twice. A rule across the top, the label centred in the line it
+   occupies, the hover surface every control on the sheet uses, and an inset
+   focus ring. It is the last child of the card's box, below the rows and below
+   any totals row, with `margin-top: auto`: in a cell taller than its rows the
+   control sits at the card's foot with the space above it.
+
+   **It is outside whatever scrolls.** A table's scroller wraps the table alone
+   and a record set's list scrolls inside its own wrapper, so the control never
+   scrolls and its label is always in view with no `position: sticky`. The rule
+   at its top is the one line between the rows and the control, so the last body
+   row drops its own (below).
+
+   The label is a span for the reason the hover and the focus below need one: to
+   reach the text without reaching the rule. `min-height` is the level ring's own
+   size token, so the control grows to a finger under a coarse pointer with the
+   marks beside it, and is at least the pointer minimum without one.
+   --------------------------------------------------------------------------- */
+.sheetsmith-view .sheetsmith-table-add-button,
+.sheetsmith-view .sheetsmith-record-add {
+	flex: none;
 	width: 100%;
-	padding: var(--size-2-2) var(--size-4-2);
+	min-height: var(--sheetsmith-inline-control, 1.6em);
+	margin-top: auto;
+	padding: var(--size-2-2);
 	border: none;
+	border-top: 1px solid var(--background-modifier-border);
 	border-radius: 0;
 	background-color: transparent;
 	box-shadow: none;
-	/* Left, under the name column, because that is where the row it adds
-	   begins. */
-	text-align: left;
+	text-align: center;
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 	cursor: pointer;
-	transition: color 160ms ease;
+	transition:
+		background-color 160ms ease,
+		color 160ms ease;
 }
 
-/* Pinned while the table scrolls, for the reason the name column is: the button
-   is as wide as the table, so its label would scroll away and leave a band of
-   nothing where the next row is added.
-
-   **`left` rather than a left *alignment*.** The button's own `text-align: left`
-   above never reached this span the way its comment assumed — the cell centres
-   its inline content — so what ships, and what `docs/UI.md` §9 now names as the
-   treatment both add controls wear, is a centred label under a rule. */
-.sheetsmith-view .sheetsmith-table-add-label {
+.sheetsmith-table-add-label,
+.sheetsmith-record-add-label {
 	display: inline-block;
-	position: sticky;
-	left: var(--size-4-2);
 }
 
-.sheetsmith-view .sheetsmith-table-add-button:hover {
+.sheetsmith-view .sheetsmith-table-add-button:hover,
+.sheetsmith-view .sheetsmith-record-add:hover {
+	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
-/* Inset, because the button fills its cell and an outline outside it would be
-   clipped by the container's own radius. */
-.sheetsmith-view .sheetsmith-table-add-button:focus-visible {
+/* Inset, because the button fills the box's width and an outline outside it
+   would be clipped by the box's own overflow and radius. An outline rather than
+   a shadow, so forced colors repaints it as the ring that is the one signal
+   there, where the hover's background and the label's colour are dropped. */
+.sheetsmith-view .sheetsmith-table-add-button:focus-visible,
+.sheetsmith-view .sheetsmith-record-add:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: -2px;
 }
 
 /* The last body row drops its rule because it would be a second line against
-   the container border — which stops being true the moment a totals row sits
-   under it. There the foot is the row at the container's edge, and the last row
-   keeps the line that separates it from the total.
+   the add control's own rule, or the container border on a closed table — which
+   stops being true the moment a totals row sits under it. There the foot is the
+   row beside the control, and the last row keeps the line that separates it from
+   the total; the control's rule then separates the foot from the control.
 
    `.sheetsmith-table-has-totals`, stamped by `table.ts` from the same
    `column.total` test that decides whether to draw a `tfoot` at all. It was
@@ -2065,9 +2212,11 @@ body {
 
    It was `--text-faint`, copied from the delete glyph one column across on a
    consistency argument, and the argument copied the wrong half. **The delete
-   rule's own words are "faint is for reading past, which is every other row"** —
-   true of a destructive control you never want pressed by accident, and exactly
-   backwards for the entry point of a column. Measured off the PNGs, faint is
+   rule's own words were "faint is for reading past, which is every other row"** —
+   arguable for a destructive control you never want pressed by accident, and
+   exactly backwards for the entry point of a column. The delete glyph has since
+   been lifted to muted too (`docs/features/text-faint-audit.md`), on the ground
+   that arming, not faintness, guards its press. Measured off the PNGs, faint is
    **2.20:1 light and 2.74:1 dark**: under `legibility.md` §3's 4.5:1 for a
    meaningful glyph and under even the 3:1 a state mark owes.
 
@@ -2082,11 +2231,14 @@ body {
    nothing to discover the column from. `harness/index.html` photographs that
    state.
 
-   **The cost, taken deliberately:** an empty modifier cell now reads louder than
-   the delete control beside it. That is right rather than regrettable. Prominence
-   should track how much a control wants pressing, adding a modifier is the thing
-   a reader came to do, and deleting a row is not — so the two diverging is the
-   two jobs differing, not an inconsistency. */
+   **The ranking this once bought is gone, and that was taken deliberately.** An
+   empty modifier cell used to read louder than the delete control beside it, on
+   the argument that prominence should track how much a control wants pressing.
+   The text-faint audit ruled the other way for the delete: on a phone the resting
+   colour is the only one a reader ever gets, and at 2.20:1 a destructive control
+   is one nobody can find to check before pressing. So the two columns now share
+   muted, and what separates the jobs is that the delete arms before it fires
+   (`docs/features/text-faint-audit.md`). */
 
 .sheetsmith-view .sheetsmith-table-value {
 	font-weight: var(--font-semibold);
@@ -2098,12 +2250,6 @@ body {
 	   read as the number giving way rather than a warning arriving. A colour
 	   fade, not motion, so reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
-}
-
-/* Status, not data: the same treatment "?" gets on a card. */
-.sheetsmith-view .sheetsmith-table-unresolved {
-	font-weight: var(--font-normal);
-	color: var(--text-faint);
 }
 
 .sheetsmith-view .sheetsmith-table-empty {
@@ -2133,25 +2279,17 @@ body {
    asked for more contrast. */
 @media (prefers-contrast: more) {
 .sheetsmith-table-wrapper,
+.sheetsmith-table-box,
+.sheetsmith-view .sheetsmith-table-add-button,
+.sheetsmith-view .sheetsmith-record-add,
 .sheetsmith-view .sheetsmith-table th,
 .sheetsmith-view .sheetsmith-table td {
 		border-color: var(--text-muted);
 	}
 
-.sheetsmith-view .sheetsmith-table-unresolved,
-.sheetsmith-view .sheetsmith-table-input-secondary {
-		color: var(--text-muted);
-	}
-
 /* An empty ring against a faint outline is the whole signal here. */
 .sheetsmith-view .sheetsmith-level-ring {
 		border-color: var(--text-muted);
-	}
-
-/* Faint is a contrast the reader has said they do not want, and this one is
-	   a control rather than something to read past. */
-.sheetsmith-view .sheetsmith-table-remove-button {
-		color: var(--text-muted);
 	}
 
 /* The ramp trades contrast for a shape that can be read down the column,
@@ -2324,7 +2462,6 @@ body {
 	   it is not — every non-Chromium engine, Obsidian mobile included —
 	   `width: auto` on an input falls back to its intrinsic ~20-character
 	   size, which is a blown-out card rather than a graceful degradation. */
-	width: 4ch;
 	min-width: 4ch;
 	padding: 0;
 	border: none;
@@ -2348,8 +2485,14 @@ body {
 	transition: color 260ms ease-out;
 }
 
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
+	width: 4ch;
+}
+
 @supports (field-sizing: content) {
-.sheetsmith-view .sheetsmith-pool-current {
+.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 		width: auto;
 		field-sizing: content;
 	}
@@ -2361,6 +2504,28 @@ body {
 	color: var(--text-muted);
 	font-size: var(--font-ui-medium);
 	font-variant-numeric: tabular-nums;
+}
+
+/* A calculated ceiling a modifier has been pushed at
+   (`docs/features/pool-ceiling-modifier-door.md`). **Not `.sheetsmith-modified`**:
+   that class's `cursor: help` promises a press on the number, and this numeral
+   has none — the corner door is the route in — and its plain underline reads as
+   a link, a trade `docs/UI.md` §9 accepts for numbers that have a press, and
+   reopens if the directory review only warns about the dotted longhands.
+
+   **A border, which was reverted on Card and is right here, and the box is the
+   difference.** On Card it drew on a right-aligned number's whole cell; this span
+   is a flex item of `.sheetsmith-pool-ceiling`, which is `nowrap`, so its box is
+   its digits and the rule spans the numeral alone. It is also the spelling the
+   Card row wanted and the CSS lint refused as `text-decoration-*`: dotted, muted,
+   2px. Dotted rather than dashed, because dashed is a Track's "granted", one
+   direction only, and this mark says moved either way; dotted under text is
+   `abbr`'s "there is an explanation". `--text-muted`, the numeral's own colour,
+   so it reads as part of the numeral and clears 3:1 on a card, where faint does
+   not. A border's style and width survive `forced-colors: active`, so the mark
+   needs no forced-colors block. */
+.sheetsmith-pool-max-modified {
+	border-bottom: 2px dotted var(--text-muted);
 }
 
 /* A max the character owns, typed where it is read.
@@ -2381,7 +2546,6 @@ body {
 	   the digits themselves both read as clamped onto the number rather than
 	   drawn around a field — and it is inside the width because the box sizes
 	   border-box, so three characters stay three characters. */
-	width: calc(3ch + 2 * var(--size-2-2));
 	min-width: calc(3ch + 2 * var(--size-2-2));
 	height: auto;
 	padding: 0 var(--size-2-2);
@@ -2393,8 +2557,14 @@ body {
 	text-align: left;
 }
 
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
+	width: calc(3ch + 2 * var(--size-2-2));
+}
+
 @supports (field-sizing: content) {
-.sheetsmith-view .sheetsmith-pool-max-input {
+.sheetsmith-view .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
 		width: auto;
 		min-width: 1ch;
 		field-sizing: content;
@@ -2426,9 +2596,25 @@ body {
 	outline-offset: 0;
 }
 
-/* "?" is a status rather than a number, and must not read as one. */
+/* An unresolved formula's "?", on a card, in a computed cell or a total, and in
+   Pool's ceiling: a status rather than a value, and not the same glyph as an
+   empty input. The weight drops a rank under the value it stands in for.
+
+   **Muted rather than faint, though the glyph is already a second channel.** The
+   `?` replaces the digits and each carries a `title` with the reason, so by
+   `docs/UI.md` §6 it could have stayed faint — but a channel is only a channel
+   while the mark is visible, and faint measured 2.12:1 light and 2.57:1 dark on a
+   card, under even the 3:1 a 28px card `?` needs. Muted clears both bars on
+   every surface these sit on (`docs/features/text-faint-audit.md`).
+
+   **Here, after the last of the rules it overrides**, not at Card's: a cell's
+   `?` is also `.sheetsmith-view .sheetsmith-table-value`, which sets the
+   semibold at equal weight above, so a fold placed earlier would lose the
+   weight. */
+.sheetsmith-card-derived-unresolved,
+.sheetsmith-view .sheetsmith-table-unresolved,
 .sheetsmith-pool-max-unresolved {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-weight: var(--font-normal);
 }
 
@@ -2532,14 +2718,16 @@ body {
 
 /* A buffer at nothing sits on the card all session saying "0". Draining its
    colour there means the pill's presence carries information: you have a
-   buffer right now. The field stays fully legible once it holds anything. */
-.sheetsmith-pool-temp-empty {
-	color: var(--text-faint);
-}
+   buffer right now. The field takes the full colour once it holds anything.
 
-.sheetsmith-pool-temp-empty .sheetsmith-pool-temp-label,
+   Drained to muted rather than faint: the `0` is a value read back, not a
+   placeholder, and faint measured 2.30:1 light and 2.97:1 dark on the pill. It
+   is the drain a spent value takes, so a Pool says "at nothing" one way. The
+   label is muted at rest, so it needs no entry here
+   (`docs/features/text-faint-audit.md`). */
+.sheetsmith-pool-temp-empty,
 .sheetsmith-view .sheetsmith-pool-temp-empty .sheetsmith-pool-temp-input {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Lit for a moment as the buffer absorbs a spend. The pool's own number does
@@ -2571,7 +2759,7 @@ body {
 }
 
 .sheetsmith-pool-temp-label {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -2580,7 +2768,6 @@ body {
 /* The pill's only control, now that the steppers are gone, so it takes the
    room they were using: a comfortable target rather than three cramped ones. */
 .sheetsmith-view .sheetsmith-pool-temp-input {
-	width: 3ch;
 	min-width: 0;
 	padding: var(--size-2-1) var(--size-2-2);
 	margin: calc(-1 * var(--size-2-1)) calc(-1 * var(--size-2-2));
@@ -2591,6 +2778,12 @@ body {
 	font-size: var(--font-ui-small);
 	font-variant-numeric: tabular-nums;
 	text-align: center;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
+	width: 3ch;
 }
 
 /* The pill wears the ring, so the field inside it wears nothing.
@@ -2820,7 +3013,6 @@ body {
 	   afterthought, and three characters is not room for an amount plus the
 	   caret after it. The type matches the glyph beside it too — a field being
 	   typed into should not be the quietest thing in its own control. */
-	width: 5ch;
 	min-width: 0;
 	height: var(--sheetsmith-pool-control, var(--size-4-8));
 	padding: 0 var(--size-2-2);
@@ -2831,6 +3023,12 @@ body {
 	font-size: var(--font-ui-medium);
 	font-variant-numeric: tabular-nums;
 	text-align: center;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-adjust-amount.sheetsmith-pool-adjust-amount {
+	width: 5ch;
 }
 
 .sheetsmith-view .sheetsmith-pool-adjust-amount:focus {
@@ -2947,9 +3145,14 @@ body {
    never meant to exceed it. Draining the colour and lending the accent say
    "different" without the component asserting "bad" and "good" about a game
    it does not know — the same restraint it already shows by not clamping.
-   Colour is never the only carrier: the live region says the state too. */
+   Colour is never the only carrier: the live region says the state too.
+
+   Drained to muted and not faint: the headline is still the value a reader
+   reads back, and faint measured 2.12:1 light and 2.57:1 dark on a card, under
+   even the 3:1 a 28px bold number needs. Muted against the value's normal is
+   still a drain (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-pool-spent {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 .sheetsmith-view .sheetsmith-pool-over {
@@ -3007,11 +3210,6 @@ body {
 .sheetsmith-pool-adjust-direction,
 .sheetsmith-pool-preview {
 		color: var(--text-normal);
-	}
-
-.sheetsmith-pool-temp-label,
-.sheetsmith-pool-max-unresolved {
-		color: var(--text-muted);
 	}
 
 }
@@ -3118,7 +3316,15 @@ body {
 }
 
 /* A declared trigger nothing binds to yet. Shown rather than hidden, so a
-   half-built layout does not read as a broken one. */
+   half-built layout does not read as a broken one.
+
+   **Faint on purpose, and one of the two places a sheet keeps it.** An inactive
+   control is exempt from WCAG 1.4.3's contrast, and this one carries its state
+   in three channels besides the colour: `disabled`, which is announced; an
+   `aria-label` and `title` saying nothing on this sheet resets on it; and no
+   hover answer. Faint is the app's own disabled reading. It measures 2.30:1
+   light and 2.97:1 dark on the button's own `--background-primary`
+   (`docs/features/text-faint-audit.md`, `styles.test.ts` holds the rule). */
 .sheetsmith-trigger:disabled {
 	color: var(--text-faint);
 	cursor: default;
@@ -3335,7 +3541,6 @@ a.sheetsmith-notice-action {
    twenty characters wide and would set the name column's width against a
    column whose whole job is to be as narrow as the longest name in it. */
 .sheetsmith-view .sheetsmith-track-row-name-input {
-	width: 8ch;
 	/* **The field has to yield with its track, not just the track.** Letting
 	   the name column shrink (`minmax(0, auto)` above) does nothing on its own:
 	   a grid item with a `min-width` of its own simply overflows the area it
@@ -3383,8 +3588,14 @@ a.sheetsmith-notice-action {
 	text-align: start;
 }
 
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-track-row-name-input.sheetsmith-track-row-name-input {
+	width: 8ch;
+}
+
 @supports (field-sizing: content) {
-	.sheetsmith-view .sheetsmith-track-row-name-input {
+	.sheetsmith-view .sheetsmith-track-row-name-input.sheetsmith-track-row-name-input {
 		width: auto;
 		min-width: 4ch;
 		/* A cap rather than no cap: the name column is shared with the
@@ -3504,9 +3715,21 @@ a.sheetsmith-notice-action {
    the *treatment* and not only the measurement (`docs/UI.md` §9): three glyph
    buttons on one card must not measure differently under one finger. What it
    does not share is the class name — this one opens no picker and performs no
-   action, so it is named for what it is about. */
+   action, so it is named for what it is about.
+
+   **Muted for all four, and for two reasons that arrive at one value.** The
+   pickers are entry points — **Add** is the only route to a row — and faint for
+   an entry point is exactly backwards. The bolt and the note mark read as a
+   state rather than an affordance: something *is* changing this value, and a
+   reader who never presses one should still see that it is there. At this size
+   a faint glyph reads as a smudge rather than a mark, 2.12:1 light and 2.57:1
+   dark on a card, which is the modifier cell's measured reason (`docs/UI.md` §9,
+   `docs/features/text-faint-audit.md`). The pickers were faint once and the
+   other three overridden a rank above them. */
 .sheetsmith-view .sheetsmith-track-action-button,
-.sheetsmith-view .sheetsmith-track-modifier-button {
+.sheetsmith-view .sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-pool-modifier-button,
+.sheetsmith-view .sheetsmith-note-mark {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -3518,7 +3741,7 @@ a.sheetsmith-notice-action {
 	border-radius: 50%;
 	background-color: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	transition:
 		background-color 160ms ease,
@@ -3526,31 +3749,27 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-track-action-button .svg-icon,
-.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon {
+.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-note-mark .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
 
 .sheetsmith-view .sheetsmith-track-action-button:hover,
-.sheetsmith-view .sheetsmith-track-modifier-button:hover {
+.sheetsmith-view .sheetsmith-track-modifier-button:hover,
+.sheetsmith-view .sheetsmith-pool-modifier-button:hover,
+.sheetsmith-view .sheetsmith-note-mark:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
 .sheetsmith-view .sheetsmith-track-action-button:focus-visible,
-.sheetsmith-view .sheetsmith-track-modifier-button:focus-visible {
+.sheetsmith-view .sheetsmith-track-modifier-button:focus-visible,
+.sheetsmith-view .sheetsmith-pool-modifier-button:focus-visible,
+.sheetsmith-view .sheetsmith-note-mark:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
-}
-
-/* The bolt reads as a state rather than as an affordance, so it sits a rank
-   above the two pickers' faint glyphs: something *is* changing this run, and a
-   reader who never presses it should still see that it is there. --text-muted
-   is the same value a modifier cell's own glyph was raised to, and for the
-   measured reason recorded there — at this size a faint bolt reads as a smudge
-   rather than as a mark (`docs/UI.md` §9). */
-.sheetsmith-view .sheetsmith-track-modifier-button {
-	color: var(--text-muted);
 }
 
 /* A rank of ink down from the pickers', and only the ink: the box above stays
@@ -3569,9 +3788,208 @@ a.sheetsmith-notice-action {
 
    At a circled glyph's size the mark was reading heavier than the name beside
    it, which is a smaller type rank than a picker's neighbours are. */
-.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon {
+.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-note-mark .svg-icon {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
+}
+
+/* The note mark (`components/note-mark.ts`), on the Track door's treatment by
+   the selector lists above: the same box, ink, hover and focus ring, so no two
+   glyph buttons on one card measure differently under one finger. What is its
+   own is where it sits.
+
+   On a card it is out of flow at the label line's inline end, so it cannot move
+   the number off the card's centre line, and the label gives up the glyph's
+   width on *both* sides so it stays centred and clips before reaching it. The
+   corner sits half the padding in, which puts the glyph's box across the
+   label's line.
+
+   In a table cell it follows the value inline, a small gap after the number or
+   the control; `vertical-align: middle` because a cell's content sits on a text
+   baseline a glyph box has none of. */
+.sheetsmith-card-has-note,
+.sheetsmith-pool-has-door {
+	position: relative;
+}
+
+.sheetsmith-card-has-note > .sheetsmith-card-label,
+.sheetsmith-pool-has-door > .sheetsmith-pool-label {
+	/* The glyph's box plus the step it was inset by, less the card's padding the
+	   label already stands clear of: `1.6em` of the label's smaller font fell
+	   0.4px short of the box once the mark moved in a step. */
+	padding-inline: calc(var(--sheetsmith-inline-control, 1.6em) + var(--size-2-1));
+}
+
+.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-pool-has-door > .sheetsmith-pool-modifier-button {
+	position: absolute;
+	/* One step in from the half-padding corner, so the focus ring's 2px offset
+	   clears the card's own border rather than drawing over it. */
+	top: var(--size-2-3);
+	inset-inline-end: var(--size-2-3);
+}
+
+/* **On a narrow card the label keeps its words and gives up its centre.** The
+   reserve is symmetric so the label stays centred over the number, and that
+   costs the glyph's width twice; at 520 a card is 116px and the label read
+   "ARMOUR…" and "PASSIVE…". Below the breakpoint the start-side reserve goes
+   and the label wraps rather than truncating, keeping the end-side reserve so
+   no line runs under the corner mark. It may then sit off centre, which is the
+   trade (`docs/features/modifier-notes.md`). **200px, from measurement**: the
+   longest sample label, "Passive perception", is 143px at the card's own
+   tracking, and with both 19.2px reserves needs 181.4px — which a 200px card's
+   184px of content holds and anything narrower does not. */
+@container (max-width: 200px) {
+	.sheetsmith-card-has-note > .sheetsmith-card-label,
+	.sheetsmith-pool-has-door > .sheetsmith-pool-label {
+		padding-inline-start: 0;
+		white-space: normal;
+		text-overflow: clip;
+	}
+}
+
+.sheetsmith-view td > .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-roster-band-inner > .sheetsmith-note-mark {
+	flex: 0 0 auto;
+	align-self: center;
+	vertical-align: middle;
+	margin-inline-start: var(--size-2-1);
+}
+
+/* **Past a level ring, the gap is the ring's reach.**
+   `.sheetsmith-level-ring::after` reaches `--size-4-2` beyond the ring on each
+   side, in both pointer modes, so at the default gap a press on the mark's
+   first few pixels landed on the ring and changed the stored level. The mark
+   cannot grow over the ring, so the gap has to (`legibility.md` §5) — and only
+   that far: the mark's own target is its box, so there is no second reach to
+   clear, and the margin a reach-plus-4px gap added overflowed a Saves card at
+   the threshold width. */
+.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark {
+	margin-inline-start: var(--size-4-2);
+}
+
+/* **And the width the mark costs comes out of the name column.** A ring, its
+   reach and the mark make a stored cell's column wider, and at the threshold
+   width that took a Saves card 1px past its box. The name column is the one
+   holding the table's slack, and its inline-end padding is the one 8px a reader
+   never sees as alignment — the left edge stays where every name starts — so a
+   table holding a mark gives half of it back. Only such a table, so every
+   other table on a sheet keeps its padding (`docs/features/modifier-notes.md`). */
+.sheetsmith-view .sheetsmith-table:has(.sheetsmith-note-mark) .sheetsmith-table-name {
+	padding-inline-end: var(--size-2-2);
+}
+
+/* A noted cell and every reserving cell keep their value and the mark, or its
+   slot, on one line: a slot wrapped under its value at a narrow width gave the
+   cell a different shape from the noted one and undid the line-up. */
+.sheetsmith-table-has-note,
+.sheetsmith-note-column {
+	white-space: nowrap;
+}
+
+/* **A noted column reserves the mark's slot in every cell, not only the noted
+   ones** (`docs/features/modifier-notes.md`). Cells are centred, so a mark
+   beside one number pushed that number off its column by half the mark's
+   width — a noted Constitution ring sat 15px left of Dexterity's. The render
+   marks the column (`reserveNoteSlots`), and a cell in it with no mark draws an
+   empty box the mark's size and gap after its value, so every cell's content
+   is the same shape and the values line up. Built from the mark's own
+   measurements: its box, its font size (which its `em` is of) and the gap it
+   takes after a number or after a ring. Body and foot cells only: a column's
+   heading is centred over the cell and reserving there would widen a narrow
+   ring column to its word's width plus a mark. Only a column holding a mark is
+   touched, so a table with no notes is exactly as it was. */
+.sheetsmith-view .sheetsmith-note-mark {
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-view td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after,
+.sheetsmith-view
+	.sheetsmith-note-bands
+	.sheetsmith-roster-band-inner:not(.sheetsmith-roster-band-has-note)::after {
+	content: '';
+	display: inline-block;
+	flex: 0 0 auto;
+	width: var(--sheetsmith-inline-control, 1.6em);
+	font-size: var(--font-ui-small);
+	margin-inline-start: var(--size-2-1);
+}
+
+.sheetsmith-view td.sheetsmith-note-column.sheetsmith-table-level:not(.sheetsmith-table-has-note)::after {
+	margin-inline-start: var(--size-4-2);
+}
+
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-level-ring,
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-input,
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-select {
+	display: inline-flex;
+	vertical-align: middle;
+}
+
+/* **After a number, the mark is centred on the digits, not on a line box.**
+   The mark used to be centred on the number's *box*, both `vertical-align:
+   middle`, and a number's line box carries the font's descent below its
+   baseline, so the box's centre sits under the digits' own centre — 2.5px at a
+   cell's 16px. That is what read as too low for a centre and too high for an
+   exponent.
+
+   So the number keeps its own baseline, untouched, and the mark is placed
+   against the cell's text metrics. `vertical-align: middle` puts its centre at
+   the baseline plus half the x-height; the digits' centre is the baseline plus
+   half the *cap* height, so the mark is then raised by half the difference.
+   Both heights are the cell's own, `1ex` and `1cap` resolved on the cell and
+   carried to the mark as lengths: the mark's own font is the button's smaller
+   one, whose metrics would be the wrong digits'. Registered so they inherit as
+   resolved lengths rather than being re-read at the mark. `top` moves the box
+   and not the layout, so the line, the hit target and the gap are unchanged. */
+@property --sheetsmith-note-cap {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
+}
+
+@property --sheetsmith-note-ex {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
+}
+
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-value,
+.sheetsmith-view .sheetsmith-note-column > .sheetsmith-table-value {
+	display: inline-block;
+	vertical-align: baseline;
+}
+
+/* **The mark takes no height from its line**, so a noted value sits where an
+   unnoted one does. A 1.6em box centred near the x-height reaches below the
+   number's descent, so it grew the cell's line box downward, and the cell —
+   centring that taller line — lifted the number 1.8px off its row. Negative
+   block margins of half its height give it a margin box of no height at the
+   point it is centred on: the box, its hit target and its glyph are where they
+   were, and the line is the number's alone. */
+.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+	margin-block: calc(-0.5 * var(--sheetsmith-inline-control, 1.6em));
+}
+
+/* Guarded, because where `@property` is supported and `cap` is not (iOS WebKit
+   16.4–17.1) `1cap` falls back to the registered `0px` and the raise would push
+   the mark half an x-height *down*; unguarded, the mark stays at plain `middle`.
+   The number's baseline above does not depend on the raise, so it stays out.
+   Without `cap` the mark's centre sits about 1.4px below the digits' — an
+   estimate from the cell's metrics and not a measurement, because the harness
+   renders in a Chrome that has `cap` and cannot render a WebKit that lacks it. */
+@supports (top: 1cap) {
+	.sheetsmith-view .sheetsmith-table-has-note {
+		--sheetsmith-note-cap: 1cap;
+		--sheetsmith-note-ex: 1ex;
+	}
+
+	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+		position: relative;
+		top: calc((var(--sheetsmith-note-ex) - var(--sheetsmith-note-cap)) / 2);
+	}
 }
 
 /* The **Remove** picker's own armed line, inside the anchored panel this
@@ -3784,15 +4202,14 @@ a.sheetsmith-notice-action {
    same value, so the granted ring and the base border agree there and the dash
    stays the whole of the difference.
 
-   **The border under it is `transparent` and `dashed`, which is the plugin's own
-   forced-colors idiom rather than a second mark.** `docs/UI.md` §6: a ring drawn
-   in a way the mode discards carries a companion that is invisible in an
-   ordinary theme and repainted where the mode bites. Here it is the other way
-   round from a focus ring and for the same reason — forced colors strips every
-   fill, so there is nothing for the overlay to sit on and nothing to bite out of
-   the border, and the border alone draws a clean dashed square. So the overlay
-   stands down in that mode and the border takes over. The two mechanisms differ
-   exactly where the *fill* does, which is what they are both about.
+   **The overlay is the mark in forced colors too, and that mode has a branch of
+   its own at the foot of this section.** The segment has no border of its own
+   (the rule below says why), so there is nothing for the mode to repaint into a
+   second ring. What the mode does change is the fill: the Track's
+   `forced-colors` block paints a lit segment `SelectedItem`, and this ring takes
+   `SelectedItemText` over it, since the mode's `CanvasText` on that fill
+   measures 1.49:1 and would disappear. Unlit, the ring stays `CanvasText` on
+   `Canvas`.
 
    The second is a wider gap at the join — the run's own gap again, so the pair
    reads as "further apart than the others" rather than as a measurement of its
@@ -4091,7 +4508,7 @@ a.sheetsmith-notice-action {
 }
 
 /* The current step's name, in the clothes a secondary table column wears: a
-   size down, tracked, and faint. It is what makes a threshold track legible —
+   size down, tracked, and muted. It is what makes a threshold track legible —
    exhaustion and corruption are ladders where the number is an index into a
    rule, and a row of anonymous segments leaves the player counting segments and then
    looking the count up somewhere else. An unnamed run has no such line and
@@ -4099,7 +4516,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-track-step {
 	max-width: 100%;
 	overflow: hidden;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
 	text-overflow: ellipsis;
@@ -4108,10 +4525,12 @@ a.sheetsmith-notice-action {
 
 /* A count that is present and did not resolve. "?" is reserved for exactly
    that (SPEC §5); an empty run is a state the control shows, not a missing
-   value, so it is never drawn as "—". */
+   value, so it is never drawn as "—". Muted on the card's own "?"'s argument
+   (above, at `.sheetsmith-card-derived-unresolved`); its own rule because it is
+   semibold and sized for the run on purpose. */
 .sheetsmith-track-unresolved {
 	margin: auto 0;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: var(--font-ui-medium);
 	font-weight: var(--font-semibold);
 }
@@ -4181,9 +4600,81 @@ a.sheetsmith-notice-action {
 		border-color: var(--interactive-accent);
 	}
 
-.sheetsmith-track-step,
-.sheetsmith-track-unresolved {
-		color: var(--text-muted);
+}
+
+/* Forced colors: the value, and every mark drawn over it.
+
+   **Without this block a run says nothing about its value in this mode.** The
+   fill is an accent `background-color`, which the mode repaints `Canvas`, and a
+   lit segment's accent border becomes `CanvasText` like an unlit one's — so a
+   run at 5 of 6 and one at 2 of 6 drew the same picture, 62 of 2760 pixels
+   apart and all of them antialiasing.
+
+   **The fill takes `SelectedItem`**, the ghost with it through the base rule's
+   own pair. That is how `editor.css` paints a ticked checkbox and how the app
+   paints its own enabled toggle, so a form and a sheet say "on" one way. The
+   ghost keeps its opacity, which the mode leaves alone. The harm ramp's
+   `color-mix` does not survive, so a harm run fills flat: the
+   `prefers-contrast` block's own rule, for the same reason.
+
+   **Everything drawn over a lit segment then takes `SelectedItemText`**, because
+   the mode's `CanvasText` on `SelectedItem` measures **1.49:1** in Chrome's
+   palette (`docs/features/forced-colors-track-and-table.md`) and vanishes:
+   the granted ring, the blocked and over slash, a glyph and the `+N` count.
+
+   **Two keys, because a multi-mark segment can be partly lit.** `-on` is set
+   once the fill is above zero and `-full` once it reaches the whole segment.
+   The ring and the glyph key on `-full`: over a half-lit segment a
+   `SelectedItemText` ring or glyph lands on `Canvas` across the unlit half and
+   vanishes there, taking the box and its granted status with it, so a partly lit
+   one keeps the mode's own `CanvasText` (faint over the lit half, whole over the
+   unlit) and the glyph keeps its backplate. The slash keys on `-on`, because it
+   is two-toned and reads on both halves.
+
+   **The slash on a lit segment is two-toned**, a `SelectedItemText` top border
+   over a `CanvasText` bottom one. A multi-mark segment can be partly lit, and
+   one stroke in the fill's text colour drew only across the lit half and
+   vanished over `Canvas`. Two tones put one half on each surface along the
+   whole diagonal, which is `docs/UI.md` §6's companion idiom applied to a
+   stroke, and it exists in this mode only.
+
+   **A wholly lit glyph and the lit count take `forced-color-adjust: none`**, and the
+   reason is the backplate: in this mode Chrome paints a `Canvas` plate behind
+   text, so `SelectedItemText` alone drew black on black. With the adjustment off
+   every colour on them is a system keyword, which `docs/UI.md` §6 makes the
+   condition of using it. Both hold text and nothing else, so the inherited
+   adjustment reaches no element this block does not name. */
+@media (forced-colors: active) {
+.sheetsmith-track-segment-fill,
+.sheetsmith-track-segment-ghost,
+.sheetsmith-track-harm .sheetsmith-track-segment-fill,
+.sheetsmith-track-harm .sheetsmith-track-segment-ghost {
+		background-color: SelectedItem;
+	}
+
+.sheetsmith-track-segment-full.sheetsmith-track-segment-granted::after {
+		border-color: SelectedItemText;
+	}
+
+.sheetsmith-track-segment-on.sheetsmith-track-segment-blocked::after,
+.sheetsmith-track-segment-on.sheetsmith-track-segment-over::after {
+		border-top-color: SelectedItemText;
+		border-bottom: 1.5px solid CanvasText;
+	}
+
+.sheetsmith-track-segment-full .sheetsmith-track-segment-glyph {
+		forced-color-adjust: none;
+		color: SelectedItemText;
+	}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on {
+		forced-color-adjust: none;
+		background-color: SelectedItem;
+		color: SelectedItemText;
+	}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on::after {
+		border-color: SelectedItem;
 	}
 
 }
@@ -4357,10 +4848,34 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible — it is what says an
-   empty box is one click from being typed in. */
-.sheetsmith-view .sheetsmith-rich-text-input::placeholder {
+/* **Every placeholder on a sheet, in one rule, and faint on purpose.** This is
+   one of the two places a sheet keeps `--text-faint` for text, and
+   `styles.test.ts` holds the colour to them (`docs/UI.md` §6,
+   `docs/features/text-faint-audit.md`).
+
+   The reason is the app's: Obsidian's own `--input-placeholder-color` is
+   `--text-faint`, so a sheet's placeholder matches every placeholder in the app,
+   a Card's empty em dash included, which has no rule here and takes the app's. A
+   placeholder is a hint standing in for a value, never the value read back, and
+   it goes the moment one is typed. It measures 2.20:1 light and 2.74:1 dark in a
+   box and 2.12:1 and 2.57:1 on a card. **A Passport's name placeholder stays
+   under even the 3:1 its 28px bold would need**, and that is said here rather
+   than hidden; `prefers-contrast: more` raises it and the field words, below.
+
+   `opacity: 1` because a browser dims a placeholder by default, which would put
+   it under faint. And on the transparent fields — Rich text's, Image's, a
+   record's body — the placeholder is the one part of an unfocused field that
+   shows through: it is what says an empty box is one click from being typed in,
+   and a hint the reader can act on is worth showing. What else each one says is
+   at its own component, below. */
+.sheetsmith-view .sheetsmith-rich-text-input::placeholder,
+.sheetsmith-view .sheetsmith-image-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-name-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-input::placeholder,
+.sheetsmith-view
+	.sheetsmith-record-body-fields
+	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder,
+.sheetsmith-view .sheetsmith-record-body-input::placeholder {
 	color: var(--text-faint);
 	opacity: 1;
 }
@@ -4599,13 +5114,9 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible — it is what says an
-   empty frame is one click from holding a picture. */
-.sheetsmith-view .sheetsmith-image-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* The placeholder shows through the field, which is what says an empty frame
+   is one click from holding a picture; its colour is the shared placeholder rule
+   at Rich text's. */
 
 /* Focused, it is a band across the box with its own background, so the reference
    is legible over whatever is behind it — and it takes the press back, since the
@@ -4772,11 +5283,8 @@ a.sheetsmith-notice-action {
    which is UI §9's model for this: a Card's empty value is an em dash at the
    card's own size, faint. A design review measured the alternative, a rank down,
    putting the smallest and faintest string on the face into the headline slot
-   while the values under it became the headline. */
-.sheetsmith-view .sheetsmith-passport-name-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+   while the values under it became the headline. The colour is the shared
+   placeholder rule at Rich text's. */
 
 /* The one new thing: the identity values as a line rather than a form.
 
@@ -4921,7 +5429,6 @@ a.sheetsmith-notice-action {
 	font-family: inherit;
 	font-weight: var(--tag-weight);
 	text-decoration: var(--tag-decoration);
-	width: auto;
 	max-width: 100%;
 	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
 	   the height of its own text and its padding rather than of a form field. A
@@ -4939,6 +5446,13 @@ a.sheetsmith-notice-action {
 	/* A level steps under the arrow keys, and digits that re-advance as they
 	   change move every field after them (§5 of docs/UI.md). */
 	font-variant-numeric: tabular-nums;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. `auto` is the input's `size`, which the
+   component sets to the value's length. */
+.sheetsmith-view .sheetsmith-passport-input.sheetsmith-passport-input {
+	width: auto;
 }
 
 /* The tag's own hover, which is why this field left the shared hover roster
@@ -5002,7 +5516,11 @@ a.sheetsmith-notice-action {
    in when shown; it is deliberately placed *before* the delete control's own
    hidden-at-rest rule below, since the two share one selector's worth of
    specificity and CSS breaks that tie by source order — the later rule (the
-   one below) is the one that must win at rest. */
+   one below) is the one that must win at rest.
+
+   Muted, as Track's pickers are: the add is the only route to a second part,
+   and the remove is drawn only while its part has focus, so neither is
+   something to read past (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-passport-part-remove,
 .sheetsmith-view .sheetsmith-passport-add {
 	display: inline-flex;
@@ -5016,7 +5534,7 @@ a.sheetsmith-notice-action {
 	border-radius: 50%;
 	background-color: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	transition:
 		background-color 160ms ease,
@@ -5126,12 +5644,8 @@ a.sheetsmith-notice-action {
    The sheet's own precedent says the same thing and is easier to check: a Card's
    empty value is an em dash at the *card's* full size, faint, and §9 cites that
    dash as the model. Rich text's placeholder, Image's and a record's body all
-   take exactly these two declarations and nothing else. This is the fourth, and
-   the size and the tracking are what leave. */
-.sheetsmith-view .sheetsmith-passport-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+   take exactly these two declarations and nothing else, which is why the four
+   are now one rule at Rich text's, and the size and the tracking are what left. */
 
 /* **Faint is a legibility floor for these two, whatever rank they belong to.**
 
@@ -5358,6 +5872,36 @@ a.sheetsmith-notice-action {
 	border-radius: var(--radius-s);
 }
 
+/* **The fields take their width before the name grows**
+   (docs/features/record-summary-fields-first.md). Under the base `auto` the
+   name's track and the fields' grow together from their minimums, because the
+   grid shares free space equally among every track under its limit and cannot
+   rank one before another; so the fields reached their full width only once the
+   name had grown by their spare, which added up to 73px to every multi-field
+   fit. `max-content` starts the fields' track at all of them on one row, and the
+   name gets what is left, up to its cap. `record-line-fit.ts`'s plain sum,
+   `192 + F`, is true only while this track is `max-content`, which
+   `styles.test.ts` holds.
+
+   **Gated on a style query, so the fallback keeps its line.** An engine with no
+   style queries drops this rule and keeps the base `auto`, so a line too narrow
+   for its fields wraps them inside their track exactly as it did; ungated, the
+   name would collapse to nothing there and the delete glyph would be pushed past
+   the box's clipped edge. A stacked line fails the `not` and takes the stack
+   block's template below, and a headed list over its strip takes the strip's
+   subgrid, which comes later in the source and wins. The strip keeps
+   `repeat(N, auto)`: changing it moved nothing measured. */
+@container not style(--sheetsmith-record-stack: on) {
+	.sheetsmith-record-summary {
+		grid-template-columns:
+			auto
+			minmax(0, var(--sheetsmith-record-name, 13em))
+			max-content
+			1fr
+			auto;
+	}
+}
+
 .sheetsmith-record-disclosure {
 	grid-column: 1;
 }
@@ -5381,6 +5925,163 @@ a.sheetsmith-notice-action {
 	.sheetsmith-record:not(.sheetsmith-record-arming)
 	.sheetsmith-record-summary:hover {
 	background-color: var(--background-modifier-hover);
+}
+
+/* ---------------------------------------------------------------------------
+   A group of records under a header that collapses
+   (docs/features/record-set-groups.md).
+
+   **Nothing here changes the box.** The list is out of flow inside a box that is
+   `--sheetsmith-rows` tall as a floor, so a group's height reaches no grid track:
+   collapsing one removes rows from the list's scroll extent and nothing the sheet
+   is sized from. The body is hidden, not removed, and `hidden="until-found"` runs
+   on `content-visibility: hidden`, so a collapsed group's records still lay out
+   and still compute.
+
+   **The clothes are all borrowed.** The chevron and its muted colour are the record
+   disclosure's, the count is the secondary rank, the rule is the group heading's
+   hairline and the hover is the surface every control on the sheet uses. A list
+   with no `groupBy` draws none of these elements. */
+/* **A group is one contained block: its header and its records inside one quiet
+   border.** Membership reads from the box, so the leading rule down the body
+   that an earlier pass drew is gone (a box says it twice) and the gap between
+   boxes is a step rather than the 12px that had to do the separating alone.
+   **The border is an `outline` drawn inward, not a `border`**: a group is a
+   subgrid in the wide regime, and a border on a subgrid is added to its edge
+   tracks, which would move the columns of the headed list off its strip. An
+   outline takes no track, no padding and no height, so the component's box,
+   its rows and its columns are exactly what they were. The radius is the
+   component's own small one, and the colour the sheet's hairline. The header
+   keeps its band, because a box alone does not say which line is the header. */
+.sheetsmith-record-group {
+	border-radius: var(--radius-s);
+	outline: 1px solid var(--background-modifier-border);
+	outline-offset: -1px;
+}
+
+.sheetsmith-record-group + .sheetsmith-record-group {
+	margin-top: var(--size-4-2);
+}
+
+/* A closed group is the header alone in its box, so the rule under the header
+   would double the box's own edge and the header's square lower corners would
+   poke out of the radius. */
+.sheetsmith-view
+	.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])
+	.sheetsmith-record-group-heading {
+	border-bottom-color: transparent;
+	border-radius: var(--radius-s);
+}
+
+/* An `h3` for the note's own outline: a component's section is `##` and a record
+   `###`, so a group between them takes the lower level and a reader navigating by
+   heading finds the groups and not forty record names. Obsidian's heading rules
+   are scoped to rendered markdown, so the size, weight and margin are set here. */
+.sheetsmith-view .sheetsmith-record-group-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	min-height: var(--sheetsmith-inline-control, 1.6em);
+	margin: 0;
+	/* A little taller than the control floor the button inside it holds: block
+	   padding from the size scale, so the row reads as a header and not as a
+	   record's own line. The hit target is the whole row either way. */
+	padding: var(--size-2-2) var(--size-2-2);
+	border-bottom: 1px solid
+		var(--sheetsmith-group-rule, var(--background-modifier-border));
+	border-radius: var(--radius-s) var(--radius-s) 0 0;
+	/* Half the hover step: the outline carries the grouping, so the band only has
+	   to say which line is the header. A mix of the sheet's own translucent token
+	   and not a fixed grey, so it still reads on the card in either theme (the
+	   card's own colour is what a band of `--background-secondary` vanished into). */
+	background-color: color-mix(
+		in srgb,
+		var(--background-modifier-hover) 60%,
+		transparent
+	);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: 1.3;
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: background-color 160ms ease;
+}
+
+.sheetsmith-view .sheetsmith-record-group-heading:hover {
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* The button fills the row and carries the name; Obsidian styles a bare `button`
+   with a background, a radius, a padding and a shadow, so the reset is scoped
+   under `.sheetsmith-view` (§2 of docs/UI.md). */
+.sheetsmith-view .sheetsmith-record-group-toggle {
+	display: inline-flex;
+	flex: 1 1 auto;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-2-2);
+	min-width: 0;
+	height: auto;
+	min-height: var(--sheetsmith-inline-control, 1.6em);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	font: inherit;
+	color: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+
+/* Muted for the disclosure's measured reason: `--text-faint` is 2.20:1 here. */
+.sheetsmith-view .sheetsmith-record-group-mark {
+	display: inline-flex;
+	flex: 0 0 auto;
+	line-height: 0;
+	color: var(--text-muted);
+}
+
+.sheetsmith-view .sheetsmith-record-group-mark .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-view .sheetsmith-record-group-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The secondary rank, in the muted colour a record's own field name wears, and in
+   tabular figures so a count changing from 9 to 10 holds still. Not in the
+   button's name. */
+.sheetsmith-view .sheetsmith-record-group-heading .sheetsmith-record-group-count {
+	flex: 0 0 auto;
+	min-height: 0;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+/* One ring per component, on the button and inside the row so the list's own
+   padding is not what it is clipped by. */
+.sheetsmith-view .sheetsmith-record-group-toggle:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* The siblings' pattern, one token: the hairlines the grouping rests on go to
+   `--text-muted`, so the box that says which records belong to which header does
+   not fade at higher contrast. */
+@media (prefers-contrast: more) {
+	.sheetsmith-record-group {
+		outline-color: var(--text-muted);
+	}
+
+	.sheetsmith-view .sheetsmith-record-group-heading {
+		border-bottom-color: var(--text-muted);
+	}
 }
 
 /* The three glyph controls a record carries, measured off the level ring's own
@@ -5454,11 +6155,14 @@ a.sheetsmith-notice-action {
 	line-height: 0;
 }
 
-/* Faint is for reading past, which is every record the reader is not on. Always
-   drawn, never revealed on hover: §7 of docs/UI.md rules out a hover-only
-   affordance, and a phone has no hover to reveal one with. */
+/* Muted at rest, on every record the reader is not on, for Table's delete
+   glyph's reason: always drawn, never revealed on hover, since §7 of docs/UI.md
+   rules out a hover-only affordance and a phone has no hover to reveal one with —
+   so the resting colour is all a touch reader gets, and faint was 2.20:1 light
+   and 2.74:1 dark here. Arming guards the press, not faintness
+   (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-record-remove {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Full contrast for the record being looked at and for the control a keyboard
@@ -5615,24 +6319,13 @@ a.sheetsmith-notice-action {
    and the raw `[[Target]]` still says where it pointed. `visibility` rather than
    `display`, so the grid cell keeps its size and the line does not move.
 
-   Table has the identical defect in the identical shot, and it is *not* fixed
-   here: it is pre-existing in a component this feature is not otherwise
-   touching, and `docs/UI.md` §12 now holds it with the photograph.
+   Table had the identical defect in the identical shot, and a record's
+   worked-out ceiling is a third stack with it. All three take this departure
+   from one rule pair, by selector list, after the worked-out ceiling's own
+   `transparent` rule further down: it has to follow every `transparent` it
+   undoes, and a copy per stack is a policy whose only possible test is that the
+   copies still agree (`docs/PATTERNS.md` §1).
    --------------------------------------------------------------------------- */
-@media (forced-colors: active) {
-.sheetsmith-view
-	.sheetsmith-record-linked
-	.sheetsmith-record-name-layer {
-		visibility: hidden;
-	}
-
-.sheetsmith-view
-	.sheetsmith-record-linked
-	.sheetsmith-record-name-input:not(:focus) {
-		color: var(--text-normal);
-	}
-
-}
 
 /* The fields, in the order the layout declared them. **No heading strip over
    them unless the layout opts in**, and that is an amendment rather than a
@@ -5685,21 +6378,14 @@ a.sheetsmith-notice-action {
 	display: none;
 }
 
-/* **One variable up from the shared abbreviation, and the job is why.** The
-   clothes are `.sheetsmith-card-abbreviation`'s — a size down, tracked, quiet —
-   and its colour is `--text-faint`, which a design review measured at **2.20:1**
-   light and 2.74:1 dark against `legibility.md` §3's 4.5:1, at the 10.2px this
-   type already is. On a Card set that costs nothing: "STR" restates "STRENGTH"
-   directly above it, so the faint copy is a second sighting of a word already
-   read. Here — correctly, wherever no strip is over it: the unheaded list, and
-   a headed one below its threshold — "Uses" is the *only* place a sighted reader
-   meets the field's name, and below it they see a bare number. (On a wide
-   headed list this span is hidden and the strip names the column.) `--text-muted` measures 6.41:1 and 7.50:1, which is what this
-   component's own chevron already wears, and the size and the tracking stay so
-   the name is still visibly secondary to the value beside it. */
-.sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
-	color: var(--text-muted);
-}
+/* **A record field's name wears `.sheetsmith-card-abbreviation` unaltered, and
+   the job is why its muted matters most here.** Wherever no strip is over it —
+   the unheaded list, and a headed one below its threshold — "Uses" is the
+   *only* place a sighted reader meets the field's name, and below it they see a
+   bare number. (On a wide headed list this span is hidden and the strip names
+   the column.) The size and the tracking keep it visibly secondary to the value
+   beside it. It needed an override here while the shared rank was faint
+   (`docs/features/text-faint-audit.md`). */
 
 /* **The ceiling a bounded number reads against, in Pool's own vocabulary.**
    `Uses 1` cannot say whether that is all of them or one of three, and a uses
@@ -5726,7 +6412,6 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-record-input {
-	width: 3.5em;
 	padding: var(--size-2-1) var(--size-2-2);
 	border: 1px solid transparent;
 	border-radius: var(--radius-s);
@@ -5737,6 +6422,34 @@ a.sheetsmith-notice-action {
 	/* A number that reflows while it is being stepped reads as movement the
 	   reader did not ask for (§5 of docs/UI.md). */
 	font-variant-numeric: tabular-nums;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input {
+	width: 3.5em;
+}
+
+/* **A text field is the number field with a width for a word.** The class a
+   record's field already wears, so it takes the shared hover and the shared
+   focus lists with no new selector, and one width rule on top: a group name is
+   not two digits, and a number's centred 3.5em box would clip `Blood Hunter`
+   to `Blood Hu`. Sized in `ch` so it follows the text size, left-aligned
+   because a name reads from its first letter, and allowed to shrink inside a
+   narrow line or body block rather than widening the box. A name longer than
+   the box is revealed by `ui/truncation.ts`' hover reveal. It is the 14ch of
+   `Path of the Wild Magic` less a few characters; the harness fixture holds a
+   90-character value, and `harness/measure-groups.mjs` holds a clipped group
+   header to one line, the same height as its siblings, with its full text on
+   hover (`docs/features/free-text-group-key.md`). The base class is doubled
+   for (0,4,0), one class past the doubled 3.5em above, so this wins on weight
+   rather than on coming later. */
+.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input.sheetsmith-record-input-text {
+	width: 100%;
+	max-width: 14ch;
+	min-width: 5ch;
+	text-align: left;
+	font-variant-numeric: normal;
 }
 
 /* **A ceiling the reader sets wears the record's field chrome and the pool's
@@ -5794,6 +6507,96 @@ a.sheetsmith-notice-action {
 	   box of slack in front of a single digit is the gap this rule removes. */
 	text-align: left;
 	color: var(--text-muted);
+}
+
+/* **A ceiling that is a formula reads as what it came to, over the field that
+   holds its text** (`docs/features/record-ceiling-formula.md`). `docs/UI.md`
+   §9's stacked arrangement — the record's own name does it for its links — one
+   grid cell holding the field and a layer, so the field stays in the DOM and in
+   the tab order and neither child changes size on focus.
+
+   The layer is the field's twin in geometry: the same fixed two-digit box, the
+   same transparent border and vertical padding, left-aligned, so `3` from
+   `prof` lands where a typed `3` lands and the two cannot be told apart at rest.
+   Its reading is `.sheetsmith-pool-max`'s, which the element wears, and `?` is
+   `.sheetsmith-pool-max-unresolved`, Pool's own class for the same state.
+
+   A typed number draws no stack at all, so nothing here reaches it. */
+.sheetsmith-view .sheetsmith-record-worked-out {
+	display: inline-grid;
+	grid-template-columns: auto;
+	align-items: center;
+}
+
+.sheetsmith-view .sheetsmith-record-worked-out > * {
+	grid-area: 1 / 1;
+}
+
+.sheetsmith-view .sheetsmith-record-field .sheetsmith-record-worked-out-layer {
+	width: calc(2ch + 2px);
+	padding: var(--size-2-1) 0;
+	border: 1px solid transparent;
+	overflow: hidden;
+	white-space: nowrap;
+	text-align: left;
+	/* The press is the field's: a ceiling is one short line, so a click lands
+	   the caret where it fell, as a table cell's does. */
+	pointer-events: none;
+}
+
+/* The layer's `?` takes Pool's own `.sheetsmith-pool-max-unresolved`, which is
+   muted since `docs/features/text-faint-audit.md`: the reading in that slot,
+   read back exactly as a number there is, beside a muted `/`. It needed an
+   override of its own here while Pool's was faint. */
+
+/* Keyed on the field's focus, through `interaction/field-focus-flag.ts`, as the
+   name's layer is: focused, the reader edits `prof` rather than 3. */
+.sheetsmith-view
+	.sheetsmith-record-worked-out-focused
+	.sheetsmith-record-worked-out-layer {
+	opacity: 0;
+}
+
+/* Unfocused the field's own text would show through the layer, so its colour
+   goes rather than the layer being made opaque: the field keeps its box, its
+   hover surface and its placeholder. */
+.sheetsmith-view
+	.sheetsmith-record-worked-out
+	.sheetsmith-record-input.sheetsmith-pool-max:not(:focus) {
+	color: transparent;
+}
+
+/* Forced colors repaints `transparent` text back to the system colour, so both
+   layers of a stack would draw at once. **One rule pair for every stack that
+   answers it the same way**: the record name's departure (its comment, above,
+   holds the argument), a Table cell holding a wikilink, and this worked-out
+   ceiling. The layer goes and the field's own text shows, so in this mode a
+   stacked link is read and not pressed, and the raw `[[Target]]` still says
+   where it points. Here, after the last of the three `transparent` rules it
+   undoes, because a later rule of the same weight would win.
+
+   **The Table cell also loses a frame by it**: its layer carries a
+   `1px solid transparent` border to sit exactly over the field's text, which
+   the mode repainted `CanvasText` into a second frame around the field's own,
+   and a hidden layer draws none. One selector covers the cell's three
+   placements, the name, a plain cell and a gloss. */
+@media (forced-colors: active) {
+.sheetsmith-view .sheetsmith-record-linked .sheetsmith-record-name-layer,
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-link-layer,
+.sheetsmith-view .sheetsmith-record-field .sheetsmith-record-worked-out-layer {
+		visibility: hidden;
+	}
+
+.sheetsmith-view
+	.sheetsmith-record-linked
+	.sheetsmith-record-name-input:not(:focus),
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-input:not(:focus),
+.sheetsmith-view
+	.sheetsmith-record-worked-out
+	.sheetsmith-record-input.sheetsmith-pool-max:not(:focus) {
+		color: var(--text-normal);
+	}
+
 }
 
 /* A read-only value one press from what it is made of, which is the same
@@ -5912,14 +6715,9 @@ a.sheetsmith-notice-action {
 	padding-inline: var(--size-2-2);
 }
 
-/* Pool's empty `—`, in the faint an empty em dash takes everywhere else on a
-   sheet, and only on a body field's value: a ceiling field has its own. */
-.sheetsmith-view
-	.sheetsmith-record-body-fields
-	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* A body field's empty `—` is Pool's, in the faint an empty em dash takes
+   everywhere else on a sheet, through the shared placeholder rule at Rich
+   text's — and only on a body field's value: a ceiling field has its own. */
 
 /* A pair may be wider than a narrow body, so it may shrink, and a menu shrinks
    inside its own `max-width` rather than widening the box. */
@@ -5963,12 +6761,8 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible. */
-.sheetsmith-view .sheetsmith-record-body-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* The placeholder still shows through, by the shared placeholder rule at Rich
+   text's. */
 
 /* The layer takes the pointer rather than `pointer-events: none`, because it is
    what scrolls when the prose is longer than the record is open: a layer that is
@@ -6048,56 +6842,34 @@ a.sheetsmith-notice-action {
 }
 
 /* ---------------------------------------------------------------------------
-   The add control, in the last position of the list.
+   The add control, at the foot of the box.
 
-   **It wears the treatment Table's own add row wears**, which is what
-   `docs/UI.md` §9 listing the two as one row asks for and what they had drifted
-   apart on before the first release: a rule across the top separating it from
-   the last record, and the label centred in the line it occupies. Table renders
-   exactly that, and a design review found the two 40px apart in one shot looking
-   like different kinds of thing — with only Table's reading as pressable.
+   **It is outside the list, and that is what pins it.** The box is a flex column
+   of two things: the scroll area, which takes whatever the control leaves, and
+   the control, which is `flex: none` and never scrolls. It was the list's last
+   child, so it scrolled away with a long list and sat under the last record in a
+   short one; now it is at the box's foot whichever it is, and an empty list
+   shows its two words of label over the control rather than a control alone.
+   Its clothes are `.sheetsmith-table-add-button`'s, in the one rule they share
+   above (`docs/features/table-add-row-pinned-bottom.md`), which is where the
+   argument for the treatment lives: the rule across its top is the only 3:1
+   boundary a control owes (`legibility.md` §3), and a design review once found
+   the two add controls 40px apart looking like different kinds of thing.
 
-   **The rule is also the only 3:1 boundary in here that a control owes.** An
-   empty list was a label over a fill measuring 1.04:1 against the page, holding
-   two words of plain grey text: `legibility.md` §3's bar applies to a control's
-   own boundary, and this is the control. A filled list clips this line at the
-   scrollport's edge, which the box's own border now draws.
+   `overflow: hidden` on the box so the control's hover takes the box's bottom
+   corners, and the scroll area is out of flow inside its own wrapper for the
+   reason the list always was: nothing in it may contribute height to the box.
    --------------------------------------------------------------------------- */
-.sheetsmith-view .sheetsmith-record-add {
-	display: block;
-	width: 100%;
-	padding: var(--size-2-2);
-	border: none;
-	border-top: 1px solid var(--background-modifier-border);
-	border-radius: 0;
-	background-color: transparent;
-	box-shadow: none;
-	text-align: center;
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-	cursor: pointer;
-	transition:
-		background-color 160ms ease,
-		color 160ms ease;
+.sheetsmith-record-set-box {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
-/* A span rather than the button's own text, for the reason Table's is one: it is
-   what the hover and the focus treatments below have to reach without also
-   reaching the rule above. */
-.sheetsmith-record-add-label {
-	display: inline-block;
-}
-
-.sheetsmith-view .sheetsmith-record-add:hover {
-	background-color: var(--background-modifier-hover);
-	color: var(--text-normal);
-}
-
-/* Inset, because the button fills the width of the list and an outline outside
-   it would be clipped by the scrollport. */
-.sheetsmith-view .sheetsmith-record-add:focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: -2px;
+.sheetsmith-record-set-scroll {
+	position: relative;
+	flex: 1 1 0;
+	min-height: 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -6116,9 +6888,6 @@ a.sheetsmith-notice-action {
    settles the grouping a separator would otherwise have to: a field line is
    nearer the name it belongs to than the record that follows.
 
-   320px rather than the sheet's 480: this is one component's own line, and it
-   is the width at which the four things in it stop fitting.
-
    **Measured: the query's subject is the list, at every width.** The query is
    unnamed, so it answers to the nearest container of any name, and the block
    that wraps the box (`.sheetsmith-record-set`, above) declares
@@ -6126,12 +6895,627 @@ a.sheetsmith-notice-action {
    summary's nearest container at that block, 346px wide, which is the box's own
    width; at `width=520` it is 157px (Known spells), 280px (Traits) and 198px
    (Spells), and at the default width 221, 794 and 565. Nothing between the list
-   and the sheet is what it measures. So the comment above is true, and a
-   six-field record's fields wrapping at a container of 338 to 361px is the
-   rule's threshold and not a subject the rule has wrong. A headed list's strip
-   is gated on the same container, one rung up, so the two can never both apply.
+   and the sheet is what it measures.
+
+   **Where the line stacks is its own fit, not one number.** This block is the
+   fallback, for an engine with no style queries; the threshold every list
+   actually takes is the width its declared fields fit at, which the component
+   stamps as `-fit-N` and the table below tabulates in px
+   (`docs/features/record-set-stacking-tiers.md`). 320px was derived for a name,
+   a labelled number, a ring and a glyph, and at containers of 338, 346 and 361px
+   every multi-field list in the harness wrapped its fields inside their own
+   track. 320px is tier 20 exactly (`FALLBACK_FIT_TIER`). A list of tier 19 or
+   under stacks to 304px or less, so this block would stack it past its own
+   threshold; it wears `-fits-narrow` and this block passes it by.
    --------------------------------------------------------------------------- */
 @container (max-width: 320px) {
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-summary {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		row-gap: var(--size-2-1);
+	}
+
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-name {
+		grid-column: 2;
+	}
+
+.sheetsmith-view .sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-remove {
+		grid-column: 3;
+		margin-left: 0;
+	}
+
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-fields {
+		grid-row: 2;
+		grid-column: 2 / -1;
+		/* The *ink*, not the column: the name is a field with its own padding, so
+		   aligning the two tracks left the first field label 8px inside the name
+		   it is supposed to line up under. */
+		padding-left: var(--size-2-2);
+	}
+
+	/* Bigger than the row gap above it, so the break between two records reads
+	   as the larger separation. Between records rather than after every one, so
+	   the last record does not push the add control down. */
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record + .sheetsmith-record {
+		margin-top: var(--size-4-2);
+	}
+
+}
+
+/* ---------------------------------------------------------------------------
+   **A line stacks below the width it fits at: one threshold per 16px.** The
+   component estimates the width its declared summary fields fit on one row at,
+   with the name at six ems, and stamps it rounded up to a step of 16px as
+   `.sheetsmith-record-set-fit-N` (`components/record-line-fit.ts`). Tier N
+   stacks up to N × 16px: the estimate is cautious, so that is at or past the
+   line's fit, and the steps add under one more. Stacked is the narrowest
+   layout (`docs/UI.md` §9): its fields can still wrap under the name in a
+   list narrower than they are. Every list wears a tier, headed or not, from
+   every declared summary field, a hidden one included, because a record can
+   draw them all.
+
+   **In px, not `em`, because the line is.** Every width on it is a fixed-px
+   token (`--font-ui-small`, `--font-ui-smaller`, `--size-*`), and the sheet's
+   `em` is not: it is the stage's type size in the harness and Obsidian's
+   `--font-ui-medium` in the app. Measured: Traits fits at 509.5px at the
+   harness's `text=20` and `text=24` as at its default, where an `em` table
+   stacked it to 660 and 792. A zoom scales both sides alike.
+
+   **Tabulated, as the strip is**: a container query can neither add widths nor
+   take a threshold from a selector, so each entry does one small thing, setting
+   `--sheetsmith-record-stack` on the box, and the five rules are written once
+   under a style query on it. `styles.test.ts` holds each entry to its rule and
+   the 320px block's copy of the five rules, the fallback for an engine with no
+   style queries, equal to this one.
+
+   **The estimate errs toward stacking.** A word is sized from its character
+   count at the widest per-character width any harness sample measured, so a
+   name of unusually wide letters can still outrun it. The fit itself is not a
+   sum: the name's track and the fields' grow together, so the line fits at
+   `96 + F + clamp(F − m, 96, 169)`px, with F the fields and their gaps and m
+   the widest field, measured on every harness list within a pixel.
+
+   **A headed list draws its plain line below its strip** wherever the line
+   fits there, and is stacked only below its own fit. The strip's entries turn
+   this property off, and they come after these in the file (`@container` adds
+   no specificity), which the test holds, so a list is plain, stacked or under
+   its strip, and never stacked under its strip.
+   --------------------------------------------------------------------------- */
+
+@container (max-width: 192px) {
+	.sheetsmith-record-set-fit-12 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 208px) {
+	.sheetsmith-record-set-fit-13 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 224px) {
+	.sheetsmith-record-set-fit-14 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 240px) {
+	.sheetsmith-record-set-fit-15 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 256px) {
+	.sheetsmith-record-set-fit-16 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 272px) {
+	.sheetsmith-record-set-fit-17 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 288px) {
+	.sheetsmith-record-set-fit-18 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 304px) {
+	.sheetsmith-record-set-fit-19 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 320px) {
+	.sheetsmith-record-set-fit-20 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 336px) {
+	.sheetsmith-record-set-fit-21 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 352px) {
+	.sheetsmith-record-set-fit-22 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 368px) {
+	.sheetsmith-record-set-fit-23 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 384px) {
+	.sheetsmith-record-set-fit-24 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 400px) {
+	.sheetsmith-record-set-fit-25 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 416px) {
+	.sheetsmith-record-set-fit-26 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 432px) {
+	.sheetsmith-record-set-fit-27 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 448px) {
+	.sheetsmith-record-set-fit-28 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 464px) {
+	.sheetsmith-record-set-fit-29 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 480px) {
+	.sheetsmith-record-set-fit-30 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 496px) {
+	.sheetsmith-record-set-fit-31 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 512px) {
+	.sheetsmith-record-set-fit-32 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 528px) {
+	.sheetsmith-record-set-fit-33 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 544px) {
+	.sheetsmith-record-set-fit-34 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 560px) {
+	.sheetsmith-record-set-fit-35 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 576px) {
+	.sheetsmith-record-set-fit-36 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 592px) {
+	.sheetsmith-record-set-fit-37 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 608px) {
+	.sheetsmith-record-set-fit-38 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 624px) {
+	.sheetsmith-record-set-fit-39 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 640px) {
+	.sheetsmith-record-set-fit-40 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 656px) {
+	.sheetsmith-record-set-fit-41 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 672px) {
+	.sheetsmith-record-set-fit-42 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 688px) {
+	.sheetsmith-record-set-fit-43 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 704px) {
+	.sheetsmith-record-set-fit-44 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 720px) {
+	.sheetsmith-record-set-fit-45 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 736px) {
+	.sheetsmith-record-set-fit-46 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 752px) {
+	.sheetsmith-record-set-fit-47 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 768px) {
+	.sheetsmith-record-set-fit-48 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 784px) {
+	.sheetsmith-record-set-fit-49 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 800px) {
+	.sheetsmith-record-set-fit-50 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 816px) {
+	.sheetsmith-record-set-fit-51 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 832px) {
+	.sheetsmith-record-set-fit-52 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 848px) {
+	.sheetsmith-record-set-fit-53 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 864px) {
+	.sheetsmith-record-set-fit-54 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 880px) {
+	.sheetsmith-record-set-fit-55 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 896px) {
+	.sheetsmith-record-set-fit-56 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 912px) {
+	.sheetsmith-record-set-fit-57 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 928px) {
+	.sheetsmith-record-set-fit-58 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 944px) {
+	.sheetsmith-record-set-fit-59 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 960px) {
+	.sheetsmith-record-set-fit-60 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 976px) {
+	.sheetsmith-record-set-fit-61 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 992px) {
+	.sheetsmith-record-set-fit-62 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1008px) {
+	.sheetsmith-record-set-fit-63 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1024px) {
+	.sheetsmith-record-set-fit-64 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1040px) {
+	.sheetsmith-record-set-fit-65 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1056px) {
+	.sheetsmith-record-set-fit-66 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1072px) {
+	.sheetsmith-record-set-fit-67 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1088px) {
+	.sheetsmith-record-set-fit-68 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1104px) {
+	.sheetsmith-record-set-fit-69 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1120px) {
+	.sheetsmith-record-set-fit-70 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1136px) {
+	.sheetsmith-record-set-fit-71 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1152px) {
+	.sheetsmith-record-set-fit-72 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1168px) {
+	.sheetsmith-record-set-fit-73 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1184px) {
+	.sheetsmith-record-set-fit-74 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1200px) {
+	.sheetsmith-record-set-fit-75 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1216px) {
+	.sheetsmith-record-set-fit-76 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1232px) {
+	.sheetsmith-record-set-fit-77 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1248px) {
+	.sheetsmith-record-set-fit-78 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1264px) {
+	.sheetsmith-record-set-fit-79 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1280px) {
+	.sheetsmith-record-set-fit-80 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1296px) {
+	.sheetsmith-record-set-fit-81 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1312px) {
+	.sheetsmith-record-set-fit-82 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1328px) {
+	.sheetsmith-record-set-fit-83 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1344px) {
+	.sheetsmith-record-set-fit-84 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1360px) {
+	.sheetsmith-record-set-fit-85 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1376px) {
+	.sheetsmith-record-set-fit-86 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1392px) {
+	.sheetsmith-record-set-fit-87 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1408px) {
+	.sheetsmith-record-set-fit-88 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1424px) {
+	.sheetsmith-record-set-fit-89 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1440px) {
+	.sheetsmith-record-set-fit-90 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1456px) {
+	.sheetsmith-record-set-fit-91 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1472px) {
+	.sheetsmith-record-set-fit-92 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1488px) {
+	.sheetsmith-record-set-fit-93 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1504px) {
+	.sheetsmith-record-set-fit-94 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1520px) {
+	.sheetsmith-record-set-fit-95 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1536px) {
+	.sheetsmith-record-set-fit-96 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1552px) {
+	.sheetsmith-record-set-fit-97 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1568px) {
+	.sheetsmith-record-set-fit-98 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1584px) {
+	.sheetsmith-record-set-fit-99 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1600px) {
+	.sheetsmith-record-set-fit-100 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container style(--sheetsmith-record-stack: on) {
 .sheetsmith-record-summary {
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		row-gap: var(--size-2-1);
@@ -6149,19 +7533,12 @@ a.sheetsmith-notice-action {
 .sheetsmith-record-fields {
 		grid-row: 2;
 		grid-column: 2 / -1;
-		/* The *ink*, not the column: the name is a field with its own padding, so
-		   aligning the two tracks left the first field label 8px inside the name
-		   it is supposed to line up under. */
 		padding-left: var(--size-2-2);
 	}
 
-	/* Bigger than the row gap above it, so the break between two records reads
-	   as the larger separation. Between records rather than after every one, so
-	   the last record does not push the add control down. */
 .sheetsmith-record + .sheetsmith-record {
 		margin-top: var(--size-4-2);
 	}
-
 }
 
 /* ---------------------------------------------------------------------------
@@ -6179,7 +7556,9 @@ a.sheetsmith-notice-action {
    number, so it is *tabulated* — the sheet's own `.sheetsmith-cols-N` pattern,
    and `styles.test.ts` holds each entry to the formula. Each entry does one
    thing and does it small: it sets `--sheetsmith-record-strip` on the box when
-   the list is at least that wide. Everything else is written once, under a style
+   the list is at least that wide, and turns the fit table's
+   `--sheetsmith-record-stack` off, so a list under its strip is never also
+   stacked (the fit table above). Everything else is written once, under a style
    query on that property, which is what stops eight copies of the same fifty
    declarations. An engine with no style queries ignores that rule whole, and so
    draws the narrow regime at every width, which is today's list.
@@ -6210,48 +7589,56 @@ a.sheetsmith-notice-action {
 	@container sheetsmith-record-set (min-width: 20.5em) {
 		.sheetsmith-record-set-fields-1 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 26.5em) {
 		.sheetsmith-record-set-fields-2 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 32.5em) {
 		.sheetsmith-record-set-fields-3 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 38.5em) {
 		.sheetsmith-record-set-fields-4 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 44.5em) {
 		.sheetsmith-record-set-fields-5 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 50.5em) {
 		.sheetsmith-record-set-fields-6 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 56.5em) {
 		.sheetsmith-record-set-fields-7 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 62.5em) {
 		.sheetsmith-record-set-fields-8 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
@@ -6338,9 +7725,8 @@ a.sheetsmith-notice-action {
 		}
 
 		/* **The secondary type, borrowed and not copied**: the shared rank for a
-		   name the eye has to find and not read (§9 of docs/UI.md), in the muted
-		   colour a record's own field name wears for the same measured reason —
-		   `--text-faint` is 2.20:1 here. Centred over the control and never
+		   name the eye has to find and not read (§9 of docs/UI.md), colour and
+		   all, as a record's own field name wears it. Centred over the control and never
 		   wrapped, so a word wider than its control sets the track's width, which
 		   is what a column heading does. The margin is the field's own, so a
 		   heading and its control are centred on the same box. */
@@ -6350,7 +7736,22 @@ a.sheetsmith-notice-action {
 			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
 			white-space: nowrap;
 			text-align: center;
-			color: var(--text-muted);
+		}
+
+		/* **A heading over a column of words starts where the words start.** A
+		   number is centred in a narrow box, so a centred heading sits over it; a
+		   name is left-aligned in a box 14ch wide, and a heading centred over the box
+		   sat 35 to 50px to the right of the ink it names (measured in the harness).
+		   The number column's precedent is to centre the heading on the *ink*
+		   (the 0.4em on the field below); here the ink is at the left edge, so the
+		   heading goes there instead of the field moving. The margin is the field's
+		   own, so the two start at one x, and the padding is the input's own
+		   padding plus its border, which puts the first letters of each over one
+		   another. */
+		.sheetsmith-view .sheetsmith-record-strip .sheetsmith-record-strip-text {
+			justify-self: start;
+			padding-inline-start: calc(var(--size-2-2) + 1px);
+			text-align: left;
 		}
 
 		.sheetsmith-record-set-records {
@@ -6361,6 +7762,21 @@ a.sheetsmith-notice-action {
 			align-content: start;
 			gap: 0 var(--size-2-2);
 			padding-block: var(--size-2-2);
+		}
+
+		/* A group and its body are subgrids of the same tracks, so a record's
+		   fields land on the same x in every group and under the one strip, and a
+		   heading spans them all. */
+		.sheetsmith-record-group,
+		.sheetsmith-record-group-body {
+			display: grid;
+			grid-template-columns: subgrid;
+			grid-column: 1 / -1;
+			gap: 0 var(--size-2-2);
+		}
+
+		.sheetsmith-view .sheetsmith-record-group-heading {
+			grid-column: 1 / -1;
 		}
 
 		.sheetsmith-record,
@@ -6421,13 +7837,12 @@ a.sheetsmith-notice-action {
 			grid-column: -2;
 		}
 
-		/* An open body, a problem line and the add control span every track, so
+		/* An open body and a problem line span every track, so
 		   opening a record moves the records below it and never a column. The
 		   list's own line — a condition that could not be worked out — too. */
 		.sheetsmith-record-body,
 		.sheetsmith-view .sheetsmith-record > .sheetsmith-error,
-		.sheetsmith-view .sheetsmith-record-set-records > .sheetsmith-error,
-		.sheetsmith-view .sheetsmith-record-add {
+		.sheetsmith-view .sheetsmith-record-set-records > .sheetsmith-error {
 			grid-column: 1 / -1;
 		}
 

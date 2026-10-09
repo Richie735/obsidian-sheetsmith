@@ -74,6 +74,15 @@ export interface ModifierTargetSource {
 	 * lookup's failure is visible.
 	 */
 	unknownType?: boolean;
+	/**
+	 * True where the component draws the notes pushed at its names: a copy of
+	 * `ComponentDefinition.drawsNotes`, on `unknownType`'s precedent.
+	 *
+	 * Copied here so the one place the registry is read for it is
+	 * `modifierTargetSource`, and the editor's report, the sheet's outcomes, the
+	 * **Value** picker and the walk's bound all read one answer (`noteTargets`).
+	 */
+	drawsNotes?: true;
 }
 
 /**
@@ -97,40 +106,77 @@ export interface ModifierTargetSource {
  *   reads `mod.self` reports every name that Table publishes as accepting,
  *   including a column total. The direction of the coarseness is over-reporting,
  *   and the sheet's own stray line at the row is what stops that being silent.
+ *
+ * **Not what a mark follows.** The second rule admits a name whose own number no
+ * push can move; `markedTargets` below is the narrower set a breakdown and every
+ * mark on the sheet are bounded by.
  */
 export function acceptingTargets(
 	components: readonly ModifierTargetSource[],
 ): readonly ModifierTarget[] {
-	const formulas = components.flatMap((component) => [
-		...(component.formulas ?? []),
-	]);
-	// The absolute spelling first, in one pass: a `mod.X` written anywhere on the
-	// layout makes X accepting wherever X is published, so this cannot be answered
-	// component by component.
-	const byName = new Set(
-		publishedTargets(components)
-			.map((target) => target.name)
-			.filter((name) =>
-				formulas.some((formula) => referencesName(formula, modifierSlot(name))),
+	/*
+	 * **Built from the narrow set, so the subset holds by construction.** The
+	 * relative rule lives once, in `markedTargets`; what the wide set adds is the
+	 * absolute spelling read from *anywhere* on the layout, which cannot be
+	 * answered component by component and so is one pass over every formula.
+	 */
+	const marked = new Set(markedTargets(components).map((target) => target.name));
+	const formulas = components.flatMap((component) => component.formulas ?? []);
+	return publishedTargets(components).filter(
+		(target) =>
+			marked.has(target.name) ||
+			formulas.some((formula) =>
+				referencesName(formula, modifierSlot(target.name)),
 			),
 	);
+}
 
-	const targets: ModifierTarget[] = [];
-	for (const component of components) {
-		const label = componentLabel(component);
-		const relative = (component.formulas ?? []).some((formula) =>
-			referencesName(formula, SELF_SLOT),
+/**
+ * Which published names a modifier can actually move, in the order the layout
+ * declares them: the names whose *own* component's formulas read a modifier for
+ * them (SPEC §13, settled).
+ *
+ * **The narrow set, and the one a mark follows.** A published name `X` is in it
+ * when some formula field on the component that publishes `X` mentions
+ * `mod.self`, or mentions `mod.X` itself. That is the relative rule — the one
+ * place it is spelled — with the absolute spelling admitted, and nothing else:
+ * a `mod.X` written on some *other* component moves that other component and
+ * never `X`'s own number, so a card reaching the wide set only that way drew
+ * the mark and listed contributors over a value that never moved.
+ *
+ * **The absolute spelling is in because a Track proved it moves a number.**
+ * `count: "3 + mod.exhaustion.count"` in the Track's own field genuinely
+ * lengthens the run (`docs/features/modifier-granted-track-segments.md`), so
+ * "only `mod.self` moves a value" was false as stated, and a set built on it
+ * would draw no door on a run whose length did change.
+ *
+ * **Coarse at the component for `mod.self` and exact for the absolute spelling**,
+ * as the wide set is: a `compute` is opaque to which name a formula field feeds,
+ * so a Table whose one computed column reads `mod.self` marks every name it
+ * publishes, while `mod.skills.perception` marks `skills.perception` alone. That
+ * keeps this a subset of the wide set name by name — a mark on a name whose
+ * enrolment reports "does not take modifiers" would be the sheet contradicting
+ * itself.
+ *
+ * **A subset of `acceptingTargets`, which is built from it, and deliberately not
+ * a replacement for it.** The formula picker and the layout editor's report
+ * keep the wide set, because they are about what an author *could* wire, and a
+ * `mod.X` read elsewhere is a real effect there. This answers a narrower question about the number on the
+ * card. What it leaves unmarked on purpose: where `Y`'s formula reads `mod.X`, a
+ * push at `X` moves `Y`, and neither set marks `Y`.
+ */
+export function markedTargets(
+	components: readonly ModifierTargetSource[],
+): readonly ModifierTarget[] {
+	return components.flatMap((component) => {
+		const formulas = component.formulas ?? [];
+		const reads = (slot: string) =>
+			formulas.some((formula) => referencesName(formula, slot));
+		const relative = reads(SELF_SLOT);
+		return publishedTargets([component]).filter(
+			(target) => relative || reads(modifierSlot(target.name)),
 		);
-		const offer = (name: string, shown: string) => {
-			if (!relative && !byName.has(name)) return;
-			targets.push({ name, label: shown });
-		};
-		if (component.values.self) offer(component.id, label);
-		for (const key of Object.keys(component.values.named ?? {})) {
-			offer(`${component.id}.${key}`, `${label} · ${key}`);
-		}
-	}
-	return targets;
+	});
 }
 
 /**
@@ -162,6 +208,26 @@ export function publishedTargets(
 	return components
 		.flatMap((component) => publishedEntries(component))
 		.map(({ name, label }) => ({ name, label }));
+}
+
+/**
+ * Every published name a note may be aimed at, in declaration order: the names
+ * whose component draws notes (`docs/features/modifier-notes.md` A).
+ *
+ * **The one derivation, read by four surfaces**: the definitions report, which
+ * says "cannot show a note yet" of anything else; the sheet's outcomes and its
+ * breakdown, which never hand a note to a name outside it; the **Value**
+ * picker's **Notes only** group; and the bound on when a breakdown may enter the
+ * modifier walk for a note. Not the accepting set, deliberately — a note needs no
+ * slot, so requiring `mod.self` in a skill's formula just to hang a reminder on
+ * it would be wiring for its own sake.
+ */
+export function noteTargets(
+	components: readonly ModifierTargetSource[],
+): readonly ModifierTarget[] {
+	return publishedTargets(
+		components.filter((component) => component.drawsNotes === true),
+	);
 }
 
 /**
@@ -283,7 +349,7 @@ export function publishedSuffixes(
 export function modifierTargetSource(
 	config: ComponentConfig,
 	definition:
-		| Pick<ComponentDefinition, 'formulaFields' | 'scopeValues'>
+		| Pick<ComponentDefinition, 'formulaFields' | 'scopeValues' | 'drawsNotes'>
 		| undefined,
 ): ModifierTargetSource {
 	return {
@@ -294,5 +360,6 @@ export function modifierTargetSource(
 		// Absent rather than `false` for a type the registry has, so a source
 		// built by hand in a test reads the same as one built here.
 		...(definition === undefined ? { unknownType: true } : {}),
+		...(definition?.drawsNotes === true ? { drawsNotes: true } : {}),
 	};
 }

@@ -60,6 +60,9 @@ import { MarkdownPasses } from './markdown-pass';
 import { renderMissingLayout } from './missing-layout';
 import { openResetConfirmation } from './reset-confirmation';
 import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
+import { attachTextSuggest, TextSuggest } from './text-suggest';
+import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
+import { layoutVocabulary } from '../formula/vocabulary';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -212,6 +215,14 @@ export class SheetView extends TextFileView {
 	 */
 	private openRecords = new Map<string, Set<number>>();
 	/**
+	 * The keys of each list's groups the reader has collapsed, by component id.
+	 *
+	 * The third sibling of the two above, for their reasons. Holds the *collapsed*
+	 * keys so that absence is the default of open, and is dropped with them when the
+	 * leaf moves to another file (`types.ts`, `collapsedGroups`).
+	 */
+	private collapsedGroups = new Map<string, Set<string>>();
+	/**
 	 * The lifecycle of markdown a component asked the app to draw.
 	 *
 	 * Here rather than in the component that wants it, because
@@ -232,6 +243,18 @@ export class SheetView extends TextFileView {
 	 * (`docs/features/picture-fit-and-suggest.md`).
 	 */
 	private fileSuggests: FileSuggest[] = [];
+	/**
+	 * The group-name type-aheads standing on the sheet, held and closed exactly
+	 * as `fileSuggests` is and for the same reason: an input removed mid-focus
+	 * fires no `blur`, and this view rebuilds on every committed edit.
+	 */
+	private textSuggests: TextSuggest[] = [];
+	/**
+	 * The formula suggesters on fields holding an expression a component keeps
+	 * in the note — a record's ceiling (`docs/features/record-ceiling-formula.md`)
+	 * — held and closed as `fileSuggests` is, for the same reason.
+	 */
+	private formulaSuggests: FormulaSuggest[] = [];
 	/**
 	 * What the note is expected to hold when the offered undo is pressed.
 	 *
@@ -345,6 +368,7 @@ export class SheetView extends TextFileView {
 		this.renderId++;
 		this.activeTab.clear();
 		this.openRecords.clear();
+		this.collapsedGroups.clear();
 		// An undo offered on the note being left has nothing to restore into.
 		this.undoExpectation = null;
 		// The outgoing note's embeds go with it: a transclusion loaded for the
@@ -459,6 +483,10 @@ export class SheetView extends TextFileView {
 		// whichever one the render before this took.
 		for (const suggest of this.fileSuggests) suggest.close();
 		this.fileSuggests = [];
+		for (const suggest of this.textSuggests) suggest.close();
+		this.textSuggests = [];
+		for (const suggest of this.formulaSuggests) suggest.close();
+		this.formulaSuggests = [];
 
 		let note: CharacterNote;
 		try {
@@ -624,6 +652,14 @@ export class SheetView extends TextFileView {
 			link.resolves(target),
 		);
 
+		// What a formula field on the sheet may name, built once per render by the
+		// assembly the layout editor uses, and read only when a popup answers.
+		const vocabulary = layoutVocabulary(
+			walk.map(({ config }) => config),
+			library,
+			getComponent,
+		);
+
 		renderGrid(grid, walk, prepared, ({ config, component, data }) => ({
 			...formulaContext(component, config, data, env),
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
@@ -636,6 +672,14 @@ export class SheetView extends TextFileView {
 					attachFileSuggest(this.app, input, commit, this.file?.path ?? ''),
 				);
 			},
+			suggestText: (input, names, commit) => {
+				this.textSuggests.push(attachTextSuggest(this.app, input, names, commit));
+			},
+			suggestFormula: (input, owner) => {
+				this.formulaSuggests.push(
+					attachFormulaSuggest(this.app, input, () => vocabulary, owner),
+				);
+			},
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
 			openRecords: [...(this.openRecords.get(config.id) ?? [])],
@@ -644,6 +688,13 @@ export class SheetView extends TextFileView {
 				if (open) held.add(index);
 				else held.delete(index);
 				this.openRecords.set(config.id, held);
+			},
+			collapsedGroups: [...(this.collapsedGroups.get(config.id) ?? [])],
+			onToggleGroup: (key: string, collapsed: boolean) => {
+				const held = this.collapsedGroups.get(config.id) ?? new Set<string>();
+				if (collapsed) held.add(key);
+				else held.delete(key);
+				this.collapsedGroups.set(config.id, held);
 			},
 		}));
 

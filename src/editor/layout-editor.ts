@@ -33,7 +33,7 @@ import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { WalkEntry } from '../parse/layout-walk';
 import { parseFunctions } from '../formula/functions';
-import { Vocabulary, vocabularySource } from '../formula/vocabulary';
+import { layoutVocabulary, Vocabulary } from '../formula/vocabulary';
 import { clipboardRow, nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
 import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
@@ -498,12 +498,11 @@ export class LayoutEditorSection {
 	private vocabulary(): Vocabulary {
 		const layout = this.layout;
 		if (layout === null) return { components: [], functions: new Map() };
-		return {
-			components: walkLayout(layout.components).map((entry) =>
-				vocabularySource(entry.config, getComponent(entry.config.type)),
-			),
-			functions: parseFunctions(layout.functions).library,
-		};
+		return layoutVocabulary(
+			walkLayout(layout.components).map((entry) => entry.config),
+			parseFunctions(layout.functions).library,
+			getComponent,
+		);
 	}
 
 	/** The focus token of whatever is focused inside the pane, if anything. */

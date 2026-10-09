@@ -26,6 +26,7 @@ import {
 import { cellParts, parseModifierPart } from '../parse/modifier-cell';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { sampleOf } from '../test/sample';
+import { hoverClip, setClip } from '../test/clipped';
 
 /*
  * A D&D skill list, which is what fixed rows exist for: the layout owns the
@@ -1898,6 +1899,83 @@ describe('table with open rows', () => {
 		expect(el.querySelector('.sheetsmith-table-add-button')).not.toBeNull();
 	});
 
+	it('draws the add control at the foot of the card, outside the table', () => {
+		const { el } = openRender(PACK);
+		const add = el.querySelector('.sheetsmith-table-add-button') as Element;
+		const box = el.querySelector('.sheetsmith-table-box') as Element;
+		// A child of the box, a sibling of the scroller, and no row of the table:
+		// that is what lets it sit at the box's foot and stay out of the scroll.
+		expect(add.parentElement).toBe(box);
+		expect(add.previousElementSibling).toBe(
+			el.querySelector('.sheetsmith-table-wrapper'),
+		);
+		expect(box.lastElementChild).toBe(add);
+		expect(el.querySelector('table')?.contains(add)).toBe(false);
+		expect(el.querySelector('tr.sheetsmith-table-add')).toBeNull();
+		// After the last row, and after every row's controls, in document order.
+		const rows = el.querySelectorAll('tbody tr');
+		const last = rows[rows.length - 1] as Element;
+		expect(
+			last.compareDocumentPosition(add) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(el.classList.contains('sheetsmith-table-open')).toBe(true);
+	});
+
+	it('keeps the add control the box\'s last child whatever the row count', () => {
+		// The position is structural, so it cannot depend on how many rows there
+		// are: the same last-child under two, three and none (the empty state).
+		for (const body of [null, PACK, `${PACK.trimEnd()}\n| Torch | 1 | 1 | no |\n`]) {
+			const { el } = openRender(body);
+			const box = el.querySelector('.sheetsmith-table-box') as Element;
+			expect(box.lastElementChild?.classList.contains('sheetsmith-table-add-button')).toBe(true);
+			expect(box.querySelectorAll('.sheetsmith-table-add-button')).toHaveLength(1);
+		}
+	});
+
+	it('stamps the totals flag the one-line rule keys on, only where there is a foot', () => {
+		// With a foot the last body row keeps its rule (`.sheetsmith-table-has-totals`)
+		// and the foot's own rule is dropped, so rows, foot and control are separated by
+		// exactly one line each; without one the last row has none and the control's top
+		// rule is the only line. The stylesheet half is asserted in `styles.test.ts`.
+		const withFoot = openRender(PACK).el.querySelector('table') as Element;
+		expect(withFoot.classList.contains('sheetsmith-table-has-totals')).toBe(true);
+		expect(withFoot.querySelectorAll('tfoot')).toHaveLength(1);
+		const plain = openRender(PACK, {
+			...inventory,
+			columns: [{ key: 'Qty', type: 'number' }],
+		}).el.querySelector('table') as Element;
+		expect(plain.classList.contains('sheetsmith-table-has-totals')).toBe(false);
+		expect(plain.querySelectorAll('tfoot')).toHaveLength(0);
+	});
+
+	it('draws the totals row before the add control', () => {
+		const { el } = openRender(PACK);
+		const foot = el.querySelector('tfoot') as Element;
+		const add = el.querySelector('.sheetsmith-table-add-button') as Element;
+		expect(
+			foot.compareDocumentPosition(add) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
+	it('keeps the add control reachable on an empty open table', () => {
+		const { el } = openRender(null);
+		expect(el.querySelector('.sheetsmith-table-empty')).not.toBeNull();
+		expect(
+			el.querySelector('.sheetsmith-table-box > .sheetsmith-table-add-button'),
+		).not.toBeNull();
+	});
+
+	it('gives only an open table the box that stretches', () => {
+		const { el } = openRender(PACK, { ...inventory, openRows: false });
+		expect(el.querySelector('.sheetsmith-table-box')).toBeNull();
+		expect(el.classList.contains('sheetsmith-table-open')).toBe(false);
+		expect(el.querySelector('.sheetsmith-table-wrapper-boxed')).toBeNull();
+		// The scroller is still the card, a direct child of the container.
+		expect(el.querySelector('.sheetsmith-table-wrapper')?.parentElement).toBe(el);
+	});
+
 	it('appends a row to the note when the add control is pressed', () => {
 		const { el, changes } = openRender(PACK);
 		const add = el.querySelector(
@@ -1936,6 +2014,82 @@ describe('table with open rows', () => {
 			true,
 		);
 		expect((landed as HTMLInputElement).value).toBe('');
+	});
+
+	describe("the name column's floor", () => {
+		/*
+		 * `docs/UI.md` §4: an open table's name column never falls below its
+		 * longest name while any column holds slack. A field with a percentage
+		 * width contributes only its `min-width` to the table's layout, so the
+		 * floor is a hidden copy of the name the cell lays out as text. Its
+		 * geometry is the stylesheet's and invisible here; what is held here is
+		 * what it holds, when, and that nothing reads it twice.
+		 */
+		function sizers(el: HTMLElement): HTMLElement[] {
+			return Array.from(
+				el.querySelectorAll<HTMLElement>('.sheetsmith-table-name-sizer'),
+			);
+		}
+
+		it("gives a character row's name cell one sizer holding its name", () => {
+			const { el } = openRender(PACK);
+			const cells = Array.from(
+				el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-name'),
+			);
+			expect(cells).toHaveLength(2);
+			expect(
+				cells.map(
+					(cell) =>
+						cell.querySelectorAll('.sheetsmith-table-name-sizer').length,
+				),
+			).toEqual([1, 1]);
+			expect(sizers(el).map((sizer) => sizer.textContent)).toEqual([
+				'Dagger',
+				'Rope',
+			]);
+		});
+
+		it('hides the sizer from assistive tech, which already has the field', () => {
+			const [sizer] = sizers(openRender(PACK).el);
+			expect(sizer?.getAttribute('aria-hidden')).toBe('true');
+		});
+
+		it('holds the new name once a rename is written and rendered again', () => {
+			const renamed = table.write(
+				{ rows: { 0: { name: 'Gauntlets of Ogre Power' } } },
+				PACK,
+				inventory,
+			);
+			expect(sizers(openRender(renamed).el)[0]?.textContent).toBe(
+				'Gauntlets of Ogre Power',
+			);
+		});
+
+		it('does not move while a name is typed and not yet committed', () => {
+			const { el } = openRender(PACK);
+			const input = el.querySelector<HTMLInputElement>(
+				'.sheetsmith-table-name-input',
+			) as HTMLInputElement;
+			input.dispatchEvent(new Event('focus'));
+			input.value = 'Dagger of a much longer name';
+			input.dispatchEvent(new Event('input'));
+			expect(sizers(el)[0]?.textContent).toBe('Dagger');
+		});
+
+		it("gives a declared row's name cell no sizer", () => {
+			const { el } = openRender(PACK, load);
+			const cells = Array.from(
+				el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-name'),
+			);
+			// The two declared rows, then the note's two character rows.
+			expect(cells).toHaveLength(4);
+			expect(
+				cells.map(
+					(cell) =>
+						cell.querySelector('.sheetsmith-table-name-sizer') !== null,
+				),
+			).toEqual([false, false, true, true]);
+		});
 	});
 
 	it('deletes a row in two presses, writing nothing on the first', () => {
@@ -2459,6 +2613,28 @@ describe('table link cells', () => {
 		).toBe('[[Sunblade|sword]]');
 	});
 
+	it("floors a linked name at the text it shows, as text and not as a link", () => {
+		/*
+		 * The floor is the width of what the cell draws at rest, so an alias
+		 * floors at the alias rather than at its source. And it is a text node
+		 * alone: `FOCUSABLE` counts `a[href]`, and the view restores focus by
+		 * control index within a cell, so an anchor in the sizer would move
+		 * every landing after it.
+		 */
+		const { el } = driven();
+		const row = el.querySelectorAll('tbody tr')[1] as HTMLElement;
+		const cell = row.querySelector('.sheetsmith-table-name') as HTMLElement;
+		const sizer = cell.querySelector('.sheetsmith-table-name-sizer');
+		expect(sizer?.textContent).toBe('sword');
+		expect(sizer?.children).toHaveLength(0);
+		expect(cell.querySelectorAll(FOCUSABLE)).toHaveLength(2);
+		expect(
+			Array.from(cell.querySelectorAll(FOCUSABLE)).some(
+				(control) => sizer?.contains(control) === true,
+			),
+		).toBe(false);
+	});
+
 	it('names a linked row in a total it could not read', () => {
 		const prose = `${PACK.trimEnd()}\n| [[Chalk\\|chalk stick]] | some | |\n`;
 		const totalled = {
@@ -2485,22 +2661,12 @@ describe('table link cells', () => {
 		const anchor = links(el).find(
 			(a) => a.textContent === 'Bag of Holding',
 		) as HTMLElement;
-		Object.defineProperty(anchor, 'scrollWidth', {
-			value: 200,
-			configurable: true,
-		});
-		Object.defineProperty(anchor, 'clientWidth', {
-			value: 100,
-			configurable: true,
-		});
-		anchor.dispatchEvent(new Event('pointerenter'));
+		setClip(anchor, 200, 100);
+		hoverClip(anchor);
 		expect(anchor.getAttribute('title')).toBe('Bag of Holding');
 
-		Object.defineProperty(anchor, 'clientWidth', {
-			value: 400,
-			configurable: true,
-		});
-		anchor.dispatchEvent(new Event('pointerenter'));
+		setClip(anchor, 200, 400);
+		hoverClip(anchor);
 		expect(anchor.hasAttribute('title')).toBe(false);
 	});
 
@@ -2513,15 +2679,8 @@ describe('table link cells', () => {
 		const aliased = links(el).find(
 			(a) => a.textContent === 'sword',
 		) as HTMLElement;
-		Object.defineProperty(aliased, 'scrollWidth', {
-			value: 200,
-			configurable: true,
-		});
-		Object.defineProperty(aliased, 'clientWidth', {
-			value: 100,
-			configurable: true,
-		});
-		aliased.dispatchEvent(new Event('pointerenter'));
+		setClip(aliased, 200, 100);
+		hoverClip(aliased);
 		expect(aliased.getAttribute('title')).toBe('Sunblade');
 	});
 
@@ -5461,6 +5620,158 @@ describe('table renders a modifier cell', () => {
 		// And no title, because there is nothing to say about it.
 		expect(button.getAttribute('title')).toBeNull();
 	});
+
+	describe('the form and a note (docs/features/modifier-notes.md)', () => {
+		const NOTE_TARGETS = [
+			...TARGETS,
+			{ name: 'passive_perception', label: 'Passive perception' },
+		];
+		const noting = (over: Partial<ModifierContext> = {}) =>
+			modifierContext({
+				definitions: [RING, PLATE],
+				targets: TARGETS,
+				published: NOTE_TARGETS,
+				noteTargets: NOTE_TARGETS,
+				bonusTypes: ['item', 'status'],
+				outcomes: (part: string) => [resolve(part, {})],
+				...over,
+			});
+
+		it('groups Value as the editor does: Takes modifiers, then Notes only', () => {
+			const { panel, lines: read } = opened('armour_class += 2', { modifiers: noting() });
+			read()[0]?.press();
+			const value = field(panel, 'Value') as HTMLSelectElement;
+			expect(
+				Array.from(value.querySelectorAll('optgroup')).map((group) => [
+					group.label,
+					Array.from(group.querySelectorAll('option')).map((one) => one.value),
+				]),
+			).toEqual([
+				['Takes modifiers', ['armour_class', 'abilities.STR']],
+				['Notes only', ['passive_perception']],
+			]);
+		});
+
+		it('writes a note typed on the row as the last clause', () => {
+			const { panel, changes, lines: read } = opened('armour_class += 2', {
+				modifiers: noting(),
+			});
+			read()[0]?.press();
+			type(field(panel, 'Note'), 'Resistance to cold');
+			expect(changes).toEqual([
+				{
+					rows: {
+						0: { cells: { Modifiers: 'armour_class += 2 note: Resistance to cold' } },
+					},
+				},
+			]);
+		});
+
+		it('refuses a semicolon in a typed note, writing nothing and saying why', () => {
+			const { panel, changes, lines: read } = opened('armour_class += 2', {
+				modifiers: noting(),
+			});
+			read()[0]?.press();
+			type(field(panel, 'Note'), 'Warm; dry');
+			expect(changes).toEqual([]);
+			expect(panel.querySelector('.sheetsmith-panel-problem')?.textContent).toBe(
+				'A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.',
+			);
+		});
+
+		it('shows a named part’s note read-only, and draws no field where it has none', () => {
+			const WARDED = definitionView({
+				name: 'Warded',
+				target: 'armour_class',
+				targetLabel: 'Armour class',
+				note: 'Resistance to cold',
+			});
+			const withWarded = noting({
+				definitions: [RING, WARDED],
+				outcomes: (part: string) =>
+					part === 'Warded'
+						? [
+								outcomeOf({
+									definition: WARDED,
+									change: WARDED.changes[0] as ModifierChangeView,
+									target: 'armour_class',
+									targetLabel: 'Armour class',
+									applies: true,
+								}),
+							]
+						: [resolve(part, {})],
+			});
+			const named = opened('Warded', { modifiers: withWarded });
+			named.lines()[0]?.press();
+			const note = field(named.panel, 'Note') as HTMLInputElement;
+			expect(note.value).toBe('Resistance to cold');
+			expect(note.readOnly).toBe(true);
+			const plain = opened('Ring of Protection', { modifiers: withWarded });
+			plain.lines()[0]?.press();
+			expect(field(plain.panel, 'Note')).toBeNull();
+		});
+
+		it('offers a note-only part for reuse, and the note goes over with it', () => {
+			const landed = vi.fn(() => Promise.resolve({ ok: true as const }));
+			const { panel, lines: read } = opened('passive_perception += note: Sharp', {
+				modifiers: noting({ promote: landed }),
+			});
+			read()[0]?.press();
+			const name = panel.querySelector(
+				'[data-sheetsmith-panel-field="promote-name"]',
+			) as HTMLInputElement;
+			name.value = 'Keen senses';
+			name.dispatchEvent(new Event('input'));
+			control(panel, 'Save to the layout')?.click();
+			expect(landed).toHaveBeenCalledWith('Keen senses', {
+				target: 'passive_perception',
+				operator: 'add',
+				amount: '',
+				note: 'Sharp',
+			});
+		});
+
+		it('copies every change’s note on detach, and refuses one no cell could spell', () => {
+			const make = (note: string) =>
+				definitionView({
+					name: 'Warded',
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					amount: '1',
+					note,
+				});
+			const context = (warded: ModifierDefinitionView) =>
+				noting({
+					definitions: [warded],
+					outcomes: () => [
+						outcomeOf({
+							definition: warded,
+							change: warded.changes[0] as ModifierChangeView,
+							target: 'armour_class',
+							targetLabel: 'Armour class',
+							applies: true,
+							amount: 1,
+						}),
+					],
+				});
+			const good = opened('Warded', { modifiers: context(make('Warm')) });
+			good.lines()[0]?.press();
+			choose(field(good.panel, 'Modifier'), 'sheetsmith-typed');
+			control(good.panel, 'Copy onto this row')?.click();
+			expect(good.changes).toEqual([
+				{ rows: { 0: { cells: { Modifiers: 'armour_class += 1 note: Warm' } } } },
+			]);
+
+			const torn = opened('Warded', { modifiers: context(make('Warm; dry')) });
+			torn.lines()[0]?.press();
+			choose(field(torn.panel, 'Modifier'), 'sheetsmith-typed');
+			expect(control(torn.panel, 'Copy onto this row')).toBeNull();
+			expect(torn.panel.querySelector('.sheetsmith-panel-problem')?.textContent).toBe(
+				'"Warded" cannot be copied onto this row. A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.',
+			);
+			expect(torn.changes).toEqual([]);
+		});
+	});
 });
 
 describe('table and mod.self', () => {
@@ -5552,6 +5863,7 @@ describe('table and mod.self', () => {
 				})),
 				bonusTypes: [],
 				accepting: new Set(pushes.map(([target]) => target)),
+				marked: new Set(pushes.map(([target]) => target)),
 			},
 		);
 	}
@@ -5899,6 +6211,7 @@ describe('table and mod.self', () => {
 				published: [],
 				bonusTypes: [],
 				accepting: new Set(['skills.acrobatics']),
+				marked: new Set(['skills.acrobatics']),
 			},
 		);
 		const el = document.createElement('div');
@@ -6297,9 +6610,8 @@ describe('table.applyReset', () => {
 		const el = document.createElement('div');
 		table.render(el, bound, data, contextFor(data, bound));
 		expect(el.querySelector('.sheetsmith-error')).toBe(null);
-		// Three rows plus the add control's own, which is what an open list
-		// draws when nothing is wrong with it.
-		expect(el.querySelectorAll('tbody tr')).toHaveLength(4);
+		// Three rows, and the add control below the table rather than among them.
+		expect(el.querySelectorAll('tbody tr')).toHaveLength(3);
 		// And still editable: the cells are fields, not read-only text.
 		expect(
 			el.querySelectorAll('tbody .sheetsmith-table-input').length,
@@ -6602,5 +6914,161 @@ describe('a condition written by hand on a column', () => {
 		const data = stored(BODY, conditioned);
 		expect(render(data, conditioned).innerHTML).toBe(render(stored(BODY), config).innerHTML);
 		expect(table.write(data, BODY, conditioned)).toBe(BODY);
+	});
+});
+
+describe('a table something has noted (docs/features/modifier-notes.md)', () => {
+	/** A sheet that has pushed one note at each name in `noted`, and nothing else. */
+	const noting = (noted: readonly string[]): ModifierContext => ({
+		definitions: [],
+		targets: [],
+		published: [],
+		bonusTypes: [],
+		outcomes: () => [],
+		breakdown: (name) => ({
+			lines: [],
+			override: null,
+			total: 0,
+			resultTotal: 0,
+			...(noted.includes(name)
+				? {
+						notes: [
+							{
+								label: 'Boots',
+								source: 'Magic items',
+								text: `Noted at ${name}`,
+								suppressed: null,
+							},
+						],
+					}
+				: {}),
+		}),
+		notable: (name) => noted.includes(name),
+		promote: () => Promise.resolve({ error: 'No layout here.' }),
+	});
+	const drawn = (over: TableConfig, data: TableData, noted: readonly string[]) => {
+		const el = document.createElement('div');
+		table.render(el, over, data, { ...contextFor(data, over), modifiers: noting(noted) });
+		return el;
+	};
+
+	/** The skills, keyed, with the computed total published and a total of Bonus. */
+	const published: TableConfig = {
+		...config,
+		rows: [
+			{ label: 'Acrobatics', values: { ability: 'abilities.DEX' }, key: 'acrobatics' },
+			{ label: 'Perception', values: { ability: 'abilities.WIS' }, key: 'perception' },
+		],
+		columns: [
+			{ key: 'Training', type: 'number', min: 0, max: 2 },
+			{ key: 'Bonus', type: 'number', total: true },
+			{
+				key: 'Total',
+				type: 'computed',
+				formula: 'ability + Training * prof + Bonus',
+				signed: true,
+				publish: true,
+			},
+		],
+	};
+	/** The same rows with a level column published instead. */
+	const levelPublished: TableConfig = {
+		...published,
+		columns: [
+			{ key: 'Training', type: 'level', max: 2, publish: true },
+			{ key: 'Bonus', type: 'number' },
+		],
+	};
+
+	it('marks a published computed cell, with the notes joining its popover and no underline', () => {
+		const data = stored(BODY, published);
+		const el = drawn(published, data, ['skills.perception']);
+		const marks = el.querySelectorAll('.sheetsmith-note-mark');
+		expect(marks).toHaveLength(1);
+		const cell = marks[0]?.closest('td') as HTMLElement;
+		expect(cell.closest('tr')?.textContent).toContain('Perception');
+		expect(cell.querySelector('.sheetsmith-modified')).toBeNull();
+		(cell.querySelector('.sheetsmith-table-value') as HTMLElement).click();
+		const bubble = document.querySelector('.sheetsmith-popover')?.textContent;
+		expect(bubble).toBe(
+			'ability + Training * prof + Bonus\n\nMagic items · Boots — "Noted at skills.perception"',
+		);
+		closePopover();
+	});
+
+	it('marks a stored published level cell after its ring', () => {
+		const data = stored(BODY, levelPublished);
+		const el = drawn(levelPublished, data, ['skills.acrobatics']);
+		const mark = el.querySelector('.sheetsmith-note-mark') as HTMLElement;
+		expect(mark.previousElementSibling?.classList.contains('sheetsmith-level-ring')).toBe(
+			true,
+		);
+		expect(mark.closest('tr')?.textContent).toContain('Acrobatics');
+	});
+
+	it('marks a column total after the sum', () => {
+		const data = stored(BODY, published);
+		const el = drawn(published, data, ['skills.Bonus']);
+		const mark = el.querySelector('tfoot .sheetsmith-note-mark') as HTMLElement;
+		expect(mark.previousElementSibling?.textContent).toBe('1');
+	});
+
+	it('draws nothing where nothing is noted, and asks no breakdown of a value that never had one', () => {
+		const data = stored(BODY, levelPublished);
+		const asked: string[] = [];
+		const context = noting([]);
+		const el = document.createElement('div');
+		table.render(el, levelPublished, data, {
+			...contextFor(data, levelPublished),
+			modifiers: {
+				...context,
+				breakdown: (name) => {
+					asked.push(name);
+					return context.breakdown(name);
+				},
+			},
+		});
+		expect(el.querySelector('.sheetsmith-note-mark')).toBeNull();
+		expect(asked).toEqual([]);
+	});
+
+	it('reserves the mark’s slot down a noted column, and touches no other', () => {
+		// The line-up is the stylesheet's; what the render owes it is the class on
+		// every value or ring cell of a column that holds a mark anywhere.
+		const data = stored(BODY, levelPublished);
+		const el = drawn(levelPublished, data, ['skills.acrobatics']);
+		const column = (at: number) =>
+			Array.from(el.querySelectorAll('tbody tr')).map((tr) =>
+				(tr as HTMLTableRowElement).cells[at]?.classList.contains('sheetsmith-note-column'),
+			);
+		expect(column(1)).toEqual([true, true]);
+		// The number column holds fields and no mark, so it reserves nothing.
+		expect(column(2)).toEqual([false, false]);
+		expect(el.querySelector('thead .sheetsmith-note-column')).toBeNull();
+	});
+
+	it('marks no column of a table with no note', () => {
+		const data = stored(BODY, published);
+		const el = drawn(published, data, []);
+		expect(el.querySelector('.sheetsmith-note-column, .sheetsmith-note-bands')).toBeNull();
+	});
+
+	it('reads a row the same with and without a key, and only a new name appears', () => {
+		// Adding a key to a claimed unkeyed row (D): the claim is by label, so the
+		// note's section is read to the same data and nothing is written.
+		const unkeyed: TableConfig = {
+			...published,
+			rows: [published.rows?.[0] ?? { label: '' }, { label: 'Perception', values: { ability: 'abilities.WIS' } }],
+		};
+		const before = table.read(BODY, unkeyed);
+		const after = table.read(BODY, published);
+		expect(after).toEqual(before);
+		const data = stored(BODY, published);
+		const names = (over: TableConfig) =>
+			Object.keys(table.scopeValues?.(data, over).named ?? {});
+		expect(names(published).filter((key) => !names(unkeyed).includes(key))).toEqual([
+			'perception',
+		]);
+		expect(table.write(data, BODY, published)).toBe(table.write(data, BODY, unkeyed));
 	});
 });

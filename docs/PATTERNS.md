@@ -285,11 +285,12 @@ wrapper taking the item titles as arguments for one caller is the generalisation
 ahead of evidence §1 refuses. The scan names that one file rather than being
 dropped, so a second import is still a decision made there.
 
-The allowlist has since gained no name, and the sibling list has gained three:
-`components/modifier-form.ts`, the markup of that form; `components/effective-value.ts`;
-and `components/typed-value.ts`, which is what a typed value stored as text means
-before any formula runs. The last two are on it for **reuse** rather than atomicity,
-which is the distinction the entry below turns on — and `typed-value.ts` is the one
+The allowlist has since gained no name. The sibling list is recorded in
+`eslint.config.mts`, each entry beside its argument, and driven through
+`components/isolation.test.ts`; this file carries no copy of it. Most entries are
+on it for **reuse** rather than atomicity, which is the distinction the entry below
+turns on — and `typed-value.ts`, which is what a typed value stored as text means
+before any formula runs, is the one
 that shows the boundary working rather than merely permitting: extraction was refused
 once in review on the grounds that §2 reserves the allowlist edit and that
 `column-types.ts` holds a vocabulary and no behaviour, and both halves of that were
@@ -297,14 +298,18 @@ right about the *destination* and wrong about the conclusion. §2 says the edit 
 the decision, and §1 says extraction goes to a module named for the behaviour — which
 is a new file, not the vocabulary.
 
-**`modifier-form.ts` is the one on the list for atomicity and not for reuse, and
-the difference is the whole of why its entry is worth reading.** It arrived with
+**`modifier-form.ts` was the first on the list for atomicity and not for reuse,
+and the difference is the whole of why its entry is worth reading.** It arrived with
 exactly one consumer — Table — where `card-face.ts`, `linked-text.ts` and
 `level-ring.ts` had three each and `modifier-breakdown.ts` five. §1 is explicit
 that one consumer earns no generalisation, so "shared" is not what admitted it:
 `table.ts` was 2450 lines and drawing a six-field form is a second job in a file
 whose job is a table, which is the Pool engine's precedent above — *atomicity is
-what forced the split, not reuse*.
+what forced the split, not reuse*. `components/record-line-fit.ts` is the second
+entry on those terms: Record set's private half, with one consumer and no markup,
+split out because estimating a summary line's width from measured constants is a
+second job in `record-set.ts`, and kept pure so its estimate is held against the
+harness's numbers without a DOM (`docs/features/record-set-stacking-tiers.md`).
 
 **And the second consumer has since arrived, which closes what that entry was
 waiting for.** Record set's `modifier` field imports `renderModifierForm` and
@@ -322,10 +327,13 @@ record of it. **A one-consumer sibling arrives with the atomicity argument or it
 not arrive**, which is the sentence a reader of this file alone needs, because
 "shared" would admit the next one with no argument at all.
 
-`setIcon` is the one import of its kind, and **four components take it now** —
-`table.ts`, `record-set.ts`, `passport.ts` and `track.ts`. This sentence said
-"`table.ts` takes `setIcon`" while three more had reached for it, which is the
-drift this tier is most prone to: the *rule* is that the allowlist stays one
+`setIcon` is the one import of its kind, and **several components and a painter
+take it** — `note-mark.ts` among them, which draws its glyph itself rather than
+taking it as an argument the way `modifier-form.ts` does, since the allowlist is a
+list of names and not of files. Deliberately not counted or listed: this sentence
+said "`table.ts` takes `setIcon`" while three more had reached for it, and then
+"four components and one painter" until Pool's ceiling door made a fifth, which is
+the drift this tier is most prone to: the *rule* is that the allowlist stays one
 name long, and it has, so nothing was violated and nothing reported. A count of
 files is not that rule and goes stale silently; `components/isolation.test.ts`
 holds the name, and no check holds this sentence. The
@@ -420,7 +428,7 @@ Every component follows the same order. A reader who knows one knows them all.
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
    `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
    `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
-   `resetColumns`, `resetWhole`, `applyReset`, `render`.
+   `drawsNotes`, `resetColumns`, `resetWhole`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -442,7 +450,10 @@ Every component follows the same order. A reader who knows one knows them all.
    to somebody else's number. `resetColumns` sits beside `hasBuffer` for the reason
    `hasBuffer` sits where it does: both are declarations the layout editor reads to
    decide what a reset binding may say, and a declaration comes before the
-   behaviour it conditions. `resetWhole` sits directly after `resetColumns`
+   behaviour it conditions. `drawsNotes` sits directly after `hasBuffer` because
+   it is the same kind of declaration — a fact about what this component draws
+   that nothing outside it could infer (`docs/features/modifier-notes.md`).
+   `resetWhole` sits directly after `resetColumns`
    because it answers the same picker read the other way: one names the parts a
    binding may pick, the other names what the picker calls a binding that picks
    none of them (`docs/features/record-set-reset-field-targeting.md`).
@@ -762,11 +773,31 @@ A component inventing its own is the failure mode to watch for.
   [checked]. The editor owns those.
 - Declaring `applyReset` obliges `formulaFields` to include `reset.*.to`
   [checked]. Forgetting it leaves the reset button dead with nothing to say so.
+- **An expression stored in a character note, and nowhere in the layout, is not
+  a formula field, because `formulaFields` names layout config paths and no config
+  path holds it** (a record's ceiling, `Uses: 1 / prof`). **Any expression held
+  anywhere in a layout's config, at any depth, is a formula field and is
+  declared** — the exemption is where the text lives, never what it is used for.
+  A note-held expression's input still owes what a declaration buys: the parser's
+  sentence where it is typed, and the suggester [judgement]. It is evaluated
+  through `RenderContext.resolveExpression`, and **every production host supplies
+  it** [checked: `src/expression-context-coverage.test.ts`]
+  (`docs/features/record-ceiling-formula.md`).
 - **Declaring `resetColumns` obliges `applyReset`** [checked]. The editor draws its
   picker from the first and the trigger writes through the second, so a component
   declaring only the first offers an author a column to bind and then passes over
   the binding when the button is pressed — the rule above one step over, and the
   same dead control with nothing to say so.
+- **A component publishing a name either draws its notes or refuses them as a
+  target** [checked: `contract.test.ts`, `note-contract.test.ts`]. `drawsNotes`
+  is the declaration, and both halves read it through one derivation,
+  `noteTargets`: a declaring component's DOM must carry every note pushed at each
+  name its sample publishes, and a silent one must have none of its names among
+  the note targets, so a note aimed at one is reported as not a note target yet.
+  Neither half alone would do: a component could declare the flag and draw
+  nothing, or draw without the check knowing. The DOM half is a file of its own
+  because `contract.test.ts` runs without a DOM on purpose
+  (`docs/features/modifier-notes.md`).
 - **Declaring `resetWhole` obliges `resetColumns`** [checked: `contract.test.ts`].
   `resetWhole` is what the **Acts on** picker calls a binding naming none of a
   component's parts, so without a picker there is nowhere to offer it — a string

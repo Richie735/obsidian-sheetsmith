@@ -211,37 +211,43 @@
 					"label": "Strength",
 					"values": {
 						"ability": "abilities.STR"
-					}
+					},
+					"key": "STR"
 				},
 				{
 					"label": "Dexterity",
 					"values": {
 						"ability": "abilities.DEX"
-					}
+					},
+					"key": "DEX"
 				},
 				{
 					"label": "Constitution",
 					"values": {
 						"ability": "abilities.CON"
-					}
+					},
+					"key": "CON"
 				},
 				{
 					"label": "Intelligence",
 					"values": {
 						"ability": "abilities.INT"
-					}
+					},
+					"key": "INT"
 				},
 				{
 					"label": "Wisdom",
 					"values": {
 						"ability": "abilities.WIS"
-					}
+					},
+					"key": "WIS"
 				},
 				{
 					"label": "Charisma",
 					"values": {
 						"ability": "abilities.CHA"
-					}
+					},
+					"key": "CHA"
 				}
 			],
 			"columns": [
@@ -258,7 +264,8 @@
 					"key": "Total",
 					"type": "computed",
 					"formula": "ability + Prof * prof",
-					"signed": true
+					"signed": true,
+					"publish": true
 				}
 			],
 			"position": {
@@ -350,37 +357,43 @@
 					"label": "Acrobatics",
 					"values": {
 						"ability": "abilities.DEX"
-					}
+					},
+					"key": "acrobatics"
 				},
 				{
 					"label": "Animal handling",
 					"values": {
 						"ability": "abilities.WIS"
-					}
+					},
+					"key": "animal_handling"
 				},
 				{
 					"label": "Arcana",
 					"values": {
 						"ability": "abilities.INT"
-					}
+					},
+					"key": "arcana"
 				},
 				{
 					"label": "Athletics",
 					"values": {
 						"ability": "abilities.STR"
-					}
+					},
+					"key": "athletics"
 				},
 				{
 					"label": "Deception",
 					"values": {
 						"ability": "abilities.CHA"
-					}
+					},
+					"key": "deception"
 				},
 				{
 					"label": "History",
 					"values": {
 						"ability": "abilities.INT"
-					}
+					},
+					"key": "history"
 				},
 				{
 					"label": "Insight",
@@ -393,7 +406,8 @@
 					"label": "Intimidation",
 					"values": {
 						"ability": "abilities.CHA"
-					}
+					},
+					"key": "intimidation"
 				},
 				{
 					"label": "Investigation",
@@ -406,13 +420,15 @@
 					"label": "Medicine",
 					"values": {
 						"ability": "abilities.WIS"
-					}
+					},
+					"key": "medicine"
 				},
 				{
 					"label": "Nature",
 					"values": {
 						"ability": "abilities.INT"
-					}
+					},
+					"key": "nature"
 				},
 				{
 					"label": "Perception",
@@ -425,7 +441,8 @@
 					"label": "Performance",
 					"values": {
 						"ability": "abilities.CHA"
-					}
+					},
+					"key": "performance"
 				},
 				{
 					"label": "Persuasion",
@@ -438,25 +455,29 @@
 					"label": "Religion",
 					"values": {
 						"ability": "abilities.INT"
-					}
+					},
+					"key": "religion"
 				},
 				{
 					"label": "Sleight of hand",
 					"values": {
 						"ability": "abilities.DEX"
-					}
+					},
+					"key": "sleight_of_hand"
 				},
 				{
 					"label": "Stealth",
 					"values": {
 						"ability": "abilities.DEX"
-					}
+					},
+					"key": "stealth"
 				},
 				{
 					"label": "Survival",
 					"values": {
 						"ability": "abilities.WIS"
-					}
+					},
+					"key": "survival"
 				}
 			],
 			"columns": [

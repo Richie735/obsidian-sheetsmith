@@ -34,9 +34,13 @@ Two different units share the word, and both appear in the HIG's tables.
   contrast table borrows. One is 4/3 CSS px, so 18pt is 24px and 14pt is
   18.66px.
 
-Nothing this plugin draws reaches 24px regular or 18.66px bold. **Every piece of
-text on a sheet is small text**, and takes the 4.5:1 bar in §3. Do not re-derive
-that per control.
+Three things on a sheet reach the large-text threshold, all at the card's 28px
+headline size: Card's unresolved `?` (28px, 400), Pool's headline value, spent
+or not (28px, 700), and a Passport's name and its placeholder (28px, 700). Those
+take the 3:1 bar in §3. **Everything else on a sheet is small text** and takes
+4.5:1, and that is the default to assume: re-derive it only for text drawn at
+the headline size, and measure the size off the render rather than the rule,
+since it follows the vault's text setting (`docs/features/text-faint-audit.md`).
 
 ---
 

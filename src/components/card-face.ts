@@ -16,7 +16,8 @@ import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { sameNumber } from './effective-value';
-import { MODIFIED_CLASS } from './modifier-breakdown';
+import { MODIFIED_CLASS, ModifierAccount } from './modifier-breakdown';
+import { renderAccountNotes } from './note-mark';
 
 /**
  * What nothing stored looks like in the value slot (SPEC §4.2). One constant
@@ -140,6 +141,18 @@ export interface CardFaceOptions {
 		placeholder?: string;
 		onCommit: (next: string) => void;
 	};
+	/**
+	 * The notes a modifier pushed at the name this card publishes, where there
+	 * are any (`docs/features/modifier-notes.md`): the whole account, both groups,
+	 * and how many notes it lists. Draws the note mark at the inline end of the
+	 * label's line.
+	 *
+	 * **Nothing to do with `note` above**, which is the character's own line and
+	 * stays exactly as it is: that is character data in an editable field, and
+	 * this is computed text owned by whichever row or definition pushed it.
+	 * Merging them would make one field show words the note does not store.
+	 */
+	notes?: ModifierAccount;
 }
 
 /**
@@ -620,6 +633,18 @@ export function renderCardFace(
 			onCommit: options.note.onCommit,
 		});
 	}
+
+	/*
+	 * **Out of flow, at the label line's inline end, and last in the DOM.** Out
+	 * of flow so it cannot move the number off the card's centre line, which a
+	 * flex item beside the label would; last so the face's own first-and-last
+	 * flex-item rules are still answered by the label and the value, with the
+	 * stylesheet skipping it as it skips the sr-only carriers. With the label
+	 * hidden it keeps the same corner, which is the line the number's run starts
+	 * on. After the controls in reading order, so a reader meets the value before
+	 * the door onto what was noted at it.
+	 */
+	renderAccountNotes(container, options.notes, 'sheetsmith-card-has-note');
 
 	if (status) container.appendChild(status);
 

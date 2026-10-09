@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { definitionView, outcomeView } from '../test/modifier-views';
 import {
 	MODIFIED_CLASS,
+	modifierAccount,
 	modifierBreakdown,
 	modifierOutcomeText,
 	modifierRowName,
@@ -11,6 +12,7 @@ import {
 	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierLine,
+	ModifierNote,
 	ModifierOutcome,
 } from '../types';
 
@@ -55,7 +57,30 @@ const said = (
 	shown: number | null = override === null ? null : override + total,
 	/** That the reader is inside a component with rows, which a table is. */
 	inRows = false,
-) => modifierBreakdown({ lines, total, override }, shown, inRows);
+) => {
+	const text = modifierBreakdown({ lines, total, override }, shown, inRows);
+	/*
+	 * **And every case is a case of a measured effect that says nothing new**
+	 * (`docs/features/breakdown-measured-effect.md`): no effect, a null one, and
+	 * one equal to the slot total all read exactly as before, so the nine other
+	 * importers of this builder are pinned byte-identical here rather than in
+	 * each of their files.
+	 */
+	for (const effect of [undefined, null, { noun: 'run', amount: total }]) {
+		expect(
+			modifierBreakdown({ lines, total, override }, shown, inRows, effect),
+		).toBe(text);
+	}
+	/*
+	 * **Every case in this file is also a case of the account**, which is how a
+	 * sheet with no notes is held byte-identical (`docs/features/modifier-notes.md`):
+	 * with no notes the account's text is this text, character for character, and
+	 * it owes the underline exactly where there is text to owe it for.
+	 */
+	const account = modifierAccount({ lines, total, override }, shown, inRows);
+	expect(account).toEqual({ text, arithmetic: text !== null, notes: 0 });
+	return text;
+};
 
 describe('modifierBreakdown', () => {
 	it('is null where nothing modifies the number', () => {
@@ -217,6 +242,112 @@ describe('modifierBreakdown', () => {
 			),
 		).toBe(
 			'Belt — item +2\nGauntlets — item +1 (not applied: a larger item bonus applies)\n\nTotal +2',
+		);
+	});
+});
+
+/*
+ * What a push did, where the formula transformed the slot
+ * (`docs/UI.md` §9, `docs/features/breakdown-measured-effect.md`).
+ *
+ * The effect is the caller's measurement, handed over as `shown` is, so these
+ * cases pass it in rather than asking the builder to work it out.
+ */
+describe('a measured effect on the total', () => {
+	const pushed = (
+		amount: number,
+		effect: { noun: string; amount: number } | null,
+		over: { override?: number | null; resultTotal?: number; shown?: number | null } = {},
+	) =>
+		modifierBreakdown(
+			{
+				lines: [line({ label: 'Talisman of Endurance', amount })],
+				total: amount,
+				override: over.override ?? null,
+				...(over.resultTotal === undefined ? {} : { resultTotal: over.resultTotal }),
+			},
+			over.shown ?? null,
+			undefined,
+			effect,
+		);
+
+	it('states one push at one magnitude: the push, then what it did to the run', () => {
+		/*
+		 * The bug this exists for. `floor((3 + mod.self) / 2)` with a `+2` draws
+		 * one granted segment, and `Total +2` alone stated one push at two
+		 * magnitudes on one control. The contributor line stays what was pushed,
+		 * since that is what a reader unticks.
+		 */
+		expect(pushed(2, { noun: 'run', amount: 1 })).toBe(
+			'Talisman of Endurance — +2\n\nTotal +2, run +1',
+		);
+	});
+
+	it('signs an effect the push shortened, through the same spelling', () => {
+		expect(pushed(-2, { noun: 'run', amount: -1 })).toBe(
+			'Talisman of Endurance — -2\n\nTotal -2, run -1',
+		);
+	});
+
+	it('says a clamp, since the run moving less than the push is what it did', () => {
+		// Cursed vigour: `2 + mod.self` with a −5 shuts both slots, and the run
+		// has no third to lose.
+		expect(pushed(-5, { noun: 'run', amount: -2 })).toBe(
+			'Talisman of Endurance — -5\n\nTotal -5, run -2',
+		);
+	});
+
+	it('adds nothing where the effect is the push', () => {
+		expect(pushed(2, { noun: 'run', amount: 2 })).toBe(pushed(2, null));
+	});
+
+	it('adds nothing for a zero effect, which an absolute spelling also measures', () => {
+		// `3 + mod.grit.count` really is two segments longer and measures zero,
+		// so `run +0` would be a false statement about a run that moved.
+		expect(pushed(1, { noun: 'run', amount: 0 })).toBe(
+			'Talisman of Endurance — +1\n\nTotal +1',
+		);
+	});
+
+	it('adds nothing under an override, whose total already states the value', () => {
+		const effect = { noun: 'run', amount: -2 };
+		expect(pushed(0, effect, { override: 2, shown: 2 })).toBe(
+			pushed(0, null, { override: 2, shown: 2 }),
+		);
+		expect(pushed(0, null, { override: 2, shown: 2 })).toContain('Total 2');
+		// And where the caller has no number, the delta arm is taken, which is the
+		// one place the override guard is reachable: without it this would read
+		// `Total +0, run -2`.
+		expect(pushed(0, effect, { override: 2, shown: null })).toBe(
+			pushed(0, null, { override: 2, shown: null }),
+		);
+		expect(pushed(0, null, { override: 2, shown: null })).toContain('Total 0');
+	});
+
+	it('compares as the phases total, so a float residue adds no clause', () => {
+		// 0.1 + 0.2 is 0.30000000000000004, and a caller measuring 0.3 has said
+		// exactly what was pushed.
+		expect(pushed(0.1, { noun: 'run', amount: 0.3 }, { resultTotal: 0.2 })).toBe(
+			pushed(0.1, null, { resultTotal: 0.2 }),
+		);
+	});
+
+	it('compares against both phases, so a result-phase line is not a transform', () => {
+		// `4 + mod.self` with `+2` and a result-phase `+1` moves the published
+		// number by 3, which is exactly what was pushed.
+		expect(pushed(2, { noun: 'run', amount: 3 }, { resultTotal: 1 })).toBe(
+			pushed(2, null, { resultTotal: 1 }),
+		);
+		// Against the value phase alone that would read as a transform; against
+		// both it differs only where the formula really did something.
+		expect(pushed(2, { noun: 'run', amount: 1 }, { resultTotal: 1 })).toBe(
+			'Talisman of Endurance — +2\n\nTotal +2, run +1',
+		);
+	});
+
+	it("takes the noun from the caller, so the builder holds no component's word", () => {
+		expect(pushed(2, { noun: 'length', amount: 1 })).toBe(
+			'Talisman of Endurance — +2\n\nTotal +2, length +1',
 		);
 	});
 });
@@ -716,5 +847,171 @@ describe('a row whose modifier names several changes', () => {
 			'Modifiers: Ring of Protection, changes nothing',
 		);
 		expect(modifierRowText(said)).toBeNull();
+	});
+});
+
+describe('a value\'s notes (docs/features/modifier-notes.md)', () => {
+	const note = (over: Partial<ModifierNote> = {}): ModifierNote => ({
+		label: 'Cloak of Warding',
+		source: 'Magic items',
+		text: 'Resistance to cold',
+		suppressed: null,
+		...over,
+	});
+
+	it('lists notes alone with no heading, and owes no underline', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note()],
+			}),
+		).toEqual({
+			text: 'Cloak of Warding — "Resistance to cold"',
+			arithmetic: false,
+			notes: 1,
+		});
+	});
+
+	it('heads the notes after the total where there is arithmetic too', () => {
+		const account = modifierAccount({
+			lines: [
+				line({ label: 'Ring of Protection', type: 'item', amount: 1 }),
+				line({
+					label: 'Shield of Faith',
+					type: 'Spell',
+					amount: 2,
+				}),
+			],
+			override: null,
+			total: 3,
+			notes: [note()],
+		});
+		expect(account.text).toBe(
+			[
+				'Ring of Protection — item +1',
+				'Shield of Faith — Spell +2',
+				'',
+				'Total +3',
+				'',
+				'Notes',
+				'Cloak of Warding — "Resistance to cold"',
+			].join('\n'),
+		);
+		expect(account.arithmetic).toBe(true);
+		expect(account.notes).toBe(1);
+	});
+
+	it('decides the component qualifier once over both groups together', () => {
+		const account = modifierAccount({
+			lines: [line({ label: 'Ring', amount: 1 })],
+			override: null,
+			total: 1,
+			notes: [note({ source: 'Feats', label: 'War Caster' })],
+		});
+		expect(account.text?.split('\n')).toEqual([
+			'Magic items · Ring — +1',
+			'',
+			'Total +1',
+			'',
+			'Notes',
+			'Feats · War Caster — "Resistance to cold"',
+		]);
+	});
+
+	it('names the component inside a table, and the modifier where the row is not called by it', () => {
+		expect(
+			modifierAccount(
+				{
+					lines: [],
+					override: null,
+					total: 0,
+					notes: [note({ label: 'Boots', definition: 'Boots of Elvenkind' })],
+				},
+				null,
+				true,
+			).text,
+		).toBe('Magic items · Boots · Boots of Elvenkind — "Resistance to cold"');
+	});
+
+	it('lists two identical notes as two lines', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note({ label: 'Boots' }), note({ label: 'Cloak' })],
+			}).text?.split('\n'),
+		).toEqual([
+			'Boots — "Resistance to cold"',
+			'Cloak — "Resistance to cold"',
+		]);
+	});
+
+	it('says why a note whose condition will not resolve is not applying', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note({ suppressed: 'Worn is not defined on this sheet.' })],
+			}).text,
+		).toBe(
+			'Cloak of Warding — "Resistance to cold" (not applied: Worn is not defined on this sheet.)',
+		);
+	});
+
+	it('draws a line break a hand-edited note holds as a space', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note({ text: 'Resistance\n to cold' })],
+			}).text,
+		).toBe('Cloak of Warding — "Resistance to cold"');
+	});
+
+	it('spells a note on the row surfaces through the same quoted outcome', () => {
+		const noteOnly = outcomeView({
+			typed: { target: 'skills.stealth', operator: 'add', amount: '', note: 'Quiet' },
+			target: 'skills.stealth',
+			targetLabel: 'Skills · stealth',
+			applies: true,
+		});
+		expect(modifierOutcomeText('skills.stealth += note: Quiet', noteOnly)).toBe(
+			'Skills · stealth — "Quiet"',
+		);
+		const both = outcomeView({
+			typed: {
+				target: 'armour_class',
+				operator: 'add',
+				amount: '1',
+				bonusType: 'item',
+				note: 'Resistance to cold',
+			},
+			target: 'armour_class',
+			targetLabel: 'Armour class',
+			applies: true,
+			amount: 1,
+		});
+		expect(modifierOutcomeText('armour_class += 1 as item note: …', both)).toBe(
+			'Armour class — item +1 and "Resistance to cold"',
+		);
+	});
+
+	it('puts a note the target cannot show on a line of its own', () => {
+		const outcome = outcomeView({
+			typed: { target: 'abilities.STR', operator: 'add', amount: '1', note: 'Strong' },
+			target: 'abilities.STR',
+			targetLabel: 'Abilities · STR',
+			applies: true,
+			amount: 1,
+			noteLine: 'Abilities · STR cannot show a note yet.',
+		});
+		expect(modifierOutcomeText('abilities.STR += 1 note: Strong', outcome)).toBe(
+			'Abilities · STR — +1 and "Strong"\nAbilities · STR cannot show a note yet.',
+		);
 	});
 });

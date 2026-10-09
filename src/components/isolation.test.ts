@@ -133,6 +133,12 @@ const ALLOWED = [
 	// which is the half §1 says drifts (`roundSum`).
 	"import { renderPictureFrame } from './picture-frame';",
 	"import { renderPictureFrame } from '../components/picture-frame';",
+	// How wide a Record set's summary line is before it fits: Record set's private
+	// half, on `modifier-form.ts`'s atomicity terms at one consumer (PATTERNS §2).
+	// A width model with measured constants and unit tests is a second job in
+	// `record-set.ts`, and kept pure so it is tested without a DOM.
+	"import { fitTier } from './record-line-fit';",
+	"import { fitTier } from '../components/record-line-fit';",
 	// A painted level ring, made into a control: its ARIA, its tooltip, its touch
 	// route and its presses. Added deliberately, and at four consumers rather
 	// than two — Table, Track, Record set and Roster — which is one past where
@@ -142,6 +148,10 @@ const ALLOWED = [
 	// every state here is a fact about a character's level.
 	"import { bindRingControl } from './ring-control';",
 	"import { bindRingControl } from '../components/ring-control';",
+	// The mark on a value something has noted, shared by Card, Table and Roster:
+	// three consumers, which is §1's extraction line met exactly.
+	"import { renderNoteMark } from './note-mark';",
+	"import { renderNoteMark } from '../components/note-mark';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",

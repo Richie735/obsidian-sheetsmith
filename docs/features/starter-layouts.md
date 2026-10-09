@@ -698,9 +698,11 @@ with their numbers so a later reader can revisit it.
 **The cold sheet, and which starters show it.** SPEC §5 has a name the sheet
 does not publish fail to resolve rather than default to zero, so a derived
 value with no data beneath it reads "?" — the honest answer before there is
-data, structural rather than a defect, and the subject of `docs/UI.md` §12's
-cold-start row. The three starters exhibit it very differently, and the
-difference is worth having in the set:
+data, structural rather than a defect, and the subject of SPEC §13's
+resolved entry on whether a derived sheet owes better than "?". *This entry
+first said `docs/UI.md` §12's cold-start row; that row moved to
+`docs/BACKLOG.md` and closed when §13 ruled "no".* The three starters
+exhibit it very differently, and the difference is worth having in the set:
 
 - **5e** is derived almost everywhere, so a fresh character reads "?" across
   armour class, proficiency, every skill total and both save columns. **Level
@@ -731,8 +733,9 @@ difference is worth having in the set:
   em dash rather than a failure.
 
 The open question underneath — whether a derived sheet owes a reader better
-than "?" — is the backlog's; two of the three starters raise its stakes without
-changing its answer, and the third is the counter-example.
+than "?" — was the backlog's and is resolved "no" in SPEC §13; two of the
+three starters raise its stakes without changing its answer, and the third is
+the counter-example.
 
 ## Config fields
 
@@ -871,6 +874,15 @@ None. No component is added or changed; the feature registers a command.
       the Dark sheet reads in under a minute and shows three zeros rather than
       question marks — the load card included, which reads as an option nobody
       has chosen yet and not as a value that failed.
+      In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol, with the
+      layout folder set to a new empty one: the command offered the three starters
+      with their descriptions, installed each with its notice, and a note naming
+      each rendered with no error box (21, 54 and 47 cells). Forged in the Dark shows
+      Insight, Prowess and Resolve at 0, no `?`, and **Load left** at `—`. Left open
+      for the owner: whether it reads in under a minute and the load card reads as
+      unchosen are judgements, shot for the land stop. The folder, files and setting
+      were put back. The replica comparison below was not taken. Method:
+      `record-summary-fields-first.md` § In the app, 2026-10-08.
 - [ ] Manual, looking at each replica **beside its reference open in the test
       vault** (UI.md §11 — appearance is reviewed by looking): the two are
       indistinguishable except for the name. For the two twelve-column sheets:
@@ -886,8 +898,9 @@ None. No component is added or changed; the feature registers a command.
 - [ ] Manual: fresh characters on the 5e and PF2e layouts are *full* of "?"
       and that is accepted, not filed — but looked at once, deliberately,
       because these are the widest instances of the cold-start state
-      `docs/UI.md` §12 records, and the ruling there should be taken with
-      these screens in front of whoever takes it.
+      SPEC §13 now rules on. *This item first said `docs/UI.md` §12 records
+      it and the ruling there should be taken with these screens in front of
+      whoever takes it; §13 has since ruled "no".*
 
 ## Commit boundaries
 

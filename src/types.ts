@@ -260,7 +260,23 @@ export interface ComponentConfig {
  * data object when it was handed null and has nothing to reset.
  */
 export type ResetResult<TData> =
-	| { ok: true; data: TData; reach?: ResetReach }
+	| {
+			ok: true;
+			data: TData;
+			reach?: ResetReach;
+			/**
+			 * The component's own sentence about parts this binding reached and did
+			 * not write, for a reason the reader can fix on the sheet — a record whose
+			 * maximum will not work out (`docs/features/record-ceiling-formula.md`).
+			 *
+			 * **A sentence rather than a count**, because the view does not know the
+			 * component's noun, and `resetSummary` teaches its file nothing about
+			 * records. Not a failure: the rest of the binding was written, so §6's
+			 * per-component error is the wrong channel for it. Absent where nothing
+			 * was skipped, so every confirmation that skips nothing reads as it did.
+			 */
+			skipped?: string;
+	  }
 	| { ok: false; error: string };
 
 /**
@@ -454,19 +470,22 @@ export interface ConfigFieldSpec<
 	 * without it, and the failure was reachable on the first field an author
 	 * added.** The field is Table's shape: it offers every type in
 	 * `components/column-types.ts`, and it leaves the *shared* default out of the
-	 * file — which is `text`. A Record set refuses a text field outright, since
-	 * SPEC §5's language has no strings and prose belongs in a record's body, so a
-	 * freshly added field arrived stored as "no type", read back as text, and the
-	 * card reported that it cannot hold text. The author met a configuration error
-	 * on the first field they created, beside checkboxes offering two more things
-	 * the component refuses.
+	 * file — which is `text`. A Record set refuses a text field except as the one
+	 * its list is grouped by, since SPEC §5's language has no strings and prose
+	 * belongs in a record's body, so a freshly added field arrived stored as "no
+	 * type", read back as text, and the card reported that it cannot hold text.
+	 * The author met a configuration error on the first field they created,
+	 * beside checkboxes offering two more things the component refuses. **It now
+	 * offers `text`, last, and the trap is closed by the Add handler writing the
+	 * first offered type out** rather than by leaving the type off the list.
 	 *
 	 * **Giving Record set its own default is what this is instead of**, and it is
 	 * the drift `column-types.ts` exists to prevent: the editor omits the key when
 	 * it equals the shared constant and the component reads a missing key as that
 	 * same constant, so two answers to "which type is first" makes one of them
-	 * misread stored data. With `text` simply not offered, a Record set's `type` is
-	 * always written out and the shared constant keeps one meaning.
+	 * misread stored data. With the first offered type always written out unless it
+	 * is the shared default, a Record set's `type` is `number` and the shared
+	 * constant keeps one meaning.
 	 */
 	columnOptions?: ColumnOptionsSpec;
 	/**
@@ -1148,6 +1167,16 @@ export interface ModifierDefinition {
 	 */
 	when?: string;
 	/**
+	 * Words shown at the target, behind a note mark, while this applies
+	 * (`docs/features/modifier-notes.md`). The flat spelling's, like the four
+	 * above it; `changes[].note` where the definition lists its changes.
+	 *
+	 * **Never an expression**, and nothing reads one: no formula, no condition.
+	 * A change carrying a note may leave its amount blank, which is a complete
+	 * change rather than an unfinished one.
+	 */
+	note?: string;
+	/**
 	 * Every value this definition moves, where it names more than the flat
 	 * spelling can.
 	 *
@@ -1181,6 +1210,7 @@ export const MODIFIER_CHANGE_KEYS = [
 	'amount',
 	'bonusType',
 	'applies',
+	'note',
 ] as const;
 
 /**
@@ -1214,6 +1244,12 @@ export interface ModifierChange {
 	 * change that says nothing is.
 	 */
 	applies?: ModifierPhase;
+	/**
+	 * Words shown at the target while this applies. Absent where blank, and a
+	 * change with one needs no amount: it moves no number, so it is a note-only
+	 * change rather than an unfinished one.
+	 */
+	note?: string;
 }
 
 /**
@@ -1242,7 +1278,8 @@ export interface TypedEffect {
 	 * An expression, evaluated on the row that typed it.
 	 *
 	 * **May be blank, which is an unfinished effect: it changes nothing and is not
-	 * an error** (SPEC §4.2). That is what makes the form safe to commit one
+	 * an error** (SPEC §4.2) — unless the effect carries a note, when it is a
+	 * complete note-only effect. That is what makes the form safe to commit one
 	 * field at a time — the part exists the moment a target is chosen, and it must
 	 * not blank a card while the reader is still typing.
 	 */
@@ -1264,6 +1301,11 @@ export interface TypedEffect {
 	applies?: ModifierPhase;
 	/** An expression; absent means always. */
 	when?: string;
+	/**
+	 * Words shown at the target while this applies, spelled last in the cell as
+	 * ` note: <text>`. Holds no `;`, which would split the part.
+	 */
+	note?: string;
 }
 
 /**
@@ -1489,6 +1531,33 @@ export interface ModifierLine {
 }
 
 /**
+ * One note pushed at a name, as a reader is shown it
+ * (`docs/features/modifier-notes.md`).
+ *
+ * **Its own type and not a `ModifierLine` with no amount**, because a note is not
+ * a contributor: it is never stacked, never contested and never part of a total,
+ * so a line type carrying an operator, a bonus type and an amount would invite a
+ * reader of the arithmetic to count it. The identifying half is the same three
+ * tokens a line has, so a breakdown names both groups one way.
+ */
+export interface ModifierNote {
+	/** The row as a reader sees it, `ModifierLine.label`'s rule. */
+	label: string;
+	/** The component the row lives on, for wherever the row alone is ambiguous. */
+	source: string;
+	/** The modifier's own name, or absent for a note typed on the row. */
+	definition?: string;
+	/** The note as the layout or the cell spells it. */
+	text: string;
+	/**
+	 * Why the note is listed and not applying, or null where it applies: only a
+	 * condition that would not resolve. A false condition lists nothing, as an
+	 * inactive contributor lists nothing.
+	 */
+	suppressed: string | null;
+}
+
+/**
  * What applies at one name, and what it comes to.
  *
  * The total travels with the lines rather than being re-added by whoever draws
@@ -1523,6 +1592,16 @@ export interface ModifierBreakdown {
 	 * does not acquire a second number to state.
 	 */
 	resultTotal?: number;
+	/**
+	 * The notes pushed at this name, in walk order, never combined.
+	 *
+	 * **Optional, and absent means none**, on `resultTotal`'s rule and for a
+	 * reason of its own: every breakdown on a sheet with no notes is then the
+	 * object it always was, which is what keeps every popover, `title` and
+	 * accessible name built from one byte-identical. Present only where there is
+	 * at least one, and only at a name whose component draws notes.
+	 */
+	notes?: readonly ModifierNote[];
 }
 
 /**
@@ -1609,6 +1688,18 @@ export interface ModifierOutcome {
 	 * Null where it applies, and null where the condition is what stopped it.
 	 */
 	suppressed: string | null;
+	/**
+	 * What this part's note is doing, where the amount's verdict does not say it
+	 * (`docs/features/modifier-notes.md`): why it is not shown, at a name that
+	 * cannot show one, or that it still shows, beside an amount that changes
+	 * nothing. Absent everywhere else, so an outcome with no note is the object it
+	 * always was.
+	 *
+	 * Separate from `applies` and `suppressed` because those are the *amount's*
+	 * verdict, judged exactly as before notes existed, and the note's can differ
+	 * from it either way.
+	 */
+	noteLine?: string;
 }
 
 /**
@@ -1638,7 +1729,8 @@ export interface ModifierContext {
 	/**
 	 * The values a modifier may be aimed at, for the form's **Value** select.
 	 *
-	 * The accepting set — every published name whose own formula reads a modifier —
+	 * The accepting set — every published name some formula on the layout reads a
+	 * modifier for, through its own `mod.self` or a `mod.<name>` anywhere —
 	 * derived once in `formula/modifier-targets.ts` and shared with the layout
 	 * editor's own picker, so the sheet and the pane cannot offer different lists.
 	 */
@@ -1653,6 +1745,15 @@ export interface ModifierContext {
 	 * popover on a player's inventory row.
 	 */
 	published: readonly ModifierTarget[];
+	/**
+	 * Every published name a note may be aimed at: the names whose component
+	 * draws notes (`noteTargets`). The form's **Value** select offers the ones
+	 * outside `targets` under **Notes only**.
+	 *
+	 * Optional because a context built without a sheet has no layout to ask, and
+	 * absent offers none — which is the truth there.
+	 */
+	noteTargets?: readonly ModifierTarget[];
 	/** The layout's bonus types, for the form's **Bonus type** select. */
 	bonusTypes: readonly string[];
 	/**
@@ -1672,8 +1773,25 @@ export interface ModifierContext {
 	 * What applies at this name, in declaration order, and what it comes to. No
 	 * lines where nothing does, and none for a name that accepts no modifier — so
 	 * a card can never draw a mark for a modifier that is not being applied.
+	 *
+	 * **Notes are bounded separately**: they come for every name whose component
+	 * draws notes, accepting or not, because a note needs no slot — and never for
+	 * any other name, which is what lets a component that draws none stay as it
+	 * is.
 	 */
 	breakdown(name: string): ModifierBreakdown;
+	/**
+	 * Whether a note could be shown at this name: it is a note target, and some
+	 * part on the sheet could carry a note to it, read from text and never by
+	 * evaluating anything (`docs/features/modifier-notes.md` F).
+	 *
+	 * **What a value with no breakdown of its own asks before asking for one.** A
+	 * stored cell and a column total never opened a breakdown, so asking at each
+	 * of them would move the modifier walk's first entry on a sheet carrying no
+	 * note at all; asking this first keeps that entry where it was. Optional, and
+	 * absent answers no, which is the truth for a context built without a sheet.
+	 */
+	notable?(name: string): boolean;
 	/**
 	 * Add one definition to the layout under `name`, then answer whether it landed
 	 * (SPEC §7).
@@ -1730,7 +1848,33 @@ export type FieldExplainer = (
 export interface ResetContext {
 	resolve: FieldResolver;
 	explain: FieldExplainer;
+	/** As `RenderContext.resolveExpression`, for a reset reading an expression a component holds. */
+	resolveExpression?: ExpressionResolver;
 }
+
+/**
+ * Evaluate an expression a component holds rather than its layout, in a scope
+ * the component supplies, against the sheet the host already built
+ * (`docs/features/record-ceiling-formula.md`).
+ *
+ * **`FieldResolver` with the text in place of the path**, because the text is in
+ * the *note* — a record's ceiling, `Uses: 1 / prof` — and no config path names
+ * it, so `formulaFields` cannot declare it and `FieldResolver` cannot find it.
+ * One evaluator behind both: the host builds this from the same reader a formula
+ * field goes through (`formula/resolve.ts`), so the name table, the function
+ * library and the modifier slots are the sheet's own. It publishes no name, so
+ * `mod.self` reads 0.
+ */
+export type ExpressionResolver = (
+	text: string,
+	scope: Readonly<Record<string, FieldValue>>,
+) => FieldValue | null;
+
+/** Why an expression a component holds did not resolve, or null where it did. */
+export type ExpressionExplainer = (
+	text: string,
+	scope: Readonly<Record<string, FieldValue>>,
+) => string | null;
 
 /**
  * What a component needs from the app to make a note reference work.
@@ -1761,6 +1905,20 @@ export interface RenderContext<TData = unknown> {
 	 * this sheet" is the difference between a status and a next action.
 	 */
 	explainField?: FieldExplainer;
+	/**
+	 * Evaluate an expression the component holds in its data rather than in
+	 * the layout (`ExpressionResolver`).
+	 *
+	 * **Optional in the type, required of every production host**, and
+	 * `src/expression-context-coverage.test.ts` holds that: `formulaContext`
+	 * supplies both members, so a host spreading it cannot drop one. Absent is
+	 * loud rather than silent — a component with no evaluator draws an
+	 * expression as `?` with a line saying it could not be worked out, which is
+	 * the truth where there is no sheet to ask.
+	 */
+	resolveExpression?: ExpressionResolver;
+	/** Why such an expression failed, on `explainField`'s terms. */
+	explainExpression?: ExpressionExplainer;
 	/**
 	 * Report edited data. The sheet view owns writing it back to the note;
 	 * components never touch the file themselves.
@@ -1870,6 +2028,42 @@ export interface RenderContext<TData = unknown> {
 	 * left open across a rebuild.
 	 */
 	suggestFile?: (input: HTMLInputElement, commit: (next: string) => void) => void;
+	/**
+	 * Attach a type-ahead to a free-text field, offering the names a list already
+	 * uses (`docs/features/free-text-group-key.md`).
+	 *
+	 * **`suggestFile`'s seam and its terms**: optional, so absent — the editor's
+	 * canvas and the harness pass none — the field is the plain text box it is; a
+	 * component may import nothing from `obsidian` beyond `setIcon`, and the
+	 * platform's `AbstractInputSuggest` is past that line; and nothing in
+	 * `ComponentDefinition` changes. Called once, immediately after the field
+	 * exists, and the caller closes whatever it attaches before the next render.
+	 *
+	 * `names` is what the *caller* decided is on offer, in the order to show it, so
+	 * the view knows nothing about groups: a name is a spelling to put in the
+	 * field and nothing else. `commit` is the field's own commit
+	 * (`EditableHandle.set`), so a pick runs the refusals, the announcement and
+	 * the regroup exactly as typing the name and pressing Enter would. The list
+	 * opens on typing and never on focus alone, which `editor/formula-suggest.ts`
+	 * argues and `suggestFile`'s field, whose whole value is replaced, may ignore.
+	 */
+	suggestText?: (
+		input: HTMLInputElement,
+		names: readonly string[],
+		commit: (next: string) => void,
+	) => void;
+	/**
+	 * Attach the formula suggester to a field holding an expression the
+	 * component keeps in its data (`docs/features/record-ceiling-formula.md`).
+	 *
+	 * **`suggestText`'s seam and its terms**: optional, so the canvas and the
+	 * harness pass none and the field is the plain text box it is; a component
+	 * cannot import `AbstractInputSuggest`; called once, immediately after the
+	 * field exists, and the caller closes whatever it attaches before the next
+	 * render. `owner` is the component's own id, so the names its rows hold are
+	 * offered first, as the layout editor offers them on **Only where**.
+	 */
+	suggestFormula?: (input: HTMLInputElement, owner: string) => void;
 	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).
@@ -1983,6 +2177,21 @@ export interface RenderContext<TData = unknown> {
 	openRecords?: readonly number[];
 	/** Report the reader opening or closing one of this component's records. */
 	onToggleRecord?: (index: number, open: boolean) => void;
+	/**
+	 * The keys of this component's groups the reader has collapsed, and empty
+	 * where they have collapsed none: absence is open, so a group nobody has
+	 * touched needs no entry.
+	 *
+	 * **The third member of the posture category above, and a third pair rather
+	 * than a reading of the other two.** An index into alternatives, a set of open
+	 * record positions and a set of collapsed keys are three shapes. Keys rather
+	 * than positions, because a group is identified by the value its records share
+	 * and not by where it is drawn: the key is the stored value as a string, and
+	 * the empty string for the group a record with no value goes under.
+	 */
+	collapsedGroups?: readonly string[];
+	/** Report the reader collapsing or expanding one of this component's groups. */
+	onToggleGroup?: (key: string, collapsed: boolean) => void;
 }
 
 /**
@@ -2267,6 +2476,20 @@ export interface ComponentDefinition<
 	 * all. The editor offers `reset.buffer` exactly where this is set.
 	 */
 	hasBuffer?: boolean;
+	/**
+	 * True where this component draws the notes a modifier pushes at the names it
+	 * publishes (`docs/features/modifier-notes.md`).
+	 *
+	 * Declared rather than inferred for `hasBuffer`'s reason: whether a component
+	 * puts a note mark beside a value is a fact about its render, which nothing
+	 * outside it can see. **Absent refuses**: every name this component publishes
+	 * is reported as not a note target yet, so a component that has not learned to
+	 * draw a note cannot drop one silently. Two files hold the two halves:
+	 * `note-contract.test.ts` renders each declaring component and checks its DOM
+	 * carries every note pushed at its sample's names, and `contract.test.ts`
+	 * checks a silent one has none of its names in `noteTargets`.
+	 */
+	drawsNotes?: true;
 	/**
 	 * Which config fields accept an expression rather than a literal.
 	 *

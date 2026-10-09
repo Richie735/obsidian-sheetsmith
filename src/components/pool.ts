@@ -15,11 +15,25 @@
  * be the plugin knowing 5e.
  */
 
-import { amountOf } from '../interaction/editable';
+import { setIcon } from 'obsidian';
+import {
+	amountOf,
+	bindEditable,
+	EditableHandle,
+} from '../interaction/editable';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { stepButton } from '../interaction/hold-repeat';
 import { bindScrub } from '../interaction/scrub';
 import { readFenced, writeFenced } from '../parse/fenced';
+import { publishedFieldNames } from '../formula/resolve';
+import { showPopover } from '../ui/popover';
+import { formatDerived } from './card-face';
+import {
+	ACCOUNT_GLYPH,
+	modifierBreakdown,
+	modifiersOnName,
+} from './modifier-breakdown';
+import { samplePart, sampleNumber, sampleSeed } from './sample-values';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -29,9 +43,6 @@ import {
 	ScopeValues,
 	showsOwnLabel,
 } from '../types';
-import { bindEditable, EditableHandle } from '../interaction/editable';
-import { formatDerived } from './card-face';
-import { samplePart, sampleNumber, sampleSeed } from './sample-values';
 
 /** Entry keys in the fenced block. Fixed, so hand-editing reads the same. */
 const CURRENT_KEY = 'current';
@@ -198,9 +209,13 @@ interface AmountControlOptions {
 	onOpenChange: (open: boolean) => void;
 }
 
-/** The three controls that answer a press themselves rather than as the card. */
+/**
+ * The controls that answer a press themselves rather than as the card: the
+ * steppers, the buffer, the amount control, and the ceiling's breakdown door,
+ * which lights itself and must not light the card behind it as well.
+ */
 const POOL_CONTROLS =
-	'.sheetsmith-pool-step, .sheetsmith-pool-temp, .sheetsmith-pool-adjust';
+	'.sheetsmith-pool-step, .sheetsmith-pool-temp, .sheetsmith-pool-adjust, .sheetsmith-pool-modifier-button';
 
 /**
  * Flag the card while the pointer is over one of its own controls, and while a
@@ -754,6 +769,100 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			label.textContent = config.label;
 		}
 
+		// The max is a formula like any other, so it can fail like one. "?" is
+		// reserved for present-but-unresolved, which is exactly this case.
+		const resolvedMax = context.resolved['max'];
+
+		/**
+		 * What a modifier is doing to this pool's ceiling, as one block of text, or
+		 * null where nothing is (`docs/features/pool-ceiling-modifier-door.md`).
+		 *
+		 * **Asked of the published name rather than gated on `maxSource` here**,
+		 * which is Track's own decision one component over: `scopeValues` already
+		 * decides that a calculated `max` publishes as a formula field and a
+		 * character's max as a stored value, and `publishedFieldNames` maps only
+		 * the first. So a typed ceiling has no name to break down — rightly, since
+		 * no formula reads its slot and nothing a modifier does can move the number
+		 * the reader typed — and a leftover `max` formula on a character-mode pool
+		 * cannot bring the door back. A second spelling of that condition here
+		 * would be `PATTERNS.md` §1's predicate in two places.
+		 *
+		 * **It follows the own-formula set**, as Track's door and Card's underline
+		 * do (`SheetModifiers.marked`): the question is whether anything was pushed
+		 * at a name this pool's own formula reads, not how far the arithmetic
+		 * moved because of it.
+		 */
+		const maxName = publishedFieldNames(pool, config).get('max');
+		const ceilingPushed =
+			maxName === undefined
+				? null
+				: modifierBreakdown(
+						context.modifiers?.breakdown(maxName),
+						typeof resolvedMax === 'number' ? resolvedMax : null,
+					);
+		/**
+		 * The sentence a `?` carries in its `title`, where the ceiling did not
+		 * resolve. One spelling for the glyph and the door, so the two cannot
+		 * disagree about why.
+		 */
+		const unresolvedMax =
+			context.explainField?.('max', {}) ?? 'The formula did not resolve.';
+		/**
+		 * What the door opens: the breakdown alone where the ceiling is a number
+		 * the reader can see, and the `?`'s own sentence first where it is not —
+		 * Track's `withBreakdown` rule, that the popover carries what the reader
+		 * cannot otherwise see.
+		 */
+		const doorText =
+			ceilingPushed === null
+				? null
+				: resolvedMax === null
+					? `${unresolvedMax}\n\n${ceilingPushed}`
+					: ceilingPushed;
+
+		/** The door's `.sheetsmith-sr-only` twin, appended with the card's other spoken children. */
+		let doorTwin: HTMLElement | null = null;
+		if (doorText !== null) {
+			/*
+			 * **The door to the breakdown, in the card's corner and not in a heading
+			 * row.** The numeral has no press of its own — the router hands a press
+			 * there to the nearest field — so a separate control is the one route in,
+			 * as on a Track. But a Track's label is start-aligned, so a label-and-door
+			 * row costs it nothing, where a Pool is centred like a Card: a heading row
+			 * would push the label off centre by half the door's width. So it takes
+			 * the note mark's corner, out of flow, by selector list (`docs/UI.md` §9).
+			 *
+			 * Drawn after the label, so a reader meets the name and then what is
+			 * modifying it; with the label hidden it keeps the corner, as the note
+			 * mark does.
+			 *
+			 * `info` and not `zap`: this is a read-only account, and every bolt on a
+			 * sheet opens something a reader can change (`docs/UI.md` §9).
+			 */
+			card.classList.add('sheetsmith-pool-has-door');
+			const door = card.createEl('button', { cls: 'sheetsmith-pool-modifier-button' });
+			door.type = 'button';
+			setIcon(door, ACCOUNT_GLYPH);
+			door.setAttribute('aria-label', modifiersOnName(config.label));
+			/*
+			 * **The twin is the note mark's spelling**: the ceiling span is not
+			 * focusable, so the door is the one control that can carry the account
+			 * to a reader with no pointer, and without it they hear only the door's
+			 * name and have to press to learn anything. The global `createDiv`,
+			 * parentless until the card's spoken children are appended last
+			 * (`src/test/spoken-order.ts`).
+			 */
+			const twin = createDiv({ cls: 'sheetsmith-sr-only', text: doorText });
+			twin.id = `sheetsmith-pool-modified-${config.id}`;
+			doorTwin = twin;
+			// The shared popover points the door at itself while it is open and puts
+			// this back when it closes, so the twin survives a press.
+			door.setAttribute('aria-describedby', twin.id);
+			door.addEventListener('click', () => {
+				showPopover(door, doorText);
+			});
+		}
+
 		// Announces once per commit, whether the change came from the keyboard,
 		// a step button, or a scrub. Attached before anything writes to it,
 		// because a live region has to be in the document before its text
@@ -812,9 +921,6 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 */
 		const characterMax = config.maxSource === 'character';
 
-		// The max is a formula like any other, so it can fail like one. "?" is
-		// reserved for present-but-unresolved, which is exactly this case.
-		const resolvedMax = context.resolved['max'];
 		const maxText = characterMax
 			? (data?.max ?? '')
 			: config.max === undefined
@@ -1188,10 +1294,20 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				max.textContent = maxText;
 				if (resolvedMax === null) {
 					max.classList.add('sheetsmith-pool-max-unresolved');
-					max.setAttribute(
-						'title',
-						context.explainField?.('max', {}) ?? 'The formula did not resolve.',
-					);
+					max.setAttribute('title', unresolvedMax);
+				} else if (ceilingPushed !== null) {
+					/*
+					 * **The mark is Pool's own and not `.sheetsmith-modified`.** That
+					 * class carries `cursor: help`, promising a press on the number,
+					 * and this numeral has none; and its plain underline reads as a
+					 * link, a trade `docs/UI.md` §9 accepts for numbers that have a
+					 * press, and reopens if the directory review only warns about
+					 * the dotted longhands. A dotted rule drawn as a border
+					 * fits here where it was reverted on Card, because this span is a
+					 * flex item sized to its digits, so its box is the numeral.
+					 * `?` takes no mark: it is a status, not a number.
+					 */
+					max.classList.add('sheetsmith-pool-max-modified');
 				}
 				// No aria-label here: a bare span is role=generic, which prohibits
 				// naming, so most assistive tech drops it. The visible text and the
@@ -1480,6 +1596,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			track.createDiv('sheetsmith-pool-track-fill');
 		}
 
+		if (doorTwin !== null) card.appendChild(doorTwin);
 		card.appendChild(hint);
 		card.appendChild(status);
 		paint();

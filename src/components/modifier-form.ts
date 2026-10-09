@@ -13,7 +13,8 @@
  * **It knows the *shape* of a modifier and none of its meaning.** The five slots
  * are here because the form writes them; the parse and the spelling are
  * `parse/modifier-cell.ts`'s, the resolution is `formula/`'s, the labels and the
- * option lists arrive as arguments. Nothing here decides what an operator does or
+ * option lists arrive as arguments — except the **Value** groups, below, which are
+ * this file's own. Nothing here decides what an operator does or
  * what a bonus type means arithmetically.
  *
  * **It imports nothing from `obsidian`** — not even `setIcon`, which arrives as a
@@ -61,6 +62,17 @@
  * That answer is a consequence of where the parse and the sentences ended up, so it
  * moves if they do: **give this file a test the moment it authors a report of its
  * own**, and the §11 rule is the reason rather than the file's size.
+ *
+ * **And that moment came with modifier notes** (`docs/features/modifier-notes.md`),
+ * so the paragraph above is history rather than the rule. Two things here are now
+ * this file's own: the **Value** select's two group names and the rule for what goes
+ * under each, exported as `fillTargetOptions` because the layout editor's picker
+ * draws the same groups; and the refusal that prefixes `unspellableNote`'s sentence
+ * when a definition cannot be copied onto a row. Both are driven in
+ * `modifier-form.test.ts`. `fillTargetOptions` stays here rather than in a module of
+ * its own because what it holds is this form's vocabulary, read by one other
+ * surface: a separate module would be one more sibling on `eslint.config.mts`'s list
+ * for two labels and a filter.
  */
 
 import {
@@ -81,8 +93,10 @@ import { bindEditable } from '../interaction/editable';
 // the whole of what says a press is about to be irreversible.
 import { armedName, armedPrompt } from '../interaction/arm-to-confirm';
 import {
+	isNoteOnly,
 	spellTypedEffect,
 	unspellableName,
+	unspellableNote,
 	withoutPart,
 } from '../parse/modifier-cell';
 import {
@@ -182,6 +196,11 @@ export interface ModifierFormOptions {
 	targets: readonly ModifierTarget[];
 	/** Every published name and its label, so a stray target has a word. */
 	published: readonly ModifierTarget[];
+	/**
+	 * The values a note may be aimed at, for **Value**'s **Notes only** group.
+	 * Absent offers none, which is a form drawn with no sheet around it.
+	 */
+	noteTargets?: readonly ModifierTarget[];
 	bonusTypes: readonly string[];
 	/**
 	 * Paint a Lucide icon into an element.
@@ -211,6 +230,48 @@ export interface ModifierFormOptions {
 /** One `<option>`, with its value and its words. */
 function option(select: HTMLSelectElement, value: string, text: string): void {
 	select.createEl('option', { value, text });
+}
+
+/**
+ * Fill a **Value** select with the values a change may be aimed at, grouped by
+ * what each will do with it (`docs/features/modifier-notes.md`).
+ *
+ * **Takes modifiers** is the accepting set in its own order, which is what an
+ * amount needs. **Notes only** is every other note target, where a note shows
+ * and an amount would do nothing. The grouping is how the picker stops inviting
+ * an amount at a value that would ignore it while still offering the value for a
+ * note.
+ *
+ * **Exported for the layout editor's own picker**, because the two group names
+ * and the rule for what goes under each are one policy read by two surfaces,
+ * and two copies of it could only be tested for still agreeing (`PATTERNS.md`
+ * §1's one-step tier). **Ungrouped where Notes only would be empty**, so a
+ * layout with nothing to note outside the accepting set draws exactly the list
+ * it always did; a lone group heading would be a token telling nothing apart.
+ */
+export function fillTargetOptions(
+	select: HTMLSelectElement,
+	accepting: readonly ModifierTarget[],
+	notable: readonly ModifierTarget[],
+): void {
+	const taken = new Set(accepting.map((target) => target.name));
+	const notesOnly = notable.filter((target) => !taken.has(target.name));
+	if (notesOnly.length === 0) {
+		for (const target of accepting) option(select, target.name, target.label);
+		return;
+	}
+	const groups: [string, readonly ModifierTarget[]][] = [
+		['Takes modifiers', accepting],
+		['Notes only', notesOnly],
+	];
+	for (const [label, members] of groups) {
+		if (members.length === 0) continue;
+		const group = select.createEl('optgroup');
+		group.label = label;
+		for (const target of members) {
+			group.createEl('option', { value: target.name, text: target.label });
+		}
+	}
 }
 
 /**
@@ -291,6 +352,7 @@ function changeAsEffect(
 			? {}
 			: { bonusType: change.bonusType }),
 		...(definition.when === undefined ? {} : { when: definition.when }),
+		...(change.note === undefined ? {} : { note: change.note }),
 	};
 }
 
@@ -660,6 +722,8 @@ function renderFields(
 		// The value phase is the absent key, so choosing it clears rather than
 		// stores — one spelling per meaning, in the cell and in the layout alike.
 		if (effect.applies === 'value') delete effect.applies;
+		// A blank note is no note, so the cell spells no clause for it.
+		if ((effect.note ?? '').trim() === '') delete effect.note;
 		if (stored === null) {
 			state.draft = effect;
 			// A part with no target cannot be spelled in a cell at all, so it stays
@@ -789,15 +853,39 @@ function renderFields(
 	if (state.pending !== null) {
 		const box = element('div', 'sheetsmith-panel-pending', fields);
 		const detaching = state.pending === TYPED_OPTION;
-		element(
-			'p',
-			'sheetsmith-panel-why',
-			box,
-			detaching
-				? "This copies the modifier's fields onto this row, so editing the layout will no longer change it."
-				: "This replaces what this row says with the layout's own modifier.",
-		);
+		/*
+		 * **Detach is refused, never written lossily, where a note could not be
+		 * spelled in a cell.** A hand-edited layout may hold a note with a
+		 * semicolon or a line break, and the cell's spelling of either would split
+		 * the part or break the row; copying it with the character dropped would be
+		 * the plugin rewriting the author's words. So the box says why and offers
+		 * only to keep things as they are.
+		 */
+		const unspellable =
+			detaching && named !== null
+				? (named.changes
+						.map((one) => unspellableNote(one.note ?? ''))
+						.find((reason) => reason !== null) ?? null)
+				: null;
+		if (unspellable !== null && named !== null) {
+			element(
+				'p',
+				'sheetsmith-panel-problem',
+				box,
+				`"${named.name}" cannot be copied onto this row. ${unspellable}`,
+			);
+		} else {
+			element(
+				'p',
+				'sheetsmith-panel-why',
+				box,
+				detaching
+					? "This copies the modifier's fields onto this row, so editing the layout will no longer change it."
+					: "This replaces what this row says with the layout's own modifier.",
+			);
+		}
 		const confirm = element('button', 'sheetsmith-panel-confirm', box);
+		if (unspellable !== null) confirm.remove();
 		confirm.type = 'button';
 		confirm.textContent = detaching
 			? 'Copy onto this row'
@@ -866,12 +954,13 @@ function renderFields(
 	 */
 	const changes = select('Value', 'target');
 	if (shown.target === '') option(changes, '', 'Choose a value');
-	for (const target of options.targets) {
-		option(changes, target.name, target.label);
-	}
+	// The editor's own two groups, through the one helper, so the sheet and the
+	// pane offer one list.
+	fillTargetOptions(changes, options.targets, options.noteTargets ?? []);
 	if (
 		shown.target !== '' &&
-		!options.targets.some((target) => target.name === shown.target)
+		!options.targets.some((target) => target.name === shown.target) &&
+		!(options.noteTargets ?? []).some((target) => target.name === shown.target)
 	) {
 		const label =
 			options.published.find((target) => target.name === shown.target)
@@ -889,7 +978,15 @@ function renderFields(
 		option(operator, id, OPERATOR_LABELS[id]);
 	}
 	operator.value = shown.operator;
-	operator.disabled = !editable;
+	/*
+	 * **Disabled on a note-only effect as well as on a named part**: with no
+	 * amount, the operator, the phase and the bonus type have nothing to act on.
+	 * Held so typing an amount gives them back at once. Disabling writes nothing.
+	 */
+	const arithmeticOnly: HTMLSelectElement[] = [operator];
+	const noteOnlyNow = (draftAmount: string) =>
+		isNoteOnly({ amount: draftAmount, note: shown.note ?? '' });
+	operator.disabled = !editable || noteOnlyNow(shown.amount);
 	operator.addEventListener('change', () => {
 		put({ operator: operator.value === 'override' ? 'override' : 'add' });
 	});
@@ -934,7 +1031,8 @@ function renderFields(
 		option(phase, 'value', 'The value');
 		option(phase, 'result', 'The derived number');
 		phase.value = phaseOf(shown);
-		phase.disabled = !editable;
+		arithmeticOnly.push(phase);
+		phase.disabled = !editable || noteOnlyNow(shown.amount);
 		phase.addEventListener('change', () => {
 			// Through the shared reading rather than a ternary of its own: this
 			// select's two options are the two phases, so the last hand-written
@@ -960,7 +1058,8 @@ function renderFields(
 			option(bonus, held, `${held} (not declared)`);
 		}
 		bonus.value = held;
-		bonus.disabled = !editable;
+		arithmeticOnly.push(bonus);
+		bonus.disabled = !editable || noteOnlyNow(shown.amount);
 		bonus.addEventListener('change', () => {
 			put({ bonusType: bonus.value });
 		});
@@ -976,6 +1075,45 @@ function renderFields(
 	 * where the reader types. Same rule **Bonus type** already follows for **Sets**:
 	 * a field with nothing to say is not shown, rather than shown saying nothing.
 	 */
+	/*
+	 * **The note, after the bonus type and before the condition**, where the
+	 * editor puts it. Read-only on a named part, like the part's other fields; a
+	 * named part with no note draws no field, as an unconditional one draws no
+	 * condition. A note a cell could not spell is refused at the commit with
+	 * `unspellableNote`'s sentence, and the draft is kept so the reader can fix it.
+	 */
+	if (editable) {
+		amount.addEventListener('input', () => {
+			for (const select of arithmeticOnly) select.disabled = noteOnlyNow(amount.value);
+		});
+	}
+
+	const note = text('Note', 'note');
+	const heldNote = shown.note ?? '';
+	if (!editable && heldNote === '') note.parentElement?.remove();
+	note.value = heldNote;
+	note.readOnly = !editable;
+	if (editable) {
+		let refusal: HTMLElement | null = null;
+		bindEditable(note, {
+			initial: heldNote,
+			refuse: (next) => unspellableNote(next),
+			onRefusal: (message) => {
+				refusal?.remove();
+				refusal = null;
+				if (message === null) return;
+				refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: message });
+				note.parentElement?.after(refusal);
+				options.announce(message);
+				options.onResize();
+			},
+			announceCommit: (next) =>
+				options.announce(next === '' ? 'Note cleared' : `Note ${next}`),
+			announceRestore: () => options.announce('Note restored'),
+			onCommit: (next) => put({ note: next }),
+		});
+	}
+
 	const when = text('Only when', 'when');
 	if (!editable && (shown.when ?? '') === '') when.parentElement?.remove();
 	when.value = shown.when ?? '';
@@ -1031,7 +1169,14 @@ function renderFields(
 	 * for. It appears the moment the effect is real, in place, with no gesture —
 	 * which is the same disclosure the fields themselves use.
 	 */
-	if (editable && shown.target !== '' && shown.amount.trim() !== '') {
+	// A note-only effect is complete, so it can be saved for reuse as surely as
+	// one with an amount; promotion copies the note with the rest, since the
+	// effect goes over whole.
+	if (
+		editable &&
+		shown.target !== '' &&
+		(shown.amount.trim() !== '' || isNoteOnly(shown))
+	) {
 		renderPromote(fields, state, options, shown, at, write, redraw);
 	}
 }

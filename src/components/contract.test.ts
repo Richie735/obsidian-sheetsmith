@@ -27,6 +27,11 @@ import {
 import { NO_ENV } from '../formula/resolve';
 import { planTrigger } from '../view/reset-plan';
 import { buildSheet, ReadComponent } from '../formula/sheet';
+import {
+	modifierTargetSource,
+	noteTargets,
+	publishedTargets,
+} from '../formula/modifier-targets';
 import { Layout } from '../parse/layout';
 
 /*
@@ -114,6 +119,10 @@ const MEMBER_ORDER = [
 	'scopeModifiers',
 	'write',
 	'hasBuffer',
+	// Beside `hasBuffer` because it is the same kind of declaration: a fact about
+	// what this component draws that nothing outside it could infer, read by the
+	// layout editor and the sheet before the behaviour it conditions.
+	'drawsNotes',
 	// Beside `hasBuffer` for the same reason it sits here: both are declarations
 	// the layout editor reads to decide what a reset binding may say, and they
 	// come before the behaviour they condition.
@@ -393,6 +402,39 @@ describe('component registry', () => {
 		expect(declared).not.toContain('definition:');
 	});
 
+	it('lets a component publishing a name either draw its notes or refuse them as a target', () => {
+		/*
+		 * **The half of the rule that needs no DOM** (`docs/features/
+		 * modifier-notes.md` A): a component that has not declared `drawsNotes`
+		 * has none of its names in `noteTargets`, so a note aimed at one is
+		 * reported as not a note target yet rather than dropped where nothing
+		 * draws it. The other half — a declaring component's DOM carries every
+		 * note pushed at its names — renders, so it is `note-contract.test.ts`'s.
+		 *
+		 * Both read the one derivation, so a component cannot pass by declaring
+		 * the flag and drawing nothing, nor draw without the check knowing.
+		 */
+		let refusing = 0;
+		for (const type of types) {
+			const component = getComponent(type);
+			const config = {
+				...bareConfig(type),
+				...(component?.example ?? {}),
+			};
+			const source = modifierTargetSource(config, component);
+			const published = publishedTargets([source]);
+			if (component?.drawsNotes === true) {
+				expect(noteTargets([source]), type).toEqual(published);
+				continue;
+			}
+			expect(noteTargets([source]), type).toEqual([]);
+			refusing += published.length;
+		}
+		// The floor: some component that draws no note does publish a name, or
+		// this would pass on a registry where every check was an empty list.
+		expect(refusing).toBeGreaterThan(0);
+	});
+
 	it('declares a typed effect as a change plus a condition, and no more', () => {
 		/*
 		 * **The field list, held once, across three interfaces now.**
@@ -431,6 +473,7 @@ describe('component registry', () => {
 			'bonusType',
 			'applies',
 			'when',
+			'note',
 		]);
 		// A change is the effect minus the condition, which is the one thing a
 		// definition holds once for every change it names.

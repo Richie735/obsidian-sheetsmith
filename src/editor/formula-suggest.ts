@@ -1,5 +1,8 @@
 /*
- * The type-ahead on a formula input in the layout editor pane.
+ * The type-ahead on a formula input: every one in the layout editor pane, and
+ * on the sheet the one field holding an expression a character note keeps — a
+ * record's ceiling (`docs/features/record-ceiling-formula.md`), which the sheet
+ * view binds through `RenderContext.suggestFormula`.
  *
  * One job: bind Obsidian's own `AbstractInputSuggest` to one `<input>`, answer
  * its queries from `formula/completion.ts` and `formula/vocabulary.ts`, and
@@ -29,6 +32,7 @@
  */
 
 import { AbstractInputSuggest, App } from 'obsidian';
+import { armOnTyping } from '../ui/arm-on-typing';
 import { Completion, completionAt } from '../formula/completion';
 import {
 	Candidate,
@@ -211,18 +215,9 @@ export function attachFormulaSuggest(
 	owner?: string,
 ): FormulaSuggest {
 	const state: SuggestState = { armed: false, accepting: false };
-	// Before the class is constructed, so these run first: `focus` disarms and
-	// `input` arms, and the class's own handler for each then finds the flag
-	// already saying which of the two it is.
-	input.addEventListener('focus', () => {
-		state.armed = false;
-	});
-	input.addEventListener('input', () => {
-		if (!state.accepting) state.armed = true;
-	});
-	input.addEventListener('blur', () => {
-		state.armed = false;
-	});
+	// Before the class is constructed, so its own handlers find the flag set.
+	// `accepting` suspends it: the accept dispatches an `input` of its own.
+	const closeOnCaretMove = armOnTyping(input, state, () => state.accepting);
 
 	const suggest = new FormulaSuggest(app, input, vocabulary, state, owner);
 
@@ -232,19 +227,7 @@ export function attachFormulaSuggest(
 	// (`docs/BACKLOG.md` § Patterns).
 	input.setAttribute('aria-autocomplete', 'list');
 
-	// A caret move that is not typing leaves the list talking about text the
-	// caret has left. Up and Down are the popup's own while it is open, so only
-	// the horizontal pair and a press inside the field reach this.
-	input.addEventListener('keydown', (event) => {
-		if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-			state.armed = false;
-			suggest.close();
-		}
-	});
-	input.addEventListener('pointerdown', () => {
-		state.armed = false;
-		suggest.close();
-	});
+	closeOnCaretMove(suggest);
 
 	return suggest;
 }

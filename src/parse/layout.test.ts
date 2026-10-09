@@ -1397,3 +1397,46 @@ describe('parseLayout: a Record set with its field names shown', () => {
 		expect(serialiseLayout(parseLayout(once))).toBe(once);
 	});
 });
+
+describe('parseLayout: a Record set holding a text field as its group key', () => {
+	/*
+	 * `docs/features/free-text-group-key.md`. A text field is stored as no `type`
+	 * (the editor's default is left out), or as a hand-written `"type": "text"`
+	 * the editor never rewrites; a layout holding both, beside the `groupBy`
+	 * naming one, must come back byte for byte or an author's own file is
+	 * reformatted on every save.
+	 */
+	it('round-trips a typeless field, a hand-written text type and a groupBy byte for byte', () => {
+		const layout = {
+			name: 'Homebrew',
+			components: [
+				{
+					id: 'features',
+					type: 'record-set',
+					label: 'Features',
+					position: { col: 1, row: 1, width: 6, height: 3 },
+					groupBy: 'Class',
+					fields: [
+						{ key: 'Class' },
+						{ key: 'Subclass', type: 'text' },
+						{ key: 'Uses', type: 'number', max: 3 },
+					],
+				},
+			],
+		};
+		const text = JSON.stringify(layout, null, '\t') + '\n';
+		const written = serialiseLayout(parseLayout(text));
+		const again = serialiseLayout(parseLayout(written));
+		expect(again).toBe(written);
+		expect(written).toContain('"groupBy": "Class"');
+		expect(written).toContain('"type": "text"');
+		// The typeless field gained no type on the way through.
+		const fields = (
+			parseLayout(written).components[0] as unknown as {
+				fields: { key: string; type?: string }[];
+			}
+		).fields;
+		expect(fields[0]).toEqual({ key: 'Class' });
+		expect(fields[1]).toEqual({ key: 'Subclass', type: 'text' });
+	});
+});

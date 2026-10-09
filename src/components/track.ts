@@ -66,7 +66,11 @@ import { levelGlyph, levelName, parseLevel } from './level-ring';
 import { bindRingControl } from './ring-control';
 import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
-import { modifierBreakdown } from './modifier-breakdown';
+import {
+	ACCOUNT_GLYPH,
+	modifierBreakdown,
+	modifiersOnName,
+} from './modifier-breakdown';
 import { publishedFieldNames } from '../formula/resolve';
 import {
 	sampleFlag,
@@ -827,6 +831,16 @@ interface CardCount {
 	 * the two marks can never land on one segment.
 	 */
 	blocked: number;
+	/**
+	 * How far the push moved the run, signed: the live run less the unmodified
+	 * one. What the breakdown's total says the push did (`docs/UI.md` §9).
+	 *
+	 * **Here and not as `granted - blocked` at the call site**, because this
+	 * function's rule is one derivation of the grant. Zero where only an absolute
+	 * spelling reads the slot, since only `mod.self` is sensitive to the name —
+	 * which is why the builder reads a zero as saying nothing.
+	 */
+	moved: number;
 }
 
 /**
@@ -851,8 +865,9 @@ interface CardCount {
  * **It is also why nothing has to scan the formula text.** A run whose `count`
  * reads the absolute spelling — `3 + mod.exhaustion.count` — resolves to the
  * same number either way, because only `mod.self` is sensitive to the name, so
- * it correctly draws a longer run with nothing marked as granted. `docs/UI.md`
- * §9's wide set still decides whether there is a breakdown to read.
+ * it correctly draws a longer run with nothing marked as granted. Whether there
+ * is a breakdown to read is the own-formula set's question
+ * (`SheetModifiers.marked`), which admits that spelling.
  *
  * **A penalty is the same subtraction read the other way, and what it produces
  * is drawn rather than thrown away.** The slots an item takes stay on the card
@@ -884,7 +899,13 @@ function cardCount(
 	// A push this component publishes no name for cannot have moved anything,
 	// so the run is whatever it resolved to and nothing is marked either way.
 	if (published === undefined) {
-		return { drawn: modified, live: modified ?? 0, granted: 0, blocked: 0 };
+		return {
+			drawn: modified,
+			live: modified ?? 0,
+			granted: 0,
+			blocked: 0,
+			moved: 0,
+		};
 	}
 	const base = unmodified ?? 0;
 	const live = modified ?? 0;
@@ -896,6 +917,7 @@ function cardCount(
 		live,
 		granted: Math.max(0, live - base),
 		blocked: drawn - live,
+		moved: live - base,
 	};
 }
 
@@ -1672,12 +1694,18 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * things about one number — the rule the `title` and the twin were already
 		 * held to, with the carriers changed under it.
 		 *
-		 * **It follows the wide set, which the granted drawing deliberately does
-		 * not.** A breakdown answers "has anything been pushed at this name",
-		 * which is a question about the name; the dashed tail answers "how much of
-		 * this length came from a push", which is a question about the formula. A
-		 * run whose `count` reads `mod.exhaustion.count` gets the door and no
-		 * dashes, and that is right on both counts.
+		 * **It follows the own-formula set, which the granted drawing deliberately
+		 * narrows further.** A breakdown answers "has anything been pushed at a
+		 * name this card's own formula reads", which admits the absolute spelling;
+		 * the dashed tail answers "how much of this length came from `mod.self`",
+		 * which does not. A run whose `count` reads `mod.exhaustion.count` gets the
+		 * door and no dashes, and that is right on both counts.
+		 *
+		 * **The total says what the push did to the run where that differs from
+		 * the push** — `floor((3 + mod.self) / 2)` with `+2` reads
+		 * `Total +2, run +1` over one granted segment — and the measurement is
+		 * `cardCount`'s, handed over as `shown` is, so the popover and the run
+		 * cannot state one push at two magnitudes.
 		 *
 		 * Row sets get none by the same absence everything else here turns on:
 		 * `countName` is undefined, so there is no name to break down.
@@ -1688,6 +1716,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				: modifierBreakdown(
 						context.modifiers?.breakdown(countName),
 						ownCount.live,
+						undefined,
+						{ noun: 'run', amount: ownCount.moved },
 					);
 
 		/**
@@ -1764,8 +1794,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const button = heading.createEl('button');
 			button.type = 'button';
 			button.classList.add('sheetsmith-track-modifier-button');
-			setIcon(button, 'info');
-			button.setAttribute('aria-label', `Modifiers on ${config.label}`);
+			setIcon(button, ACCOUNT_GLYPH);
+			button.setAttribute('aria-label', modifiersOnName(config.label));
 			button.addEventListener('click', () => {
 				showPopover(button, doorText ?? cardPushed);
 			});
@@ -2681,6 +2711,11 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						String(held === landing ? 0 : ghost),
 					);
 					segment.classList.toggle('sheetsmith-track-segment-on', solid > 0);
+					// Lit across the whole segment, which is what forced colors needs
+					// to know before it paints a mark in the fill's own text colour:
+					// on a partly lit segment that colour lands on `Canvas` too and
+					// vanishes there (`sheet.css`, the Track's `forced-colors` block).
+					segment.classList.toggle('sheetsmith-track-segment-full', solid >= 1);
 				});
 				// Held inside the run for what the control reports. The run's
 				// range is what it draws, so a stored value past the live run is

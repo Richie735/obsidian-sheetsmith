@@ -160,6 +160,23 @@ function sheetFrom(layoutSource: string, noteSource: string) {
 			});
 			return el;
 		},
+		/**
+		 * `draw` with the sheet's modifier context handed over too, which is what a
+		 * note mark is drawn from. A member of its own rather than a change to
+		 * `draw`, so every case drawn without one stays as it was.
+		 */
+		drawNoted: (id: string): HTMLElement => {
+			const entry = entryFor(id);
+			const el = document.createElement('div');
+			entry.component.render(el, entry.config, entry.data, {
+				resolved: resolveFormulaFields(entry.component, entry.config, entry.data, env),
+				resolveField: makeFieldResolver(entry.component, entry.config, entry.data, env),
+				explainField: makeFieldExplainer(entry.component, entry.config, entry.data, env),
+				onChange: () => {},
+				modifiers,
+			});
+			return el;
+		},
 	};
 }
 
@@ -1392,6 +1409,109 @@ describe('the 5e sheet is a complete system sheet', () => {
 			'Class feature',
 		]);
 		expect(parseModifierTypes(built.layout).problems).toEqual([]);
+	});
+
+	describe('publishes every save and skill (docs/features/modifier-notes.md B)', () => {
+		const SAVES = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+		const SKILLS: Record<string, string> = {
+			acrobatics: 'DEX',
+			animal_handling: 'WIS',
+			arcana: 'INT',
+			athletics: 'STR',
+			deception: 'CHA',
+			history: 'INT',
+			insight: 'WIS',
+			intimidation: 'CHA',
+			investigation: 'INT',
+			medicine: 'WIS',
+			nature: 'INT',
+			perception: 'WIS',
+			performance: 'CHA',
+			persuasion: 'CHA',
+			religion: 'INT',
+			sleight_of_hand: 'DEX',
+			stealth: 'DEX',
+			survival: 'WIS',
+		};
+		/**
+		 * The starter as it was before it published them: no key on a save, none
+		 * on the fourteen skills that gained one, no `publish` on the saves.
+		 */
+		const before = (() => {
+			const raw = JSON.parse(source) as {
+				components: { id: string; rows?: { key?: string }[]; columns?: { publish?: boolean }[] }[];
+			};
+			for (const component of raw.components) {
+				if (component.id === 'saves') {
+					for (const row of component.rows ?? []) delete row.key;
+					for (const column of component.columns ?? []) delete column.publish;
+				}
+				if (component.id === 'skills') {
+					for (const row of component.rows ?? []) {
+						if (!['insight', 'investigation', 'perception', 'persuasion'].includes(row.key ?? '')) {
+							delete row.key;
+						}
+					}
+				}
+			}
+			return JSON.stringify(raw);
+		})();
+
+		it('resolves all six saves and all eighteen skills from the abilities', () => {
+			const built = sheetFrom(source, FIFTH_NOTE);
+			expect(built.problems).toEqual([]);
+			// Nothing marked on a character with no Saves or Skills section, so each
+			// is its ability's modifier and nothing more.
+			for (const key of SAVES) {
+				expect(built.sheet(`saves.${key}`), key).toBe(built.sheet(`abilities.${key}`));
+			}
+			expect(Object.keys(SKILLS)).toHaveLength(18);
+			for (const [key, ability] of Object.entries(SKILLS)) {
+				expect(built.sheet(`skills.${key}`), key).toBe(
+					built.sheet(`abilities.${ability}`),
+				);
+			}
+		});
+
+		it('draws saves and skills exactly as before for a character with no notes', () => {
+			const now = sheetFrom(source, FIFTH_NOTE);
+			const then = sheetFrom(before, FIFTH_NOTE);
+			for (const id of ['saves', 'skills']) {
+				expect(now.drawNoted(id).innerHTML, id).toBe(then.drawNoted(id).innerHTML);
+			}
+		});
+
+		it('marks the Constitution save with War Caster’s note, and moves no number', () => {
+			const raw = JSON.parse(source) as { modifiers: unknown[] };
+			raw.modifiers.push({
+				name: 'War Caster',
+				target: 'saves.CON',
+				note: 'Advantage to maintain concentration',
+			});
+			const note = `${FIFTH_NOTE}
+## Items
+| Item | Qty | Weight | Worn | Attuned | Modifiers | Notes |
+|---|---|---|---|---|---|---|
+| War Caster |  |  |  |  | War Caster | The feat |
+`;
+			const built = sheetFrom(JSON.stringify(raw), note);
+			expect(built.definitions.problems).toEqual([]);
+			expect(built.sheet('saves.CON')).toBe(built.sheet('abilities.CON'));
+			const saves = built.drawNoted('saves');
+			const marks = Array.from(saves.querySelectorAll('.sheetsmith-note-mark'));
+			expect(marks).toHaveLength(1);
+			expect(marks[0]?.closest('tr')?.textContent).toContain('Constitution');
+			expect(saves.textContent).toContain(
+				'Items · War Caster — "Advantage to maintain concentration"',
+			);
+			// And the row enrolled in it says it is applying.
+			const row = Array.from(built.drawNoted('inventory').querySelectorAll('tr')).find(
+				(tr) => tr.querySelector('input')?.value === 'War Caster',
+			);
+			expect(
+				row?.querySelector('.sheetsmith-table-modifier-glyph')?.getAttribute('data-icon'),
+			).toBe('zap');
+		});
 	});
 
 	it('resolves its library and the numbers built on it', () => {

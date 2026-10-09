@@ -167,6 +167,59 @@
 					"hideHeading": true
 				}
 			]
+		},
+		{
+			"id": "checks",
+			"type": "roster",
+			"label": "Checks",
+			"position": {
+				"col": 4,
+				"row": 9,
+				"width": 3,
+				"height": 3
+			},
+			"rowHeader": "Check",
+			"stats": [
+				{
+					"key": "CON",
+					"name": "Constitution"
+				},
+				{
+					"key": "DEX",
+					"name": "Dexterity"
+				}
+			],
+			"derived": "floor((value - 10) / 2)",
+			"columns": [
+				{
+					"key": "Bonus",
+					"type": "number"
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "stat + Bonus",
+					"publish": true
+				}
+			],
+			"rows": [
+				{
+					"label": "Con Save",
+					"stat": "CON",
+					"key": "con_save",
+					"dividerAfter": true
+				},
+				{
+					"label": "Concentration",
+					"stat": "CON",
+					"key": "concentration",
+					"dividerAfter": true
+				},
+				{
+					"label": "Stealth",
+					"stat": "DEX"
+				}
+			]
 		}
 	],
 	"modifierTypes": [
@@ -245,6 +298,11 @@
 			"target": "skills.perception",
 			"amount": "2",
 			"bonusType": "item"
+		},
+		{
+			"name": "War Caster",
+			"target": "checks.concentration",
+			"note": "Advantage to maintain concentration"
 		}
 	]
 }

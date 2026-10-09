@@ -11,7 +11,7 @@ import { COLUMN_TYPES } from '../components/column-types';
 import { MAX_LEVELS } from '../components/level-ring';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { makeFieldResolver, NO_ENV } from '../formula/resolve';
-import { Notice } from '../test/obsidian-stub';
+import { Notice, Platform } from '../test/obsidian-stub';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -1174,10 +1174,10 @@ describe('entries editor', () => {
 	});
 
 	it('writes each cell under the property name its column declared', () => {
-		// The exposure PATTERNS §11 carries as a row: the two cells write
-		// whatever `key` says, and a component reading a different word finds
-		// nothing while the list stays self-consistent. Asserted on a spelling
-		// no component uses, so it can only pass by reading the spec.
+		// The exposure: the two cells write whatever `key` says, and a
+		// component reading a different word finds nothing while the list
+		// stays self-consistent. Asserted on a spelling no component uses, so
+		// it can only pass by reading the spec.
 		const record: Record<string, unknown> = {};
 		const el = entriesEditor(record, {
 			columns: [
@@ -1317,30 +1317,95 @@ describe('entries editor', () => {
 		expect(reserved()).toBe(false);
 	});
 
-	it('reorders on the arrow keys, and names its controls without the entry', () => {
-		/*
-		 * The accessible names are the reason this list's controls are its own
-		 * rather than `addControls`, and the reason PATTERNS §11 carries that
-		 * duplication as a row: a row's and a column's controls name the item
-		 * they act on, and these deliberately do not. With both copies driven
-		 * from this file, the two namings are now side by side — which is what
-		 * a decision on them would have to change.
-		 */
+	it('reorders on the arrow keys, and names its controls for the entry', () => {
+		// The shared `addControls`, so a Tab onto one of these says which entry
+		// it moves or removes — nothing else on the way there announces it
+		// (`docs/UI.md` §6).
 		const record = abilities();
 		const el = entriesEditor(record);
-		const handle = byLabel(el, 'Reorder: drag, or press the arrow keys');
+		expect(byLabel(el, 'Remove STR').dataset.sheetsmithFocus).toBe(
+			'attr-abilities-STR-remove',
+		);
+		const handle = byLabel(el, 'Reorder STR: drag, or press the arrow keys');
+		expect(handle.dataset.sheetsmithFocus).toBe('attr-abilities-STR-handle');
 		handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
 		expect(record.entries.map((entry) => entry.key)).toEqual(['DEX', 'STR']);
 	});
 
-	it('removes an entry without asking, unlike a row or a column', () => {
-		// The other half of the same difference: `addControls` confirms before
-		// destroying something hand-written and this list never does.
+	it('names its touch arrows for the entry where there is no drag', () => {
+		Platform.isMobile = true;
+		try {
+			const record = abilities();
+			const el = entriesEditor(record);
+			expect(byLabel(el, 'Move STR up').dataset.sheetsmithFocus).toBe(
+				'attr-abilities-STR-up',
+			);
+			byLabel(el, 'Move STR down').click();
+			expect(record.entries.map((entry) => entry.key)).toEqual(['DEX', 'STR']);
+		} finally {
+			Platform.isMobile = false;
+		}
+	});
+
+	it('falls back to the list\'s own noun for an entry with no name', () => {
+		// Only a hand-edited file arrives with the first column blank, and
+		// "Remove " would name nothing at all.
+		const record = { entries: [{ name: 'Strength' }] };
+		byLabel(entriesEditor(record), 'Remove entry').click();
+		expect(record.entries).toEqual([]);
+
+		const track = entriesEditor({ entries: [{}] }, { withCount: true });
+		const handle = byLabel(track, 'Reorder row: drag, or press the arrow keys');
+		// The focus token is still the name, blank or not.
+		expect(handle.dataset.sheetsmithFocus).toBe('attr-abilities--handle');
+	});
+
+	it('confirms a nameless row\'s formula through the same fallback noun', () => {
+		const record = { entries: [{ count: 'level + 1' }, { key: 'L2' }] };
+		recorded.answer = false;
+		const el = entriesEditor(record, { withCount: true });
+		byLabel(el, 'Remove row').click();
+		expect(recorded.confirms).toEqual([
+			'Remove this row? Its segments formula is lost.',
+		]);
+		expect(record.entries).toEqual([{ count: 'level + 1' }, { key: 'L2' }]);
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('removes a plain entry without asking', () => {
+		// A couple of short words, retyped in seconds, and the note keeps the
+		// character's values under it either way.
 		const record = abilities();
 		const el = entriesEditor(record);
-		byLabel(el, 'Remove entry').click();
+		byLabel(el, 'Remove STR').click();
 		expect(record.entries).toEqual([{ key: 'DEX' }]);
 		expect(recorded.confirms).toEqual([]);
+	});
+
+	it('asks before removing a row whose segments are a formula, and only then removes it', () => {
+		// The 5e spell-slot rows are the case: a level table written by hand,
+		// and `persist()` writes the file on the spot with no undo behind it.
+		const record: Record<string, unknown> = {
+			entries: [{ key: 'L1', count: 'if(level >= 3, 4, 2)' }, { key: 'L2', count: 3 }],
+		};
+		recorded.answer = false;
+		const el = entriesEditor(record, { withCount: true });
+		byLabel(el, 'Remove L1').click();
+		expect(recorded.confirms).toEqual([
+			'Remove the row "L1"? Its segments formula is lost. Character notes keep their "L1" data either way.',
+		]);
+		expect(record.entries).toHaveLength(2);
+		expect(recorded.persists).toBe(0);
+
+		recorded.answer = true;
+		byLabel(el, 'Remove L1').click();
+		expect(record.entries).toEqual([{ key: 'L2', count: 3 }]);
+
+		// A bare number is not a formula, so its row goes without asking.
+		const again = entriesEditor(record, { withCount: true });
+		byLabel(again, 'Remove L2').click();
+		expect(recorded.confirms).toHaveLength(2);
+		expect(record.entries).toEqual([]);
 	});
 
 	it('attaches the list on the first add and not on merely being shown', () => {
@@ -1561,6 +1626,98 @@ describe('the columns editor over a component that holds fewer types', () => {
 		const table: { columns: { key: string; type?: string }[] } = { columns: [] };
 		button(columnsEditor(table), 'Add column').click();
 		expect(table.columns).toEqual([{ key: 'New column' }]);
+	});
+
+	describe('with Record set, Table and Roster as they are registered', () => {
+		/*
+		 * `docs/features/free-text-group-key.md`. A Record set now offers text, last,
+		 * as the field its list is grouped by. The derived `fallback` is then the
+		 * shared default, so an Add handler testing it would store every new field
+		 * as "no type", read back as text and refused on the first field an author
+		 * created. The handler writes the first *offered* type instead, and these
+		 * drive it over each component's real declaration rather than a copy.
+		 */
+		const offersOf = (type: string, key: string): ColumnOptionsSpec => {
+			const found = getComponent(type)?.configFields.find(
+				(one) => one.key === key,
+			)?.columnOptions;
+			if (found === undefined) throw new Error(`${type} offers no ${key}`);
+			return found;
+		};
+		const added = (offers: ColumnOptionsSpec | undefined, name: string) => {
+			const record: { columns: Record<string, unknown>[] } = { columns: [] };
+			button(columnsEditor(record, 0, offers), `Add ${name}`).click();
+			return record.columns;
+		};
+
+		it('stores a Record set\'s new field as a number, not as no type', () => {
+			expect(added(offersOf('record-set', 'fields'), 'field')).toEqual([
+				{ key: 'New field', type: 'number' },
+			]);
+		});
+
+		it('stores a Table\'s new column as absence, exactly as it did', () => {
+			// Table declares no `columnOptions`: every type, text first.
+			expect(added(undefined, 'column')).toEqual([{ key: 'New column' }]);
+		});
+
+		it('stores a Roster\'s new column as it did', () => {
+			const roster = offersOf('roster', 'columns');
+			// Whatever Roster offers first, written out unless it is the default.
+			const first = roster.types[0];
+			expect(added(roster, 'column')).toEqual(
+				first === 'text'
+					? [{ key: 'New column' }]
+					: [{ key: 'New column', type: first }],
+			);
+			expect(first).toBe('number');
+		});
+
+		it('lists Text last for a Record set and shows it for a field with no type', () => {
+			const offers = offersOf('record-set', 'fields');
+			const el = columnsEditor({ columns: [{ key: 'Class' }] }, 0, offers);
+			const select = el.querySelector<HTMLSelectElement>(
+				"select[aria-label='What the field holds']",
+			) as HTMLSelectElement;
+			const values = Array.from(select.options).map((one) => one.value);
+			expect(values.at(-1)).toBe('text');
+			expect(values.indexOf('number')).toBe(0);
+			expect(select.value).toBe('text');
+			expect(select.selectedOptions[0]?.textContent).toBe('Text');
+		});
+
+		it('writes choosing Text as absence, and keeps a hand-written "text"', () => {
+			const offers = offersOf('record-set', 'fields');
+			const record: { columns: Record<string, unknown>[] } = {
+				columns: [
+					{ key: 'A', type: 'number' },
+					{ key: 'B', type: 'text' },
+				],
+			};
+			const el = columnsEditor(record, 0, offers);
+			const [first, second] = Array.from(
+				el.querySelectorAll<HTMLSelectElement>(
+					"select[aria-label='What the field holds']",
+				),
+			) as [HTMLSelectElement, HTMLSelectElement];
+			first.value = 'text';
+			first.dispatchEvent(new Event('change'));
+			expect(record.columns[0]).toEqual({ key: 'A' });
+			// Untouched: a hand-written spelling is carried, not normalised.
+			expect(record.columns[1]).toEqual({ key: 'B', type: 'text' });
+			expect(second.value).toBe('text');
+		});
+
+		it('offers a text field the line a text field has and no number bounds', () => {
+			const offers = offersOf('record-set', 'fields');
+			const el = columnsEditor({ columns: [{ key: 'Class' }] }, 0, offers);
+			const spans = Array.from(
+				el.querySelectorAll('.sheetsmith-position-label'),
+			).map((one) => one.textContent);
+			expect(spans).not.toContain('Minimum');
+			expect(spans).not.toContain('Maximum');
+			expect(labels(el)).not.toContain('Show a total');
+		});
 	});
 
 	it('offers neither a total nor publication where the field refuses them', () => {
