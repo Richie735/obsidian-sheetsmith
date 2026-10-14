@@ -649,6 +649,13 @@ const DEFAULTS = [
 		 * strengths, and it belongs in the repository instead of in a reviewer's
 		 * scratch directory.
 		 *
+		 * **And a multi-mark run's dividers in all three states**, on the
+		 * Quartered card beside Clocks: a wholly lit segment, one lit for a mark of
+		 * four, and an unlit one. The unlit one is the case the dividers were
+		 * redrawn for — as a fill this mode repainted them `Canvas`, so an unlit
+		 * segment lost its count of targets left — and before that card no run on
+		 * the sheet had one, which is what this row's fix waited on.
+		 *
 		 * `theme=light`, which forced colors overrides anyway — the flag decides the
 		 * palette, so naming a theme here only says which one the page asked for.
 		 */

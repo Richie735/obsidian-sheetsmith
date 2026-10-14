@@ -3915,3 +3915,31 @@ describe('the room beside an open table\'s sticky name', () => {
 		);
 	});
 });
+
+describe("a multi-mark segment's dividers in forced colors", () => {
+	/*
+	 * `docs/features/forced-colors-track-and-table.md`. That mode repaints an
+	 * author `background-color` as `Canvas`, so a divider drawn as one vanished on
+	 * an unlit segment and took its count of targets with it. Only a forced-colors
+	 * shot shows it, and only on a run that has an unlit multi-mark segment.
+	 */
+	const mark = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+		/\.sheetsmith-track-mark\b/.test(rule.selector),
+	);
+
+	it('draws every divider as a border, never a fill', () => {
+		expect(mark.length).toBeGreaterThanOrEqual(3);
+		expect(mark.filter((rule) => /background(-color)?:/.test(rule.body))).toEqual([]);
+		expect(mark.some((rule) => /border-left:\s*1px solid/.test(rule.body))).toBe(true);
+	});
+
+	it('two-tones a divider on a lit segment, as the slash is', () => {
+		const lit = mark.find(
+			(rule) =>
+				rule.context[0] === '@media (forced-colors: active)' &&
+				rule.selector.trim() === '.sheetsmith-track-segment-on .sheetsmith-track-mark',
+		);
+		expect(lit?.body).toMatch(/border-left-color:\s*SelectedItemText/);
+		expect(lit?.body).toMatch(/border-right:\s*1px solid CanvasText/);
+	});
+});

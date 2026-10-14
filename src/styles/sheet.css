@@ -4449,15 +4449,22 @@ a.sheetsmith-notice-action {
    border and doubles it — visible on every multi-mark segment on the run. The
    count is the fix and the reason for the change together: a segment holding n
    marks has n - 1 boundaries inside it, and the segment's border is already the
-   outer two. */
+   outer two.
+
+   **A border and not a fill, for forced colors.** That mode repaints an author
+   `background-color` as `Canvas`, so a divider drawn as one vanished on an
+   unlit segment, which then lost the count of targets left in it
+   (`legibility.md` §2), and showed dark over the fill. A border it repaints
+   `CanvasText`, which reads on `Canvas`; the mode's block below two-tones it
+   over a lit part. Same 1px and same place in every other mode. */
 .sheetsmith-track-mark {
 	position: absolute;
 	top: 0;
 	bottom: 0;
 	left: calc(var(--sheetsmith-track-at, 0) * 100%);
 	z-index: 1;
-	width: 1px;
-	background-color: var(--background-modifier-border);
+	width: 0;
+	border-left: 1px solid var(--background-modifier-border);
 	pointer-events: none;
 }
 
@@ -4629,7 +4636,7 @@ a.sheetsmith-notice-action {
 /* A divider carries the same job as the segment's own edge, so it takes the
 	   same treatment rather than staying the faint line it is by default. */
 .sheetsmith-track-mark {
-		background-color: var(--text-muted);
+		border-left-color: var(--text-muted);
 	}
 
 /* A shape read along the run is the wrong thing to trade contrast for, so
@@ -4682,6 +4689,16 @@ a.sheetsmith-notice-action {
    whole diagonal, which is `docs/UI.md` §6's companion idiom applied to a
    stroke, and it exists in this mode only.
 
+   **A multi-mark segment's dividers are two-toned the same way, and on the same
+   key.** Unlit they are the mode's own `CanvasText` border on `Canvas`, which
+   is all an unlit segment needs to keep its count of targets. Once the segment
+   is lit at all, the 1px stroke takes `SelectedItemText` and gains a second
+   `CanvasText` pixel beside it, so whichever surface a divider lands on — the
+   fill, the unlit part, or the edge between them — one of the two reads.
+   A half pixel's margin centres the pair on its boundary at 2x, where it
+   straddles it; at 1x the margin rounds to nothing and the pair sits on the
+   boundary and one pixel right of it (`sheet-forced-colors`, measured).
+
    **A wholly lit glyph and the lit count take `forced-color-adjust: none`**, and the
    reason is the backplate: in this mode Chrome paints a `Canvas` plate behind
    text, so `SelectedItemText` alone drew black on black. With the adjustment off
@@ -4704,6 +4721,12 @@ a.sheetsmith-notice-action {
 .sheetsmith-track-segment-on.sheetsmith-track-segment-over::after {
 		border-top-color: SelectedItemText;
 		border-bottom: 1.5px solid CanvasText;
+	}
+
+.sheetsmith-track-segment-on .sheetsmith-track-mark {
+		margin-left: -0.5px;
+		border-left-color: SelectedItemText;
+		border-right: 1px solid CanvasText;
 	}
 
 .sheetsmith-track-segment-full .sheetsmith-track-segment-glyph {
