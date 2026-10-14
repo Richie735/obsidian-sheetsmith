@@ -207,7 +207,7 @@ mkdirSync(outDir, { recursive: true });
  * **8100**, 16600 to **17300**, 8600 to **9300**, 9600 to **10200**.
  *
  * **Raised again for the scoped reset** (`docs/features/record-set-reset-scope.md`):
- * `rest_features` and its pool take rows 84–86 at the foot of the sheet. Measured
+ * `rest_features` and its pool take rows 84–86 (now 86–88) at the foot of the sheet. Measured
  * off `document.body` over the DevTools Protocol, harness built first, through
  * each view's own query and window — and HEAD measured by the same script first,
  * which reproduced the four numbers above to the pixel, so the instrument is the
@@ -215,8 +215,19 @@ mkdirSync(outDir, { recursive: true });
  * against 17300, **9264** at 520 against 9300 and **10281** at `text=24` against
  * 10200: three over, and the 520 one inside by 36px. 8100 to **8500**, 17300 to
  * **17800**, 9300 to **9600**, 10200 to **10600**.
+ *
+ * **Raised again when the Passport row stopped sitting under the six-up group**:
+ * `cacbe54` moved the group down two rows and left Passport and Playbook over its
+ * foot, so they and everything below them moved two rows down. Measured off
+ * `document.body` over the DevTools Protocol, harness built first, through each
+ * view's own query: **8423** here against 8500, **9625** at 520 against 9600 and
+ * **10629** at `text=24` against 10600, two over and this one inside by 77px.
+ * `&width=380` is one column, where rows place nothing, and it measured
+ * **18338** both before and after the move, against 18300: already over by a
+ * stale 38px this pass did not cause. 8500 to **8800**, 9600 to **9900**, 10600
+ * to **10900**, 18300 to **18600**.
  */
-const SHEET_FRAME = '1400,8500';
+const SHEET_FRAME = '1400,8800';
 
 /**
  * The `pinned-add` state at a 520px container with its wide Table scrolled to one
@@ -415,9 +426,12 @@ const DEFAULTS = [
 		// while at one column each is a full-width row of its own. Measured
 		// 17893 against 17800, so the last cards on the sheet were the ones
 		// cropped. 17800 to **18300**.
+		//
+		// Found over at 18338 by the pass that moved the Passport row, which
+		// does not reach this view (SHEET_FRAME's note). 18300 to **18600**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,18300',
+		size: '520,18600',
 	},
 	{
 		/*
@@ -464,9 +478,12 @@ const DEFAULTS = [
 		// Raised again with SHEET_FRAME for the scoped reset: measured 9264
 		// against 9300 — inside, by 36px, which is a frame that clips on the next
 		// row anybody adds. 9300 to **9600**.
+		//
+		// Raised again with SHEET_FRAME for the moved Passport row: measured 9625
+		// against 9600. 9600 to **9900**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,9600',
+		size: '620,9900',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -504,7 +521,10 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the scoped reset: measured 10281
 		// against 10200. 10200 to **10600**.
-		size: '1400,10600',
+		//
+		// Raised again with SHEET_FRAME for the moved Passport row: measured
+		// 10629 against 10600. 10600 to **10900**.
+		size: '1400,10900',
 	},
 	{
 		/*
