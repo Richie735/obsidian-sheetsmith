@@ -313,7 +313,7 @@ the guard, the attribute is set, the tests pass, and every field still draws.
   `grid-column` from a `--sheetsmith-record-track` custom property, set with
   `style.setProperty` to its summary index (PATTERNS §5's sanctioned route).
   Hidden or not, a field lands in its own track. The strip still counts every
-  summary field. N in `14.5em + 6em × N` is static, because the strip is the
+  summary field. N in `232px + 96px × N` is static, because the strip is the
   list's and not the record's.
 - **Body block:** a hidden body field takes no space, and the pairs rewrap. **Where
   every body field on a record is hidden, the block itself carries `hidden` and the

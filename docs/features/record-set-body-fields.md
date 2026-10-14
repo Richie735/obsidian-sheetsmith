@@ -20,7 +20,7 @@ restates it only as far as the design leans on it:
 
 1. **The strip.** A body field has no column. Its track is left out of the grid, and
    the strip and each record's subgrid are built from summary fields only, so N in
-   `14.5em + 6em × N` and in the `sheetsmith-record-set-fields-N` table is the
+   `232px + 96px × N` and in the `sheetsmith-record-set-fields-N` table is the
    summary count. N = 0 means no strip (Custom System Builder #335: a heading over
    nothing, or a hole that misaligns the subgrid).
 2. **The closed record** shows nothing for a body field: no count and no mark. The

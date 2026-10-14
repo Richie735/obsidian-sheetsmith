@@ -2971,12 +2971,12 @@ describe("a Record set's strip of field names", () => {
 	const STYLE_QUERY = '@container style(--sheetsmith-record-strip: on)';
 	const inGate = (rule: Rule) => rule.context[0] === GATE;
 
-	/** The per-count entries: `[N, em]`. */
+	/** The per-count entries: `[N, px]`. */
 	function thresholds(): [number, number][] {
 		const out: [number, number][] = [];
 		for (const rule of all) {
 			const query = rule.context[1]?.match(
-				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)px\)$/,
 			);
 			const count = rule.selector.match(
 				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,
@@ -2988,17 +2988,20 @@ describe("a Record set's strip of field names", () => {
 	}
 
 	/**
-	 * The measured formula, in `em` at the container's own type size.
+	 * The measured formula, in px, because every width on the line is
+	 * (`docs/features/record-set-stacking-tiers.md`): the container's `em` is
+	 * `--font-ui-medium` in Obsidian and follows no text-size setting, so a
+	 * threshold in it drew every strip at 15/16 of the width it was measured at.
 	 *
 	 * Swept in the harness with the strip forced on and every field the widest
 	 * kind there is — a number whose ceiling the reader types — the narrowest list
-	 * that leaves the name six ems and everything inside the delete glyph is 264,
-	 * 372, 464, 556, 646, 738, 830 and 922px at 16px for one to eight fields
-	 * (`188px + 92px × N` from two). `14.5em + 6em × N` clears each by 52 to 76px,
+	 * that leaves the name 96px and everything inside the delete glyph is 264,
+	 * 372, 464, 556, 646, 738, 830 and 922px for one to eight fields
+	 * (`188px + 92px × N` from two). `232px + 96px × N` clears each by 52 to 76px,
 	 * and its base is what lifts one field over the stacking rule below.
 	 */
-	const BASE = 14.5;
-	const STEP = 6;
+	const BASE = 232;
+	const STEP = 96;
 	const FIT_PX = [264, 372, 464, 556, 646, 738, 830, 922];
 
 	it('tabulates every count from one to eight, once each', () => {
@@ -3015,17 +3018,17 @@ describe("a Record set's strip of field names", () => {
 
 	it('holds every threshold to the formula it was measured to', () => {
 		const off = thresholds()
-			.filter(([count, em]) => em !== BASE + STEP * count)
-			.map(([count, em]) => `${count} fields at ${em}em`);
+			.filter(([count, px]) => px !== BASE + STEP * count)
+			.map(([count, px]) => `${count} fields at ${px}px`);
 		expect(off).toEqual([]);
 	});
 
 	it('never puts a threshold under the narrowest width that holds its fields', () => {
-		// At 16px. A number below the measurement is a list the strip is drawn
-		// over at a width its fields do not fit.
+		// A number below the measurement is a list the strip is drawn over at a
+		// width its fields do not fit.
 		const short = thresholds()
-			.filter(([count, em]) => em * 16 < (FIT_PX[count - 1] ?? Infinity))
-			.map(([count, em]) => `${count} fields at ${em * 16}px`);
+			.filter(([count, px]) => px < (FIT_PX[count - 1] ?? Infinity))
+			.map(([count, px]) => `${count} fields at ${px}px`);
 		expect(short).toEqual([]);
 	});
 
@@ -3040,8 +3043,8 @@ describe("a Record set's strip of field names", () => {
 			),
 		).toBe(true);
 		const under = thresholds()
-			.filter(([, em]) => em * 16 <= stacking)
-			.map(([count, em]) => `${count} fields at ${em * 16}px`);
+			.filter(([, px]) => px <= stacking)
+			.map(([count, px]) => `${count} fields at ${px}px`);
 		expect(under).toEqual([]);
 	});
 
@@ -3134,6 +3137,31 @@ describe("a Record set's strip of field names", () => {
 		// The list's own padding moved off the top, or a band above the strip shows
 		// records passing through.
 		expect(list?.body).toMatch(/padding-block:\s*0/);
+	});
+
+	it("declares a record's type basis once, on the list, so the strip's cap is the plain line's", () => {
+		// The cap is `13em` and a custom property's `em` resolves where it is used:
+		// the plain line uses it on a record's summary, the strip on the list. With
+		// the basis on the record alone the strip's cap came to 208px against 169.
+		// One declaration on the list both inherit, and no second copy anywhere a
+		// record or the list could pick up instead.
+		const list = all.find(
+			(rule) => rule.selector === '.sheetsmith-record-set-list' && rule.context.length === 0,
+		);
+		expect(list?.body).toMatch(/font-size:\s*var\(--font-ui-small\)/);
+		const elsewhere = all.filter(
+			(rule) =>
+				rule !== list &&
+				/^\.sheetsmith-record(-set-list|-set-records|-summary)?$/.test(rule.selector.trim()) &&
+				/font-size:/.test(rule.body),
+		);
+		expect(elsewhere.map((rule) => rule.selector)).toEqual([]);
+		const strip = all.find(
+			(rule) =>
+				rule.context[1] === STYLE_QUERY &&
+				rule.selector === '.sheetsmith-record-set-list',
+		);
+		expect(strip?.body).toMatch(/minmax\(0, var\(--sheetsmith-record-name, 13em\)\)/);
 	});
 
 	it("moves a number field's ink under its heading inside the gate, and by paint alone", () => {
@@ -3265,7 +3293,7 @@ describe("a Record set's stacking tiers", () => {
 		const out: [number, number, number, string][] = [];
 		all.forEach((rule, at) => {
 			const query = rule.context[1]?.match(
-				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)px\)$/,
 			);
 			const count = rule.selector.match(
 				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,

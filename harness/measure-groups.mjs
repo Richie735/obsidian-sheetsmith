@@ -49,7 +49,13 @@
  *     c. no list is stacked and under its strip at once;
  *     d. in the forced-plain sweep, at every width from 150 to 1300px and not
  *        only past the fit, no record's name box passes the left edge of its
- *        fields: a name narrowed under its floor clips, and never overlaps.
+ *        fields: a name narrowed under its floor clips, and never overlaps;
+ *     e. under its strip, at every width it is drawn, no record's name is
+ *        under 96px and no field passes the delete glyph — the constraint the
+ *        strip's px thresholds were measured to;
+ *     f. at 1300px a name under the strip is exactly as wide as the plain
+ *        line's at the same width, so the cap does not move as the strip comes
+ *        in (`docs/features/record-set-heading-strip.md`).
  *     It prints, per list, where it is stacked to, where its plain line fits
  *     from and where its strip comes in.
  */
@@ -285,7 +291,7 @@ await load('light', 520, 620);
 
 }
 
-// 7. Where every list's line stacks: checks a, b, c and d.
+// 7. Where every list's line stacks: checks a to f.
 async function loadState(state, text) {
 	await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1900, deviceScaleFactor: 1, mobile: false });
 	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${text}` });
@@ -296,7 +302,7 @@ const SWEEP = `(()=>{
  const overlaps=(s)=>{const f=s.querySelector('.sheetsmith-record-fields');if(!f||![...f.children].some(x=>!x.hidden))return false;return s.querySelector('.sheetsmith-record-name').getBoundingClientRect().right>f.getBoundingClientRect().left+0.5;};
  const lines=(fs)=>{const bs=fs.map(f=>f.getBoundingClientRect()).sort((a,b)=>a.top-b.top);let n=0,bottom=-1e9;for(const b of bs){if(b.top>=bottom-1){n++;bottom=b.bottom;}else bottom=Math.max(bottom,b.bottom);}return n;};
  const blocks=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-record-set')].filter(b=>b.querySelector('.sheetsmith-record-summary'));
- const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],overlap:[],stackedTo:null,stripFrom:null,fit:null}));
+ const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],overlap:[],stripBad:[],stripName:null,plainName:null,stackedTo:null,stripFrom:null,fit:null}));
  const sweep=(b,each)=>{b.style.flex='none';b.style.justifySelf='start';b.style.maxWidth='none';for(let w=150;w<=1300;w+=0.5){b.style.width=w+'px';void b.offsetWidth;if(each(w))break;}};
  blocks.forEach((b,i)=>{const o=out[i];sweep(b,(w)=>{
   const strip=getComputedStyle(b.querySelector('.sheetsmith-record-set-box')).getPropertyValue('--sheetsmith-record-strip').trim()==='on';
@@ -304,7 +310,7 @@ const SWEEP = `(()=>{
   let stacked=false,bad=false;
   for(const s of b.querySelectorAll('.sheetsmith-record-summary')){const f=s.querySelector('.sheetsmith-record-fields');
    if(getComputedStyle(f).gridRowStart==='2'){stacked=true;continue;}
-   if(strip)continue;
+   if(strip){if(s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))o.stripBad.push(w);if(w===1300)o.stripName=Math.max(o.stripName??0,s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width);continue;}
    if(lines([...f.children].filter(x=>!x.hidden))>1||s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))bad=true;}
   if(stacked)o.stackedTo=w; if(bad)o.wrap.push(w); if(stacked&&strip)o.both.push(w); return false;});});
  const force=document.createElement('style');force.textContent='.sheetsmith-record-set-box{--sheetsmith-record-stack: off !important}';document.head.appendChild(force);
@@ -312,6 +318,7 @@ const SWEEP = `(()=>{
   for(const f of b.querySelectorAll('.sheetsmith-record-summary .sheetsmith-record-field'))f.removeAttribute('hidden');
   sweep(b,(w)=>{const summaries=[...b.querySelectorAll('.sheetsmith-record-summary')];
    if(summaries.some(overlaps))o.overlap.push(w);
+   if(w===1300)o.plainName=Math.max(...summaries.map(s=>s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width));
    const ok=summaries.every(s=>{const f=s.querySelector('.sheetsmith-record-fields');return lines([...f.children])<=1&&s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width>=96&&!pastDelete(s);});if(ok&&o.fit===null)o.fit=w;return false;});});
  return out;})()`;
 /**
@@ -335,6 +342,10 @@ for (const state of [...new Set(['populated', STATE])]) {
 			check(one.fit !== null && past <= PAST_PX, `${at} ${one.name}: (b) stacked no more than 2em past its fit`, `${past}px past`);
 			check(one.both.length === 0, `${at} ${one.name}: (c) never stacked under its strip`, one.both.slice(0, 4).join(','));
 			check(one.overlap.length === 0, `${at} ${one.name}: (d) no name passes its fields`, one.overlap.slice(0, 4).join(','));
+			if (one.stripFrom !== null) {
+				check(one.stripBad.length === 0, `${at} ${one.name}: (e) under its strip no name is under 96px and no field passes the delete glyph`, one.stripBad.slice(0, 4).join(','));
+				check(one.stripName !== null && Math.abs(one.stripName - one.plainName) <= 0.5, `${at} ${one.name}: (f) under its strip a name caps where the plain line's does`, `${one.stripName} against ${one.plainName}`);
+			}
 		}
 	}
 }

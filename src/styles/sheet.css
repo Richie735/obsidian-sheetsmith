@@ -5815,6 +5815,25 @@ a.sheetsmith-notice-action {
 	overflow-y: auto;
 	padding: var(--size-2-2);
 	border-radius: inherit;
+	/*
+	 * **One type basis for the whole list, and every record inherits it.** A
+	 * custom property's `em` is resolved where it is *used*, not where it is
+	 * declared — and `--sheetsmith-inline-control` is `1.6em` — so the chevron,
+	 * which sets `--font-ui-small` on itself, computed a 20.8px column while the
+	 * body, which inherited the sheet's size, computed a 38.4px indent from the
+	 * same token. At `text=24` that put the body's left edge 14px past the name it
+	 * is titled by, and prose visibly larger than the name above it, which is
+	 * `legibility.md` §4's "the hierarchy must not reorder".
+	 *
+	 * **On the list rather than on the record**, because the strip uses the
+	 * name's `13em` cap on the list's own grid and the plain line uses it on a
+	 * record's summary: declared on the record alone, the strip resolved the cap
+	 * at the sheet's size, 208px against the plain line's 169, and a name grew 39px
+	 * as the strip came in. One declaration answers the summary, the body, the
+	 * problem line and the strip's tracks. Nothing else on the list is in `em`:
+	 * its padding and gaps are `--size-*`, and every other child sets its own size.
+	 */
+	font-size: var(--font-ui-small);
 }
 
 .sheetsmith-record {
@@ -5833,21 +5852,9 @@ a.sheetsmith-notice-action {
 		var(--sheetsmith-inline-control, 1.6em) + var(--size-2-2)
 	);
 	/*
-	 * **One type basis for the whole record**, which is the other half of the same
-	 * drift and the half that made the first fix insufficient. A custom property's
-	 * `em` is resolved where it is *used*, not where it is declared — and
-	 * `--sheetsmith-inline-control` is `1.6em` — so the chevron, which sets
-	 * `--font-ui-small` on itself, computed a 20.8px column while the body, which
-	 * inherited the vault's text size, computed a 38.4px indent from the same
-	 * token. At `text=24` that put the body's left edge 14px past the name it is
-	 * titled by, and prose visibly larger than the name above it, which is
-	 * `legibility.md` §4's "the hierarchy must not reorder".
-	 *
-	 * Declared here rather than on each part, so there is one answer for the
-	 * summary, the body and the problem line and the three cannot resolve one
-	 * token three ways.
+	 * The record's type basis is the list's, inherited
+	 * (`.sheetsmith-record-set-list` above says why it is declared there).
 	 */
-	font-size: var(--font-ui-small);
 }
 
 /* ---------------------------------------------------------------------------
@@ -7584,10 +7591,16 @@ a.sheetsmith-notice-action {
    declarations. An engine with no style queries ignores that rule whole, and so
    draws the narrow regime at every width, which is today's list.
 
-   **The threshold is `14.5em + 6em × N`**, in `em` so it follows the
-   container's own type size: the strip drops sooner as the vault's text grows,
-   where a `px` threshold would let larger type overflow a list that used to
-   fit. The container is the block, and its font size is the sheet's.
+   **The threshold is `232px + 96px × N`**, in px because every width on the
+   line is (docs/features/record-set-stacking-tiers.md, "In px, because the
+   line's widths are"): a record is `--font-ui-small`, the name's cap is 13em of
+   that, the gaps are `--size-*` and a heading is `--font-ui-smaller`. It was
+   `14.5em + 6em × N`, on the claim that the container's `em` follows the
+   vault's text size. It follows nothing: Obsidian 1.14.4 sets `body` to
+   `--font-ui-medium`, 15px, and nothing on a view, so the app drew every strip
+   at 15/16 of the width it was measured at (397.5 for 424), and the harness's
+   `text=`, which does move the container's `em`, moved the strip off lines
+   that had not changed width.
 
    **Measured, not derived, and the constraint is the behaviour**: no width at
    which the strip is drawn and a record's fields leave the delete glyph behind,
@@ -7598,8 +7611,8 @@ a.sheetsmith-notice-action {
    one to eight fields, which is `188px + 92px × N` from two up. The starting
    values the design began from (`18em + 4.5em × N`) clear five fields by two
    pixels and *fail* from six: 864px against 922 at eight. This is the fit
-   rounded up to whole sixes, with the base lifted until one field clears the
-   320px stacking rule above (`20.5em`, 328px, where the fit alone is 288), so a
+   rounded up to whole sixes of ems at 16px, with the base lifted until one field
+   clears the 320px stacking rule above (328px, where the fit alone is 288), so a
    headed list never has the strip and the stacked line at once. It clears the
    fit by 52 to 76px from two fields up. The mixed fixture (a ceiling, a toggle,
    a named level, a computed value and a modifier) fits in 468px at five and this
@@ -7607,56 +7620,56 @@ a.sheetsmith-notice-action {
    five counters: the strip drops earlier than the commonest list needs.
    --------------------------------------------------------------------------- */
 @supports (grid-template-columns: subgrid) {
-	@container sheetsmith-record-set (min-width: 20.5em) {
+	@container sheetsmith-record-set (min-width: 328px) {
 		.sheetsmith-record-set-fields-1 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 26.5em) {
+	@container sheetsmith-record-set (min-width: 424px) {
 		.sheetsmith-record-set-fields-2 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 32.5em) {
+	@container sheetsmith-record-set (min-width: 520px) {
 		.sheetsmith-record-set-fields-3 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 38.5em) {
+	@container sheetsmith-record-set (min-width: 616px) {
 		.sheetsmith-record-set-fields-4 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 44.5em) {
+	@container sheetsmith-record-set (min-width: 712px) {
 		.sheetsmith-record-set-fields-5 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 50.5em) {
+	@container sheetsmith-record-set (min-width: 808px) {
 		.sheetsmith-record-set-fields-6 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 56.5em) {
+	@container sheetsmith-record-set (min-width: 904px) {
 		.sheetsmith-record-set-fields-7 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 62.5em) {
+	@container sheetsmith-record-set (min-width: 1000px) {
 		.sheetsmith-record-set-fields-8 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
