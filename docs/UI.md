@@ -375,6 +375,14 @@ sheet.
   beside its reason (`docs/features/text-faint-audit.md`, which measured every
   instance; `docs/features/track-row-legibility-and-clipped-fields.md` was the
   first, for a Track row's name column).
+  **So a placeholder never carries anything the row does not also say at full
+  contrast** [judgement], in its description or its value; one that repeats the
+  description is accepted as redundant. The settings tab's **Character folder**
+  is the instance: the app's `setPlaceholder` draws `Same as new notes` at
+  2.30:1 light and 2.36:1 dark, nothing inside it can raise that, and the
+  description names the same destination. It stays rather than going because,
+  with an `aria-label` as the name, a placeholder is exposed as the input's
+  accessible description (per HTML-AAM, not tested with a screen reader).
 
 The numbers these rules are judged against, and the way to measure them, are in
 `.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
@@ -1190,6 +1198,15 @@ bare and unscoped, so they paint **in a modal**, which is the scoping test
 generated per instance there rather than being a module literal, because a modal
 can be opened, closed and opened again where a pane's row is replaced whole by a
 redraw.
+
+**An app path quoted in arrow notation keeps each multi-word label whole and
+breaks at its arrows; a line may end on an arrow but never begins with one**
+[judgement]. A trailing `→` says a step follows, where a leading one reads as a
+continuation of nothing. So a no-break space goes inside a label and before its
+arrow, never after one, which leaves the space after an arrow as the only break;
+binding the whole path is out too, since it overflows a narrow column. The
+**Character folder** description is the instance: at 620 it wraps
+`Settings → Files and links →` over `Default location for new notes.`
 
 ---
 

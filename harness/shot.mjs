@@ -2333,8 +2333,9 @@ const DEFAULTS = [
 	 * column is 464px. Nothing wraps awkwardly there, which is exactly why it
 	 * proves nothing: **every wrapping question on this tab lives below the cap**,
 	 * where the column is 286px and both folder descriptions run to four lines.
-	 * That is where the `BACKLOG` § UI row about a quoted app path ending a line
-	 * on its arrow is visible, and where its measurement has to be taken.
+	 * That is where a quoted app path wraps after its arrows (`UI.md` §9: each
+	 * arrow is bound to the label before it, so a line may end on an arrow and
+	 * never begins with one), and where any measurement of it has to be taken.
 	 *
 	 * `1000,620` rather than the 520 above: the card's bottom sits at 556px at
 	 * this width, and the harness bar rewraps to a second row at some widths

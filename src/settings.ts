@@ -180,13 +180,21 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 					 * `AGENTS.md` asks for arrow notation, and a label that wraps
 					 * mid-phrase defeats it — at the shipped shot's own column width
 					 * this broke after "Files and" and opened the next line with
-					 * "links →", which reads as a step named "links". They sit
-					 * *inside* the two multi-word labels only; the spaces around the
-					 * arrows stay breakable, so the path still wraps at its own joints
-					 * and the longest unbreakable run is one label. Written as escapes
-					 * because the whole point is a space that does not look like the
-					 * one beside it, and a pasted one is invisible to every reader of
-					 * this file.
+					 * "links →", which reads as a step named "links". So they do two
+					 * jobs: one sits *inside* each multi-word label, and one binds
+					 * each arrow to the label *before* it. The space after an arrow is
+					 * the only break the path has, so a line can end on an arrow and
+					 * never begin with one — the owner's ruling, since a trailing `→`
+					 * says a step follows and a leading one continues nothing — and
+					 * the longest unbreakable run is still the last label. At 620 it
+					 * reads `Settings → Files and links →` over `Default location for
+					 * new notes.` Binding each arrow to the label *after* it was
+					 * measured (187px in the 286px column, no overflow) and refused,
+					 * because it makes the leading arrow; binding the whole path
+					 * overflows by 48px.
+					 * Written as escapes because the whole point is a space that does
+					 * not look like the one beside it, and a pasted one is invisible
+					 * to every reader of this file.
 					 *
 					 * **Sentence case is held by review here, not by the linter.**
 					 * `obsidianmd/ui/sentence-case` reads the argument of `setDesc`
@@ -197,7 +205,7 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 					 * notation quoting the app's own labels keeps their capitals;
 					 * everything else is sentence case.
 					 */
-					'New characters are written here, and the folder is created if it is missing. Leave it empty to follow Settings → Files\u00a0and\u00a0links → Default\u00a0location\u00a0for\u00a0new\u00a0notes.',
+					'New characters are written here, and the folder is created if it is missing. Leave it empty to follow Settings\u00a0→ Files\u00a0and\u00a0links\u00a0→ Default\u00a0location\u00a0for\u00a0new\u00a0notes.',
 				render: (setting) => {
 					setting.addText((text) => {
 						text
@@ -220,6 +228,19 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 							 * sentence. This says where the note goes when the field is
 							 * empty, in the app's own terms, and nothing is lost because
 							 * the full label path is in the description above, verbatim.
+							 *
+							 * **Drawn at faint by the app, about 2.3:1, and accepted.**
+							 * `setPlaceholder` paints `--text-faint` on the form field
+							 * (`#ababab` on `#ffffff` 2.30:1, `#666666` on `#2e2e2e`
+							 * 2.36:1), and `docs/UI.md` §1 forbids substituting a
+							 * colour, so nothing here can raise it. It passes because it
+							 * is redundant: the description says the same at full
+							 * contrast. Kept rather than dropped because, with the
+							 * `aria-label` below supplying the name, HTML-AAM exposes a
+							 * placeholder as the accessible description — likely the one
+							 * hint a screen reader announces, since the visible
+							 * description is a sibling with no `aria-describedby`. That
+							 * is per the spec, not tested with a screen reader.
 							 */
 							.setPlaceholder('Same as new notes')
 							.setValue(this.plugin.settings.characterFolder)
