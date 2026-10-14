@@ -40,7 +40,8 @@ or not (28px, 700), and a Passport's name and its placeholder (28px, 700). Those
 take the 3:1 bar in §3. **Everything else on a sheet is small text** and takes
 4.5:1, and that is the default to assume: re-derive it only for text drawn at
 the headline size, and measure the size off the render rather than the rule,
-since it follows the vault's text setting (`docs/features/text-faint-audit.md`).
+since it follows the sheet's `em`, which a theme or snippet can move
+(`docs/features/text-faint-audit.md`; `docs/UI.md` §5 says what sets it).
 
 ---
 
@@ -129,13 +130,14 @@ Two things follow for a sheet:
 - **Check the derived sizes, not the tokens.** Obsidian's own tokens are at or
   above the floor by construction. What lands under it is arithmetic on top of
   them: `calc(var(--font-ui-smaller) * 0.85)` is 10.2px at Obsidian's defaults,
-  which clears 10px by a fifth of a pixel and goes under at any smaller vault
-  text setting.
+  which clears 10px by a fifth of a pixel and goes under wherever a theme sets
+  the token smaller.
 - **Check at a larger text size too**, which is the other half of the HIG's
   typography guidance: truncation must not grow, the hierarchy must not
   reorder, and a multi-column layout may need fewer columns. UI.md §5 commits
-  the card's headline number to `1.75em` precisely so it follows the vault
-  setting. `harness:shot` renders `sheet-large-text` for this; before it existed
+  the card's headline number to `1.75em` precisely so it follows the sheet's
+  size, which a theme or snippet sets and the vault's text-size setting does
+  not. `harness:shot` renders `sheet-large-text` for this; before it existed
   that commitment had never been looked at.
 
 ---

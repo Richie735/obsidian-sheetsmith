@@ -64,7 +64,8 @@ body {
 	/* Fixed card width where the grid does not dictate one. */
 	--sheetsmith-card-width: 110px;
 	/* The card's headline number. Relative rather than a pixel size, so it
-	   follows the vault's text size setting and the card scales with it. */
+	   follows the sheet's `em` and the card scales with whatever sets the
+	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
 	/* How tall one row of the sheet's grid is, for a component whose content has
 	   no height the grid could take one from: a block of prose, a picture. Both
@@ -75,7 +76,7 @@ body {
 	   height — the sheet's rows are content-sized, and every card happens to come
 	   out at about this — so this is the one place such a box is agreed with the
 	   cards beside it. Relative rather than a pixel size, so it follows the
-	   vault's text size the way the card's own headline does.
+	   sheet's `em` the way the card's own headline does.
 
 	   **It is a floor, and that is what bounds the risk of it being a number.** A
 	   review asked whether approximating a card's height here is a second statement
@@ -2305,7 +2306,20 @@ body {
 	   a printed one are two rows of one list and must not read as two lists,
 	   which four pixels of indent is enough to do. */
 	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
-	min-width: 6em;
+	/* **Six ems, unless that would leave less than one number cell beside the
+	   sticky name** (`--sheetsmith-table-name-room`, at the box below). The floor
+	   is the field's own, so it outweighed the sizer's cap: at 520 a 155px
+	   scroller held a 102px name and left 53px, where a number cell is 68 and a
+	   toggle under `Active` 65, so neither was ever seen whole beside it. The
+	   field is pulled into the cell's padding by its inset on each side, so its
+	   floor is the room plus both insets. On a card wide enough for six ems this
+	   is the `6em` it always was. */
+	min-width: min(
+		6em,
+		calc(
+			var(--sheetsmith-table-name-room) + 2 * var(--sheetsmith-field-inset)
+		)
+	);
 	/* And at the size the names beside it are. The other cells are a size down
 	   because they are data beside the row; this one is the row. */
 	font-size: inherit;
@@ -2356,24 +2370,34 @@ body {
    scroller**, because `.sheetsmith-table-wrapper` is Roster's scroller as well,
    and a container there would become the nearest one for every unnamed query
    inside a Roster; the box exists only on an open table, which is the only
-   table that draws a sizer, and its content box is the scroller's width. */
+   table that draws a sizer, and its content box is the scroller's width.
+
+   **The room is declared once, here, and both floors are held under it**: the
+   sizer's, and the field's own `6em`, which outweighed the sizer in a narrow
+   card until it was held too. A custom property's `cqi` resolves where it is
+   used, so in a name cell it is this box. One number cell:
+   `.sheetsmith-table-input`'s `width: 4em` at its own `--font-ui-small`
+   (border-box, so padding and border are inside it), plus its cell's inline
+   padding. The name cell's own inline padding comes off too, since the cell is
+   what has to leave the band.
+
+   **A text cell is the one cell seen in part beside the name, and that is the
+   ruling rather than a gap** (`docs/UI.md` §4). Its field clips prose at every
+   width and starts it at the left, so the scroll position that puts the cell's
+   start against the name shows the prose's start, and focus reads the rest.
+   Widening the band to a text field's `8em` floor would leave a 155px card's
+   name 35px. */
 .sheetsmith-view .sheetsmith-table-box {
 	container-type: inline-size;
+	--sheetsmith-table-name-room: calc(
+		100cqi - 2 * var(--size-4-2) - 4 * var(--font-ui-small) - 2 *
+			var(--size-4-2)
+	);
 }
 
 .sheetsmith-view .sheetsmith-table-name-sizer {
-	/* One number cell: `.sheetsmith-table-input`'s `width: 4em` at its own
-	   `--font-ui-small` (border-box, so padding and border are inside it), plus
-	   its cell's inline padding. */
-	--sheetsmith-table-name-band: calc(
-		4 * var(--font-ui-small) + 2 * var(--size-4-2)
-	);
 	display: block;
-	/* The name cell's own inline padding comes off too, since the cap is on
-	   the sizer and the cell is what has to leave the band. */
-	max-width: calc(
-		100cqi - 2 * var(--size-4-2) - var(--sheetsmith-table-name-band)
-	);
+	max-width: var(--sheetsmith-table-name-room);
 	height: 0;
 	overflow: hidden;
 	visibility: hidden;
@@ -5090,15 +5114,22 @@ a.sheetsmith-notice-action {
    border and doubles it — visible on every multi-mark segment on the run. The
    count is the fix and the reason for the change together: a segment holding n
    marks has n - 1 boundaries inside it, and the segment's border is already the
-   outer two. */
+   outer two.
+
+   **A border and not a fill, for forced colors.** That mode repaints an author
+   `background-color` as `Canvas`, so a divider drawn as one vanished on an
+   unlit segment, which then lost the count of targets left in it
+   (`legibility.md` §2), and showed dark over the fill. A border it repaints
+   `CanvasText`, which reads on `Canvas`; the mode's block below two-tones it
+   over a lit part. Same 1px and same place in every other mode. */
 .sheetsmith-track-mark {
 	position: absolute;
 	top: 0;
 	bottom: 0;
 	left: calc(var(--sheetsmith-track-at, 0) * 100%);
 	z-index: 1;
-	width: 1px;
-	background-color: var(--background-modifier-border);
+	width: 0;
+	border-left: 1px solid var(--background-modifier-border);
 	pointer-events: none;
 }
 
@@ -5270,7 +5301,7 @@ a.sheetsmith-notice-action {
 /* A divider carries the same job as the segment's own edge, so it takes the
 	   same treatment rather than staying the faint line it is by default. */
 .sheetsmith-track-mark {
-		background-color: var(--text-muted);
+		border-left-color: var(--text-muted);
 	}
 
 /* A shape read along the run is the wrong thing to trade contrast for, so
@@ -5323,6 +5354,16 @@ a.sheetsmith-notice-action {
    whole diagonal, which is `docs/UI.md` §6's companion idiom applied to a
    stroke, and it exists in this mode only.
 
+   **A multi-mark segment's dividers are two-toned the same way, and on the same
+   key.** Unlit they are the mode's own `CanvasText` border on `Canvas`, which
+   is all an unlit segment needs to keep its count of targets. Once the segment
+   is lit at all, the 1px stroke takes `SelectedItemText` and gains a second
+   `CanvasText` pixel beside it, so whichever surface a divider lands on — the
+   fill, the unlit part, or the edge between them — one of the two reads.
+   A half pixel's margin centres the pair on its boundary at 2x, where it
+   straddles it; at 1x the margin rounds to nothing and the pair sits on the
+   boundary and one pixel right of it (`sheet-forced-colors`, measured).
+
    **A wholly lit glyph and the lit count take `forced-color-adjust: none`**, and the
    reason is the backplate: in this mode Chrome paints a `Canvas` plate behind
    text, so `SelectedItemText` alone drew black on black. With the adjustment off
@@ -5345,6 +5386,12 @@ a.sheetsmith-notice-action {
 .sheetsmith-track-segment-on.sheetsmith-track-segment-over::after {
 		border-top-color: SelectedItemText;
 		border-bottom: 1.5px solid CanvasText;
+	}
+
+.sheetsmith-track-segment-on .sheetsmith-track-mark {
+		margin-left: -0.5px;
+		border-left-color: SelectedItemText;
+		border-right: 1px solid CanvasText;
 	}
 
 .sheetsmith-track-segment-full .sheetsmith-track-segment-glyph {
@@ -5930,8 +5977,8 @@ a.sheetsmith-notice-action {
    the one control whose entire job is to be the largest thing on the card. Found
    by looking at a shot, and it is why the class is named the way it is now.
 
-   Relative rather than a pixel size, so the face scales with the vault's
-   text-size setting exactly as a card's number does. Chromeless at rest so it
+   Relative rather than a pixel size, so the face scales with whatever sets the
+   sheet's size exactly as a card's number does. Chromeless at rest so it
    reads as the headline rather than as a form control; the shared hover and focus
    treatments further up this file are what reveal it. `height: auto` against
    Obsidian's `--input-height: 30px`, or a 28px headline would sit in a 30px box
@@ -6479,6 +6526,25 @@ a.sheetsmith-notice-action {
 	overflow-y: auto;
 	padding: var(--size-2-2);
 	border-radius: inherit;
+	/*
+	 * **One type basis for the whole list, and every record inherits it.** A
+	 * custom property's `em` is resolved where it is *used*, not where it is
+	 * declared — and `--sheetsmith-inline-control` is `1.6em` — so the chevron,
+	 * which sets `--font-ui-small` on itself, computed a 20.8px column while the
+	 * body, which inherited the sheet's size, computed a 38.4px indent from the
+	 * same token. At `text=24` that put the body's left edge 14px past the name it
+	 * is titled by, and prose visibly larger than the name above it, which is
+	 * `legibility.md` §4's "the hierarchy must not reorder".
+	 *
+	 * **On the list rather than on the record**, because the strip uses the
+	 * name's `13em` cap on the list's own grid and the plain line uses it on a
+	 * record's summary: declared on the record alone, the strip resolved the cap
+	 * at the sheet's size, 208px against the plain line's 169, and a name grew 39px
+	 * as the strip came in. One declaration answers the summary, the body, the
+	 * problem line and the strip's tracks. Nothing else on the list is in `em`:
+	 * its padding and gaps are `--size-*`, and every other child sets its own size.
+	 */
+	font-size: var(--font-ui-small);
 }
 
 .sheetsmith-record {
@@ -6497,21 +6563,9 @@ a.sheetsmith-notice-action {
 		var(--sheetsmith-inline-control, 1.6em) + var(--size-2-2)
 	);
 	/*
-	 * **One type basis for the whole record**, which is the other half of the same
-	 * drift and the half that made the first fix insufficient. A custom property's
-	 * `em` is resolved where it is *used*, not where it is declared — and
-	 * `--sheetsmith-inline-control` is `1.6em` — so the chevron, which sets
-	 * `--font-ui-small` on itself, computed a 20.8px column while the body, which
-	 * inherited the vault's text size, computed a 38.4px indent from the same
-	 * token. At `text=24` that put the body's left edge 14px past the name it is
-	 * titled by, and prose visibly larger than the name above it, which is
-	 * `legibility.md` §4's "the hierarchy must not reorder".
-	 *
-	 * Declared here rather than on each part, so there is one answer for the
-	 * summary, the body and the problem line and the three cannot resolve one
-	 * token three ways.
+	 * The record's type basis is the list's, inherited
+	 * (`.sheetsmith-record-set-list` above says why it is declared there).
 	 */
-	font-size: var(--font-ui-small);
 }
 
 /* ---------------------------------------------------------------------------
@@ -8248,10 +8302,16 @@ a.sheetsmith-notice-action {
    declarations. An engine with no style queries ignores that rule whole, and so
    draws the narrow regime at every width, which is today's list.
 
-   **The threshold is `14.5em + 6em × N`**, in `em` so it follows the
-   container's own type size: the strip drops sooner as the vault's text grows,
-   where a `px` threshold would let larger type overflow a list that used to
-   fit. The container is the block, and its font size is the sheet's.
+   **The threshold is `232px + 96px × N`**, in px because every width on the
+   line is (docs/features/record-set-stacking-tiers.md, "In px, because the
+   line's widths are"): a record is `--font-ui-small`, the name's cap is 13em of
+   that, the gaps are `--size-*` and a heading is `--font-ui-smaller`. It was
+   `14.5em + 6em × N`, on the claim that the container's `em` follows the
+   vault's text size. It follows nothing: Obsidian 1.14.4 sets `body` to
+   `--font-ui-medium`, 15px, and nothing on a view, so the app drew every strip
+   at 15/16 of the width it was measured at (397.5 for 424), and the harness's
+   `text=`, which does move the container's `em`, moved the strip off lines
+   that had not changed width.
 
    **Measured, not derived, and the constraint is the behaviour**: no width at
    which the strip is drawn and a record's fields leave the delete glyph behind,
@@ -8262,8 +8322,8 @@ a.sheetsmith-notice-action {
    one to eight fields, which is `188px + 92px × N` from two up. The starting
    values the design began from (`18em + 4.5em × N`) clear five fields by two
    pixels and *fail* from six: 864px against 922 at eight. This is the fit
-   rounded up to whole sixes, with the base lifted until one field clears the
-   320px stacking rule above (`20.5em`, 328px, where the fit alone is 288), so a
+   rounded up to whole sixes of ems at 16px, with the base lifted until one field
+   clears the 320px stacking rule above (328px, where the fit alone is 288), so a
    headed list never has the strip and the stacked line at once. It clears the
    fit by 52 to 76px from two fields up. The mixed fixture (a ceiling, a toggle,
    a named level, a computed value and a modifier) fits in 468px at five and this
@@ -8271,56 +8331,56 @@ a.sheetsmith-notice-action {
    five counters: the strip drops earlier than the commonest list needs.
    --------------------------------------------------------------------------- */
 @supports (grid-template-columns: subgrid) {
-	@container sheetsmith-record-set (min-width: 20.5em) {
+	@container sheetsmith-record-set (min-width: 328px) {
 		.sheetsmith-record-set-fields-1 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 26.5em) {
+	@container sheetsmith-record-set (min-width: 424px) {
 		.sheetsmith-record-set-fields-2 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 32.5em) {
+	@container sheetsmith-record-set (min-width: 520px) {
 		.sheetsmith-record-set-fields-3 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 38.5em) {
+	@container sheetsmith-record-set (min-width: 616px) {
 		.sheetsmith-record-set-fields-4 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 44.5em) {
+	@container sheetsmith-record-set (min-width: 712px) {
 		.sheetsmith-record-set-fields-5 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 50.5em) {
+	@container sheetsmith-record-set (min-width: 808px) {
 		.sheetsmith-record-set-fields-6 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 56.5em) {
+	@container sheetsmith-record-set (min-width: 904px) {
 		.sheetsmith-record-set-fields-7 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;
 		}
 	}
 
-	@container sheetsmith-record-set (min-width: 62.5em) {
+	@container sheetsmith-record-set (min-width: 1000px) {
 		.sheetsmith-record-set-fields-8 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
 			--sheetsmith-record-stack: off;

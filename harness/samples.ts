@@ -3008,6 +3008,28 @@ export const SAMPLES: Sample[] = [
 		body: '```sheet\nRescue the miners: 2 / 8\nHeat: 4\n```',
 	},
 	/*
+	 * **A multi-mark run in every state a segment's dividers can sit in**: four
+	 * marks a segment, five held, so the first segment is wholly lit, the second
+	 * lit for one mark of four, and the third unlit. The third is what
+	 * `sheet-forced-colors` needs and no other run here has: a divider on an unlit
+	 * multi-mark segment is the only count of the targets left in it, and while
+	 * dividers were a fill that mode repainted them `Canvas` and they vanished
+	 * (`docs/features/forced-colors-track-and-table.md`). Overfull (marks) below
+	 * has dividers only on lit or half-lit segments. In the cell row 75 leaves
+	 * free beside Clocks, so nothing on the sheet moves at 1400.
+	 */
+	{
+		config: {
+			id: 'quartered',
+			type: 'track',
+			label: 'Quartered',
+			position: { col: 9, row: 75, width: 4, height: 1 },
+			count: 3,
+			marks: 4,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	/*
 	 * **Tracks holding more than their run**
 	 * (`docs/features/track-stored-value-past-shortened-run.md`). The part of a
 	 * stored value past the live run is drawn, so no step starts from a value the

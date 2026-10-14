@@ -487,12 +487,12 @@ const DEFAULTS = [
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
-		// "so it follows the vault's text size setting", and until this entry
-		// existed nothing had ever rendered a sheet at any size but the default:
-		// the claim was argued in a comment and never once looked at. 24px is
-		// half again the 16px default and well inside what Obsidian's Appearance
-		// setting offers, so it is a size a reader actually sets rather than an
-		// invented worst case. What it shows is truncation that grew, a
+		// so it follows the sheet's own size, and until this entry existed
+		// nothing had ever rendered a sheet at any size but the default: the
+		// claim was argued in a comment and never once looked at. 24px is half
+		// again the harness's 16px default. It stands for a theme or snippet that
+		// sets the sheet's size, not for the vault's text-size setting, which
+		// reaches no `em` on a sheet (UI.md §5). What it shows is truncation that grew, a
 		// hierarchy that reordered, and controls that collided. See
 		// `reference/legibility.md` §4. Taller frame because everything on the
 		// sheet gets taller with it: 4500 against a measured 4201, where 3000
@@ -648,6 +648,13 @@ const DEFAULTS = [
 		 * evidence the glyph *pair* was the right call rather than one glyph with two
 		 * strengths, and it belongs in the repository instead of in a reviewer's
 		 * scratch directory.
+		 *
+		 * **And a multi-mark run's dividers in all three states**, on the
+		 * Quartered card beside Clocks: a wholly lit segment, one lit for a mark of
+		 * four, and an unlit one. The unlit one is the case the dividers were
+		 * redrawn for — as a fill this mode repainted them `Canvas`, so an unlit
+		 * segment lost its count of targets left — and before that card no run on
+		 * the sheet had one, which is what this row's fix waited on.
 		 *
 		 * `theme=light`, which forced colors overrides anyway — the flag decides the
 		 * palette, so naming a theme here only says which one the page asked for.
@@ -988,10 +995,10 @@ const DEFAULTS = [
 		/*
 		 * **The panel at `Text → 24`, and the answer is that nothing in it moves.**
 		 * Taken expecting the height cap to bite here — a cap in px over type that
-		 * follows a vault setting is the shape of a clip — and it does not, for a
+		 * follows the sheet's size is the shape of a clip — and it does not, for a
 		 * reason worth having a shot of rather than a sentence: the panel hangs off
 		 * `document.body` and sets `font-size: var(--font-ui-small)` on itself, so
-		 * neither the stage's font size nor the reader's text setting reaches it. It
+		 * the stage's font size, which is what `text=` moves, does not reach it. It
 		 * is 390 x 479 here and 390 x 479 at the default, beside a sheet that grew
 		 * 650px.
 		 *
@@ -1412,12 +1419,12 @@ const DEFAULTS = [
 	},
 	{
 		/*
-		 * **The pane at the vault's `Text` setting, which no editor view had.**
+		 * **The pane at the harness's `Text → 24`, which no editor view had.**
 		 * Two shots existed at `text=24` and both were `surface=sheet`, so §5's
-		 * "relative units follow the vault's text size" had never been checked
-		 * on the surface where most of a sheet is actually configured — and it
-		 * is not one message. `editor.css` declares `--font-smallest`, which is
-		 * `0.8em` and follows the setting, in six places against eight tokens
+		 * "relative units follow the sheet's size" had never been checked on the
+		 * surface where most of a sheet is actually configured — and it is not
+		 * one message. `editor.css` declares `--font-smallest`, which is `0.8em`
+		 * and follows the stage's size, in six places against eight tokens
 		 * fixed in px: at Text 24 the six grow 1.5× while their neighbours hold,
 		 * so eight muted *secondary* labels render 48% larger than the 104
 		 * primary ones around them (`reference/legibility.md` §4, inverted

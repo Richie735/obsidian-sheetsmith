@@ -173,7 +173,7 @@ rests on it: with `grid-template-columns: subgrid` on the record, the summary an
 the fields wrapper, every record's fields and the strip's headings land on
 identical x-centres regardless of content (`1` against `1 / 3`, `+1` against `+12`).
 
-- Tracks, in order: the chevron (`auto`), the name (`minmax(0, var(--sheetsmith-record-name, 13em))`), one `auto` track per declared field, the slack (`1fr`), the delete (`auto`). **The first two and the last are today's**, so the name and the delete glyph sit where they sit unheaded.
+- Tracks, in order: the chevron (`auto`), the name (`minmax(0, var(--sheetsmith-record-name, 13em))`), one `auto` track per declared field, the slack (`1fr`), the delete (`auto`). **The first two and the last are today's**, so the name and the delete glyph sit where they sit unheaded. **The list declares `--font-ui-small` and every record inherits it** for that to hold: the name's `13em` resolves where it is used, and on the list it came to 208px against the plain line's 169 while only the record set that size (`harness/measure-groups.mjs` check 7f).
 - The field count reaches the stylesheet as a custom property the component sets on the block (`--sheetsmith-record-fields`, the way `--sheetsmith-rows` already is), read by `repeat(var(--sheetsmith-record-fields), auto)`.
 - The fields wrapper spans those tracks as its own subgrid and keeps today's `gap: var(--size-4-5)` as its own column gap, so two fields' controls keep the clearance `docs/UI.md`'s target-size rule set.
 - **Cells are centred in their track**, and the heading is centred over the same track. A heading wider than its control (`Modifiers` over a glyph) sets the track's width, as it did in Table before `hideHeading`; the author's answer is a shorter `name` on the field, and the field's description says so.
@@ -207,11 +207,15 @@ room than one over two, and a single fixed number is wrong at one end or the oth
 The component stamps `sheetsmith-record-set-fields-N` (N clamped to 1..8) beside
 `--sheetsmith-record-fields`, and the stylesheet carries one `@container` block per
 N, the sheet's own pattern for this (`.sheetsmith-cols-N`, `styles.test.ts` holding
-each threshold to its formula). The formula is `base + N x step` **in `em`**, so the
-strip drops sooner as the vault's text size grows, where a `px` threshold would let
-a larger type overflow a list that used to fit. **As built, and measured: `14.5em + 6em x N`** (the starting values, `18em + 4.5em x N`, failed from six fields; the derivation is in `src/styles/sheet.css` and `styles.test.ts`). That
+each threshold to its formula). The formula is `base + N x step`. **As built, and measured: `14.5em + 6em x N`** (the starting values, `18em + 4.5em x N`, failed from six fields; the derivation is in `src/styles/sheet.css` and `styles.test.ts`). That
 puts one field at 22.5em, above the 320px rule at any text size the harness
-photographs. The constraint is the behaviour, not the numbers: **no width at which
+photographs (since moved to px, 328px for one field, fixed across `text=`). **Since moved to px, `232px + 96px x N`, the same widths at 16px.** It
+was in `em` so the strip would drop sooner as the vault's text size grew, and the
+sheet's `em` follows no text-size setting: Obsidian 1.14.4 sets `body` to
+`--font-ui-medium`, 15px, so the app drew every strip at 15/16 of the width
+measured here, while every width on the line is a fixed-px token
+(`docs/features/record-set-stacking-tiers.md`, "In px, because the line's widths
+are"). The constraint is the behaviour, not the numbers: **no width at which
 the strip is drawn and a record's fields wrap, clip, or leave the name track under
 six ems; and no width at which a `number` field has neither its own name nor a
 strip over it.** A list with more than eight fields uses the eight-field threshold,
@@ -325,7 +329,7 @@ written or reformatted**, so a layout change deletes no character data
 - [x] `fieldHeadings` is declared as a `boolean` in group `Appearance` with a default of `false` and a description; the registry contract passes unchanged. (`contract.test.ts`)
 - [x] A layout with `fieldHeadings: true` round-trips byte-identically; `false` is omitted from the written config. (layout parse/serialise test)
 - [x] The count stamp is clamped to 1..8, and the custom property carries the true count. (`record-set.test.ts`)
-- [x] Each per-count threshold equals `base + N x step` in `em`, the table covers 1..8, and every threshold is above the 320px rule at 16px. (`styles.test.ts`)
+- [x] Each per-count threshold equals `base + N x step` in `em` (since in px, `232px + 96px x N`, fixed across `text=`), the table covers 1..8, and every threshold is above the 320px rule at 16px. (`styles.test.ts`)
 - [x] Every declaration the feature adds sits inside the `@supports` and `@container` blocks, bar three rules that only take the strip away and name the container, and no second container is added: the block was already the list's container, so it is named only under `.sheetsmith-record-set-headed`. (`styles.test.ts`)
 - [x] The strip is opaque (declares a background) and sticky, and the list declares a `scroll-padding-top`. (`styles.test.ts`)
 
@@ -344,7 +348,7 @@ The harness sample gains the flag on `traits` (7 columns wide, five fields of ev
 - [x] **Narrow drops cleanly.** `known_spells` (2 columns), `sheet-list-narrow` (520px) and `sheet-narrow` (380px): no strip, each `number` has its name back, and the summary line is arranged exactly as the unheaded `spells` is at that width.
 - [x] **No half state.** Sweeping the width of `traits` through its threshold (at least one width just under and one just over): never a strip over wrapped or clipped fields, never a `number` with neither a name nor a strip.
 - [x] **Both themes.** Headings are legible in light and dark; the strip's fill is the box's, and the hairline is visible in both.
-- [x] **Large text.** `sheet-large-text` (`text=24`): the strip either fits or has dropped, and never clips a heading. The threshold followed the type size.
+- [x] **Large text.** `sheet-large-text` (`text=24`): the strip either fits or has dropped, and never clips a heading. The threshold followed the type size (since in px, so it stays at its harness width across `text=`, and the strip comes in at 424 at `text=24` as at the default, `harness/measure-groups.mjs` check 7).
 - [x] **A headed and an unheaded list read as one component** side by side.
 - [x] **The editor.** `editor-record-fields`: the checkbox sits in **Appearance** beside **Hide the heading**, its description reads as a consequence, and the canvas preview shows the strip where the placement is wide enough.
 - [x] `npm run lint`, `npm test` and `npm run build` pass, and `styles.css` matches `src/styles/` (the build regenerates it).

@@ -93,7 +93,7 @@ With the fix in place, check 7's sweep in the app at 390 phone shows the plain l
 | Homebrew strip | 408 | 384 | 24 |
 | Recharging features (Records) | 634.5 | 592 | 42.5 |
 
-In that band a line is drawn plain with its name under 96px, so check 7a fails at phone. Checks 7c and 7d are clean: nothing is stacked under its strip, and no name passes its fields. Before the fix the same sweep put fits 131 to 147px past their tiers. The owner kept the formula and tiers as they are, and that is now a ruling in `docs/UI.md` §9's summary-line row, with what following the app's text size would cost and when it reopens. The strip's `em` is 16px at phone, so the strip arrives where the harness puts it.
+In that band a line is drawn plain with its name under 96px, so check 7a fails at phone. Checks 7c and 7d are clean: nothing is stacked under its strip, and no name passes its fields. Before the fix the same sweep put fits 131 to 147px past their tiers. The owner kept the formula and tiers as they are, and that is now a ruling in `docs/UI.md` §9's summary-line row, with what following the app's text size would cost and when it reopens. The strip's thresholds are px, so the strip arrives where the harness puts it.
 
 ## The guard
 

@@ -628,16 +628,21 @@ function draw(): void {
 }
 
 /**
- * The base font size the sheet's relative units resolve against, which is the
- * thing a reader's vault text size setting actually moves. `0` leaves the
- * inherited size alone.
+ * The base font size the sheet's relative units resolve against. `0` leaves the
+ * inherited size alone, which is 16px here against the app's 15.
+ *
+ * **Not the vault's text-size setting**, which this used to claim. Obsidian
+ * 1.14.4 sets `body` to `--font-ui-medium` and nothing on a view, and the
+ * setting reaches only `--font-text-size`, which the markdown views read. So the
+ * sheet's `em` moves for a theme or a snippet that sets a size on it, and that is
+ * what `text=` stands for (UI.md §5).
  *
  * It moves every `em`-relative rule the plugin declares — the card's headline
  * number, the level ring and the delete glyph beside it, the 0.85 secondary
  * sizes — and deliberately not Obsidian's fixed-px `--font-ui-*` tokens, which
  * do not move for the user either. So a shot at 24 shows exactly what UI.md
- * §5's "relative units, so the card scales with the user's setting" is worth,
- * and claims nothing beyond it.
+ * §5's "relative units, so the card scales with whatever sets the sheet's size"
+ * is worth, and claims nothing beyond it.
  */
 function setText(size: string): void {
 	stage.style.fontSize = size === '0' ? '' : `${size}px`;
