@@ -1816,11 +1816,64 @@ describe('every custom property the plugin declares is its own', () => {
 		expect(new Set(declared).size).toBeGreaterThan(12);
 	});
 
+	/**
+	 * **The app's switches, which are set rather than declared.** The rule above
+	 * is about a name the plugin invents. `--no-tooltip` is one Obsidian reads, and
+	 * inheriting into everything nested is the point: it turns the app's
+	 * `aria-label` tooltip off on the sheet (`docs/UI.md` §6).
+	 */
+	const APP_SWITCHES = ['--no-tooltip'];
+
 	it('prefixes every one with --sheetsmith-', () => {
 		const foreign = [...new Set(declared)].filter(
-			(name) => !name.startsWith('--sheetsmith-'),
+			(name) => !name.startsWith('--sheetsmith-') && !APP_SWITCHES.includes(name),
 		);
 		expect(foreign).toEqual([]);
+	});
+
+	it("turns the app's aria-label tooltip off on the sheet and the panel", () => {
+		const bodies = new Map(
+			[...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/^(\.[^{}]+)\{([^}]*)\}/gm)].map(
+				(match) => [(match[1] as string).trim(), match[2] as string],
+			),
+		);
+		for (const root of ['.sheetsmith-view', '.sheetsmith-panel']) {
+			expect(bodies.get(root)).toMatch(/--no-tooltip:\s*true;/);
+		}
+	});
+
+	it("gives markdown the app rendered its tooltip back", () => {
+		// An aliased or external link there carries its only drawn target in
+		// `aria-label`, so dropping this override loses it with nothing to see in
+		// a shot. Found by the selectors it names, whatever else the list holds.
+		const restoring = [
+			...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g),
+		].filter(
+			([, selector, body]) =>
+				/--no-tooltip:\s*false;/.test(body as string) &&
+				(selector as string).includes('.sheetsmith-rich-text-rendered') &&
+				(selector as string).includes('.sheetsmith-record-body-rendered'),
+		);
+		expect(restoring).toHaveLength(1);
+	});
+
+	it.each([
+		'.sheetsmith-note-mark',
+		'.sheetsmith-pool-modifier-button',
+		'.sheetsmith-track-modifier-button',
+	])("gives the glyph door %s the app's tooltip back", (door) => {
+		// Named only by `aria-label`, so the app's tooltip is its one hover name
+		// (`docs/UI.md` §6). Per selector, so losing any one door fails alone.
+		const restoring = [
+			...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g),
+		].filter(
+			([, selector, body]) =>
+				/--no-tooltip:\s*false;/.test(body as string) &&
+				(selector as string)
+					.split(',')
+					.some((one) => one.trim() === `.sheetsmith-view ${door}`),
+		);
+		expect(restoring).toHaveLength(1);
 	});
 });
 

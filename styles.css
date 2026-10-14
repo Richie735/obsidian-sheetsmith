@@ -291,6 +291,11 @@ body {
 	box-shadow: 0 2px 12px var(--background-modifier-box-shadow);
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+	/* The app's tooltip is off here as on the sheet (`sheet.css`'s
+	   `.sheetsmith-view`): hung off the body, the panel inherits nothing from
+	   it, and its own `aria-label` as a dialog would fire over every point of it
+	   no labelled control covers. */
+	--no-tooltip: true;
 	/* The cap is on the box and the scroll is on the body, one element in, so the
 	   panel's own edge stays put while its contents move. Deliberately **not**
 	   `.sheetsmith-list-scroll`, whose `20em` cap is a layout-editor list's and
@@ -674,6 +679,27 @@ body {
 	   threshold on a container's own width can separate them. What separates
 	   them is whether the sheet has given up being a grid. */
 	container-name: sheetsmith-sheet;
+	/* **The app's tooltip is off on the sheet** (`docs/UI.md` §6). Obsidian
+	   draws one from any `[aria-label]` under the pointer after a second, and
+	   reads this property, which its own stylesheet sets on five surfaces, to
+	   skip it. Left on, it said "Feature" over a clipped record name and
+	   "Barkskin Notes" over a cell, and overrode every `title` decision a
+	   control makes. Inherited, so it reaches every control here. */
+	--no-tooltip: true;
+}
+
+/* **Two exceptions keep the app's tooltip** (`docs/UI.md` §6). Markdown the app
+   rendered: an aliased or external link there carries its target in
+   `aria-label`, as in reading view, and that target is drawn nowhere else. And
+   the three glyph doors named only by `aria-label` — the note mark, Pool's door
+   and Track's door — whose name is drawn nowhere either, so the app's tooltip is
+   the one hover name they have. */
+.sheetsmith-view .sheetsmith-rich-text-rendered,
+.sheetsmith-view .sheetsmith-record-body-rendered,
+.sheetsmith-view .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-pool-modifier-button,
+.sheetsmith-view .sheetsmith-track-modifier-button {
+	--no-tooltip: false;
 }
 
 .sheetsmith-grid {

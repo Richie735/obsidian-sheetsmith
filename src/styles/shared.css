@@ -163,6 +163,11 @@
 	box-shadow: 0 2px 12px var(--background-modifier-box-shadow);
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+	/* The app's tooltip is off here as on the sheet (`sheet.css`'s
+	   `.sheetsmith-view`): hung off the body, the panel inherits nothing from
+	   it, and its own `aria-label` as a dialog would fire over every point of it
+	   no labelled control covers. */
+	--no-tooltip: true;
 	/* The cap is on the box and the scroll is on the body, one element in, so the
 	   panel's own edge stays put while its contents move. Deliberately **not**
 	   `.sheetsmith-list-scroll`, whose `20em` cap is a layout-editor list's and

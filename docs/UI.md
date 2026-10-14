@@ -251,6 +251,29 @@ sheet.
   was the case that taught this: it copied Obsidian's own markup, which puts the
   link target in `aria-label`. `aria-label` is for a control whose visible mark is
   *not* words — a ring, a glyph button — which is the next rule.
+- **Obsidian draws a tooltip of its own from every `aria-label`, and the sheet
+  turns it off** [checked: `styles.test.ts`]. In 1.14.4 the app listens for a
+  pointer over any `[aria-label]` and shows the label about a second later,
+  unless the element's computed `--no-tooltip` is `true`, a switch its own
+  `app.css` sets on five surfaces. Left on, it overrode every `title` decision
+  below: over Traits' clipped record name it said "Feature" while the name sat
+  in `title`, a Notes cell said "Barkskin Notes", and a Track run said its
+  composed name at every pass. So `.sheetsmith-view` and `.sheetsmith-panel` set
+  it, and two exceptions set it back. Markdown the app rendered is the first,
+  since an aliased link there carries its only drawn target in `aria-label`. A
+  control named only by `aria-label` is the second — the note mark, Pool's door
+  and Track's door — since nothing else gives it a hover name. **Read from Obsidian 1.14.4's
+  `app.js` and `app.css`, not yet seen working in the app**: the check holds the
+  declarations, not their effect, which the owner confirms in the vault.
+  **Rejected:** naming controls by
+  `aria-labelledby`, which keeps the name and misses the app's selector, but
+  costs a node and a unique id at each of 51 `aria-label` sites in sixteen
+  modules, and about 270 test lines that read one; and letting the reveal set the app's tooltip,
+  which means writing the value into `aria-label` (`setTooltip` does) and so
+  replacing the name the rule above gives, at one site of many. **The cost
+  taken:** the switch is in `app.css`, not `obsidian.d.ts`, so a rename brings
+  the app's tooltip back, which is today's behaviour rather than a break, and the
+  harness cannot show either state, since the stub draws no tooltip.
 - **A control names every party its context does not already announce**
   [judgement]. A move names where it goes, a remove names what it removes —
   unless the reader reached the control through something already named for
