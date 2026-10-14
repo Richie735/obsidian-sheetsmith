@@ -64,7 +64,8 @@ body {
 	/* Fixed card width where the grid does not dictate one. */
 	--sheetsmith-card-width: 110px;
 	/* The card's headline number. Relative rather than a pixel size, so it
-	   follows the vault's text size setting and the card scales with it. */
+	   follows the sheet's `em` and the card scales with whatever sets the
+	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
 	/* How tall one row of the sheet's grid is, for a component whose content has
 	   no height the grid could take one from: a block of prose, a picture. Both
@@ -75,7 +76,7 @@ body {
 	   height — the sheet's rows are content-sized, and every card happens to come
 	   out at about this — so this is the one place such a box is agreed with the
 	   cards beside it. Relative rather than a pixel size, so it follows the
-	   vault's text size the way the card's own headline does.
+	   sheet's `em` the way the card's own headline does.
 
 	   **It is a floor, and that is what bounds the risk of it being a number.** A
 	   review asked whether approximating a card's height here is a second statement
@@ -5930,8 +5931,8 @@ a.sheetsmith-notice-action {
    the one control whose entire job is to be the largest thing on the card. Found
    by looking at a shot, and it is why the class is named the way it is now.
 
-   Relative rather than a pixel size, so the face scales with the vault's
-   text-size setting exactly as a card's number does. Chromeless at rest so it
+   Relative rather than a pixel size, so the face scales with whatever sets the
+   sheet's size exactly as a card's number does. Chromeless at rest so it
    reads as the headline rather than as a form control; the shared hover and focus
    treatments further up this file are what reveal it. `height: auto` against
    Obsidian's `--input-height: 30px`, or a 28px headline would sit in a 30px box

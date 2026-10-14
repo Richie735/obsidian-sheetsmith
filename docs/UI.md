@@ -191,15 +191,26 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
 
 ## 5. Type
 
-- **Relative units for anything that should follow the vault's text-size
-  setting** [judgement]. The card's headline number is `1.75em`, not a pixel
-  size, so the card scales with the user's setting.
+- **Relative units for anything that should scale with the sheet's own type**
+  [judgement]. The card's headline number is `1.75em`, not a pixel size, so the
+  card scales with whatever sets the sheet's size.
+- **What sets the sheet's size is not the vault's text-size setting**, which
+  this section used to claim [judgement]. Obsidian 1.14.4 sets `body` to `--font-ui-medium`, 15px, and
+  nothing on a view, and the vault's text size reaches only `--font-text-size`,
+  which the markdown views read — so the sheet's `em` moves for a theme or a
+  snippet that sets it, and for nothing in Settings. The harness's `text=`
+  stands for that, not for the setting, and its default is 16px against the
+  app's 15. **So a width that has to agree with fixed-px chrome is px, never
+  `em`**: a record line's stacking tiers and its strip's thresholds are, since
+  every width on the line is a fixed-px token
+  (`docs/features/record-set-stacking-tiers.md`). The strip's were `em`, and the
+  app drew each at 15/16 of the width it was measured at.
 - `--font-ui-small` / `--font-ui-smaller` for secondary and tertiary text;
   `--font-smallest` below that.
 - **A surface hung off `document.body` is app chrome, and takes the app's UI
   sizes rather than the sheet's** [judgement]. The anchored panel and the shared
-  popover are `--font-ui-small` and `--font-ui-smaller`, so the reader's
-  **Text** setting does not reach them: at `text=24` the panel measures 390 x
+  popover are `--font-ui-small` and `--font-ui-smaller`, so whatever sets the
+  sheet's size does not reach them: at `text=24` the panel measures 390 x
   479, as at the default, beside a sheet that grew 650px. That is right: they do
   the job of Obsidian's own `Menu` and `Modal`, which keep the same sizes, and
   §1 is why the plugin invents no type scale of its own.
@@ -1003,8 +1014,8 @@ it is a floor rather than a height.** `--sheetsmith-grid-row` is `4.75em`
 genuinely has no row height to derive from — the sheet's rows are content-sized —
 so what a placed box actually gets is `max(the row's own height, 4.75em × rows)`,
 and `SPEC` §8's "`height` grid rows tall whatever is in it" is that, approximated.
-`em` rather than pixels so it follows the vault's text size the way a card's
-headline does.
+`em` rather than pixels so it follows the sheet's size the way a card's
+headline does (§5 says what sets that).
 
 **Why the approximation is safe is the direction it can be wrong in.** Where a
 card in the same grid row is taller, the row grows and a placed box fills it —
@@ -1257,10 +1268,12 @@ Run `npm run harness`. Check each of these, because none is visible in code.
   drawn nowhere. A stored body cannot stand in for any of them, because a note
   that already holds the offending value is rendered and carried under SPEC §10
 - an error state and an empty state, not only the populated one
-- a larger text size (`Text → 24`, or `sheet-large-text.png`): does truncation
-  grow, does the hierarchy reorder, does anything collide. §5 rests the card on
-  relative units so it follows the vault setting, and that is where the claim is
-  either true or not
+- a larger sheet size (the harness's `Text → 24`, or `sheet-large-text.png`):
+  does truncation grow, does the hierarchy reorder, does anything collide. §5
+  rests the card on relative units so it follows the sheet's `em`, which a
+  theme or snippet moves and the vault's text-size setting does not, and that
+  is where the claim
+  is either true or not
 
 **A harness that rebuilds on hover cannot review anything a pointer does.** The
 fake link context redrew the sheet on a preview, so the element under the pointer
