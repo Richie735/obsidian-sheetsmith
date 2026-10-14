@@ -27,6 +27,11 @@
  * the vault's text size nor the sheet's `em`, and a zoom scales both sides
  * alike. Every constant is the harness's measurement. Pure: no DOM, no
  * `obsidian`.
+ *
+ * **Measured at desktop's 13px, and on mobile it does not follow.** There
+ * `--font-ui-small` is 15px and a line is drawn plain up to 42.5px short of its
+ * fit, with the name giving as above. Ruled to stay, with what following it
+ * would cost and when it reopens, in `docs/UI.md` §9's summary-line row.
  */
 
 /** A summary-line field, as much of it as its width depends on. */
