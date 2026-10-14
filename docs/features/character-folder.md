@@ -138,8 +138,9 @@ warns and `npm run lint` runs at `--max-warnings 0`):
   Default location for new notes.` The spaces **inside** each multi-word app
   label are `\u00a0`, added under design review and written as source escapes:
   arrow notation is a quoted path, and a wrap mid-label opened a line with
-  "links →", which reads as a step named "links". The spaces around the arrows
-  stay breakable so the path still wraps at its own joints.
+  "links →", which reads as a step named "links". The space before each arrow
+  is a `\u00a0` too, so the path breaks only after an arrow and a line never
+  begins with one (`docs/UI.md` §9).
 - Accessible name: `Character folder`, set as an `aria-label` on the input.
   Obsidian draws a row's name in a sibling element rather than a `<label for>`,
   so the field is otherwise programmatically nameless and a screen reader reads
@@ -308,8 +309,9 @@ ordering the prose had wrong.
       whole on one line**, so no line opens mid-label with `links →`: the test
       above pins the non-breaking spaces, but happy-dom performs no layout, so
       the wrap itself is only observable here. A *trailing* arrow at a line's end
-      stays possible at some widths by design — the spaces around the arrows are
-      deliberately breakable (`docs/UI.md` §12).
+      stays possible at some widths by design — each arrow is bound to the label
+      before it and the space after it is breakable, so a line may end on an
+      arrow and never begins with one (`docs/UI.md` §9).
 - [x] **In Obsidian**, against the throwaway vault
       (`~/Developer/sheetsmith-test-vault/`, whose layouts are in
       `Sheetsmith layouts/` and characters in `Characters/`): with a folder typed

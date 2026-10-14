@@ -180,13 +180,21 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 					 * `AGENTS.md` asks for arrow notation, and a label that wraps
 					 * mid-phrase defeats it — at the shipped shot's own column width
 					 * this broke after "Files and" and opened the next line with
-					 * "links →", which reads as a step named "links". They sit
-					 * *inside* the two multi-word labels only; the spaces around the
-					 * arrows stay breakable, so the path still wraps at its own joints
-					 * and the longest unbreakable run is one label. Written as escapes
-					 * because the whole point is a space that does not look like the
-					 * one beside it, and a pasted one is invisible to every reader of
-					 * this file.
+					 * "links →", which reads as a step named "links". So they do two
+					 * jobs: one sits *inside* each multi-word label, and one binds
+					 * each arrow to the label *before* it. The space after an arrow is
+					 * the only break the path has, so a line can end on an arrow and
+					 * never begin with one — the owner's ruling, since a trailing `→`
+					 * says a step follows and a leading one continues nothing — and
+					 * the longest unbreakable run is still the last label. At 620 it
+					 * reads `Settings → Files and links →` over `Default location for
+					 * new notes.` Binding each arrow to the label *after* it was
+					 * measured (187px in the 286px column, no overflow) and refused,
+					 * because it makes the leading arrow; binding the whole path
+					 * overflows by 48px.
+					 * Written as escapes because the whole point is a space that does
+					 * not look like the one beside it, and a pasted one is invisible
+					 * to every reader of this file.
 					 *
 					 * **Sentence case is held by review here, not by the linter.**
 					 * `obsidianmd/ui/sentence-case` reads the argument of `setDesc`
@@ -197,7 +205,7 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 					 * notation quoting the app's own labels keeps their capitals;
 					 * everything else is sentence case.
 					 */
-					'New characters are written here, and the folder is created if it is missing. Leave it empty to follow Settings → Files\u00a0and\u00a0links → Default\u00a0location\u00a0for\u00a0new\u00a0notes.',
+					'New characters are written here, and the folder is created if it is missing. Leave it empty to follow Settings\u00a0→ Files\u00a0and\u00a0links\u00a0→ Default\u00a0location\u00a0for\u00a0new\u00a0notes.',
 				render: (setting) => {
 					setting.addText((text) => {
 						text

@@ -1191,6 +1191,15 @@ generated per instance there rather than being a module literal, because a modal
 can be opened, closed and opened again where a pane's row is replaced whole by a
 redraw.
 
+**An app path quoted in arrow notation keeps each multi-word label whole and
+breaks at its arrows; a line may end on an arrow but never begins with one**
+[judgement]. A trailing `→` says a step follows, where a leading one reads as a
+continuation of nothing. So a no-break space goes inside a label and before its
+arrow, never after one, which leaves the space after an arrow as the only break;
+binding the whole path is out too, since it overflows a narrow column. The
+**Character folder** description is the instance: at 620 it wraps
+`Settings → Files and links →` over `Default location for new notes.`
+
 ---
 
 ## 10. Failure appears in place
