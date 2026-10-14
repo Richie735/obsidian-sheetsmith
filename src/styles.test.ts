@@ -3856,3 +3856,62 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 		expect(declarations(gap)).toContain('margin-inline-start: var(--size-4-2)');
 	});
 });
+
+describe('the room beside an open table\'s sticky name', () => {
+	/*
+	 * `docs/features/table-name-column-floor.md` capped the sizer so the sticky
+	 * name always leaves one number cell beside it, and the field's own `6em`
+	 * floor outweighed the cap in a narrow card: at 520 a 155px scroller held a
+	 * 102px name and left 53px for a 68px number cell. Both floors are held under
+	 * one room, declared once on the box, so they cannot disagree. Invisible in a
+	 * unit test: happy-dom lays nothing out.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const body = (selector: string) =>
+		all.find((rule) => rule.selector.trim() === selector && rule.context.length === 0)
+			?.body ?? '';
+
+	it('declares the room once, on the box that is the scroller\'s container', () => {
+		const box = body('.sheetsmith-view .sheetsmith-table-box');
+		expect(box).toMatch(/container-type:\s*inline-size/);
+		expect(box).toMatch(/--sheetsmith-table-name-room:\s*calc\(\s*100cqi/);
+		expect(
+			all.filter((rule) => /--sheetsmith-table-name-room:/.test(rule.body)),
+		).toHaveLength(1);
+	});
+
+	it("sizes the room's one number cell as the number field is sized", () => {
+		// The room is `4 * var(--font-ui-small)` because the number field is
+		// `width: 4em` at its own `--font-ui-small`. Widen the field without the
+		// room and a number cell no longer shows whole beside the name, which no
+		// unit test can see: so the two are read from the stylesheet and compared.
+		const room = /--sheetsmith-table-name-room:\s*calc\(([^;]*)\);/.exec(
+			body('.sheetsmith-view .sheetsmith-table-box'),
+		)?.[1];
+		const roomCells = /([\d.]+)\s*\*\s*var\(--font-ui-small\)/.exec(room ?? '')?.[1];
+		const width = /width:\s*([\d.]+)em/.exec(
+			body('.sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input'),
+		)?.[1];
+		const basis = /font-size:\s*(var\(--font-ui-[a-z]+\))/.exec(
+			body('.sheetsmith-view .sheetsmith-table-input'),
+		)?.[1];
+		// Each read found something, so the comparison cannot pass on nothing.
+		expect(roomCells).toBeDefined();
+		expect(width).toBeDefined();
+		expect(basis).toBe('var(--font-ui-small)');
+		expect(Number(roomCells)).toBe(Number(width));
+	});
+
+	it('holds the sizer and the field under it', () => {
+		expect(body('.sheetsmith-view .sheetsmith-table-name-sizer')).toMatch(
+			/max-width:\s*var\(--sheetsmith-table-name-room\)/,
+		);
+		// The field is pulled into the cell's padding by its inset each side, so
+		// its floor is the room plus both insets, and six ems on a wide card.
+		expect(
+			body('.sheetsmith-view .sheetsmith-table-name-input').replace(/\s+/g, ' '),
+		).toContain(
+			'min-width: min( 6em, calc( var(--sheetsmith-table-name-room) + 2 * var(--sheetsmith-field-inset) ) )',
+		);
+	});
+});

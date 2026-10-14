@@ -58,6 +58,13 @@
  *        in (`docs/features/record-set-heading-strip.md`).
  *     It prints, per list, where it is stacked to, where its plain line fits
  *     from and where its strip comes in.
+ *  8. At a 520px container in `populated`, beside every open table's sticky
+ *     name that its table scrolls under (`docs/UI.md` §4): a. the room is at
+ *     least one number cell, unless the name column is as wide as its heading,
+ *     which is never clipped; b. every cell's content but prose, its width less
+ *     its padding, fits in that room. It prints each table's scroller, name and
+ *     room, which are the figures the §4 ruling quotes, and the same at
+ *     `text=24` without holding them: the residue that ruling records.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -348,6 +355,40 @@ for (const state of [...new Set(['populated', STATE])]) {
 			}
 		}
 	}
+}
+
+// 8. The room beside an open table's sticky name, at a 520px container.
+const ROOM = `(()=>{
+ const px=(e,p)=>parseFloat(getComputedStyle(e)[p]);
+ return [...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-box')].map(box=>{
+  const sc=box.querySelector('.sheetsmith-table-wrapper');const t=sc.querySelector('.sheetsmith-table');
+  const probe=document.createElement('div');probe.style.width='calc(4 * var(--font-ui-small) + 2 * var(--size-4-2))';box.appendChild(probe);const band=probe.getBoundingClientRect().width;probe.remove();
+  const name=t.querySelector('.sheetsmith-table-name').getBoundingClientRect().width;
+  const room=sc.clientWidth-name;
+  const head=t.querySelector('thead .sheetsmith-table-name');let heading=0;if(head){const g=document.createRange();g.selectNodeContents(head);heading=g.getBoundingClientRect().width+px(head,'paddingLeft')+px(head,'paddingRight');}
+  const cut=[...t.querySelectorAll('tr')].flatMap(tr=>[...tr.children].filter(c=>!c.classList.contains('sheetsmith-table-name')&&!c.classList.contains('sheetsmith-table-text')).map(c=>({h:c.textContent.trim().slice(0,12),w:c.getBoundingClientRect().width-px(c,'paddingLeft')-px(c,'paddingRight')}))).filter(c=>c.w>room+0.5);
+  return {label:box.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?',scroller:sc.clientWidth,overflows:t.getBoundingClientRect().width>sc.clientWidth+0.5,name:Math.round(name*10)/10,room:Math.round(room*10)/10,band,cut,byHeading:heading>=name-0.5};
+ });})()`;
+async function loadRoom(text) {
+	await send('Emulation.setDeviceMetricsOverride', { width: 620, height: 1900, deviceScaleFactor: 1, mobile: false });
+	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=populated&width=520&text=${text}` });
+	await sleep(2500);
+}
+// At `text=24` printed and not held: the name's heading is `em` and grows past
+// the room there, which `docs/UI.md` §4 records as the residue.
+await loadRoom(24);
+for (const one of (await evaluate(ROOM)).filter((each) => each.overflows)) {
+	console.log(`      520 text=24 ${one.label}: scroller ${one.scroller}, name ${one.name}, room ${one.room}, cut ${JSON.stringify(one.cut.slice(0, 3))}`);
+}
+await loadRoom(0);
+const tables = await evaluate(ROOM);
+check(tables.some((one) => one.overflows), '(8) at 520 at least one open table scrolls beside its sticky name, or this check holds nothing');
+for (const one of tables.filter((each) => each.overflows)) {
+	console.log(`      520 ${one.label}: scroller ${one.scroller}, name ${one.name}, room ${one.room}${one.byHeading ? ', the name column set by its heading' : ''}`);
+	// A name heading is never clipped (§4), so a column its heading sets is the
+	// one case the room may be under a number cell; (b) still holds there.
+	if (!one.byHeading) check(one.room >= one.band - 0.5, `520 ${one.label}: (8a) the room beside the sticky name is at least one number cell`, `${one.room} against ${one.band}`);
+	check(one.cut.length === 0, `520 ${one.label}: (8b) every cell's content but prose shows whole beside it`, JSON.stringify(one.cut.slice(0, 3)));
 }
 
 ws.close();

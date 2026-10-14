@@ -137,6 +137,37 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   But the name column never falls below its longest name while any column holds
   slack: the reason it yields, "row names are a fixed vocabulary", is false on
   an `openRows` table, where the character types them.
+- **At the default sheet size, beside its sticky name an open table leaves one
+  number cell of room, short only where the name's heading is wider, and every
+  cell's content but prose is seen whole there** [judgement; held at 520 by
+  `harness/measure-groups.mjs` check 8, which prints these figures, and prints
+  the `text=24` ones below without holding them]. The name's two floors,
+  its longest name and its field's `6em`, are held under one room declared on
+  the table's box: the scroller less one number cell
+  (`docs/features/table-name-column-floor.md`). The field's floor used to
+  outweigh it, so at 520 Attacks' 155px scroller held a 102px name beside a 68px
+  number cell and left 53; it now leaves 68.3, and the name gives with an
+  ellipsis: `Longsword`, whole at 102px, reads `Longsw…` at 86.7, which is the
+  cost taken. **A text cell is the one seen in part**: its field clips prose at
+  every width and starts it at the left, so a scroll that puts the cell's start
+  against the name shows the prose's start, and focus reads the rest. Widening
+  the room to a text field's `8em` floor would leave that card's name 35px.
+  **A name heading is never clipped**, so one wider than the bound narrows the
+  room by the difference: Conditions' `Condition` heading is 92.3px and leaves
+  62.8px for a 64.6px `Active` cell, whose ring and heading are centred and show
+  whole with under a pixel of padding a side behind the name: the cell's box is
+  not whole there, its content is. **At `text=24` the claim does not hold, and
+  that is the residue** (520, `surface=sheet theme=light width=520 text=24`):
+  the heading is `--font-smallest`, which is `em`, so it grows with the sheet
+  where the cells' `--font-ui-small` does not. Conditions' heading is 126.3px
+  and leaves 28.7px of a 155px scroller for an 86.2px `Active` cell, whose ring
+  is wholly behind the name, so the card shows no toggle; Attacks' heading sets
+  a 90px name and leaves 65px for its 68px `Hit` cell, and `Dagger` reads
+  `Dagg…`. Not a regression: the field's old `6em` floor was 144px there. It
+  reopens with the clause above, since only clipping or wrapping the heading
+  reaches it. A declared row's
+  name is plain text and is not held, so a long one on an open table widens the
+  column as before.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.

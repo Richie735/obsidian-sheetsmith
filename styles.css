@@ -2306,7 +2306,20 @@ body {
 	   a printed one are two rows of one list and must not read as two lists,
 	   which four pixels of indent is enough to do. */
 	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
-	min-width: 6em;
+	/* **Six ems, unless that would leave less than one number cell beside the
+	   sticky name** (`--sheetsmith-table-name-room`, at the box below). The floor
+	   is the field's own, so it outweighed the sizer's cap: at 520 a 155px
+	   scroller held a 102px name and left 53px, where a number cell is 68 and a
+	   toggle under `Active` 65, so neither was ever seen whole beside it. The
+	   field is pulled into the cell's padding by its inset on each side, so its
+	   floor is the room plus both insets. On a card wide enough for six ems this
+	   is the `6em` it always was. */
+	min-width: min(
+		6em,
+		calc(
+			var(--sheetsmith-table-name-room) + 2 * var(--sheetsmith-field-inset)
+		)
+	);
 	/* And at the size the names beside it are. The other cells are a size down
 	   because they are data beside the row; this one is the row. */
 	font-size: inherit;
@@ -2357,24 +2370,34 @@ body {
    scroller**, because `.sheetsmith-table-wrapper` is Roster's scroller as well,
    and a container there would become the nearest one for every unnamed query
    inside a Roster; the box exists only on an open table, which is the only
-   table that draws a sizer, and its content box is the scroller's width. */
+   table that draws a sizer, and its content box is the scroller's width.
+
+   **The room is declared once, here, and both floors are held under it**: the
+   sizer's, and the field's own `6em`, which outweighed the sizer in a narrow
+   card until it was held too. A custom property's `cqi` resolves where it is
+   used, so in a name cell it is this box. One number cell:
+   `.sheetsmith-table-input`'s `width: 4em` at its own `--font-ui-small`
+   (border-box, so padding and border are inside it), plus its cell's inline
+   padding. The name cell's own inline padding comes off too, since the cell is
+   what has to leave the band.
+
+   **A text cell is the one cell seen in part beside the name, and that is the
+   ruling rather than a gap** (`docs/UI.md` §4). Its field clips prose at every
+   width and starts it at the left, so the scroll position that puts the cell's
+   start against the name shows the prose's start, and focus reads the rest.
+   Widening the band to a text field's `8em` floor would leave a 155px card's
+   name 35px. */
 .sheetsmith-view .sheetsmith-table-box {
 	container-type: inline-size;
+	--sheetsmith-table-name-room: calc(
+		100cqi - 2 * var(--size-4-2) - 4 * var(--font-ui-small) - 2 *
+			var(--size-4-2)
+	);
 }
 
 .sheetsmith-view .sheetsmith-table-name-sizer {
-	/* One number cell: `.sheetsmith-table-input`'s `width: 4em` at its own
-	   `--font-ui-small` (border-box, so padding and border are inside it), plus
-	   its cell's inline padding. */
-	--sheetsmith-table-name-band: calc(
-		4 * var(--font-ui-small) + 2 * var(--size-4-2)
-	);
 	display: block;
-	/* The name cell's own inline padding comes off too, since the cap is on
-	   the sizer and the cell is what has to leave the band. */
-	max-width: calc(
-		100cqi - 2 * var(--size-4-2) - var(--sheetsmith-table-name-band)
-	);
+	max-width: var(--sheetsmith-table-name-room);
 	height: 0;
 	overflow: hidden;
 	visibility: hidden;
