@@ -228,6 +228,19 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 							 * sentence. This says where the note goes when the field is
 							 * empty, in the app's own terms, and nothing is lost because
 							 * the full label path is in the description above, verbatim.
+							 *
+							 * **Drawn at faint by the app, about 2.3:1, and accepted.**
+							 * `setPlaceholder` paints `--text-faint` on the form field
+							 * (`#ababab` on `#ffffff` 2.30:1, `#666666` on `#2e2e2e`
+							 * 2.36:1), and `docs/UI.md` §1 forbids substituting a
+							 * colour, so nothing here can raise it. It passes because it
+							 * is redundant: the description says the same at full
+							 * contrast. Kept rather than dropped because, with the
+							 * `aria-label` below supplying the name, HTML-AAM exposes a
+							 * placeholder as the accessible description — likely the one
+							 * hint a screen reader announces, since the visible
+							 * description is a sibling with no `aria-describedby`. That
+							 * is per the spec, not tested with a screen reader.
 							 */
 							.setPlaceholder('Same as new notes')
 							.setValue(this.plugin.settings.characterFolder)

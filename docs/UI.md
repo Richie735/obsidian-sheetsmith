@@ -375,6 +375,14 @@ sheet.
   beside its reason (`docs/features/text-faint-audit.md`, which measured every
   instance; `docs/features/track-row-legibility-and-clipped-fields.md` was the
   first, for a Track row's name column).
+  **So a placeholder never carries anything the row does not also say at full
+  contrast** [judgement], in its description or its value; one that repeats the
+  description is accepted as redundant. The settings tab's **Character folder**
+  is the instance: the app's `setPlaceholder` draws `Same as new notes` at
+  2.30:1 light and 2.36:1 dark, nothing inside it can raise that, and the
+  description names the same destination. It stays rather than going because,
+  with an `aria-label` as the name, a placeholder is exposed as the input's
+  accessible description (per HTML-AAM, not tested with a screen reader).
 
 The numbers these rules are judged against, and the way to measure them, are in
 `.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
