@@ -283,8 +283,9 @@ body {
 	flex-direction: column;
 	/* Wide enough for a labelled control and a resolved definition's own words on
 	   one line, and clamped to the viewport minus a gutter below that — which is
-	   the phone regime, read rather than seen: nothing below a 500px viewport has
-	   ever been photographed (`docs/UI.md` §12). */
+	   the phone regime, photographed at a true 380 in
+	   `sheet-modifier-form-viewport-380`: 348px, centred by `placeAnchored`'s
+	   `EDGE_GUTTER`, which is this gutter and has to stay it. */
 	width: min(30em, calc(100vw - 2 * var(--size-4-4)));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
@@ -324,8 +325,20 @@ body {
 	   an empty cell, 325 on a named part. **Re-measure rather than adjusting by eye**
 	   — open the harness at `sheet-modifier-form-light` and read the body's
 	   `scrollHeight`; a cap one pixel over the content is what the `em` left behind
-	   and it looks exactly like a fit. */
-	max-height: min(500px, calc(100vh - 2 * var(--size-4-4)));
+	   and it looks exactly like a fit.
+
+	   **And it had gone stale the same way, which is why it is 570 now.** The form
+	   grew a **Note** and an **Only when** after 479 was taken, so the mixed row's
+	   open form measured **547** against a body of 498, and the two-value part 515
+	   at 1400 and 531 at a true 380: the ordinary states were scrolling at every
+	   width, cut across the promote row, while this comment said they fitted. Found
+	   by the fifth rulings pass reading the body rather than the box — the box's own
+	   `scrollHeight` is 498 either way, because the scroll is one element in. 570 is
+	   547 with the headroom 500 gave 479; a row with three parts and one open is 625
+	   and still scrolls, which is the cost `docs/UI.md` §9 accepts. Measured again:
+	   471 and 487 with a repeated name, 352 on an empty cell, 325 and 341 on a named
+	   part, at 1400 and at 380. */
+	max-height: min(570px, calc(100vh - 2 * var(--size-4-4)));
 	overflow: hidden;
 }
 
@@ -7367,6 +7380,17 @@ a.sheetsmith-notice-action {
 	box-shadow: none;
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+}
+
+/* The siblings' pattern again: this border is the whole of the control's shape,
+   since the fill is transparent and no chevron is drawn, so it is the one edge on
+   a record that faded at higher contrast while the list's own box, a card's pill
+   and a pool's steppers rose round it (`sheet-contrast-more`, the Spells list and
+   the recharging lists). Below the rule it raises, which it ties on (0,2,0). */
+@media (prefers-contrast: more) {
+	.sheetsmith-view .sheetsmith-record-select {
+		border-color: var(--text-muted);
+	}
 }
 
 /* The body, indented to the name rather than to the chevron, so an open record

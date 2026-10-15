@@ -175,6 +175,16 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   split in a wide window must reflow too, and a media query cannot see that.
   `.sheetsmith-view` sets `container-type: inline-size`; the grid collapses to a
   column under 480px of *container* width.
+- **So a phone's 380px viewport draws the sheet a 380px container draws, and the
+  narrow views stay container widths** [judgement; seen in `sheet-viewport-380`
+  against `sheet-narrow`]. Diffed with the harness bar's height taken off, the
+  two differ by antialiasing alone, under 40 levels a channel anywhere on the
+  sheet: nothing on it reads the viewport, which is the rule above doing its job.
+  What a true viewport changes is what hangs off `document.body`, the anchored
+  panel and the shared popover, whose caps read `100vw` (§9), so a view earns a
+  true viewport when it holds one of them. Neither picture carries Obsidian's
+  `.is-mobile` rules, which the stub never sets
+  (`docs/features/phone-input-width.md`), and neither is a device.
 - **A container is its own reflow context** (`SPEC` §8). A Group four columns
   wide inside a wide pane is narrow even though the sheet is not, so
   `.sheetsmith-subgrid` carries `container-type` and the grid inside it collapses
@@ -241,8 +251,8 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
 - **A surface hung off `document.body` is app chrome, and takes the app's UI
   sizes rather than the sheet's** [judgement]. The anchored panel and the shared
   popover are `--font-ui-small` and `--font-ui-smaller`, so whatever sets the
-  sheet's size does not reach them: at `text=24` the panel measures 390 x
-  479, as at the default, beside a sheet that grew 650px. That is right: they do
+  sheet's size does not reach them: at `text=24` the panel's body measures
+  390 x 547, as at the default (re-measured in the fifth rulings pass), beside a sheet that grew 650px. That is right: they do
   the job of Obsidian's own `Menu` and `Modal`, which keep the same sizes, and
   §1 is why the plugin invents no type scale of its own.
 - **`font-variant-numeric: tabular-nums` on every number that changes.** A value
@@ -275,6 +285,23 @@ sheet.
   A glyph on a partly lit segment is not a case, since part of it sits on
   `Canvas`, so it keeps the mode's own colour and plate
   (`docs/features/forced-colors-track-and-table.md`).
+- **`prefers-contrast: more` raises every line that is a surface's or a control's
+  only edge to `--text-muted`, and leaves the rest** [judgement; seen block by
+  block in `sheet-contrast-more`, `-dark` and `sheet-record-groups-contrast-more`].
+  That is a card's border and pill, a table's box and cells, a pool's box and
+  steppers, a track's box, segments and dividers, a placed box, a record group's
+  outline and header rule, the record strip's rule, and a record's menu, which
+  was the one edge left faint until this was looked at. Two marks go further: a
+  card dropdown's chevron to `--text-normal`, and every marked level ring and harm
+  segment to the full fill, since a ramp trades contrast for shape. **The
+  abbreviation and the unresolved `?` have no block**: both are muted at every
+  contrast (the faint rule below). **Left alone, as the ruling and not an
+  omission**: a container's heading rule and a tab strip's baseline, whose
+  heading text carries the structure; a Passport's chips, whose fill is the
+  field; a Pool's bar track, which repeats the number above it; the Rich text,
+  Image and record body placeholders, the asymmetry `sheet.css` records at
+  Passport's block; and an unresolved link, which takes the app's own
+  `--link-unresolved-*` tokens, so a theme that answers the query answers it here.
 - **One focus treatment per component.** The same gesture in the same component
   must not produce two different rings. **A round control takes a round ring**,
   so a Record set's summary line can show three same-size circles — a focused
@@ -796,10 +823,30 @@ none is: the list is the panel's primary offer, one press for the layout's own
 suggestion, and the form the fallback — Tab cycles
 within it, and Escape closes it and returns focus to the control, which is the
 platform's own contract for a dialog and what makes `aria-haspopup="dialog"` true
-rather than decorative; and a phone regime, **owed and read rather than seen**,
-since nothing below a 500px viewport had been photographed when this was
-written. `sheet-viewport-380` and `sheet-modifier-form-viewport-380` now draw the
-sheet and this panel at a true 380, and no pass has read them yet (§12).
+rather than decorative; and a phone regime, **seen at a true 380**
+(`sheet-modifier-form-viewport-380`, `sheet-modifier-form-three-parts-viewport-380`).
+There the `100vw` cap bites at 348px, and **the clamp's gutter is the cap's**,
+16px a side (`popover.ts`'s `EDGE_GUTTER`), so a capped panel is centred and sits
+on the sheet's own column. It was the 8px anchor gap, which pushed the panel to
+24px from one edge and 8 from the other; the bubble shared the arithmetic and the
+fault. The ordinary form wraps nothing at 348, and **it fits its cap at every
+width only since the fifth rulings pass raised the cap to 570px**: `shared.css` measured the
+mixed row's form at 479 before **Note** and **Only when** joined it, and it had
+reached 547 against a 498px body, so the promote row was cut and **Add a
+modifier** was off the end of the panel at 1400 as at 380. The box's own
+`scrollHeight` read 498 throughout, since the scroll is on the body; measure the
+body.
+
+**A row with three parts and one open scrolls inside the panel, and that is
+accepted** [judgement]. Two closed lines with their reasons over the typed part's
+fields measure 625px against the body's 568, so 57px scroll: the cut falls across
+the promote row, under **Remove**, and the box's edge stays drawn because the
+scroll is on the body one element in. It is not a scroll inside the table's: the
+panel is a fixed surface on `document.body`, so the table scrolling sideways under
+it is a second scroller beside it, and the table's scroll repositions the panel on
+its anchor rather than nesting one scroller in the other. No cap fits every row,
+since each part adds a line: 570 is the tallest ordinary state with headroom, a
+row past it scrolls, and the `100vh` term holds a short phone to its own height.
 
 **What it holds is a list and one disclosure**, and the state each line carries is
 its own words plus its own mark: `zap` / `zap-off` per line, the same mark the
@@ -1266,6 +1313,16 @@ pane's place, not a global one, and it never displaces the row.
 
 Error text names the fix: `"max: 'con' is not defined on this sheet"`, not
 `"could not resolve"`.
+
+**Every fenced component's read failure is drawn in `sheet-error`, one breakage
+each, so no message appears twice** [judgement]: a Track flag holding `maybe`, a
+Card set line with its colon gone, a Pool key written twice and a Card fence never
+closed. The last three are three of the four shapes `readFenced` refuses; the
+fourth, a section holding a second sheet block, is not drawn. A value
+of the wrong kind is not one for Card, Card set or Pool, which read every value as
+text. Which component carries which is argued in `harness/samples.ts`'s
+`brokenSamples()`. **These three fail the rule above**, naming the fault and not
+the fix, where a record's copy adds one; tracked in `docs/BACKLOG.md` § UI.
 
 ---
 

@@ -227,6 +227,46 @@ describe('the placement both floating surfaces share', () => {
 		expect(panelLeft).toBe(bubbleLeft);
 	});
 
+	it('centres a surface its viewport cap has bitten on, rather than pushing it to one side', () => {
+		/*
+		 * The clamp's gutter is the cap's (`EDGE_GUTTER`, `shared.css`'s
+		 * `100vw - 2 * --size-4-4`). At a true 380px viewport the panel is 348 wide;
+		 * with the old 8px clamp an anchor right of centre put it at 24, leaving 8
+		 * on the right (`sheet-modifier-form-viewport-380`). Both edges are 16 now,
+		 * from either side, and the bubble answers alike.
+		 */
+		const was = window.innerWidth;
+		Object.defineProperty(window, 'innerWidth', { configurable: true, value: 380 });
+		try {
+			for (const left of [300, 10]) {
+				for (const open of [
+					(el: HTMLElement) => showAnchoredPanel(el, 'One', 'a', {}),
+					(el: HTMLElement) => showPopover(el, 'Expertise'),
+				]) {
+					// The surface's own box: the cap's width, which happy-dom cannot lay
+					// out. The anchor answers from its own override, so only the
+					// surface reaches the prototype here.
+					const box = vi
+						.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+						.mockReturnValue({ left: 0, top: 0, bottom: 300, width: 348, height: 300 } as DOMRect);
+					try {
+						open(anchor({ left, top: 400, bottom: 420 }));
+					} finally {
+						box.mockRestore();
+					}
+					const surface = document.querySelector<HTMLElement>(
+						'.sheetsmith-panel, .sheetsmith-popover',
+					);
+					expect(surface?.style.left).toBe('16px');
+					closeAnchoredPanel();
+					closePopover();
+				}
+			}
+		} finally {
+			Object.defineProperty(window, 'innerWidth', { configurable: true, value: was });
+		}
+	});
+
 	it('puts both below the anchor where there is no room above', () => {
 		// Above where there is room, below where there is not — one arithmetic, so
 		// the flip cannot happen for one surface and not the other.

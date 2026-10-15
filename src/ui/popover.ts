@@ -22,6 +22,20 @@ export const LONG_PRESS = 450;
 export const ANCHOR_OFFSET = 8;
 
 /**
+ * The least room a floating surface leaves between itself and either side of the
+ * viewport, in pixels: `--size-4-4`, the gutter both surfaces' `100vw` caps in
+ * `shared.css` take off each side.
+ *
+ * **Its own number rather than `ANCHOR_OFFSET`, because the clamp has to agree
+ * with the cap.** It was the 8px anchor gap, so a panel the cap had made
+ * `100vw - 32px` wide was pushed against the side its anchor was nearer to: at a
+ * true 380px viewport it sat 24px from the left edge and 8px from the right
+ * (`sheet-modifier-form-viewport-380`). With the two equal, a surface the cap
+ * bites on is centred, and on a phone it lines up with the sheet's own column.
+ */
+export const EDGE_GUTTER = 16;
+
+/**
  * Place a floating element against the control that opened it: above where there
  * is room, below where there is not, and clamped into the viewport horizontally
  * so a cell at the edge of a scrolled table still reads.
@@ -30,7 +44,7 @@ export const ANCHOR_OFFSET = 8;
  * reason it is a function: "clamped into the viewport" is one policy, and two
  * copies of it drifting apart is a visible bug at the one edge nobody photographs.
  * The panel is the bubble's *kind* grown a body (`docs/UI.md` §9), so it is the
- * same arithmetic and not merely a similar one — `popover.test.ts` clamps both at
+ * same arithmetic and not merely a similar one — `anchored-panel.test.ts` clamps both at
  * one edge and asserts they answer alike.
  *
  * Both surfaces are attached to the document rather than to the cell, because a
@@ -47,9 +61,9 @@ export function placeAnchored(el: HTMLElement, anchor: HTMLElement): void {
 	el.setCssStyles({
 		top: `${above >= 0 ? above : box.bottom + ANCHOR_OFFSET}px`,
 		left: `${Math.max(
-			ANCHOR_OFFSET,
+			EDGE_GUTTER,
 			Math.min(
-				width - size.width - ANCHOR_OFFSET,
+				width - size.width - EDGE_GUTTER,
 				box.left + box.width / 2 - size.width / 2,
 			),
 		)}px`,
