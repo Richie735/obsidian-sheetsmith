@@ -22,10 +22,28 @@
  *   media=forced-colors:active
  *   hover=<selector>                  # a real pointer resting on the element
  *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held
+ *   platform=tablet                   # Obsidian's tablet body classes, and touch
+ *   frame=<selector>                  # the PNG clipped to that element, plus 16px
+ *   pad=<px>                          # what a frame adds round the element
  *
  * and `flag=<chrome flag>` passes a launch flag on either path, so a custom view
  * can ask for `--force-high-contrast` as a default view does. The values are
  * read here and never reach the page; everything else is the harness's query.
+ *
+ * `platform=` is a body class the page cannot be asked for: the stub never
+ * sets Obsidian's platform classes, so the driven path adds `is-mobile` and
+ * `is-tablet` to `body` the moment it exists, before the harness's script
+ * draws or presses anything, so a panel a `press=` opens is placed against
+ * the tablet's own sizes; and with touch emulated so a
+ * coarse pointer's rules answer as they do on the device. What the classes
+ * reach is what `calibrate.mjs` carries under them — the platform's own
+ * variables and its bare-control rules — so it is the app's tablet CSS, not a
+ * device.
+ *
+ * `frame=` clips the capture to one element's box, wherever it sits on the
+ * page, so a component deep in the sample sheet can be looked at without a
+ * frame the sheet's whole height: the page is still laid out at the view's
+ * `size`, so a frame shows the component at the width it has there.
  *
  * `--screenshot` cannot do any of the four: headless Chrome floors the viewport
  * at 500px whatever `--window-size` says (a narrower frame is a 500px render
@@ -354,6 +372,15 @@ const TRACK_ADD_TRIGGER =
 	"press=%5Baria-label%3D'Add%20to%20Open%20hit%20dice'%5D";
 const TRACK_REMOVE_TRIGGER =
 	"press=%5Baria-label%3D'Remove%20from%20Open%20hit%20dice'%5D";
+/** The Languages table's cell, the one sample whose Table level is a select. */
+const TABLE_SELECT = ".sheetsmith-cell:has([aria-label='Common Fluency'])";
+/**
+ * Under the grid's 8px gap, so the card beside it, whose border sits 8px from
+ * the cell's edge, stays out of the frame: at the default 16 its right border
+ * was a stray line down the left of every shot.
+ */
+const TABLE_SELECT_PAD = 6;
+
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
@@ -443,9 +470,14 @@ const DEFAULTS = [
 		//
 		// Found over at 18338 by the pass that moved the Passport row, which
 		// does not reach this view (SHEET_FRAME's note). 18300 to **18600**.
+		//
+		// Raised again for the Languages table, a Table select beside the cards
+		// roster: free columns at every other width, a full-width row of its own
+		// here. Measured 18575 against 18600, 25px of headroom. 18600 to
+		// **18900**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,18600',
+		size: '520,18900',
 	},
 	{
 		/*
@@ -458,11 +490,78 @@ const DEFAULTS = [
 		 *
 		 * No `&width=`: the stage fills the viewport, as a pane fills a phone.
 		 * Measured off `document.body` at this viewport, harness built first:
-		 * **18459**.
+		 * **18459**; **18632** once the Languages table joined the sample.
 		 */
 		name: 'sheet-viewport-380',
 		query: 'surface=sheet&theme=dark',
-		size: '380,18800',
+		size: '380,19000',
+	},
+	{
+		/*
+		 * **A tablet**: Obsidian's `is-mobile is-tablet` on `body` and touch
+		 * emulated, at an 820px portrait viewport, so the app's tablet CSS that
+		 * `calibrate.mjs` carries applies — the platform's variables and
+		 * `.is-tablet button:not(.clickable-icon)`'s padding, at (0,2,1), which
+		 * outranked every sheet button rule until they were doubled (the foot of
+		 * `src/styles/sheet.css`). Every glyph button, ring and tab is the thing
+		 * to look at. Needs a calibrated harness: without
+		 * `obsidian.generated.css` the classes reach nothing and this is a
+		 * desktop sheet at 820. Measured off `document.body` through this
+		 * view's own staging, harness built first: **10596**.
+		 */
+		name: 'sheet-tablet',
+		query: 'surface=sheet&theme=light',
+		size: '820,11000',
+		platform: 'tablet',
+	},
+	{
+		/*
+		 * **The anchored panel on a tablet**: the modifier form open on a mixed
+		 * row, as `sheet-modifier-form-light` opens it, framed to the panel.
+		 * What to look at is the two kinds of button side by side: the list
+		 * lines and **Add**, whose padding is the plugin's and doubled past the
+		 * tablet rule, and **Save** and **Remove**, which take the app's chrome
+		 * whole and so its tablet padding, `var(--size-4-1) var(--size-4-5)`.
+		 * At the tablet's 44px inputs the form outgrows the panel's cap, so the
+		 * body is scrolled to **Save**, which brings **Remove** with it.
+		 */
+		name: 'sheet-tablet-panel',
+		query: `surface=sheet&theme=light&${OPEN_MIXED_FORM}&scroll=.sheetsmith-panel-save`,
+		size: '820,11000',
+		platform: 'tablet',
+		frame: '.sheetsmith-panel',
+	},
+	{
+		/*
+		 * **A Table's level drawn as a select**, framed: the Languages table, the
+		 * one sample staging a cell's menu, sits some 6800px down the default
+		 * sheet, where every full-sheet frame shows it at a twentieth of its
+		 * size. What to look at is `docs/UI.md` §9's one chevron inside the
+		 * select's own field, at its end, clear of the longest option's text.
+		 * Named by a select's accessible name, which only this table carries.
+		 */
+		name: 'sheet-table-select',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		frame: TABLE_SELECT,
+		pad: TABLE_SELECT_PAD,
+	},
+	{
+		name: 'sheet-table-select-dark',
+		query: 'surface=sheet&theme=dark',
+		size: SHEET_FRAME,
+		frame: TABLE_SELECT,
+		pad: TABLE_SELECT_PAD,
+	},
+	{
+		// The chevron is two borders, which forced colors repaints, where the
+		// app's own `.dropdown` chevron is invisible there (`docs/BACKLOG.md` § UI).
+		name: 'sheet-table-select-forced-colors',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		frame: TABLE_SELECT,
+		pad: TABLE_SELECT_PAD,
+		flags: ['--force-high-contrast'],
 	},
 	{
 		/*
@@ -2996,7 +3095,7 @@ const DEFAULTS = [
 const args = process.argv.slice(2);
 
 /** The arguments `shot.mjs` reads itself, which never reach the page's query. */
-const OWN = ['size', 'media', 'hover', 'hold', 'flag'];
+const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad'];
 const own = (name) =>
 	args.filter((arg) => arg.startsWith(`${name}=`)).map((arg) => decodeURIComponent(arg.slice(name.length + 1)));
 
@@ -3036,6 +3135,9 @@ const views =
 					media: mediaOf(own('media')),
 					hover: own('hover')[0],
 					hold: holdOf(own('hold')[0]),
+					platform: own('platform')[0],
+					frame: own('frame')[0],
+					pad: own('pad')[0] === undefined ? undefined : Number(own('pad')[0]),
 					flags: own('flag'),
 				},
 			];
@@ -3050,7 +3152,14 @@ const views =
  */
 function driven(view) {
 	const width = Number(view.size.split(',')[0]);
-	return view.media !== undefined || view.hover !== undefined || view.hold !== undefined || width < 500;
+	return (
+		view.media !== undefined ||
+		view.hover !== undefined ||
+		view.hold !== undefined ||
+		view.platform !== undefined ||
+		view.frame !== undefined ||
+		width < 500
+	);
 }
 
 /**
@@ -3079,6 +3188,12 @@ async function centreOf(browser, view, selector) {
 }
 
 /**
+ * The body classes Obsidian sets for a platform, which the stub never does. A
+ * tablet is mobile as well, so it carries both, as the app's `body` does.
+ */
+const PLATFORMS = { tablet: ['is-mobile', 'is-tablet'] };
+
+/**
  * Capture a view by driving Chrome over the DevTools Protocol.
  *
  * **The second capture path, and it exists for four states the first cannot
@@ -3101,7 +3216,8 @@ async function centreOf(browser, view, selector) {
  * pointer's own position all answer to it.
  *
  * The clip is the whole frame, so the file matches what `--screenshot` produces
- * for every other view and a reviewer can diff the two.
+ * for every other view and a reviewer can diff the two — unless the view names
+ * a `frame`, which is the one view that asked for less.
  */
 async function shootDriven(view, out) {
 	const [width, height] = view.size.split(',').map(Number);
@@ -3120,6 +3236,28 @@ async function shootDriven(view, out) {
 			deviceScaleFactor: 1,
 			mobile: false,
 		});
+		const platform = view.platform === undefined ? undefined : PLATFORMS[view.platform];
+		if (view.platform !== undefined && platform === undefined) {
+			throw new Error(`Bad platform "${view.platform}"; want one of ${Object.keys(PLATFORMS).join(', ')}.`);
+		}
+		// Before the load, so the page's first layout already answers to a
+		// coarse pointer and no hover, as a tablet's does.
+		if (platform !== undefined) {
+			await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+			// On `body` as soon as the parser makes it, ahead of the module script:
+			// a class added after the load would restyle a panel already placed.
+			// The observer watches `document` itself, because this runs before the
+			// parser has made even `<html>`: observing `documentElement` threw on
+			// null, the script died silently, and the "tablet" drew at desktop scale.
+			const classes = platform.map((one) => `'${one}'`).join(', ');
+			await browser.send('Page.addScriptToEvaluateOnNewDocument', {
+				source: `(() => {
+					const add = () => document.body !== null && (document.body.classList.add(${classes}), true);
+					if (!add()) new MutationObserver((_, watch) => { if (add()) watch.disconnect(); })
+						.observe(document, { childList: true, subtree: true });
+				})()`,
+			});
+		}
 		if (view.media !== undefined) {
 			await browser.send('Emulation.setEmulatedMedia', {
 				features: Object.entries(view.media).map(([name, value]) => ({ name, value })),
@@ -3129,6 +3267,14 @@ async function shootDriven(view, out) {
 		await browser.send('Page.navigate', { url: `${page}?${view.query}` });
 		await loaded;
 		await wait(DRAW_BUDGET);
+		// Held rather than trusted: a staging that silently fails draws a
+		// plausible desktop sheet, which is the failure above.
+		if (platform !== undefined) {
+			const missing = await browser.evaluate(
+				`${JSON.stringify(platform)}.filter((one) => !document.body.classList.contains(one))`,
+			);
+			if (missing.length > 0) throw new Error(`platform=${view.platform}: body lacks ${missing.join(', ')}`);
+		}
 
 		if (view.hover !== undefined) {
 			const at = await centreOf(browser, view, view.hover);
@@ -3165,10 +3311,24 @@ async function shootDriven(view, out) {
 		// a hovered surface runs (160ms on a card, per `sheet.css`).
 		if (view.hover !== undefined || view.hold !== undefined) await wait(400);
 
+		// The whole frame, unless the view names one element to frame, in page
+		// coordinates so it is found wherever the sheet has scrolled it.
+		const clip =
+			view.frame === undefined
+				? { x: 0, y: 0, width, height, scale: 1 }
+				: await browser.evaluate(`(() => {
+						const target = document.querySelector(${JSON.stringify(view.frame)});
+						if (target === null) throw new Error('No element matches frame=' + ${JSON.stringify(view.frame)});
+						const box = target.getBoundingClientRect();
+						const pad = ${view.pad ?? 16};
+						const x = Math.max(0, box.left + scrollX - pad);
+						const y = Math.max(0, box.top + scrollY - pad);
+						return { x, y, width: Math.min(${width} - x, box.width + 2 * pad), height: box.height + 2 * pad, scale: 1 };
+					})()`);
 		const shot = await browser.send('Page.captureScreenshot', {
 			format: 'png',
 			captureBeyondViewport: true,
-			clip: { x: 0, y: 0, width, height, scale: 1 },
+			clip,
 		});
 		writeFileSync(out, Buffer.from(shot.data, 'base64'));
 	} finally {

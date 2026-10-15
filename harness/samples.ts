@@ -3181,6 +3181,40 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: '```sheet\nLoad: 0\n```',
 	},
+	/*
+	 * **A Table's level drawn as a select** (`docs/UI.md` §9's one chevron), which
+	 * no sample staged until a select in a cell had to be looked at: every other
+	 * menu on this sheet is a card's or a record's. Beside `roster_card_layout`,
+	 * in the six columns it leaves empty, so no default frame grows by it, and
+	 * appended at the end on this file's rule against renumbering. Three option
+	 * lengths, so the column's width is its longest option's and a shorter one
+	 * shows the chevron's inset holding.
+	 */
+	{
+		config: {
+			id: 'languages',
+			type: 'table',
+			label: 'Languages',
+			position: { col: 7, row: 67, width: 6, height: 2 },
+			rowHeader: 'Language',
+			columns: [
+				{
+					key: 'Fluency',
+					type: 'level',
+					levels: ['None', 'Understands', 'Fluent'],
+					input: 'select',
+				},
+			],
+			rows: [{ label: 'Common' }, { label: 'Elvish' }, { label: 'Dwarvish' }],
+		} as ComponentConfig,
+		body: [
+			'| Language | Fluency |',
+			'| --- | --- |',
+			'| Common | 2 |',
+			'| Elvish | 1 |',
+			'| Dwarvish | 0 |',
+		].join('\n'),
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */

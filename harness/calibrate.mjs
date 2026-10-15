@@ -254,6 +254,21 @@ const CHROME = [
 	/^\.workspace-leaf-content/,
 	/^\.view-header/,
 	/^\.view-content/,
+	/*
+	 * **A bare control under a platform class**, which is where Obsidian keeps
+	 * the rules that outrank a plugin's own on a phone or a tablet:
+	 * `.is-tablet button:not(.clickable-icon)` sets a button's padding at
+	 * (0,2,1), over every sheet button rule at (0,2,0) or lighter, and
+	 * `.is-mobile input[type='text']` sets a field's width the same way
+	 * (`docs/features/phone-input-width.md`). Inert here until something puts
+	 * the class on `body`, which only a driven shot does (`platform=` in
+	 * `shot.mjs`), so every other view is unchanged by carrying them.
+	 *
+	 * Anchored on the element and refused a class after it, on the bare
+	 * button's own argument above: `.is-mobile button.mod-warning` and the
+	 * app's other scoped platform rules stay out.
+	 */
+	/^\.is-(mobile|tablet|phone) (button|input|select|textarea)(?![.#\w-])/,
 ];
 
 /**
@@ -266,6 +281,16 @@ const CHROME = [
  */
 const PALETTE =
 	/^(:root|body|\.theme-dark|\.theme-light|body\.theme-dark|body\.theme-light)$/;
+
+/**
+ * The platform classes' own variables, custom properties only, on `PALETTE`'s
+ * argument. A tablet is `is-mobile is-tablet` on `body`, and `.is-mobile`
+ * re-derives the type scale, the input height and the button chrome from the
+ * device's text size — so a staged tablet carrying the platform's control rules
+ * without these would be a desktop palette wearing a tablet's padding. Inert
+ * until a driven shot sets the class (`platform=` in `shot.mjs`).
+ */
+const PLATFORM = /^\.is-(mobile|tablet|phone)(\.theme-(dark|light))?$/;
 
 /**
  * Split a stylesheet into top-level rules.
@@ -433,7 +458,7 @@ for (const rule of rules(css)) {
 		resets++;
 		continue;
 	}
-	if (parts.some((s) => PALETTE.test(s))) {
+	if (parts.some((s) => PALETTE.test(s) || PLATFORM.test(s))) {
 		const props = customProperties(rule.body);
 		if (props.length === 0) continue;
 		lines.push(`${rule.selector} {`, ...props.map((p) => `\t${p}`), '}', '');
