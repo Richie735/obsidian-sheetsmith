@@ -2643,6 +2643,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				: null;
 
 			const step = named ? line.createDiv('sheetsmith-track-step') : null;
+			// The run is centred alone and the step hangs after it, so a named
+			// run lines up with an unnamed one above it (`sheet.css`).
+			if (step !== null) line.classList.add('sheetsmith-track-row-stepped');
 
 			/**
 			 * The breakdown where there is no pointer.

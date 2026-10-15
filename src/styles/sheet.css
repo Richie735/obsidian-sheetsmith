@@ -4580,8 +4580,43 @@ a.sheetsmith-notice-action {
    exhaustion and corruption are ladders where the number is an index into a
    rule, and a row of anonymous segments leaves the player counting segments and then
    looking the count up somewhere else. An unnamed run has no such line and
-   holds no space for one. */
+   holds no space for one.
+
+   **It sits beside the run, in the run's own flex row, so it brings its own
+   space.** The step was a line under the run until a track could hold a set of
+   runs, when it moved into the row the run is drawn in, and that row has no gap:
+   `Lost, 2 over` started at 712.8px in `Overfull (named)`, exactly where the last
+   segment ends, in both palettes and at a true 380. `--size-4-2` is the gap a
+   set draws between a row's name and its run (`.sheetsmith-track-set`), the same
+   pairing of a name with a run read from the other side. A margin on the step
+   rather than a gap on the row, because a set's row is a subgrid, and a gap
+   declared on it would replace the set's own gap rather than leave it alone.
+
+   **The run is centred alone and the step hangs after it**, so a named run sits
+   at the x an unnamed run of the same length does, rather than the pair being
+   centred as one unit and the run pushed left by its own reading (the two
+   Overfull cards, one above the other). Three columns, the outer two equal: the
+   run in the middle at its own width, the step at the start of the right-hand
+   one. One regime at every width: the step gets the half of the leftover room,
+   and ellipsises inside it, which at a true 380 is about 120px against
+   `Lost, 2 over`'s 73 with its margin. */
+.sheetsmith-track-row-stepped {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	width: 100%;
+}
+
+.sheetsmith-track-row-stepped > .sheetsmith-track-run {
+	grid-column: 2;
+}
+
+.sheetsmith-track-row-stepped > .sheetsmith-track-step {
+	grid-column: 3;
+	justify-self: start;
+}
+
 .sheetsmith-track-step {
+	margin-inline-start: var(--size-4-2);
 	max-width: 100%;
 	overflow: hidden;
 	color: var(--text-muted);
