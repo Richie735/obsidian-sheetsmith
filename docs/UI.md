@@ -199,7 +199,8 @@ be the control's at another font size reads the factor, never the length.
   the heading is `--font-smallest`, which is `em`, so it grows with the sheet
   where the cells' `--font-ui-small` does not. Conditions' heading is 126.3px
   and leaves 28.7px of a 155px scroller for an 86.2px `Active` cell, whose ring
-  is wholly behind the name, so the card shows no toggle; Attacks' heading sets
+  is wholly behind the name at rest, so the card shows no toggle until it is
+  scrolled, and then only the ring and none of its cell; Attacks' heading sets
   a 90px name and leaves 65px for its 68px `Hit` cell, and `Dagger` reads
   `Dagg…`. Magic items, in a 319px scroller, leaves 67.7px beside its name for
   a 77.3px `Worn` toggle cell, which its heading widens: the ring is centred
@@ -208,8 +209,22 @@ be the control's at another font size reads the factor, never the length.
   clause above, since only clipping or wrapping the heading reaches it, and
   the seventh rulings pass did not reopen it: the per-table band changes no
   name heading, so a heading wider than its bound stays the case it was.
-  A declared row's name is plain text and is not held, so a long one on an
-  open table widens the column as before.
+  **A declared row's name is plain text and is not held under the room, so on
+  a table with no prose column it wraps instead** [judgement; seen at
+  `surface=sheet theme=light width=520 text=24`]. A closed table has no box to
+  declare a room on, and the scroller cannot be a container, since Roster
+  shares it. Before the wrap, Tool training at `text=24` in a 520 container
+  drew `Thieves' tools` at 158.2px in a 155px scroller (195px of content): no
+  scroll moved its toggle out from under the name, a pointer at the ring hit
+  the name, and Tab still landed on the ring behind it, its focus ring hidden.
+  Wrapped, the name takes 118px on two lines and the toggle shows whole beside
+  it. Where the table has no prose column the name takes the slack, so it
+  wraps only where the slack is shorter than the name: on the default sheet at
+  1400, 520 and 380, and at `text=24` at 1400, every table measures exactly as
+  it did, and at `text=24` in 520 only Tool training and a Roster's `Sleight of
+  hand` move. A table with prose keeps the one line, since its name column is
+  `auto` and would fall to its longest word, and a declared name on an open
+  table with prose still widens its column as before.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.

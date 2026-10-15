@@ -1938,7 +1938,8 @@ body {
 .sheetsmith-view .sheetsmith-table {
 	width: 100%;
 	border-collapse: collapse;
-	/* Cells are inputs, not prose: a table row is one line, always. */
+	/* Cells are inputs, not prose: a table row is one line, but for a declared
+	   name too long for its card (below). */
 	white-space: nowrap;
 }
 
@@ -2083,6 +2084,25 @@ body {
 	.sheetsmith-table-has-text
 	.sheetsmith-table-name {
 	width: auto;
+}
+
+/* **A declared row's name wraps rather than cover the cells beside it**, on a
+   table with no prose column (`docs/UI.md` §4). The name cell is sticky and
+   opaque, and a declared name is plain text the room does not hold, since a
+   closed table has no box to declare one on: Tool training at `text=24` in a
+   520 container drew `Thieves' tools` at 158.2px in a 155px scroller, so no
+   scroll reached its toggle, no pointer could press it, and Tab still landed
+   on it, behind the name, with its focus ring hidden. With no prose column the
+   name takes the slack (the rule above), so it wraps only where the slack is
+   shorter than the name — a narrow card, never the default sheet, whose tables
+   draw exactly as before. Not on a table with prose, where the name column is
+   `auto` and would fall to its longest word. A field keeps its one line, since
+   an input does not wrap, and the sizer is `pre`. */
+.sheetsmith-view
+	.sheetsmith-table:not(.sheetsmith-table-has-text)
+	tbody
+	.sheetsmith-table-name {
+	white-space: normal;
 }
 
 /* Doubled for (0,4,0), one class past the doubled 4em above: the base is at

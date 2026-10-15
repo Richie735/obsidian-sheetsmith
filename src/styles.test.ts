@@ -4052,6 +4052,19 @@ describe('the room beside an open table\'s sticky name', () => {
 		);
 	});
 
+	it('lets a declared name wrap only on a table with no prose column', () => {
+		// `docs/UI.md` §4: a sticky declared name wider than its card covered the
+		// toggle beside it and hid its focus. With prose the name column is
+		// `auto`, where a wrap would fall to the longest word, so it stays out.
+		const wrap = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+			/white-space:\s*normal/.test(rule.body) &&
+			selectorList(rule.selector).some((one) => / tbody \.sheetsmith-table-name$/.test(one)),
+		);
+		expect(wrap.map((rule) => rule.selector.replace(/\s+/g, ' ').trim())).toEqual([
+			'.sheetsmith-view .sheetsmith-table:not(.sheetsmith-table-has-text) tbody .sheetsmith-table-name',
+		]);
+	});
+
 	it("sizes the room's one number cell as the number field is sized", () => {
 		// The band is `4 * var(--font-ui-small)` because the number field is
 		// `width: 4em` at its own `--font-ui-small`. Widen the field without the
