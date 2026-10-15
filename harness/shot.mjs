@@ -995,12 +995,11 @@ const DEFAULTS = [
 		 * **And it does not narrow the panel, which is worth saying rather than
 		 * hoping otherwise.** It was added to catch an indented hanging block
 		 * wrapping under its own indent, and it cannot: the panel hangs off
-		 * `document.body` and is capped at `min(500px, …)` of *viewport*, so it
-		 * draws at the same 390px here as at 1400 — which `docs/UI.md` §12 already
-		 * records twice, once for the panel not following the reader's text size
-		 * and once for headless Chrome refusing a viewport under 500px. What this
-		 * does photograph is the two-line part in the other palette against a narrow
-		 * sheet.
+		 * `document.body` and its width is `min(30em, 100vw - 2 * --size-4-4)` of
+		 * *viewport*, so in this 520 window it draws at the same 390px as at 1400
+		 * (`docs/UI.md` §5 records the same for the reader's text size, §9 the
+		 * true-380 width). What this does photograph is the two-line part in the
+		 * other palette against a narrow sheet.
 		 *
 		 * **Driving the wrap needs `Emulation.setDeviceMetricsOverride` over the
 		 * DevTools protocol, not `--window-size`**, and the expectation this view
@@ -1090,11 +1089,34 @@ const DEFAULTS = [
 		 * the panel hangs off `document.body` and is capped against the viewport,
 		 * so a 380 container in a 520 window draws it at its wide size. Here the
 		 * cap bites — 348 wide, the viewport less its gutter — inside a table that
-		 * is itself scrolling. Measured at this viewport: the panel is 348 x 500
-		 * with 498 of content, and the sheet 18240 tall.
+		 * is itself scrolling, and `placeAnchored` centres it, 16px a side.
+		 * Measured at this viewport, off the panel's *body*, which is where the
+		 * scroll is: 547 of content, which is why the cap is 570 (`shared.css`).
+		 * The box's own `scrollHeight` reads 498 against a cap of 500 whatever the
+		 * body holds, which is how an earlier note here read a fit that was not
+		 * one. The sheet is 18240 tall.
 		 */
 		name: 'sheet-modifier-form-viewport-380',
 		query: `surface=sheet&theme=dark&bar=off&${OPEN_MIXED_FORM}`,
+		size: '380,18800',
+	},
+	{
+		/*
+		 * **A row with three parts and one of them open, at the same true 380** —
+		 * the one state `shared.css`'s `570px` cap says does not fit, and so the one
+		 * place the panel scrolls (625 against a body of 568): two closed lines with their reasons, then the
+		 * typed part's six fields, its **Remove** and the promote row. The
+		 * `Charm bracelet` row exists for this and nothing else, in a state of its
+		 * own (`state=three-parts`) so the populated sheet every other shot
+		 * draws is unchanged; every part waits on Worn, which is off.
+		 *
+		 * What to look at is the foot: the body scrolls inside the capped box, so
+		 * the cut falls inside the form and the box's own edge stays drawn.
+		 * Named by the row's accessible name, which begins with its own name.
+		 */
+		name: 'sheet-modifier-form-three-parts-viewport-380',
+		query:
+			"surface=sheet&theme=dark&state=three-parts&bar=off&press=.sheetsmith-table-modifier-button%5Baria-label%5E%3D'Charm%20bracelet%20Modifiers'%5D&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D",
 		size: '380,18800',
 	},
 	{

@@ -28,6 +28,7 @@ import {
 	MIN_FIT_TIER,
 	STEP_PX,
 } from './components/record-line-fit';
+import { EDGE_GUTTER } from './ui/popover';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -3941,5 +3942,26 @@ describe("a multi-mark segment's dividers in forced colors", () => {
 		);
 		expect(lit?.body).toMatch(/border-left-color:\s*SelectedItemText/);
 		expect(lit?.body).toMatch(/border-right:\s*1px solid CanvasText/);
+	});
+});
+
+describe('the floating surfaces\' viewport gutter', () => {
+	/*
+	 * `placeAnchored` clamps with `EDGE_GUTTER` and both caps take
+	 * `2 * var(--size-4-4)` off the viewport. If the two drift, a capped surface
+	 * stops being centred at phone width, which is the defect the constant fixed
+	 * (`docs/UI.md` §9). So both caps must still spell the token, and the token's
+	 * value — Obsidian's 16px, which the harness's fallback theme carries — must
+	 * still be the constant.
+	 */
+	it('caps the panel and the bubble by the gutter the clamp uses', () => {
+		const rule = (selector: string) =>
+			new RegExp(`(?:^|\\n)${selector.replace('.', '\\.')} \\{([^}]*)\\}`).exec(CSS)?.[1] ?? '';
+		expect(rule('.sheetsmith-panel')).toMatch(/width: min\([^;]*calc\(100vw - 2 \* var\(--size-4-4\)\)\)/);
+		expect(rule('.sheetsmith-popover')).toMatch(
+			/max-width: min\([^;]*calc\(100vw - 2 \* var\(--size-4-4\)\)\)/,
+		);
+		const theme = readFileSync(new URL('../harness/theme.css', import.meta.url), 'utf8');
+		expect(/--size-4-4:\s*(\d+)px/.exec(theme)?.[1]).toBe(String(EDGE_GUTTER));
 	});
 });

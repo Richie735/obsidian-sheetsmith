@@ -54,6 +54,7 @@ import {
 	emptySamples,
 	Sample,
 	SAMPLES,
+	threePartSamples,
 	unmodifiedSamples,
 	pinnedAddSamples,
 	recordGroupSamples,
@@ -73,7 +74,8 @@ type StateName =
 	| 'pinned-add'
 	| 'record-groups'
 	| 'text-groups'
-	| 'notes';
+	| 'notes'
+	| 'three-parts';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -102,6 +104,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'record-groups') return recordGroupSamples();
 	if (name === 'text-groups') return textGroupSamples();
 	if (name === 'notes') return notesSamples();
+	if (name === 'three-parts') return threePartSamples();
 	return SAMPLES;
 }
 
@@ -805,7 +808,8 @@ function applyQuery(): void {
 			wanted === 'pinned-add' ||
 			wanted === 'record-groups' ||
 			wanted === 'text-groups' ||
-			wanted === 'notes'
+			wanted === 'notes' ||
+			wanted === 'three-parts'
 			? wanted
 			: 'populated',
 	);

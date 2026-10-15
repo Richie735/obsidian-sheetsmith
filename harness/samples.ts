@@ -3312,6 +3312,33 @@ export function effectiveSamples(): Sample[] {
  * That is what the design axis needed to see to rule on the glyph's contrast, and
  * a review cannot rule on a state no shot contains.
  */
+/**
+ * **A row with three parts in one modifier cell**, for the one panel state the
+ * populated sample has no row for: `sheet-modifier-form-three-parts-viewport-380`.
+ * Open on its typed part it is the tallest form the panel draws — two closed
+ * lines with their reasons over the fields and the promote row — and the one
+ * `shared.css`'s `570px` cap says still scrolls (`docs/UI.md` §9).
+ *
+ * **A state of its own rather than a row in `SAMPLES`**, because a row there
+ * shifts every full-sheet shot by its height for the sake of one view. Every
+ * part waits on Worn and Worn is off, so even here it moves no number and adds
+ * no line to a breakdown. Appended as the table's last row, after `Chalk`.
+ */
+export function threePartSamples(): Sample[] {
+	let reached = 0;
+	const samples = SAMPLES.map((sample) => {
+		if (sample.config.id !== 'magic_items' || sample.body === null) return sample;
+		reached += 1;
+		const row =
+			'| Charm bracelet | Cloak of Elvenkind; Blessing of the Bear; armour_class += 3 as item when Worn |  | three parts, none applying |';
+		return { ...sample, body: `${sample.body}\n${row}` };
+	});
+	// `effectiveSamples`' guard: a renamed table must not leave this state
+	// silently drawing the populated sheet under its own name.
+	if (reached !== 1) throw new Error('threePartSamples: no magic_items table to extend');
+	return samples;
+}
+
 export function unmodifiedSamples(): Sample[] {
 	return SAMPLES.map((sample) => {
 		const columns = (sample.config as { columns?: { type?: string }[] }).columns;
