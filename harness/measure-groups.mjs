@@ -10,8 +10,8 @@
  * (`docs/features/free-text-group-key.md`), where check 5 also holds the strip
  * to being centred over the text column's field.
  *
- * It drives Chrome over the DevTools Protocol, as `inspect.mjs` does, and exits
- * non-zero if any check fails. It prints the numbers.
+ * It drives Chrome over the DevTools Protocol through `cdp.mjs`, which
+ * `shot.mjs`'s driven path shares, and exits non-zero if any check fails. It prints the numbers.
  *
  *  1. The sheet does not move: every cell's and placed box's rectangle is
  *     identical across collapse of the tallest group, collapse of all, and
@@ -66,61 +66,17 @@
  *     room, which are the figures the §4 ruling quotes, and the same at
  *     `text=24` without holding them: the residue that ruling records.
  */
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import WebSocket from 'ws';
+import { CHROME, launch, wait as sleep } from './cdp.mjs';
 
-const CHROME = [
-	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	'/Applications/Chromium.app/Contents/MacOS/Chromium',
-	'/usr/bin/google-chrome',
-	'/usr/bin/chromium',
-].find((path) => existsSync(path));
 if (!CHROME) {
 	console.error('No Chrome-family browser found.');
 	process.exit(1);
 }
 const root = fileURLToPath(new URL('.', import.meta.url));
-const PORT = 9334;
 const STATE = process.argv[2] ?? 'record-groups';
-const proc = spawn(
-	CHROME,
-	['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, '--window-size=1400,1900', 'about:blank'],
-	{ stdio: 'ignore' },
-);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-let tabs;
-for (let tries = 0; tries < 30 && !tabs; tries++) {
-	await sleep(300);
-	try {
-		tabs = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-	} catch {
-		/* not up yet */
-	}
-}
-const ws = new WebSocket(tabs.find((tab) => tab.type === 'page').webSocketDebuggerUrl);
-await new Promise((resolve) => ws.on('open', resolve));
-let next = 0;
-const pending = new Map();
-ws.on('message', (raw) => {
-	const message = JSON.parse(raw);
-	if (message.id && pending.has(message.id)) {
-		pending.get(message.id)(message);
-		pending.delete(message.id);
-	}
-});
-const send = (method, params = {}) =>
-	new Promise((resolve) => {
-		const id = ++next;
-		pending.set(id, resolve);
-		ws.send(JSON.stringify({ id, method, params }));
-	});
-const evaluate = async (expression) => {
-	const reply = await send('Runtime.evaluate', { expression, returnByValue: true });
-	if (reply.result.exceptionDetails) throw new Error(JSON.stringify(reply.result.exceptionDetails));
-	return reply.result.result.value;
-};
+const browser = await launch(['--window-size=1400,1900']);
+const { send, evaluate } = browser;
 async function load(theme, width, viewport) {
 	await send('Emulation.setDeviceMetricsOverride', { width: viewport, height: 1900, deviceScaleFactor: 1, mobile: false });
 	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=${theme}&state=${STATE}&width=${width}` });
@@ -391,6 +347,5 @@ for (const one of tables.filter((each) => each.overflows)) {
 	check(one.cut.length === 0, `520 ${one.label}: (8b) every cell's content but prose shows whole beside it`, JSON.stringify(one.cut.slice(0, 3)));
 }
 
-ws.close();
-proc.kill();
+await browser.close();
 process.exit(failed === 0 ? 0 : 1);
