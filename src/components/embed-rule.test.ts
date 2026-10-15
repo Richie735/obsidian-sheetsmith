@@ -42,7 +42,7 @@ describe('embedRefusal', () => {
 		// The spelling every analogue accepts and the one that goes stale silently:
 		// rename the file and the sheet shows nothing, with nothing saying why.
 		expect(embedRefusal('Portrait.png')).toBe(
-			'A picture is an embed: ![[Portrait.png]].',
+			'Write the picture as an embed, like ![[Portrait.png]].',
 		);
 	});
 
@@ -50,7 +50,7 @@ describe('embedRefusal', () => {
 		// `![](path)` does not propagate on rename either, which is the whole
 		// reason the value is an embed.
 		expect(embedRefusal('![](Portrait.png)')).toBe(
-			'A picture is an embed: ![[Portrait.png]].',
+			'Write the picture as an embed, like ![[Portrait.png]].',
 		);
 	});
 
@@ -62,7 +62,7 @@ describe('embedRefusal', () => {
 			'[[Portrait.png]]',
 		]) {
 			expect(embedRefusal(source), source).toBe(
-				'A picture is an embed: ![[Portrait.png]].',
+				'Write the picture as an embed, like ![[Portrait.png]].',
 			);
 		}
 	});
@@ -72,7 +72,7 @@ describe('embedRefusal', () => {
 		 * The remote refusal is a *policy* and not a syntax check, so all three
 		 * spellings get the one message — and the order matters. `parseEmbed`
 		 * recognises only `![[…]]`, so `![](https://…)` used to fall through to
-		 * "a picture is an embed", whose advice produces `![[https://…]]` and
+		 * the embed refusal, whose advice produces `![[https://…]]` and
 		 * reaches this message one step later by a different route (PATTERNS §4:
 		 * a fix that leads to a second refusal does not name the fix).
 		 */

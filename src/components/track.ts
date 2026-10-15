@@ -974,10 +974,12 @@ function marksProblem(config: TrackConfig, raw: string): string | null {
 	// a checkbox stores yes and no, so telling its author about marks points
 	// them at a spelling that card never produces. SPEC §10 wants the fix
 	// rather than the fault, and here the two are different sentences for the
-	// same fault.
+	// same fault. Each is the fault and then the fix, which names the note on
+	// `readFenced`'s own reasoning: nothing on the sheet can repair a value the
+	// card cannot read (`docs/UI.md` §10).
 	return isFlagCard(config)
-		? `"${text}" is not yes or no.`
-		: `"${text}" is not a number of marks.`;
+		? `"${text}" is not yes or no. Write yes or no after its key in the note.`
+		: `"${text}" is not a number of marks. Write a whole number after its key in the note.`;
 }
 
 /**
@@ -2641,6 +2643,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				: null;
 
 			const step = named ? line.createDiv('sheetsmith-track-step') : null;
+			// The run is centred alone and the step hangs after it, so a named
+			// run lines up with an unnamed one above it (`sheet.css`).
+			if (step !== null) line.classList.add('sheetsmith-track-row-stepped');
 
 			/**
 			 * The breakdown where there is no pointer.

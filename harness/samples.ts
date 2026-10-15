@@ -3583,8 +3583,9 @@ export function brokenSamples(): Sample[] {
 		 * **The other three fenced components' read errors, one breakage each**, so
 		 * three of the four ways `readFenced` refuses a block are on screen and
 		 * none of them twice. The fourth, `Section has more than one sheet
-		 * block.`, is not drawn: it is the same one-line refusal in the same
-		 * cell, and a second fence is a paste rather than a retyped value. A
+		 * block.` and its fix, is not drawn: it is the same two-sentence refusal,
+		 * fault then fix, in the same cell, and a second fence is a paste rather
+		 * than a retyped value. A
 		 * value of the wrong kind is not among
 		 * them: Card, Card set and Pool read every value as text and leave the
 		 * meaning to the face, so their `read` fails only on the block's shape.
@@ -3619,7 +3620,7 @@ export function brokenSamples(): Sample[] {
 		 * component drew, with the field still there to fix it. Nothing else stages a
 		 * body this component holds and will not draw, which is why it is worth
 		 * staging — and the message has to carry the fix rather than the fault:
-		 * "A picture is an embed" plus the syntax.
+		 * "Write the picture as an embed" plus the syntax.
 		 *
 		 * On the portrait alone. Breaking every Image sample would put one error
 		 * across the whole row on a view whose whole job is the states side by side,

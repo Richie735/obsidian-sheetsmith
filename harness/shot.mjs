@@ -1072,10 +1072,13 @@ const DEFAULTS = [
 	},
 	{
 		/*
-		 * **The panel on a narrow pane**, where it clamps to the viewport minus a
-		 * gutter and sits inside a table that is itself scrolling. A 520 window
-		 * with a 380 container, from when 520 was the narrowest a shot could
-		 * honestly show; `sheet-modifier-form-viewport-380` is the true 380.
+		 * **The panel on a narrow pane**, inside a table that is itself scrolling.
+		 * A 520 window with a 380 container, from when 520 was the narrowest a shot
+		 * could honestly show; `sheet-modifier-form-viewport-380` is the true 380.
+		 * **What this one shows is the overhang, and it is ruled** (`docs/UI.md`
+		 * §9): the panel is bounded by the window, not the pane, so it draws at its
+		 * full 390 from 105 to 495 against a sheet ending at 449, and stays
+		 * inside the window's 16px gutter, as `Menu` would.
 		 */
 		name: 'sheet-modifier-form-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,

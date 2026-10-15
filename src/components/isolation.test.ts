@@ -392,7 +392,7 @@ describe('a refusal sentence is written in one place', () => {
 		 * sending the reader to a different component in the older words.
 		 */
 		'is a web address, and a picture has to be a file in this vault',
-		'A picture is an embed',
+		'Write the picture as an embed',
 		/*
 		 * **The two a resolved reference says**, and they were the pair this scan
 		 * could not see: `embed-rule.ts` shared the predicate and left its

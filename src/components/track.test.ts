@@ -173,7 +173,7 @@ describe('track.read', () => {
 		const result = track.read('\n```sheet\nvalue: lots\n```\n', config);
 		expect(result).toEqual({
 			ok: false,
-			error: '"lots" is not a number of marks.',
+			error: '"lots" is not a number of marks. Write a whole number after its key in the note.',
 		});
 	});
 
@@ -1985,14 +1985,15 @@ describe('a Track the character may add rows to', () => {
 			const read = track.read(body, kills);
 			expect(read).toEqual({
 				ok: false,
-				error: 'Duplicate key "Goblins" in sheet block.',
+				error:
+					'Duplicate key "Goblins" in sheet block. Keep one "Goblins" line in the note and delete the rest.',
 			});
 		});
 
 		it('is a malformed section where a value half is not marks', () => {
 			expect(track.read('\n```sheet\nGoblins: frog\n```\n', kills)).toEqual({
 				ok: false,
-				error: '"frog" is not a number of marks.',
+				error: '"frog" is not a number of marks. Write a whole number after its key in the note.',
 			});
 		});
 
@@ -3229,12 +3230,12 @@ describe('a flag track', () => {
 			// fix they could not use (SPEC §10).
 			expect(track.read('\n```sheet\nvalue: maybe\n```\n', flag)).toEqual({
 				ok: false,
-				error: '"maybe" is not yes or no.',
+				error: '"maybe" is not yes or no. Write yes or no after its key in the note.',
 			});
 			// And a run of segments still says marks, since that is what it holds.
 			expect(
 				track.read('\n```sheet\nvalue: maybe\n```\n', { ...flag, count: 6 }),
-			).toEqual({ ok: false, error: '"maybe" is not a number of marks.' });
+			).toEqual({ ok: false, error: '"maybe" is not a number of marks. Write a whole number after its key in the note.' });
 		});
 
 		it('round-trips a flag section byte for byte', () => {

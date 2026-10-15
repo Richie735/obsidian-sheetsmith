@@ -267,6 +267,43 @@ describe('the placement both floating surfaces share', () => {
 		}
 	});
 
+	it('is bounded by the window, not by the narrow pane it was opened in', () => {
+		/*
+		 * The ruling in `docs/UI.md` §9: a surface hung off `document.body` is app
+		 * chrome, and app chrome is bounded by the window, as Obsidian's own `Menu`
+		 * is when it opens from a narrow sidebar. So a 390px panel opened from a
+		 * 380px sheet in a 520px window (`sheet-modifier-form-narrow`) overhangs
+		 * the sheet and stays 16px inside the window, rather than being squeezed
+		 * into the pane or clamped to its edge. Nothing here reads the container;
+		 * this pins that nothing starts to.
+		 */
+		const was = window.innerWidth;
+		Object.defineProperty(window, 'innerWidth', { configurable: true, value: 520 });
+		try {
+			const pane = document.createElement('div');
+			pane.className = 'sheetsmith-view';
+			document.body.appendChild(pane);
+			pane.getBoundingClientRect = () =>
+				({ left: 71, right: 449, top: 0, bottom: 2000, width: 378, height: 2000 }) as DOMRect;
+			const control = anchor({ left: 300, top: 400, bottom: 420 });
+			pane.appendChild(control);
+			const box = vi
+				.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+				.mockReturnValue({ left: 0, top: 0, bottom: 300, width: 390, height: 300 } as DOMRect);
+			try {
+				showAnchoredPanel(control, 'One', 'a', {});
+			} finally {
+				box.mockRestore();
+			}
+			const panel = document.querySelector<HTMLElement>('.sheetsmith-panel');
+			// 520 - 390 - 16: the window's gutter, past the pane's right edge at 449.
+			expect(panel?.style.left).toBe('114px');
+			pane.remove();
+		} finally {
+			Object.defineProperty(window, 'innerWidth', { configurable: true, value: was });
+		}
+	});
+
 	it('puts both below the anchor where there is no room above', () => {
 		// Above where there is room, below where there is not — one arithmetic, so
 		// the flip cannot happen for one surface and not the other.

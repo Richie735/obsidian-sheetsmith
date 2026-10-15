@@ -60,7 +60,7 @@ const MARKDOWN_IMAGE = /^!\[[^\]]*\]\(([^)]*)\)$/;
  * embed, and that ordering is the whole of the bug it fixes. `parseEmbed` only
  * recognises `![[…]]`, so `![](https://…)` — the spelling the demand actually
  * arrives in, because it is the one Obsidian itself renders — was falling through
- * to "a picture is an embed". Doing what that says produces `![[https://…]]`,
+ * to the embed refusal. Doing what that says produces `![[https://…]]`,
  * which is refused again by a different message sending the reader to a different
  * component. Two refusals to reach one answer, and the first one's advice was
  * wrong: PATTERNS §4 asks the text to name the fix, and a fix that leads to a
@@ -128,7 +128,7 @@ export function embedRefusal(source: string): string | null {
 		return `"${target}" is a web address, and a picture has to be a file in this vault. Put a remote picture in a Rich text block instead, where Obsidian fetches it under your own settings.`;
 	}
 	if (parseEmbed(source) === null) {
-		return `A picture is an embed: ${EMBED_PLACEHOLDER}.`;
+		return `Write the picture as an embed, like ${EMBED_PLACEHOLDER}.`;
 	}
 	return null;
 }
