@@ -3620,7 +3620,7 @@ export function brokenSamples(): Sample[] {
 		 * component drew, with the field still there to fix it. Nothing else stages a
 		 * body this component holds and will not draw, which is why it is worth
 		 * staging — and the message has to carry the fix rather than the fault:
-		 * "A picture is an embed" plus the syntax.
+		 * "Write the picture as an embed" plus the syntax.
 		 *
 		 * On the portrait alone. Breaking every Image sample would put one error
 		 * across the whole row on a view whose whole job is the states side by side,

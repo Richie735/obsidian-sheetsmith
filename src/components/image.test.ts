@@ -414,10 +414,10 @@ describe('image.render — a body it cannot use is still editable', () => {
 	const cases: [string, string][] = [
 		['![](https://example.com/p.png)', 'web address'],
 		['![[https://example.com/p.png]]', 'web address'],
-		['Sildar Hallwinter.png', 'A picture is an embed'],
-		['![](Sildar.png)', 'A picture is an embed'],
-		['A picture goes here.', 'A picture is an embed'],
-		['![[a.png]] ![[b.png]]', 'A picture is an embed'],
+		['Sildar Hallwinter.png', 'Write the picture as an embed'],
+		['![](Sildar.png)', 'Write the picture as an embed'],
+		['A picture goes here.', 'Write the picture as an embed'],
+		['![[a.png]] ![[b.png]]', 'Write the picture as an embed'],
 	];
 
 	it.each(cases)('keeps the field for %s', (source, expected) => {
@@ -456,7 +456,7 @@ describe('image.render — a body it cannot use is still editable', () => {
 		const hidden = render({ hideLabel: true }, { source: 'Sildar.png' });
 		expect(hidden.querySelector('.sheetsmith-image-label')).toBeNull();
 		expect(error(hidden)).toBe(
-			'Portrait: A picture is an embed: ![[Portrait.png]].',
+			'Portrait: Write the picture as an embed, like ![[Portrait.png]].',
 		);
 
 		// A container that already named it is the second way to have no heading.
@@ -465,7 +465,7 @@ describe('image.render — a body it cannot use is still editable', () => {
 
 		// And it never says it twice: with the heading drawn, the message is bare.
 		expect(error(render({}, { source: 'Sildar.png' }))).toBe(
-			'A picture is an embed: ![[Portrait.png]].',
+			'Write the picture as an embed, like ![[Portrait.png]].',
 		);
 	});
 

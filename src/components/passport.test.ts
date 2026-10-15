@@ -1269,7 +1269,7 @@ describe('passport.render — the picture', () => {
 		expect(field.value).toBe('Thora.png');
 		// The message is `embed-rule.ts`'s, so a reader meets one sentence here
 		// and in an Image.
-		expect(error(el)).toBe('A picture is an embed: ![[Portrait.png]].');
+		expect(error(el)).toBe('Write the picture as an embed, like ![[Portrait.png]].');
 	});
 
 	it('clears a standing refusal once the draft is acceptable again', () => {
