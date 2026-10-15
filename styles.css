@@ -9237,7 +9237,7 @@ a.sheetsmith-notice-action {
    specificity (0,2,0) is what actually clears (0,1,1); the name is always
    inside its own row, so nesting the selector costs nothing. */
 .sheetsmith-tree-row .sheetsmith-tree-name {
-	padding: 0;
+	/* Padding is the doubled rule below the canvas's, past the tablet rule. */
 	border: none;
 	border-radius: 0;
 	background: none;
@@ -9344,7 +9344,7 @@ a.sheetsmith-notice-action {
 	justify-content: center;
 	width: var(--size-4-6);
 	height: var(--size-4-6);
-	padding: 0;
+	/* Padding is the doubled rule below the canvas's, past the tablet rule. */
 	margin: 0;
 	border: none;
 	border-radius: var(--radius-s);
@@ -10801,7 +10801,7 @@ a.sheetsmith-notice-action {
 	inset: 0;
 	height: 100%;
 	margin: 0;
-	padding: 0;
+	/* Padding is the doubled rule below, past the tablet rule. */
 	border: 1px solid transparent;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -11171,6 +11171,22 @@ a.sheetsmith-notice-action {
 		transition: none;
 	}
 
+}
+
+/* **The pane's own buttons, past Obsidian's tablet rule**, which is
+   `.is-tablet button:not(.clickable-icon)` at (0,2,1): sheet.css's foot, one
+   surface over (`docs/UI.md` §2). A tree row's name and its chevron took
+   `4px 20px` there, the name growing from 49 to 89px wide and the chevron from
+   24 to 40. The overlay's box did not move, since it is border-box, inset and
+   empty, and it is here so the guard needs no exception for a rule that loses.
+   **The padding alone, on a doubled class**, so neither button's fill is lifted
+   over its own `:hover` or `:focus-visible`. A rule of the editor's own rather
+   than a line in sheet.css's list, because the sheet knows nothing of the
+   editor; `styles.test.ts` keeps the two bodies apart on purpose. */
+.sheetsmith-tree-row .sheetsmith-tree-name.sheetsmith-tree-name,
+.sheetsmith-tree-row .sheetsmith-tree-disclosure.sheetsmith-tree-disclosure,
+.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-canvas-overlay {
+	padding: 0;
 }
 
 /* The attribute list has two fixed tracks; these lists vary by what the

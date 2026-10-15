@@ -3781,11 +3781,32 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		'sheetsmith-panel-remove',
 		'sheetsmith-track-harm',
 	];
+	/**
+	 * The layout editor pane's own buttons that set padding
+	 * (`docs/features/layout-editor-narrow-regime.md` §5), a list of the pane's
+	 * rather than more lines in the sheet's, since the two are held to one rule
+	 * from two stylesheets that must not know each other. Taken the same way, over
+	 * CDP at 820 with each tree row selected in turn: the name and the chevron
+	 * moved, and the overlay's computed padding moved under a box that did not.
+	 */
+	const EDITOR_BUTTONS = [
+		'sheetsmith-tree-name',
+		'sheetsmith-tree-disclosure',
+		'sheetsmith-canvas-overlay',
+	];
+	/**
+	 * Classes on a pane `<button>` that set no padding of the plugin's own. Every
+	 * **Add …** footer button, **Add row** among them, takes the app's chrome
+	 * whole, and so its tablet padding; `clickable-icon` is the class the app's
+	 * tablet rule excludes by name; and **Back to the selection** is a text button
+	 * in the app's own chrome.
+	 */
+	const EDITOR_APP_CHROME = ['mod-cta', 'clickable-icon', 'sheetsmith-panel-back'];
 
-	/** Every literal class the sheet's source writes onto a `<button>` it creates. */
-	function buttonClassesInSource(): string[] {
+	/** Every literal class the source in `dirs` writes onto a `<button>` it creates. */
+	function buttonClassesInSource(dirs: readonly string[]): string[] {
 		const found = new Set<string>();
-		for (const dir of ['components', 'view', 'interaction']) {
+		for (const dir of dirs) {
 			const at = new URL(`./${dir}/`, import.meta.url);
 			for (const file of readdirSync(at)) {
 				if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
@@ -3809,10 +3830,29 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 	}
 
 	it('lists every class the source writes onto a sheet button, or exempts it', () => {
-		const inSource = buttonClassesInSource();
+		const inSource = buttonClassesInSource(['components', 'view', 'interaction']);
 		// The read finds the bulk of them, or it holds nothing.
 		expect(inSource.length).toBeGreaterThanOrEqual(20);
 		expect(inSource.filter((cls) => !BUTTONS.includes(cls) && !APP_CHROME.includes(cls))).toEqual([]);
+	});
+
+	it('lists every class the source writes onto a pane button, or exempts it', () => {
+		const inSource = buttonClassesInSource(['editor']);
+		// The three, and the app-chrome classes beside them: a read that found
+		// none of the pane's own would pass on an empty list. The editor's level
+		// sample wears `.sheetsmith-view` and the sheet's ring, so the sheet's list
+		// holds it.
+		expect(inSource.filter((cls) => EDITOR_BUTTONS.includes(cls)).sort()).toEqual(
+			[...EDITOR_BUTTONS].sort(),
+		);
+		expect(
+			inSource.filter(
+				(cls) =>
+					!EDITOR_BUTTONS.includes(cls) &&
+					!EDITOR_APP_CHROME.includes(cls) &&
+					!BUTTONS.includes(cls),
+			),
+		).toEqual([]);
 	});
 
 	/** Every selector giving a sheet button padding, and those too light to keep it. */
@@ -3823,7 +3863,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 			if (!declarations(rule.body).some((one) => /^padding(-[\w-]+)?\s*:/.test(one))) continue;
 			for (const selector of selectorList(rule.selector)) {
 				const classes = (subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
-				if (!classes.some((cls) => BUTTONS.includes(cls))) continue;
+				if (!classes.some((cls) => BUTTONS.includes(cls) || EDITOR_BUTTONS.includes(cls))) continue;
 				found.push(selector);
 				if (!heavier(specificity(selector), TABLET_RULE)) light.push(selector);
 			}
@@ -3837,7 +3877,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		// padding rule went missing cannot hide behind another's count.
 		const classesIn = (selector: string) =>
 			(subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
-		const unmatched = BUTTONS.filter(
+		const unmatched = [...BUTTONS, ...EDITOR_BUTTONS].filter(
 			(cls) => !found.some((selector) => classesIn(selector).includes(cls)),
 		);
 		expect(unmatched).toEqual([]);
@@ -3854,6 +3894,10 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 			padded('.sheetsmith-view .sheetsmith-tabset-tab { padding-inline: 0; }').light,
 		).toHaveLength(1);
 		expect(padded('.sheetsmith-pool-step { padding: 0; }').light).toHaveLength(1);
+		// The pane's own, at the (0,2,0) every one of them shipped at.
+		expect(padded('.sheetsmith-tree-row .sheetsmith-tree-name { padding: 0; }').light).toEqual([
+			'.sheetsmith-tree-row .sheetsmith-tree-name',
+		]);
 		expect(
 			padded(
 				'.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring { padding: 0; }\n' +
