@@ -159,6 +159,26 @@ describe('editing a component', () => {
 		);
 	});
 
+	it("makes the position fields number inputs, which Obsidian's phone rule does not select", () => {
+		/*
+		 * `docs/features/layout-editor-narrow-regime.md`: the app's phone rule is
+		 * `.is-mobile input[type='text'] { width: 100% }` at (0,2,1), with no
+		 * `number` counterpart, so these four keep their 5em on a phone only for
+		 * as long as they are not text fields. Pinned, because a change to
+		 * `addText` here would bring the backlog row back with nothing reporting it.
+		 */
+		const fields = (['col', 'row', 'width', 'height'] as const).map((key) =>
+			control<HTMLInputElement>(harness, `pos-armour-${key}`),
+		);
+		expect(fields.map((field) => field.getAttribute('type'))).toEqual([
+			'number',
+			'number',
+			'number',
+			'number',
+		]);
+		expect(fields.every((field) => !field.matches("input[type='text']"))).toBe(true);
+	});
+
 	it('never touches the other components', async () => {
 		const before = (await harness.stored()).components[1];
 		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
