@@ -1321,8 +1321,29 @@ closed. The last three are three of the four shapes `readFenced` refuses; the
 fourth, a section holding a second sheet block, is not drawn. A value
 of the wrong kind is not one for Card, Card set or Pool, which read every value as
 text. Which component carries which is argued in `harness/samples.ts`'s
-`brokenSamples()`. **These three fail the rule above**, naming the fault and not
-the fix, where a record's copy adds one; tracked in `docs/BACKLOG.md` § UI.
+`brokenSamples()`.
+
+**Each of `readFenced`'s four refusals is the fault and then the fix, and the fix
+names the note** [checked: `fenced.test.ts`]: `Line "GP 7" is not a "key: value"
+entry. Put a colon between its key and its value in the note, or delete the
+line.`, `Duplicate key "max" in sheet block. Keep one "max" line in the note and
+delete the rest.`, `Sheet block is never closed. Add a line holding only ``` after
+its last entry in the note.`, and `Section has more than one sheet block. Merge
+them into one in the note, or delete the extra one.` In the parser rather than in
+each component, because Card, Card set, Pool, Track, Passport and Roster all hand
+the message on verbatim and six copies of one piece of advice drift. **The fix
+says "in the note"** because nothing on the sheet can repair a block it cannot
+read, and the reader may never have opened the note in source mode. A record
+adds only what its list alone knows: `Every other spell on this list still
+works.`, where it used to add a fix of its own, which with the parser's would
+have said the fix twice. **Track's refusal of a value its run cannot read takes
+the same shape** [checked: `track.test.ts`]: `"maybe" is not yes or no. Write yes
+or no after its key in the note.` on a flag, `… is not a number of marks. Write a
+whole number after its key in the note.` on a run. Those six are every refusal a
+component makes of its sheet block: Card, Card set and Pool read every value as
+text, Passport's other refusals are of its layout, and Roster's of its markdown
+table, which is not this rule's subject. The layout-side refusal of a fence key is not one of them, and still
+gives its reason without its fix (`docs/BACKLOG.md` § UI).
 
 ---
 

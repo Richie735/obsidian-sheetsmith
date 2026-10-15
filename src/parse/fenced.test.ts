@@ -55,6 +55,25 @@ describe('readFenced', () => {
 	it('errors on duplicate keys', () => {
 		expect(readFenced('\n```sheet\na: 1\na: 2\n```\n').ok).toBe(false);
 	});
+
+	it('follows every refusal\'s fault with its fix, in the note', () => {
+		// `docs/UI.md` §10: error text names the fix. Each message is the fault,
+		// then a second sentence saying what to change in the note, which every
+		// fenced component hands on verbatim.
+		const refusals: Record<string, string> = {
+			'\n```sheet\nGP 7\n```\n':
+				'Line "GP 7" is not a "key: value" entry. Put a colon between its key and its value in the note, or delete the line.',
+			'\n```sheet\nmax: 22\nmax: 24\n```\n':
+				'Duplicate key "max" in sheet block. Keep one "max" line in the note and delete the rest.',
+			'\n```sheet\nvalue: 1\n':
+				'Sheet block is never closed. Add a line holding only ``` after its last entry in the note.',
+			'\n```sheet\na: 1\n```\n```sheet\nb: 2\n```\n':
+				'Section has more than one sheet block. Merge them into one in the note, or delete the extra one.',
+		};
+		for (const [body, error] of Object.entries(refusals)) {
+			expect(readFenced(body)).toEqual({ ok: false, error });
+		}
+	});
 });
 
 describe('writeFenced', () => {

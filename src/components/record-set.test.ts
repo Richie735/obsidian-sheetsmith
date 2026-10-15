@@ -290,10 +290,10 @@ describe('recordSet.read', () => {
 		const held = readData(body).records;
 		expect(held[0]?.error).toBeNull();
 		expect(held[1]?.error).toContain('not an entry');
-		// And it names the action rather than only the fault (PATTERNS §4).
-		expect(held[1]?.error).toContain(
-			'every other one on this list still works',
-		);
+		// And it names the action rather than only the fault (PATTERNS §4):
+		// the fence's own fix, then the list's word that the rest still works.
+		expect(held[1]?.error).toContain('Put a colon between its key and its value in the note');
+		expect(held[1]?.error).toMatch(/Every other \w+ on this list still works\.$/);
 	});
 
 	it('reports a fence that never closes, and keeps the record', () => {

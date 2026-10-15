@@ -1772,9 +1772,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				name: block.name,
 				fields,
 				body: bodyText(block.rest),
+				// `readFenced` already says what to fix, and where; what only this
+				// list knows is that the damage stops at this one record.
 				error: parsed.ok
 					? null
-					: `${parsed.error} Fix this ${noun} in the note; every other one on this list still works.`,
+					: `${parsed.error} Every other ${noun} on this list still works.`,
 			};
 		});
 		return { ok: true, data: { records } };
