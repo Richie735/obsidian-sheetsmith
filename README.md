@@ -100,6 +100,16 @@ With the plugin disabled, or on a device that does not have it, layout files are
 
 <!-- HELD: the sentence on how Obsidian Sync treats .sheetsmith files goes here once the owner has observed it in the app (docs/features/visible-layout-files.md, Documentation). Not written from the docs. -->
 
+### CSS snippets
+
+A [CSS snippet](https://help.obsidian.md/snippets) can tune a sheet through the custom properties Sheetsmith declares on `body`, each prefixed `--sheetsmith-`. To resize the small round controls, such as level rings and the delete and modifier buttons beside them, set `--sheetsmith-inline-control-factor`, a plain number of ems that is `1.6` by default and `2.2` on a touch screen; a value you set applies to both. Set it on `body`, and leave `--sheetsmith-inline-control` alone: that one is derived from the factor, and a table's room beside its row names reads the factor, so overriding the derived value puts the two out of step.
+
+```css
+body {
+	--sheetsmith-inline-control-factor: 1.8;
+}
+```
+
 ## Development
 
 ```bash

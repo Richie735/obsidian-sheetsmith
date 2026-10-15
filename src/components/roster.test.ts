@@ -975,6 +975,18 @@ describe('render', () => {
 			]);
 		});
 
+		it('wraps a level drawn as a dropdown, so it can wear the chevron', () => {
+			// Table's wrapper, for its reason (`docs/UI.md` §9's one chevron).
+			const select = { ...levelled, columns: [{ ...training, input: 'select' as const }] };
+			const result = roster.read(levelledBody, select);
+			const { el } = recording(select, result.ok ? result.data : null);
+			const menus = Array.from(el.querySelectorAll('tbody select'));
+			expect(menus).toHaveLength(2);
+			for (const menu of menus) {
+				expect(menu.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+			}
+		});
+
 		it('repaints as it cycles, without waiting for the view to rebuild', () => {
 			const result = roster.read(levelledBody, levelled);
 			const data = result.ok ? result.data : null;

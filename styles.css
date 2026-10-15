@@ -43,8 +43,25 @@ body {
 	   The size is the whole of the agreement, and the treatments deliberately are
 	   not shared: `docs/UI.md` §9 records that each of these controls owns its own
 	   resting colour, hover surface and which state stands down for which. Grows
-	   for a coarse pointer, in sheet.css. */
-	--sheetsmith-inline-control: 1.6em;
+	   for a coarse pointer, in sheet.css.
+
+	   **Spelt as a unitless factor of `1em`**, so a length that has to be the
+	   control's at a different font size than the one it is used at can take the
+	   factor over that size instead: an open table's glyph band is one control at
+	   the cells' `--font-ui-small`, used in a name cell at the name's size, where
+	   this `em` would resolve 1.2 times too wide. The coarse-pointer block raises
+	   the factor, so both follow it.
+
+	   **So the factor is the knob, and the length is derived from it**: a
+	   snippet overrides `--sheetsmith-inline-control-factor`, on `body`.
+	   Overriding the length instead resizes the controls but not the table's
+	   glyph band, which reads the factor, and overriding the factor below
+	   `body` moves the band but not the controls, since the length is
+	   substituted here. */
+	--sheetsmith-inline-control-factor: 1.6;
+	--sheetsmith-inline-control: calc(
+		var(--sheetsmith-inline-control-factor) * 1em
+	);
 	/* **How wide a record's name may grow before its own fields stop following
 	   it.** Published as a knob because it is a judgement about reading rather
 	   than a measurement: pinned to the trailing edge instead, a design review
@@ -387,7 +404,7 @@ body {
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -595,7 +612,7 @@ body {
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -611,6 +628,20 @@ body {
 .sheetsmith-panel .sheetsmith-panel-add:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
+}
+
+/* **The panel's two list buttons' padding, past Obsidian's tablet rule.** On a
+   tablet the app adds `.is-tablet button:not(.clickable-icon)` with
+   `padding: var(--size-4-1) var(--size-4-5)` at (0,2,1), over this panel's
+   (0,2,0) scope, so a line drew 20px in from its edge. The padding alone, on a
+   doubled class at (0,3,0), as the sheet's own block at the foot of `sheet.css`
+   does and for its reason: doubling the whole rule would lift it over the
+   lines' own `:hover` and `:focus-visible`. **Save**, **Cancel**, **Confirm**
+   and **Remove** are not here, because they take the app's button chrome whole
+   (`docs/UI.md` §2), so the app's tablet padding is theirs too. */
+.sheetsmith-panel .sheetsmith-panel-line.sheetsmith-panel-line,
+.sheetsmith-panel .sheetsmith-panel-add.sheetsmith-panel-add {
+	padding: var(--size-2-2) var(--size-2-3);
 }
 
 /* A rule above the promote row, because it is a different question from the five
@@ -1126,7 +1157,7 @@ body {
    Obsidian's own button styling would never reveal the loss on a control that
    painted its own surface (§2). */
 .sheetsmith-view .sheetsmith-tabset-tab {
-	padding: var(--size-2-2) 0 var(--size-2-3);
+	/* Padding: the tablet block at this file's foot. */
 	border: 0;
 	/* Reserves the mark the active tab paints, so nothing shifts by two pixels
 	   when the selection moves. */
@@ -1481,11 +1512,12 @@ body {
    cannot run underneath it.
 
    **One mark for every menu on a sheet, by selector list**: a record's select
-   wears the same chevron, drawn by these same declarations, so a reader learns
-   one sign for "this opens a list" (`docs/UI.md` §9). Where it sits is each
-   menu's own, and follows this rule. */
+   and a Table's or a Roster's cell select wear the same chevron, drawn by these
+   same declarations, so a reader learns one sign for "this opens a list"
+   (`docs/UI.md` §9). Where it sits is each menu's own, and follows this rule. */
 .sheetsmith-card-dropdown::after,
-.sheetsmith-view .sheetsmith-record-menu::after {
+.sheetsmith-view .sheetsmith-record-menu::after,
+.sheetsmith-view .sheetsmith-table-menu::after {
 	/* Named here because each placement below centres on them: a placement that
 	   restated 0.34em or the lift as its own number would decentre the moment
 	   this rule was retuned. On the mark itself, not `body`, so not a knob (§3 of
@@ -1833,9 +1865,10 @@ body {
 
 /* One step further for someone who asked for it, since the default is
 	   already what this block would otherwise raise it to. A record's menu
-	   wears the same mark, so it rises with it. */
+	   and a cell's wear the same mark, so they rise with it. */
 .sheetsmith-card-dropdown::after,
-.sheetsmith-view .sheetsmith-record-menu::after {
+.sheetsmith-view .sheetsmith-record-menu::after,
+.sheetsmith-view .sheetsmith-table-menu::after {
 		border-color: var(--text-normal);
 	}
 
@@ -1905,7 +1938,8 @@ body {
 .sheetsmith-view .sheetsmith-table {
 	width: 100%;
 	border-collapse: collapse;
-	/* Cells are inputs, not prose: a table row is one line, always. */
+	/* Cells are inputs, not prose: a table row is one line, but for a declared
+	   name too long for its card (below). */
 	white-space: nowrap;
 }
 
@@ -2050,6 +2084,25 @@ body {
 	.sheetsmith-table-has-text
 	.sheetsmith-table-name {
 	width: auto;
+}
+
+/* **A declared row's name wraps rather than cover the cells beside it**, on a
+   table with no prose column (`docs/UI.md` §4). The name cell is sticky and
+   opaque, and a declared name is plain text the room does not hold, since a
+   closed table has no box to declare one on: Tool training at `text=24` in a
+   520 container drew `Thieves' tools` at 158.2px in a 155px scroller, so no
+   scroll reached its toggle, no pointer could press it, and Tab still landed
+   on it, behind the name, with its focus ring hidden. With no prose column the
+   name takes the slack (the rule above), so it wraps only where the slack is
+   shorter than the name — a narrow card, never the default sheet, whose tables
+   draw exactly as before. Not on a table with prose, where the name column is
+   `auto` and would fall to its longest word. A field keeps its one line, since
+   an input does not wrap, and the sizer is `pre`. */
+.sheetsmith-view
+	.sheetsmith-table:not(.sheetsmith-table-has-text)
+	tbody
+	.sheetsmith-table-name {
+	white-space: normal;
 }
 
 /* Doubled for (0,4,0), one class past the doubled 4em above: the base is at
@@ -2225,7 +2278,7 @@ body {
 	vertical-align: middle;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: 1.5px solid var(--text-faint);
 	border-radius: 50%;
@@ -2393,11 +2446,13 @@ body {
    name as wide as the scroller hides every cell that scrolls under it, and in a
    narrow card no scroll position reached a row's modifier or remove control. The
    other cells need not all fit beside the name, only one at a time, since
-   scrolling brings each into the band left over in turn — so the band is one
-   constant and not a sum over each table's trailing cells: one number cell,
-   which takes a glyph, the remove control or a number field whole, and a text
-   field in part. Wide cards never reach the cap, so the floor is unchanged
-   there; in a narrow one the field's own `6em` minimum takes over again.
+   scrolling brings each into the band left over in turn — so the band is the
+   widest single cell, never a sum over each table's trailing cells. It is one
+   number cell, which takes a glyph, the remove control or a number field whole,
+   and a text field in part; or one glyph cell on a table whose every trailing
+   cell is a glyph, the rule after this one. Wide cards never reach the cap, so
+   the floor is unchanged there; in a narrow one the field's own `6em` minimum
+   takes over again.
 
    **`cqi`, against the box**, because nothing else can say how wide the
    scroller is. A percentage `max-width` inside a table cell resolves against
@@ -2412,7 +2467,9 @@ body {
    **The room is declared once, here, and both floors are held under it**: the
    sizer's, and the field's own `6em`, which outweighed the sizer in a narrow
    card until it was held too. A custom property's `cqi` resolves where it is
-   used, so in a name cell it is this box. One number cell:
+   used, so in a name cell it is this box. What it leaves is
+   `--sheetsmith-table-band`, which is the one thing a table varies: the glyph
+   band below overrides the band alone, never the room. One number cell:
    `.sheetsmith-table-input`'s `width: 4em` at its own `--font-ui-small`
    (border-box, so padding and border are inside it), plus its cell's inline
    padding. The name cell's own inline padding comes off too, since the cell is
@@ -2426,8 +2483,25 @@ body {
    name 35px. */
 .sheetsmith-view .sheetsmith-table-box {
 	container-type: inline-size;
+	--sheetsmith-table-band: calc(4 * var(--font-ui-small) + 2 * var(--size-4-2));
 	--sheetsmith-table-name-room: calc(
-		100cqi - 2 * var(--size-4-2) - 4 * var(--font-ui-small) - 2 *
+		100cqi - 2 * var(--size-4-2) - var(--sheetsmith-table-band)
+	);
+}
+
+/* **A table whose every trailing cell is a glyph keeps a band one glyph wide**,
+   stamped by `table.ts` where each column is a modifier glyph with its heading
+   hidden, beside the remove glyph (`docs/UI.md` §4). One number cell there was
+   a band no cell needed: Worn items at 520 held its names to 86.7px and
+   scrolled 5px of the remove cell's padding. A glyph cell is the inline
+   control at the cells' `--font-ui-small` plus its cell's padding: the token's
+   factor over that size, since the token itself is `em` and would resolve at
+   the name's size where the room is used. The coarse-pointer block raises the
+   factor on `body`, so this follows it with no twin of its own. The band
+   alone, so the room is still the one declared above. */
+.sheetsmith-view .sheetsmith-table-box.sheetsmith-table-glyph-band {
+	--sheetsmith-table-band: calc(
+		var(--sheetsmith-inline-control-factor) * var(--font-ui-small) + 2 *
 			var(--size-4-2)
 	);
 }
@@ -2630,7 +2704,7 @@ body {
 	vertical-align: middle;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -2763,7 +2837,7 @@ body {
 	width: 100%;
 	min-height: var(--sheetsmith-inline-control, 1.6em);
 	margin-top: auto;
-	padding: var(--size-2-2);
+	/* Padding: the tablet block at this file's foot. */
 	border: none;
 	border-top: 1px solid var(--background-modifier-border);
 	border-radius: 0;
@@ -2827,14 +2901,18 @@ body {
    not measure differently under the same finger. */
 @media (pointer: coarse) {
 body {
-		--sheetsmith-inline-control: 2.2em;
+		--sheetsmith-inline-control-factor: 2.2;
 	}
 
 }
 
 .sheetsmith-view .sheetsmith-table-select {
 	max-width: 100%;
-	padding: var(--size-2-1) var(--size-4-1);
+	/* The end holds the chevron its wrapper draws inside the field: the mark's
+	   inset, its width and the gap the text keeps from it, as a record's
+	   select keeps. */
+	padding-block: var(--size-2-1);
+	padding-inline: var(--size-4-1) var(--size-4-4);
 	font-size: var(--font-ui-small);
 }
 
@@ -2874,7 +2952,7 @@ body {
 	vertical-align: middle;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: var(--radius-s);
@@ -3426,7 +3504,7 @@ body {
 	flex: none;
 	width: var(--sheetsmith-pool-control, var(--size-4-8));
 	height: var(--sheetsmith-pool-control, var(--size-4-8));
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
@@ -3605,7 +3683,7 @@ body {
 	flex: none;
 	width: var(--sheetsmith-pool-control, var(--size-4-8));
 	height: var(--sheetsmith-pool-control, var(--size-4-8));
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
@@ -4044,7 +4122,7 @@ body {
 }
 
 .sheetsmith-trigger {
-	padding: var(--size-2-1) var(--size-4-2);
+	/* Padding: the tablet block at this file's foot. */
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
@@ -4481,7 +4559,7 @@ a.sheetsmith-notice-action {
 	justify-content: center;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -4669,7 +4747,7 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-level-ring,
 .sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-input,
-.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-select {
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-menu {
 	display: inline-flex;
 	vertical-align: middle;
 }
@@ -6332,7 +6410,7 @@ a.sheetsmith-notice-action {
 	justify-content: center;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -6834,7 +6912,7 @@ a.sheetsmith-notice-action {
 	min-width: 0;
 	height: auto;
 	min-height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: var(--radius-s);
@@ -6910,7 +6988,7 @@ a.sheetsmith-notice-action {
 	flex: 0 0 auto;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -7436,8 +7514,16 @@ a.sheetsmith-notice-action {
    hairline is the control's shape and a mark outside it would read as a
    second, separate thing. It takes no pointer, so a press on the mark is a
    press on the select under it. Sized at the select's own text so the mark's
-   `em` is the menu's. */
-.sheetsmith-view .sheetsmith-record-menu {
+   `em` is the menu's.
+
+   **A Table's and a Roster's cell select sit the same way**, on
+   `.sheetsmith-table-menu`: there the select keeps the app's field box, so
+   the mark goes inside it at its end. On a tablet that box is a pill about
+   1.03:1 against its row, so there the mark is the only sign (`docs/UI.md`
+   §9). Both are at `--font-ui-small`, so one
+   placement serves both. */
+.sheetsmith-view .sheetsmith-record-menu,
+.sheetsmith-view .sheetsmith-table-menu {
 	position: relative;
 	display: inline-flex;
 	min-width: 0;
@@ -7445,7 +7531,8 @@ a.sheetsmith-notice-action {
 	font-size: var(--font-ui-small);
 }
 
-.sheetsmith-view .sheetsmith-record-menu::after {
+.sheetsmith-view .sheetsmith-record-menu::after,
+.sheetsmith-view .sheetsmith-table-menu::after {
 	position: absolute;
 	/* Centred on the line by half its own size, then lifted by the shared
 	   correction. */
@@ -8900,6 +8987,55 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider th,
 .sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider td {
 	border-bottom-color: var(--text-muted);
+}
+
+/* **A sheet button's padding, past Obsidian's tablet rule.** On a tablet the
+   app adds `.is-tablet button:not(.clickable-icon)` with
+   `padding: var(--size-4-1) var(--size-4-5)` at (0,2,1), and every sheet
+   button rule setting padding was (0,2,0) or lighter — the scope's, or a bare
+   class on the pool's steppers and the reset bar's triggers — so each button's
+   own padding was dropped there. A glyph button sized by `--sheetsmith-inline-control` is border-box,
+   so 40px of padding outgrew its width: a level ring drew as a 42 × 33 oval,
+   and a tab gained 40px. Seen in `sheet-tablet`, a driven shot that puts the
+   app's tablet classes on `body`.
+
+   **The padding alone, on a doubled class at (0,3,0)**, the phone width fix's
+   shape (`docs/features/phone-input-width.md`): doubling each whole rule would
+   lift its border and background over the button's own `:hover` and
+   `:focus-visible`, and a rule on the app's selector would have to beat (0,2,1)
+   and still lose to these. No `!important`. The rules this padding came out of
+   say so where it was. `styles.test.ts` holds every sheet button's padding
+   above the tablet rule. */
+.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring,
+.sheetsmith-view .sheetsmith-table-remove-button.sheetsmith-table-remove-button,
+.sheetsmith-view .sheetsmith-table-modifier-button.sheetsmith-table-modifier-button,
+.sheetsmith-view .sheetsmith-pool-step.sheetsmith-pool-step,
+.sheetsmith-view .sheetsmith-pool-adjust-trigger.sheetsmith-pool-adjust-trigger,
+.sheetsmith-view .sheetsmith-pool-adjust-direction.sheetsmith-pool-adjust-direction,
+.sheetsmith-view .sheetsmith-track-action-button.sheetsmith-track-action-button,
+.sheetsmith-view .sheetsmith-track-modifier-button.sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-pool-modifier-button.sheetsmith-pool-modifier-button,
+.sheetsmith-view .sheetsmith-note-mark.sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-passport-part-remove.sheetsmith-passport-part-remove,
+.sheetsmith-view .sheetsmith-passport-add.sheetsmith-passport-add,
+.sheetsmith-view .sheetsmith-record-group-toggle.sheetsmith-record-group-toggle,
+.sheetsmith-view .sheetsmith-record-disclosure.sheetsmith-record-disclosure,
+.sheetsmith-view .sheetsmith-record-modifier.sheetsmith-record-modifier,
+.sheetsmith-view .sheetsmith-record-remove.sheetsmith-record-remove {
+	padding: 0;
+}
+
+.sheetsmith-view .sheetsmith-tabset-tab.sheetsmith-tabset-tab {
+	padding: var(--size-2-2) 0 var(--size-2-3);
+}
+
+.sheetsmith-view .sheetsmith-table-add-button.sheetsmith-table-add-button,
+.sheetsmith-view .sheetsmith-record-add.sheetsmith-record-add {
+	padding: var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-trigger.sheetsmith-trigger {
+	padding: var(--size-2-1) var(--size-4-2);
 }
 
 /*

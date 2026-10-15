@@ -258,7 +258,7 @@
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -466,7 +466,7 @@
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -482,6 +482,20 @@
 .sheetsmith-panel .sheetsmith-panel-add:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
+}
+
+/* **The panel's two list buttons' padding, past Obsidian's tablet rule.** On a
+   tablet the app adds `.is-tablet button:not(.clickable-icon)` with
+   `padding: var(--size-4-1) var(--size-4-5)` at (0,2,1), over this panel's
+   (0,2,0) scope, so a line drew 20px in from its edge. The padding alone, on a
+   doubled class at (0,3,0), as the sheet's own block at the foot of `sheet.css`
+   does and for its reason: doubling the whole rule would lift it over the
+   lines' own `:hover` and `:focus-visible`. **Save**, **Cancel**, **Confirm**
+   and **Remove** are not here, because they take the app's button chrome whole
+   (`docs/UI.md` §2), so the app's tablet padding is theirs too. */
+.sheetsmith-panel .sheetsmith-panel-line.sheetsmith-panel-line,
+.sheetsmith-panel .sheetsmith-panel-add.sheetsmith-panel-add {
+	padding: var(--size-2-2) var(--size-2-3);
 }
 
 /* A rule above the promote row, because it is a different question from the five

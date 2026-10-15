@@ -93,6 +93,24 @@ button was discarded. Every rule whose subject is a control in there now reads
 `.sheetsmith-panel .sheetsmith-panel-…`, at (0,2,0), and `styles.test.ts` checks
 the weight rather than the spelling.
 
+**And (0,2,0) is not the ceiling, because the app has platform rules above it.**
+On a phone `.is-mobile input[type='text']` sets a width at (0,2,1)
+(`docs/features/phone-input-width.md`), and on a tablet
+`.is-tablet button:not(.clickable-icon)` sets `padding: var(--size-4-1)
+var(--size-4-5)` at (0,2,1) — so every sheet button's own padding was dropped
+there, a 1.6em glyph button took 40px of padding, and a level ring drew as a
+42 × 33 oval [checked: `styles.test.ts`; seen in `sheet-tablet`]. Both answers
+are one shape: the declaration the platform rule replaces moves into a rule of
+its own on a doubled class, at (0,3,0), and nothing else moves with it, since a
+doubled whole rule would lift a control's border and fill over its own `:hover`
+and `:focus-visible`. A button that takes the app's chrome whole — the
+anchored panel's **Save**, **Cancel**, **Confirm** and **Remove** — takes the
+app's tablet padding too, which is the app's own control doing what it does
+everywhere. The harness stages a tablet by putting `is-mobile is-tablet` on
+`body` over CDP (`platform=tablet` in `shot.mjs`), against the platform rules
+and variables `harness:calibrate` now carries; it is the app's tablet CSS, not
+a device.
+
 ---
 
 ## 3. Sheetsmith's own knobs
@@ -107,6 +125,11 @@ comment on `--sheetsmith-card-abbr-space` states the test: re-deriving
 constant moved.
 
 A knob is public API once shipped. Renaming it breaks someone's snippet.
+
+**Where a knob is spelt as a factor and a length derived from it, the factor
+is the override point**, on `body`: `--sheetsmith-inline-control-factor`, from
+which `--sheetsmith-inline-control` is derived, because a length that has to
+be the control's at another font size reads the factor, never the length.
 
 ---
 
@@ -138,13 +161,28 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   slack: the reason it yields, "row names are a fixed vocabulary", is false on
   an `openRows` table, where the character types them.
 - **At the default sheet size, beside its sticky name an open table leaves one
-  number cell of room, short only where the name's heading is wider, and every
-  cell's content but prose is seen whole there** [judgement; held at 520 by
+  number cell of room, or one glyph cell where every cell beside the name is a
+  glyph, short only where the name's heading is wider, and every cell's
+  content but prose is seen whole there** [judgement; held at 520 by
   `harness/measure-groups.mjs` check 8, which prints these figures, and prints
   the `text=24` ones below without holding them]. The name's two floors,
   its longest name and its field's `6em`, are held under one room declared on
-  the table's box: the scroller less one number cell
-  (`docs/features/table-name-column-floor.md`). The field's floor used to
+  the table's box: the scroller less one band
+  (`docs/features/table-name-column-floor.md`). **The band is set per table
+  from its own trailing cells, in two values, chosen from the config and never
+  measured.** Where every column is a modifier glyph with its heading hidden,
+  beside the remove glyph, the band is one glyph cell (the inline control at
+  `--font-ui-small` plus its padding, 36.8px, 44.6 under a coarse pointer);
+  everywhere else it is one number cell. One constant cost Worn items 31px of
+  names for nothing — at 520 it held them to 86.7px beside two 36.8px glyphs
+  and still scrolled 5px of the remove cell's padding; with the glyph band they
+  are 117.9, `Shackles` is whole, and the scroll brings the remove glyph whole
+  into a 37.1px room. Measuring each table's widest cell in code was refused:
+  a column is as wide as its heading when that is wider, and a heading is
+  laid-out text, so it needs a layout read on every render that happy-dom
+  cannot see. That is also why a toggle or a level is left out, even with its
+  heading hidden: its heading may show, and a note mark may sit beside its
+  ring. The field's floor used to
   outweigh it, so at 520 Attacks' 155px scroller held a 102px name beside a 68px
   number cell and left 53; it now leaves 68.3, and the name gives with an
   ellipsis: `Longsword`, whole at 102px, reads `Longsw…` at 86.7, which is the
@@ -161,13 +199,32 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   the heading is `--font-smallest`, which is `em`, so it grows with the sheet
   where the cells' `--font-ui-small` does not. Conditions' heading is 126.3px
   and leaves 28.7px of a 155px scroller for an 86.2px `Active` cell, whose ring
-  is wholly behind the name, so the card shows no toggle; Attacks' heading sets
+  is wholly behind the name at rest, so the card shows no toggle until it is
+  scrolled, and then only the ring and none of its cell; Attacks' heading sets
   a 90px name and leaves 65px for its 68px `Hit` cell, and `Dagger` reads
-  `Dagg…`. Not a regression: the field's old `6em` floor was 144px there. It
-  reopens with the clause above, since only clipping or wrapping the heading
-  reaches it. A declared row's
-  name is plain text and is not held, so a long one on an open table widens the
-  column as before.
+  `Dagg…`. Magic items, in a 319px scroller, leaves 67.7px beside its name for
+  a 77.3px `Worn` toggle cell, which its heading widens: the ring is centred
+  and shows whole, so the content holds and the box does not. Not a
+  regression: the field's old `6em` floor was 144px there. It reopens with the
+  clause above, since only clipping or wrapping the heading reaches it, and
+  the seventh rulings pass did not reopen it: the per-table band changes no
+  name heading, so a heading wider than its bound stays the case it was.
+  **A declared row's name is plain text and is not held under the room, so on
+  a table with no prose column it wraps instead** [judgement; seen at
+  `surface=sheet theme=light width=520 text=24`]. A closed table has no box to
+  declare a room on, and the scroller cannot be a container, since Roster
+  shares it. Before the wrap, Tool training at `text=24` in a 520 container
+  drew `Thieves' tools` at 158.2px in a 155px scroller (195px of content): no
+  scroll moved its toggle out from under the name, a pointer at the ring hit
+  the name, and Tab still landed on the ring behind it, its focus ring hidden.
+  Wrapped, the name takes 118px on two lines and the toggle shows whole beside
+  it. Where the table has no prose column the name takes the slack, so it
+  wraps only where the slack is shorter than the name: on the default sheet at
+  1400, 520 and 380, and at `text=24` at 1400, every table measures exactly as
+  it did, and at `text=24` in 520 only Tool training and a Roster's `Sleight of
+  hand` move. A table with prose keeps the one line, since its name column is
+  `auto` and would fall to its longest word, and a declared name on an open
+  table with prose still widens its column as before.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.
@@ -570,7 +627,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name, a Passport's name, a Record set's group header name and a text field's value. **"Its own text" is `value` on an `<input>` and `textContent` everywhere else**, which the fourth consumer forced: a field has no `textContent`, so the first three's spelling would have set the tooltip to the empty string on a clipped field — a reveal that decided there was nothing to reveal. A copy in the caller is forbidden and unguardable, since `scrollWidth` and `clientWidth` are both 0 under happy-dom |
 | A list inside one row of another list | `editor/nested-list-field.ts`; `.sheetsmith-nested-list`, `-line`, `-controls`, `-controls-reserved` | a modifier definition's **Changes**. **The frame only**: the caller draws each line's own controls and names them, so the module knows that no modifier exists — `linked-text.ts`'s arrangement, in the editor. What it owns is the indent, the trailing control track, the remove, and the **Add** footer in `.sheetsmith-entry-footer`'s own clothes. **Indented by geometry rather than a background**, `--size-4-2`, so the nesting survives `forced-colors: active` where an author background is repainted one system colour — and little enough that a definition with one change is still the form that shipped. **A hairline between one line and the next, and spacing alone could not do it**: the forced break puts each line's six controls on two rows, measured 63px apart, against 56px between one line and the next — so the gap said the opposite of the grouping, and raising it far enough would make a two-line entry twice the object a one-line one is. A rule is a difference in kind, it survives forced colors as a border, and it costs a pixel. **The remove is reserved and hidden on the only line there is**, `.sheetsmith-detail-field-reserved`'s argument one element over: a control that is not created gives its width back to the line's grow, so a list holding one-line and two-line entries would read as two forms down the pane. **No reorder and no drag**, which is a refusal: order inside this list is not observable, since a breakdown lists contributors in *definition* order and two changes at one target contest by size (`docs/features/multi-change-definitions.md`) |
 | A problem list under a textarea field | `.sheetsmith-field-problems`, `-problem`, `-problem-line` | the function library, the reset triggers, the bonus types |
-| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select`; the chevron on its wrapper, `.sheetsmith-card-dropdown::after` and `.sheetsmith-record-menu::after`, one mark by selector list | Card's options, Table's and Record set's `level` set to a select. **One chevron, placed by each control** (the paragraph below): beside a card's value, inside a record's hairline; a Table's and a Roster's select draw none yet (`docs/BACKLOG.md` § UI) |
+| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select`; the chevron on its wrapper, `.sheetsmith-card-dropdown::after` and `.sheetsmith-record-menu::after`, one mark by selector list | Card's options, Table's, Roster's and Record set's `level` set to a select. **One chevron, placed by each control** (the paragraph below): beside a card's value, inside a record's hairline and inside a cell select's field (`.sheetsmith-table-menu::after`) |
 | The one sentence a fenced value says about a wikilink | `components/fenced-link.ts` | Record set's fields, a Passport's name and values. **A row for a *sentence*, on `arm-to-confirm.ts`'s precedent** — that row already carries "(the sentences only)" for the same reason: Obsidian indexes no link inside a code fence, so a component whose values live in one refuses a link at the commit, and the sentence is the whole of what the reader is told. Two copies of it is one design pass away from saying two things, which is what `components/isolation.test.ts` scans for by clause. The two words that differ arrive as arguments, so the module knows that neither a record nor a passport exists: a record has a name and a body to move a link into, and a passport has neither |
 | A form anchored to the control that opened it | `ui/anchored-panel.ts`; `.sheetsmith-panel`, `-body`, `-line`, `-fields`, `-field`, `-why`, `-problem` | Table's `modifier` column, Record set's `modifier` field |
 | A value read against its ceiling | `.sheetsmith-pool-ceiling`, `-separator`, `-max` | Pool's max, a Record set `number` field whose ceiling the layout declares or the record holds — **one vocabulary**: the value at full contrast, a `/`, and the ceiling muted with tabular figures. A record overrides the size only, since the pool's ceiling qualifies a headline number and a record's a 13px one; where the ceiling is the record's it is a *field* rather than a span, wearing the record's own chrome and this reading. **Where that field holds a formula** (`Uses: 1 / prof`) it is stacked under a layer drawing what the formula came to (`.sheetsmith-record-worked-out`, `-layer`, `-focused`), §9's stacked arrangement: the number at rest in this same reading and box, so it cannot be told from a typed one, the text on focus, the layer taking no press, and `?` in `.sheetsmith-pool-max-unresolved` with a `.sheetsmith-error` line under the record where it cannot be worked out; a typed number draws no stack at all (`docs/features/record-ceiling-formula.md`). **A Track row whose length the character types takes only the ceiling half** (`.sheetsmith-pool-max`, `.sheetsmith-pool-max-input`), narrowed again to its own row-name scale (`.sheetsmith-track-row-length-input`) — there is no value beside it to separate from, since a run's segments are already the reading of the value the way Pool's own numeral is the reading of its own (`docs/features/track-row-length.md`) |
@@ -1203,12 +1260,14 @@ Obsidian's bare `select` rule sets a height, a background, a shadow and a font
 size, and `styles.test.ts` covers the `-select` naming for it.
 
 **A menu on a sheet wears one chevron, drawn by one rule, and each control places
-it** [judgement; seen in `sheet-record-groups` and its contrast and dark twins].
+it** [judgement; seen in `sheet-record-groups` and its contrast and dark twins,
+and a cell's in the Languages table on `sheet-light`, `sheet-dark`,
+`sheet-forced-colors` and `sheet-contrast-more`].
 A select that has had the app's chrome taken off is a word in a box, and nothing
 else says it opens a list: a record's Spells read `None` and its recharging lists
 `Short rest` as typed text until the sixth rulings pass gave them the
-card's mark. So the mark is one selector list, `.sheetsmith-card-dropdown::after`
-and `.sheetsmith-record-menu::after`, carrying the shape, the size and the lift each placement centres on (`--sheetsmith-chevron-size`, `--sheetsmith-chevron-lift`, declared on the mark, not knobs) in the menu's
+card's mark. So the mark is one selector list, `.sheetsmith-card-dropdown::after`,
+`.sheetsmith-record-menu::after` and `.sheetsmith-table-menu::after`, carrying the shape, the size and the lift each placement centres on (`--sheetsmith-chevron-size`, `--sheetsmith-chevron-lift`, declared on the mark, not knobs) in the menu's
 own `em`, the muted stroke and its raise to `--text-normal` under
 `prefers-contrast: more`; **where it sits is the control's**, because the two
 are not the same object (the paragraph above). A card's chevron is a flex sibling
@@ -1219,9 +1278,16 @@ read as a second thing; it takes no pointer, so pressing it presses the select.
 Both ride on a wrapper because a `<select>` carries no pseudo-element, and both
 are borders rather than an image, so forced colors repaints them (§1). **One
 mark rather than two similar ones**, so a reader learns one sign; a third menu
-joins the list rather than drawing its own. A Table's or a Roster's cell select
-has not joined: it keeps the app's field chrome and draws no chevron at all, and
-no view stages one (`docs/BACKLOG.md` § UI).
+joins the list rather than drawing its own, which is what a Table's and a
+Roster's cell select did in the seventh rulings pass. That select keeps the
+app's field box as the platform draws it, so the mark sits inside it at its
+end on the record's placement rule, by selector list: `.sheetsmith-table-menu`,
+the wrapper both components draw. Before it a level column set to a select read
+as a text box. **The box is not the sign everywhere, so the chevron is**: on
+desktop the box is white with an inset shadow and outlines the control, but on
+a tablet `.is-mobile` takes the shadow off and draws a grey pill, `#f6f6f6` on
+a `#fafafa` row, about 1.03:1, which outlines nothing (`sheet-tablet`), and
+there the chevron is the one thing saying the word opens a list.
 
 The delete glyph is deliberately **not** a shared class. It borrows the level
 ring's measurements through `--sheetsmith-inline-control`, because two glyph

@@ -60,7 +60,8 @@
  *     from and where its strip comes in.
  *  8. At a 520px container in `populated`, beside every open table's sticky
  *     name that its table scrolls under (`docs/UI.md` §4): a. the room is at
- *     least one number cell, unless the name column is as wide as its heading,
+ *     least its band — one number cell, or one glyph cell on a table stamped
+ *     `sheetsmith-table-glyph-band` — unless the name column is as wide as its heading,
  *     which is never clipped; b. every cell's content but prose, its width less
  *     its padding, fits in that room. It prints each table's scroller, name and
  *     room, which are the figures the §4 ruling quotes, and the same at
@@ -318,12 +319,13 @@ const ROOM = `(()=>{
  const px=(e,p)=>parseFloat(getComputedStyle(e)[p]);
  return [...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-box')].map(box=>{
   const sc=box.querySelector('.sheetsmith-table-wrapper');const t=sc.querySelector('.sheetsmith-table');
-  const probe=document.createElement('div');probe.style.width='calc(4 * var(--font-ui-small) + 2 * var(--size-4-2))';box.appendChild(probe);const band=probe.getBoundingClientRect().width;probe.remove();
+  const glyph=box.classList.contains('sheetsmith-table-glyph-band');
+  const probe=document.createElement('div');probe.style.width=glyph?'calc(var(--sheetsmith-inline-control) + 2 * var(--size-4-2))':'calc(4 * var(--font-ui-small) + 2 * var(--size-4-2))';if(glyph)probe.style.fontSize='var(--font-ui-small)';box.appendChild(probe);const band=probe.getBoundingClientRect().width;probe.remove();
   const name=t.querySelector('.sheetsmith-table-name').getBoundingClientRect().width;
   const room=sc.clientWidth-name;
   const head=t.querySelector('thead .sheetsmith-table-name');let heading=0;if(head){const g=document.createRange();g.selectNodeContents(head);heading=g.getBoundingClientRect().width+px(head,'paddingLeft')+px(head,'paddingRight');}
   const cut=[...t.querySelectorAll('tr')].flatMap(tr=>[...tr.children].filter(c=>!c.classList.contains('sheetsmith-table-name')&&!c.classList.contains('sheetsmith-table-text')).map(c=>({h:c.textContent.trim().slice(0,12),w:c.getBoundingClientRect().width-px(c,'paddingLeft')-px(c,'paddingRight')}))).filter(c=>c.w>room+0.5);
-  return {label:box.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?',scroller:sc.clientWidth,overflows:t.getBoundingClientRect().width>sc.clientWidth+0.5,name:Math.round(name*10)/10,room:Math.round(room*10)/10,band,cut,byHeading:heading>=name-0.5};
+  return {label:box.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?',scroller:sc.clientWidth,overflows:t.getBoundingClientRect().width>sc.clientWidth+0.5,name:Math.round(name*10)/10,room:Math.round(room*10)/10,band,glyph,cut,byHeading:heading>=name-0.5};
  });})()`;
 async function loadRoom(text) {
 	await send('Emulation.setDeviceMetricsOverride', { width: 620, height: 1900, deviceScaleFactor: 1, mobile: false });
@@ -340,10 +342,10 @@ await loadRoom(0);
 const tables = await evaluate(ROOM);
 check(tables.some((one) => one.overflows), '(8) at 520 at least one open table scrolls beside its sticky name, or this check holds nothing');
 for (const one of tables.filter((each) => each.overflows)) {
-	console.log(`      520 ${one.label}: scroller ${one.scroller}, name ${one.name}, room ${one.room}${one.byHeading ? ', the name column set by its heading' : ''}`);
+	console.log(`      520 ${one.label}: scroller ${one.scroller}, name ${one.name}, room ${one.room}${one.glyph ? ', a glyph band' : ''}${one.byHeading ? ', the name column set by its heading' : ''}`);
 	// A name heading is never clipped (§4), so a column its heading sets is the
 	// one case the room may be under a number cell; (b) still holds there.
-	if (!one.byHeading) check(one.room >= one.band - 0.5, `520 ${one.label}: (8a) the room beside the sticky name is at least one number cell`, `${one.room} against ${one.band}`);
+	if (!one.byHeading) check(one.room >= one.band - 0.5, `520 ${one.label}: (8a) the room beside the sticky name is at least its band: one number cell, or one glyph where every trailing cell is one`, `${one.room} against ${one.band}`);
 	check(one.cut.length === 0, `520 ${one.label}: (8b) every cell's content but prose shows whole beside it`, JSON.stringify(one.cut.slice(0, 3)));
 }
 

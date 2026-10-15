@@ -960,6 +960,29 @@ describe('table.render', () => {
 		]);
 	});
 
+	it('wraps a level drawn as a dropdown, so it can wear the chevron', () => {
+		// A select carries no pseudo-element, and the app draws its own chevron
+		// on `.dropdown` alone, so without the wrapper a cell's menu reads as a
+		// text box (`docs/UI.md` §9's one chevron).
+		const el = render(note({}), {
+			...levelled,
+			columns: [
+				{
+					key: 'Training',
+					type: 'level' as const,
+					input: 'select' as const,
+					levels: ['Untrained', 'Proficient'],
+				},
+			],
+		});
+		const selects = Array.from(el.querySelectorAll('tbody select'));
+		expect(selects.length).toBeGreaterThan(0);
+		for (const select of selects) {
+			expect(select.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+			expect(select.parentElement?.parentElement?.tagName).toBe('TD');
+		}
+	});
+
 	it('leaves a colon inside a level name alone', () => {
 		// A mark is one character in a circle. A layout that named a level
 		// "Trained: the useful one" before this syntax existed is a name with
@@ -1965,6 +1988,26 @@ describe('table with open rows', () => {
 		expect(
 			el.querySelector('.sheetsmith-table-box > .sheetsmith-table-add-button'),
 		).not.toBeNull();
+	});
+
+	it('narrows the room to a glyph only where every column beside the name is a hidden-heading modifier glyph', () => {
+		// `docs/UI.md` §4: such a table has no cell wider than a glyph beside the
+		// name, so the band one number cell wide is room no cell needs.
+		const band = (columns: TableConfig['columns'], openRows = true) =>
+			openRender(null, { ...inventory, openRows, columns })
+				.el.querySelector('.sheetsmith-table-box')
+				?.classList.contains('sheetsmith-table-glyph-band') ?? null;
+		const glyph = { key: 'Modifiers', type: 'modifier' as const, hideHeading: true };
+		expect(band([glyph])).toBe(true);
+		// A list of names alone has only the remove glyph beside them.
+		expect(band([])).toBe(true);
+		// A heading that shows is laid-out text, wider than the glyph.
+		expect(band([{ ...glyph, hideHeading: false }])).toBe(false);
+		// A toggle may show its heading or carry a note mark beside its ring.
+		expect(band([glyph, { key: 'Worn', type: 'toggle', hideHeading: true }])).toBe(false);
+		expect(band([glyph, { key: 'Qty', type: 'number' }])).toBe(false);
+		// A closed table has no box to set the room on.
+		expect(band([glyph], false)).toBeNull();
 	});
 
 	it('gives only an open table the box that stretches', () => {

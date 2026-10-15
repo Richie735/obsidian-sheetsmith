@@ -3710,6 +3710,162 @@ describe("a sheet input's width outranks Obsidian's phone rule", () => {
 	});
 });
 
+describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
+	/*
+	 * On a tablet Obsidian adds `.is-tablet button:not(.clickable-icon)` with
+	 * `padding: var(--size-4-1) var(--size-4-5)`, at (0,2,1) because a `:not()`
+	 * argument counts. Every sheet button rule setting padding was (0,2,0) or
+	 * lighter — four were a bare class at (0,1,0) — so on a
+	 * tablet each lost its own padding: a border-box glyph button 1.6em wide took
+	 * 40px of it and a level ring drew as a 42 × 33 oval. Read from 1.14.4's
+	 * `app.css` and seen in `sheet-tablet`, which only a driven shot stages, so
+	 * this scan is what a build can hold.
+	 *
+	 * **Every rule giving a sheet button padding must weigh more than (0,2,1)**,
+	 * which the stylesheet buys by doubling the class on a rule declaring the
+	 * padding alone: the phone width fix's shape and its reason, since a doubled
+	 * whole rule would lift the button's border and fill over its own `:hover`.
+	 *
+	 * **The list is explicit**, for the panel scope check's reason: which classes
+	 * land on a `<button>` is a fact about `components/`, not about a name, and a
+	 * pattern would miss `-ring` and `-tab` or drag in `-glyph`. It was taken from
+	 * the harness over CDP, every button on `populated`, `records` and an open
+	 * modifier form, measured with `is-tablet` on `body` and off. The panel's
+	 * **Save**, **Cancel**, **Confirm** and **Remove** are not in it: they take the
+	 * app's button chrome whole (`docs/UI.md` §2), so its tablet padding is theirs
+	 * too. Add a class here when a component grows a button that sets padding.
+	 *
+	 * **And the list is held to the source from below**: every class a
+	 * component writes literally onto a `<button>` it creates must be in it or
+	 * in `APP_CHROME`, so a new button cannot slip past by not being listed.
+	 * The read is narrow — a `createEl('button', { cls })`, an
+	 * `element('button', cls)`, or a `createEl('button')` whose variable is given
+	 * a literal class within the next few lines — so a class passed through a
+	 * variable (`NOTE_MARK_CLASS`, hold-repeat's `className`) is held by the list
+	 * alone, which is why the list stays the floor.
+	 */
+	const TABLET_RULE: [number, number, number] = [0, 2, 1];
+	const BUTTONS = [
+		'sheetsmith-level-ring',
+		'sheetsmith-table-remove-button',
+		'sheetsmith-table-modifier-button',
+		'sheetsmith-table-add-button',
+		'sheetsmith-pool-step',
+		'sheetsmith-pool-adjust-trigger',
+		'sheetsmith-pool-adjust-direction',
+		'sheetsmith-pool-modifier-button',
+		'sheetsmith-track-action-button',
+		'sheetsmith-track-modifier-button',
+		'sheetsmith-note-mark',
+		'sheetsmith-passport-part-remove',
+		'sheetsmith-passport-add',
+		'sheetsmith-record-group-toggle',
+		'sheetsmith-record-disclosure',
+		'sheetsmith-record-modifier',
+		'sheetsmith-record-remove',
+		'sheetsmith-record-add',
+		'sheetsmith-tabset-tab',
+		'sheetsmith-trigger',
+		'sheetsmith-panel-line',
+		'sheetsmith-panel-add',
+	];
+	/**
+	 * Classes on a sheet `<button>` that set no padding of their own: the four
+	 * panel actions take the app's chrome whole, and `-track-harm` is a state on
+	 * a level ring, which the list already holds.
+	 */
+	const APP_CHROME = [
+		'sheetsmith-panel-save',
+		'sheetsmith-panel-cancel',
+		'sheetsmith-panel-confirm',
+		'sheetsmith-panel-remove',
+		'sheetsmith-track-harm',
+	];
+
+	/** Every literal class the sheet's source writes onto a `<button>` it creates. */
+	function buttonClassesInSource(): string[] {
+		const found = new Set<string>();
+		for (const dir of ['components', 'view', 'interaction']) {
+			const at = new URL(`./${dir}/`, import.meta.url);
+			for (const file of readdirSync(at)) {
+				if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
+				const text = readFileSync(new URL(file, at), 'utf8');
+				for (const match of text.matchAll(
+					/(?:element|createEl)\(\s*'button',\s*(?:\{[^}]*?cls:\s*)?'([\w-]+)'/g,
+				)) {
+					found.add(match[1] as string);
+				}
+				for (const match of text.matchAll(/(\w+) = [\w.]*createEl\(\s*'button'\s*\)/g)) {
+					const after = text.slice(match.index, match.index + 700);
+					const added = new RegExp(
+						`\\b${match[1] as string}\\.(?:classList\\.add|addClass)\\(\\s*'([\\w-]+)'`,
+						'g',
+					);
+					for (const one of after.matchAll(added)) found.add(one[1] as string);
+				}
+			}
+		}
+		return [...found].sort();
+	}
+
+	it('lists every class the source writes onto a sheet button, or exempts it', () => {
+		const inSource = buttonClassesInSource();
+		// The read finds the bulk of them, or it holds nothing.
+		expect(inSource.length).toBeGreaterThanOrEqual(20);
+		expect(inSource.filter((cls) => !BUTTONS.includes(cls) && !APP_CHROME.includes(cls))).toEqual([]);
+	});
+
+	/** Every selector giving a sheet button padding, and those too light to keep it. */
+	function padded(text: string): { found: string[]; light: string[] } {
+		const found: string[] = [];
+		const light: string[] = [];
+		for (const rule of rules(text)) {
+			if (!declarations(rule.body).some((one) => /^padding(-[\w-]+)?\s*:/.test(one))) continue;
+			for (const selector of selectorList(rule.selector)) {
+				const classes = (subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+				if (!classes.some((cls) => BUTTONS.includes(cls))) continue;
+				found.push(selector);
+				if (!heavier(specificity(selector), TABLET_RULE)) light.push(selector);
+			}
+		}
+		return { found, light };
+	}
+
+	it('gives every sheet button its padding at more than (0,2,1)', () => {
+		const { found, light } = padded(CSS_WITHOUT_COMMENTS);
+		// Every listed class matched by at least one rule, so a class whose
+		// padding rule went missing cannot hide behind another's count.
+		const classesIn = (selector: string) =>
+			(subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+		const unmatched = BUTTONS.filter(
+			(cls) => !found.some((selector) => classesIn(selector).includes(cls)),
+		);
+		expect(unmatched).toEqual([]);
+		expect(light).toEqual([]);
+	});
+
+	it('would catch a padding the tablet rule outranks', () => {
+		// The scoped rule that shipped, a long-hand, and an unscoped class; and it
+		// passes the doubled answer and a button it does not list.
+		expect(padded('.sheetsmith-view .sheetsmith-level-ring { padding: 0; }').light).toEqual([
+			'.sheetsmith-view .sheetsmith-level-ring',
+		]);
+		expect(
+			padded('.sheetsmith-view .sheetsmith-tabset-tab { padding-inline: 0; }').light,
+		).toHaveLength(1);
+		expect(padded('.sheetsmith-pool-step { padding: 0; }').light).toHaveLength(1);
+		expect(
+			padded(
+				'.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring { padding: 0; }\n' +
+					'.sheetsmith-panel .sheetsmith-panel-save { padding: 0; }',
+			),
+		).toEqual({
+			found: ['.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring'],
+			light: [],
+		});
+	});
+});
+
 describe('the add control pinned to the foot of the card', () => {
 	const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
 	const all = rules(stripped);
@@ -3733,7 +3889,7 @@ describe('the add control pinned to the foot of the card', () => {
 		const coarse = all.filter(
 			(rule) =>
 				rule.context.includes('@media (pointer: coarse)') &&
-				/--sheetsmith-inline-control:\s*2\.2em/.test(rule.body),
+				/--sheetsmith-inline-control-factor:\s*2\.2;/.test(rule.body),
 		);
 		expect(coarse.length).toBeGreaterThan(0);
 	});
@@ -3872,21 +4028,49 @@ describe('the room beside an open table\'s sticky name', () => {
 		all.find((rule) => rule.selector.trim() === selector && rule.context.length === 0)
 			?.body ?? '';
 
+	const GLYPH_BAND = '.sheetsmith-view .sheetsmith-table-box.sheetsmith-table-glyph-band';
+
 	it('declares the room once, on the box that is the scroller\'s container', () => {
 		const box = body('.sheetsmith-view .sheetsmith-table-box');
 		expect(box).toMatch(/container-type:\s*inline-size/);
 		expect(box).toMatch(/--sheetsmith-table-name-room:\s*calc\(\s*100cqi/);
+		expect(box).toMatch(/--sheetsmith-table-name-room:[^;]*var\(--sheetsmith-table-band\)/);
 		expect(
 			all.filter((rule) => /--sheetsmith-table-name-room:/.test(rule.body)),
 		).toHaveLength(1);
 	});
 
+	it('varies only the band, on the box and on a glyph band', () => {
+		const declaring = all.filter((rule) => /--sheetsmith-table-band:/.test(rule.body));
+		expect(declaring.map((rule) => rule.selector.trim()).sort()).toEqual(
+			['.sheetsmith-view .sheetsmith-table-box', GLYPH_BAND].sort(),
+		);
+		// One glyph cell: the inline control's own factor over the cells' size, so
+		// the coarse-pointer block's factor reaches it with no copy of the number.
+		expect(body(GLYPH_BAND).replace(/\s+/g, ' ')).toContain(
+			'--sheetsmith-table-band: calc( var(--sheetsmith-inline-control-factor) * var(--font-ui-small) + 2 * var(--size-4-2) )',
+		);
+	});
+
+	it('lets a declared name wrap only on a table with no prose column', () => {
+		// `docs/UI.md` §4: a sticky declared name wider than its card covered the
+		// toggle beside it and hid its focus. With prose the name column is
+		// `auto`, where a wrap would fall to the longest word, so it stays out.
+		const wrap = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+			/white-space:\s*normal/.test(rule.body) &&
+			selectorList(rule.selector).some((one) => / tbody \.sheetsmith-table-name$/.test(one)),
+		);
+		expect(wrap.map((rule) => rule.selector.replace(/\s+/g, ' ').trim())).toEqual([
+			'.sheetsmith-view .sheetsmith-table:not(.sheetsmith-table-has-text) tbody .sheetsmith-table-name',
+		]);
+	});
+
 	it("sizes the room's one number cell as the number field is sized", () => {
-		// The room is `4 * var(--font-ui-small)` because the number field is
+		// The band is `4 * var(--font-ui-small)` because the number field is
 		// `width: 4em` at its own `--font-ui-small`. Widen the field without the
 		// room and a number cell no longer shows whole beside the name, which no
 		// unit test can see: so the two are read from the stylesheet and compared.
-		const room = /--sheetsmith-table-name-room:\s*calc\(([^;]*)\);/.exec(
+		const room = /--sheetsmith-table-band:\s*calc\(([^;]*)\);/.exec(
 			body('.sheetsmith-view .sheetsmith-table-box'),
 		)?.[1];
 		const roomCells = /([\d.]+)\s*\*\s*var\(--font-ui-small\)/.exec(room ?? '')?.[1];
