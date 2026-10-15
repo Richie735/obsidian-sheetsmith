@@ -182,7 +182,10 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   sheet: nothing on it reads the viewport, which is the rule above doing its job.
   What a true viewport changes is what hangs off `document.body`, the anchored
   panel and the shared popover, whose caps read `100vw` (§9), so a view earns a
-  true viewport when it holds one of them. Neither picture carries Obsidian's
+  true viewport when it holds one of them. **That reading is the ruling, not a
+  gap**: both are bounded by the window, never by the sheet's container, so in a
+  narrow pane in a wide window the panel overhangs the sheet as the app's own
+  `Menu` would (§9 gives the reasons). Neither picture carries Obsidian's
   `.is-mobile` rules, which the stub never sets
   (`docs/features/phone-input-width.md`), and neither is a device.
 - **A container is its own reflow context** (`SPEC` §8). A Group four columns
@@ -847,6 +850,25 @@ it is a second scroller beside it, and the table's scroll repositions the panel 
 its anchor rather than nesting one scroller in the other. No cap fits every row,
 since each part adds a line: 570 is the tallest ordinary state with headroom, a
 row past it scrolls, and the `100vh` term holds a short phone to its own height.
+
+**The panel is bounded by the window, not by the pane that opened it, so in a
+narrow pane it overhangs the sheet, and that is the ruling** [judgement; seen in
+`sheet-modifier-form-narrow`, and pinned by `anchored-panel.test.ts`]. A 380 pane
+in a 520 window draws it at its full 390, from 105 to 495 against a sheet ending
+at 449. Three reasons, in order of weight. It is app chrome hung off
+`document.body` (§4), and the app's own floating surfaces — `Menu`, a hover
+preview, the suggester — are bounded by the window and open over whatever is
+beside the pane they came from; a plugin surface that alone stayed inside its
+pane would be the inconsistency. It is on the body in the first place to escape
+a box that would clip it, the table's overflow, and capping it at the sheet's
+column reinstates that box by arithmetic. And the cost of the other answer lands
+on the narrowest panes: in a 300px sidebar a container cap would squeeze the form
+to 268 and wrap rows that fit at 348, to avoid covering a neighbour for the few
+seconds a transient surface is open. What a narrow pane still owes is that the
+panel stays in the window and on its anchor, which the shared clamp does. At a
+true phone width the two answers coincide, since the window is the pane — which
+is why §4 says a view earns a true viewport when it holds this panel, and why
+`sheet-modifier-form-narrow` is a picture of the overhang and not of a phone.
 
 **What it holds is a list and one disclosure**, and the state each line carries is
 its own words plus its own mark: `zap` / `zap-off` per line, the same mark the

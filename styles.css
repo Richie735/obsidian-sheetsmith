@@ -285,7 +285,14 @@ body {
 	   one line, and clamped to the viewport minus a gutter below that — which is
 	   the phone regime, photographed at a true 380 in
 	   `sheet-modifier-form-viewport-380`: 348px, centred by `placeAnchored`'s
-	   `EDGE_GUTTER`, which is this gutter and has to stay it. */
+	   `EDGE_GUTTER`, which is this gutter and has to stay it.
+
+	   **The viewport and never the pane**, which is a ruling (`docs/UI.md` §9):
+	   this is app chrome on `document.body`, and app chrome is bounded by the
+	   window, as Obsidian's own `Menu` is. So in a 380 pane in a 520 window the
+	   panel is its full 390 and overhangs the sheet by 46px
+	   (`sheet-modifier-form-narrow`); a container query cannot reach it here
+	   anyway, since nothing on the body is inside the sheet's container. */
 	width: min(30em, calc(100vw - 2 * var(--size-4-4)));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);

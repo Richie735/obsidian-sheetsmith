@@ -24,8 +24,10 @@
  * gets a floating surface subtly wrong: placement and clamping (bought back by
  * sharing the popover's), dismissal on a press outside and on Escape (the
  * popover's regime with one departure), keyboard navigation and focus management
- * (owed, below), and a phone regime (owed, and read rather than seen — nothing
- * below a 500px viewport has ever been photographed).
+ * (owed, below), and a phone regime (seen at a true 380, `docs/UI.md` §9).
+ * **Bounded by the window, not by the pane that opened it**, as `Menu` is: in a
+ * narrow pane in a wide window the panel overhangs the sheet, which §9 rules
+ * rather than tolerates.
  *
  * Plain DOM, and it imports nothing from `obsidian`: that is what keeps the
  * component layer's one-name allowlist one name long, and it is what took the
