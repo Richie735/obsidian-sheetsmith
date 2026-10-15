@@ -3564,10 +3564,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				graded ? String(level) : flagText(level > 0);
 
 			if (graded && field.input === 'select') {
+				// The chevron rides on a wrapper, because a select can carry no
+				// pseudo-element, and on a wrapper rather than the cell so the mark
+				// sits inside the select's own hairline (`docs/UI.md` §9's menu
+				// row). Without it the transparent select is a word in a box.
+				const menu = element('span', 'sheetsmith-record-menu', cell);
 				const select = element(
 					'select',
 					'sheetsmith-record-select',
-					cell,
+					menu,
 				);
 				for (let level = 0; level <= count; level++) {
 					const option = element(

@@ -28,12 +28,12 @@ const MEASURED: [string, LineField, number][] = [
 	[
 		'Spells’ school dropdown',
 		{ kind: 'select', options: ['None', 'Evocation', 'Abjuration'] },
-		73,
+		85,
 	],
 	[
 		'a rest dropdown',
 		{ kind: 'select', options: ['None', 'Short rest', 'Long rest', 'Always-on'] },
-		74,
+		86,
 	],
 ];
 
@@ -62,10 +62,10 @@ const LISTS: [string, LineField[], number, number?][] = [
 			MARK,
 			{ kind: 'select', options: ['None', 'Evocation', 'Abjuration'] },
 		],
-		418,
+		430,
 	],
-	['Recharging features', [REST, TYPED, MARK, MARK], 468, 616],
-	['Rest features', [REST, TYPED], 386.5, 424],
+	['Recharging features', [REST, TYPED, MARK, MARK], 480, 616],
+	['Rest features', [REST, TYPED], 398.5, 424],
 	[
 		'Homebrew features',
 		[
@@ -86,7 +86,7 @@ const LISTS: [string, LineField[], number, number?][] = [
 	[
 		'Spells by name',
 		[{ kind: 'select', options: ['Cantrip', '1st', '2nd', '3rd'] }, MARK],
-		287.5,
+		299.5,
 	],
 	['Group by nothing', [{ kind: 'number', name: 'Level', ceiling: 'none' }, MARK], 308.5],
 	['Group by a toggle', [{ kind: 'number', name: 'Level', ceiling: 'none' }, MARK], 308.5],

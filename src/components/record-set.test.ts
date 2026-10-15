@@ -3768,7 +3768,8 @@ describe('a strip of field names over the list', () => {
 
 		it('sizes a level drawn as a dropdown by its longest option', () => {
 			// Spells' line: `Level / 9`, a toggle and a school dropdown, measured to
-			// fit at 418px; estimated at 424.2, so 27 steps.
+			// fit at 430px since the dropdown keeps room for its chevron; estimated
+			// at 436.2, so 28 steps.
 			const spells = render(
 				{
 					...HEADED,
@@ -3786,7 +3787,7 @@ describe('a strip of field names over the list', () => {
 				},
 				HEADED_BODY,
 			);
-			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-27']);
+			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-28']);
 			// The same level as a ring is one mark wide: 96 + 178.9 + 96 = 370.9px, so 24.
 			const ring = render(
 				{
@@ -4320,6 +4321,9 @@ describe('a field inside the opened record', () => {
 			(record) => record.querySelector('.sheetsmith-record-select') as HTMLElement,
 			(control) => {
 				const select = control as HTMLSelectElement;
+				// The wrapper is what carries the chevron, which a select cannot
+				// (`docs/UI.md` §9): without it the menu reads as typed text.
+				expect(select.parentElement?.classList.contains('sheetsmith-record-menu')).toBe(true);
 				select.value = '2';
 				select.dispatchEvent(new Event('change'));
 			},

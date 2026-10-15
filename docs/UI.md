@@ -292,7 +292,7 @@ sheet.
   steppers, a track's box, segments and dividers, a placed box, a record group's
   outline and header rule, the record strip's rule, and a record's menu, which
   was the one edge left faint until this was looked at. Two marks go further: a
-  card dropdown's chevron to `--text-normal`, and every marked level ring and harm
+  menu's chevron, a card's and a record's alike (§9), to `--text-normal`, and every marked level ring and harm
   segment to the full fill, since a ramp trades contrast for shape. **The
   abbreviation and the unresolved `?` have no block**: both are muted at every
   contrast (the faint rule below). **Left alone, as the ruling and not an
@@ -567,7 +567,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name, a Passport's name, a Record set's group header name and a text field's value. **"Its own text" is `value` on an `<input>` and `textContent` everywhere else**, which the fourth consumer forced: a field has no `textContent`, so the first three's spelling would have set the tooltip to the empty string on a clipped field — a reveal that decided there was nothing to reveal. A copy in the caller is forbidden and unguardable, since `scrollWidth` and `clientWidth` are both 0 under happy-dom |
 | A list inside one row of another list | `editor/nested-list-field.ts`; `.sheetsmith-nested-list`, `-line`, `-controls`, `-controls-reserved` | a modifier definition's **Changes**. **The frame only**: the caller draws each line's own controls and names them, so the module knows that no modifier exists — `linked-text.ts`'s arrangement, in the editor. What it owns is the indent, the trailing control track, the remove, and the **Add** footer in `.sheetsmith-entry-footer`'s own clothes. **Indented by geometry rather than a background**, `--size-4-2`, so the nesting survives `forced-colors: active` where an author background is repainted one system colour — and little enough that a definition with one change is still the form that shipped. **A hairline between one line and the next, and spacing alone could not do it**: the forced break puts each line's six controls on two rows, measured 63px apart, against 56px between one line and the next — so the gap said the opposite of the grouping, and raising it far enough would make a two-line entry twice the object a one-line one is. A rule is a difference in kind, it survives forced colors as a border, and it costs a pixel. **The remove is reserved and hidden on the only line there is**, `.sheetsmith-detail-field-reserved`'s argument one element over: a control that is not created gives its width back to the line's grow, so a list holding one-line and two-line entries would read as two forms down the pane. **No reorder and no drag**, which is a refusal: order inside this list is not observable, since a breakdown lists contributors in *definition* order and two changes at one target contest by size (`docs/features/multi-change-definitions.md`) |
 | A problem list under a textarea field | `.sheetsmith-field-problems`, `-problem`, `-problem-line` | the function library, the reset triggers, the bonus types |
-| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select` | Card's options, Table's and Record set's `level` set to a select |
+| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select`; the chevron on its wrapper, `.sheetsmith-card-dropdown::after` and `.sheetsmith-record-menu::after`, one mark by selector list | Card's options, Table's and Record set's `level` set to a select. **One chevron, placed by each control** (the paragraph below): beside a card's value, inside a record's hairline; a Table's and a Roster's select draw none yet (`docs/BACKLOG.md` § UI) |
 | The one sentence a fenced value says about a wikilink | `components/fenced-link.ts` | Record set's fields, a Passport's name and values. **A row for a *sentence*, on `arm-to-confirm.ts`'s precedent** — that row already carries "(the sentences only)" for the same reason: Obsidian indexes no link inside a code fence, so a component whose values live in one refuses a link at the commit, and the sentence is the whole of what the reader is told. Two copies of it is one design pass away from saying two things, which is what `components/isolation.test.ts` scans for by clause. The two words that differ arrive as arguments, so the module knows that neither a record nor a passport exists: a record has a name and a body to move a link into, and a passport has neither |
 | A form anchored to the control that opened it | `ui/anchored-panel.ts`; `.sheetsmith-panel`, `-body`, `-line`, `-fields`, `-field`, `-why`, `-problem` | Table's `modifier` column, Record set's `modifier` field |
 | A value read against its ceiling | `.sheetsmith-pool-ceiling`, `-separator`, `-max` | Pool's max, a Record set `number` field whose ceiling the layout declares or the record holds — **one vocabulary**: the value at full contrast, a `/`, and the ceiling muted with tabular figures. A record overrides the size only, since the pool's ceiling qualifies a headline number and a record's a 13px one; where the ceiling is the record's it is a *field* rather than a span, wearing the record's own chrome and this reading. **Where that field holds a formula** (`Uses: 1 / prof`) it is stacked under a layer drawing what the formula came to (`.sheetsmith-record-worked-out`, `-layer`, `-focused`), §9's stacked arrangement: the number at rest in this same reading and box, so it cannot be told from a typed one, the text on focus, the layer taking no press, and `?` in `.sheetsmith-pool-max-unresolved` with a `.sheetsmith-error` line under the record where it cannot be worked out; a typed number draws no stack at all (`docs/features/record-ceiling-formula.md`). **A Track row whose length the character types takes only the ceiling half** (`.sheetsmith-pool-max`, `.sheetsmith-pool-max-input`), narrowed again to its own row-name scale (`.sheetsmith-track-row-length-input`) — there is no value beside it to separate from, since a run's segments are already the reading of the value the way Pool's own numeral is the reading of its own (`docs/features/track-row-length.md`) |
@@ -1179,6 +1179,27 @@ and two selects at two sizes are the card and the cell agreeing about what a men
 is. What they do share is the reason both have to carry the view scope (§2):
 Obsidian's bare `select` rule sets a height, a background, a shadow and a font
 size, and `styles.test.ts` covers the `-select` naming for it.
+
+**A menu on a sheet wears one chevron, drawn by one rule, and each control places
+it** [judgement; seen in `sheet-record-groups` and its contrast and dark twins].
+A select that has had the app's chrome taken off is a word in a box, and nothing
+else says it opens a list: a record's Spells read `None` and its recharging lists
+`Short rest` as typed text until the sixth rulings pass gave them the
+card's mark. So the mark is one selector list, `.sheetsmith-card-dropdown::after`
+and `.sheetsmith-record-menu::after`, carrying the shape, the size and the lift each placement centres on (`--sheetsmith-chevron-size`, `--sheetsmith-chevron-lift`, declared on the mark, not knobs) in the menu's
+own `em`, the muted stroke and its raise to `--text-normal` under
+`prefers-contrast: more`; **where it sits is the control's**, because the two
+are not the same object (the paragraph above). A card's chevron is a flex sibling
+beside a borderless value, so the pair centres together. A record's sits
+*inside* the select's hairline, at its end, over padding the select keeps for it,
+since there the hairline is the control's whole shape and a mark outside it would
+read as a second thing; it takes no pointer, so pressing it presses the select.
+Both ride on a wrapper because a `<select>` carries no pseudo-element, and both
+are borders rather than an image, so forced colors repaints them (§1). **One
+mark rather than two similar ones**, so a reader learns one sign; a third menu
+joins the list rather than drawing its own. A Table's or a Roster's cell select
+has not joined: it keeps the app's field chrome and draws no chevron at all, and
+no view stages one (`docs/BACKLOG.md` § UI).
 
 The delete glyph is deliberately **not** a shared class. It borrows the level
 ring's measurements through `--sheetsmith-inline-control`, because two glyph

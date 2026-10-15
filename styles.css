@@ -1471,18 +1471,25 @@ body {
    plugin's own — the arrow in `app.css` is a black stroke over a themed ellipse
    and is scoped to `.dropdown` (docs/UI.md §1, §9). A sibling in the slot's flex
    row rather than an overlay, so the pair centres together and a long label
-   cannot run underneath it. */
-.sheetsmith-card-dropdown::after {
-	content: '';
-	/* The row is baseline-aligned for the value and its pill; an empty box has
-	   no baseline worth aligning to. */
-	align-self: center;
-	flex: none;
-	width: 0.34em;
-	height: 0.34em;
+   cannot run underneath it.
+
+   **One mark for every menu on a sheet, by selector list**: a record's select
+   wears the same chevron, drawn by these same declarations, so a reader learns
+   one sign for "this opens a list" (`docs/UI.md` §9). Where it sits is each
+   menu's own, and follows this rule. */
+.sheetsmith-card-dropdown::after,
+.sheetsmith-view .sheetsmith-record-menu::after {
+	/* Named here because each placement below centres on them: a placement that
+	   restated 0.34em or the lift as its own number would decentre the moment
+	   this rule was retuned. On the mark itself, not `body`, so not a knob (§3 of
+	   docs/UI.md); `em` resolves on the mark, which is where it is used. */
+	--sheetsmith-chevron-size: 0.34em;
 	/* The rotated square's own centre sits below the glyph's, so a chevron
-	   aligned by the box reads as hanging low. */
-	margin-block-start: -0.16em;
+	   aligned by its box reads as hanging low. */
+	--sheetsmith-chevron-lift: -0.16em;
+	content: '';
+	width: var(--sheetsmith-chevron-size);
+	height: var(--sheetsmith-chevron-size);
 	/* Muted rather than faint, which is the variable a quiet mark reaches for
 	   first and the wrong one here: faint measures 2.12:1 on the card in a light
 	   theme and 2.57:1 in a dark one, under the 3:1 a border or fill has to
@@ -1493,6 +1500,14 @@ body {
 	border-right: 1.5px solid var(--text-muted);
 	border-bottom: 1.5px solid var(--text-muted);
 	transform: rotate(45deg);
+}
+
+.sheetsmith-card-dropdown::after {
+	/* The row is baseline-aligned for the value and its pill; an empty box has
+	   no baseline worth aligning to. */
+	align-self: center;
+	flex: none;
+	margin-block-start: var(--sheetsmith-chevron-lift);
 }
 
 .sheetsmith-card-derived {
@@ -1810,8 +1825,10 @@ body {
 	}
 
 /* One step further for someone who asked for it, since the default is
-	   already what this block would otherwise raise it to. */
-.sheetsmith-card-dropdown::after {
+	   already what this block would otherwise raise it to. A record's menu
+	   wears the same mark, so it rises with it. */
+.sheetsmith-card-dropdown::after,
+.sheetsmith-view .sheetsmith-record-menu::after {
 		border-color: var(--text-normal);
 	}
 
@@ -7370,10 +7387,40 @@ a.sheetsmith-notice-action {
 	color: var(--text-muted);
 }
 
+/* The menu's wrapper, there only to carry the chevron a select cannot: the
+   mark is the card's (its rule, at `.sheetsmith-card-dropdown::after`), placed
+   inside the select's own hairline at its end, over padding the select keeps
+   for it. **Inside rather than beside**, unlike the card's, because here the
+   hairline is the control's shape and a mark outside it would read as a
+   second, separate thing. It takes no pointer, so a press on the mark is a
+   press on the select under it. Sized at the select's own text so the mark's
+   `em` is the menu's. */
+.sheetsmith-view .sheetsmith-record-menu {
+	position: relative;
+	display: inline-flex;
+	min-width: 0;
+	max-width: 100%;
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-view .sheetsmith-record-menu::after {
+	position: absolute;
+	/* Centred on the line by half its own size, then lifted by the shared
+	   correction. */
+	inset-block-start: calc(
+		50% - var(--sheetsmith-chevron-size) / 2 + var(--sheetsmith-chevron-lift)
+	);
+	inset-inline-end: var(--size-2-3);
+	pointer-events: none;
+}
+
 .sheetsmith-view .sheetsmith-record-select {
 	max-width: 100%;
 	height: auto;
-	padding: var(--size-2-1) var(--size-2-2);
+	/* The end holds the chevron: its inset, its width and the gap the text
+	   keeps from it. */
+	padding-block: var(--size-2-1);
+	padding-inline: var(--size-2-2) var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -7383,7 +7430,7 @@ a.sheetsmith-notice-action {
 }
 
 /* The siblings' pattern again: this border is the whole of the control's shape,
-   since the fill is transparent and no chevron is drawn, so it is the one edge on
+   since the fill is transparent and the chevron sits inside it, so it is the one edge on
    a record that faded at higher contrast while the list's own box, a card's pill
    and a pool's steppers rose round it (`sheet-contrast-more`, the Spells list and
    the recharging lists). Below the rule it raises, which it ties on (0,2,0). */
@@ -7489,6 +7536,7 @@ a.sheetsmith-notice-action {
 	max-width: 100%;
 }
 
+.sheetsmith-view .sheetsmith-record-body-fields .sheetsmith-record-menu,
 .sheetsmith-view .sheetsmith-record-body-fields .sheetsmith-record-select {
 	min-width: 0;
 }
