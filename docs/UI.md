@@ -1492,8 +1492,25 @@ or no after its key in the note.` on a flag, `… is not a number of marks. Writ
 whole number after its key in the note.` on a run. Those six are every refusal a
 component makes of its sheet block: Card, Card set and Pool read every value as
 text, Passport's other refusals are of its layout, and Roster's of its markdown
-table, which is not this rule's subject. The layout-side refusal of a fence key is not one of them, and still
-gives its reason without its fix (`docs/BACKLOG.md` § UI).
+table, which is not this rule's subject.
+
+**A fence key's refusal is the parser's reason and the caller's fix, and on the
+sheet the fix names the layout editor** [checked: `card.test.ts`,
+`roster.test.ts`, `record-set.test.ts`, `track.test.ts`]. A key holding a colon
+is the layout's fault, not the note's, so `fencedKeyProblem` states the rule
+and its reason and stops: `The key cannot contain a colon or a line break,
+because the sheet block separates key from value with a colon. Rename it under
+Key in the layout editor.` on a Card (`sheet-error`: Armour class, Carried,
+Load), and the same clause ending `Rename it under Stats …`, `… under Fields …`
+and `… under Rows in the layout editor.` on a Roster's stat, a Record set's
+field and a Track's row key. **The fix is each caller's because the clause has
+three readers who repair it in three places**: Track's **Add** form refuses a
+row name the character just typed with `Take the colon out of the name.`,
+since the draft is kept in the field beside the message; and the layout
+editor's own key fields end the clause with what the field was left holding,
+the grammar of every field mark in the pane, since the mark sits under the
+field it refuses. Passport's `nameKey` and field keys fall back silently and
+draw no message.
 
 ---
 

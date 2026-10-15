@@ -335,6 +335,15 @@ describe('card.render', () => {
 		).toBeNull();
 	});
 
+	it('refuses a key holding a colon, naming the layout editor field that fixes it', () => {
+		// A layout refusal, so the fix is the layout's field: nothing in the note
+		// can repair a key the layout declares.
+		const el = render({ key: 'Armour: class' }, null);
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toBe(
+			'The key cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Key in the layout editor.',
+		);
+	});
+
 	it('reports a key it cannot store, even with no section to read', () => {
 		const el = render({ key: 'note' }, null);
 		expect(el.querySelector('.sheetsmith-error')).not.toBeNull();

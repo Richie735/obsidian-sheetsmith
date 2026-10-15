@@ -103,7 +103,9 @@ function valueKey(config: CardConfig): { key: string } | { error: string } {
 	const key = (config.key ?? '').trim();
 	if (key === '') return { key: DEFAULT_KEY };
 	const problem = fencedKeyProblem(key);
-	if (problem !== null) return { error: `The key ${problem}.` };
+	if (problem !== null) {
+		return { error: `The key ${problem}. Rename it under Key in the layout editor.` };
+	}
 	if (key === NOTE_KEY) {
 		return { error: `The key "${NOTE_KEY}" is reserved for the note line.` };
 	}

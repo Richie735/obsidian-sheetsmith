@@ -280,8 +280,9 @@ describe('track config errors', () => {
 		expect(
 			configError({ ...slots, rows: [{ key: 'L1' }, { key: 'L1' }] }),
 		).toContain('both called');
-		expect(configError({ ...slots, rows: [{ key: 'a:b' }] })).toContain(
-			'cannot contain a colon',
+		// A layout refusal: the fix is the layout editor's field, not the note.
+		expect(configError({ ...slots, rows: [{ key: 'a:b' }] })).toBe(
+			'The row key "a:b" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Rows in the layout editor.',
 		);
 	});
 
@@ -2193,8 +2194,10 @@ describe('a Track the character may add rows to', () => {
 			// pasted or typed, so the other half is unreachable from a
 			// single-line field and is refused for the hand-edited layout the
 			// shared clause is also read at.
-			expect(refusal('Armor: class')).toContain(
-				'cannot contain a colon or a line break',
+			// The fix is the field the name was typed into, which keeps the
+			// refused draft, and not the layout editor the other refusals name.
+			expect(refusal('Armor: class')).toBe(
+				'A row name cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Take the colon out of the name.',
 			);
 		});
 

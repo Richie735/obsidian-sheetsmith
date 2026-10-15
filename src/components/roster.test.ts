@@ -1393,4 +1393,16 @@ describe('a roster something has noted (docs/features/modifier-notes.md)', () =>
 		roster.render(el, clashing, null, contextFor(null, clashing));
 		expect(el.querySelector('.sheetsmith-error')).not.toBeNull();
 	});
+
+	it('refuses a stat key holding a colon, naming the layout editor field that fixes it', () => {
+		const colon: RosterConfig = {
+			...config,
+			stats: [{ key: 'STR: base', name: 'Strength' }],
+		};
+		const el = document.createElement('div');
+		roster.render(el, colon, null, contextFor(null, colon));
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toBe(
+			'The stat "STR: base" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Stats in the layout editor.',
+		);
+	});
 });

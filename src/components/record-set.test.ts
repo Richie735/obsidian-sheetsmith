@@ -612,7 +612,7 @@ describe('recordSet configuration', () => {
 
 	it('refuses a key a fence could not hold, and a repeated one', () => {
 		expect(refuses([{ key: 'Uses: left', type: 'number' }])).toContain(
-			'cannot contain a colon',
+			'The field "Uses: left" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Fields in the layout editor.',
 		);
 		expect(
 			refuses([

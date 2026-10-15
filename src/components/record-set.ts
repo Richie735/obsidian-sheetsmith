@@ -756,7 +756,9 @@ function configError(config: RecordSetConfig): string | null {
 		// Validated because the file format requires it, not because it is tidy:
 		// the rule and its reason are the fence's own (`parse/fenced.ts`).
 		const problem = fencedKeyProblem(key);
-		if (problem !== null) return `The field "${key}" ${problem}.`;
+		if (problem !== null) {
+			return `The field "${key}" ${problem}. Rename it under Fields in the layout editor.`;
+		}
 		if (seen.has(key.toLowerCase())) {
 			return `Two fields are both called "${key}".`;
 		}

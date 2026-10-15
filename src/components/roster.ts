@@ -366,7 +366,9 @@ function configError(config: RosterConfig): string | null {
 		const key = (stat.key ?? '').trim();
 		if (key === '') return 'Every stat needs a key.';
 		const problem = fencedKeyProblem(key);
-		if (problem !== null) return `The stat "${key}" ${problem}.`;
+		if (problem !== null) {
+			return `The stat "${key}" ${problem}. Rename it under Stats in the layout editor.`;
+		}
 		if (statKeys.has(key.toLowerCase())) return `Two stats are both called "${key}".`;
 		statKeys.add(key.toLowerCase());
 	}
