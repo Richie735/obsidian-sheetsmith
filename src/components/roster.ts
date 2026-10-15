@@ -54,6 +54,7 @@ import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText } from '../parse/wikilink';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
+import { keepFocusClearOfPinned } from '../ui/pinned-column-focus';
 import { revealWhenTruncated } from '../ui/truncation';
 import { ColumnType, COLUMN_TYPES } from './column-types';
 import { effectiveReading, sameNumber } from './effective-value';
@@ -365,7 +366,9 @@ function configError(config: RosterConfig): string | null {
 		const key = (stat.key ?? '').trim();
 		if (key === '') return 'Every stat needs a key.';
 		const problem = fencedKeyProblem(key);
-		if (problem !== null) return `The stat "${key}" ${problem}.`;
+		if (problem !== null) {
+			return `The stat "${key}" ${problem}. Rename it under Stats in the layout editor.`;
+		}
 		if (statKeys.has(key.toLowerCase())) return `Two stats are both called "${key}".`;
 		statKeys.add(key.toLowerCase());
 	}
@@ -893,6 +896,8 @@ function renderShared(
 ): void {
 	const columns = config.columns ?? [];
 	const wrapper = container.createDiv('sheetsmith-table-wrapper');
+	// Table's pinned name cell, so Table's answer to a control focused behind it.
+	keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 	const grid = wrapper.createEl('table', { cls: 'sheetsmith-table sheetsmith-roster' });
 	const order = columnOrder(config);
 	const width = columns.length + 1;
@@ -1574,6 +1579,7 @@ function renderCards(
 		if (rowsOfStat.length === 0) continue;
 
 		const wrapper = card.createDiv('sheetsmith-table-wrapper sheetsmith-roster-card-table');
+		keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 		const grid = wrapper.createEl('table', { cls: 'sheetsmith-table sheetsmith-roster' });
 		if (config.hideColumnHeadings !== true) drawHead(grid, config, order);
 		const body = grid.createEl('tbody');

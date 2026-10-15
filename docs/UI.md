@@ -225,6 +225,29 @@ be the control's at another font size reads the factor, never the length.
   hand` move. A table with prose keeps the one line, since its name column is
   `auto` and would fall to its longest word, and a declared name on an open
   table with prose still widens its column as before.
+- **A control focused behind a sticky name is scrolled clear of it, in every
+  table and Roster that scrolls** [checked: `ui/pinned-column-focus.test.ts`;
+  held by `harness/measure-groups.mjs` check 9, real Shift-Tab at 520 and at a
+  true 380 under phone staging, each at `text=24` too]. The browser scrolls a
+  focused control only into the scrollport, whose start the name covers, so
+  Shift-Tab back along a table scrolled right landed behind it. Counted one
+  press per control, the table scrolled fully right before each (check 9's
+  measure): at 520, 4 of Attacks' 8 controls and 18 of Inventory's 34 (its
+  three links aside, none covered), and at a true 380, 2 and 18. Counted as one
+  walk back from the last control, the scroll carried from press to press: the
+  same at 520, and 2 and 13 at 380. Now none by either count, at either size
+  or width.
+  The cell's start goes against the name, as a text cell's already does above,
+  unless that carries a control that fits the room past the far edge, when the
+  control's own start does: Conditions' `Active` ring at `text=24`, in a
+  28.7px room. **Measured on focus, not declared**: a `scroll-padding` the
+  name's width cannot be written for a closed table or a Roster, which have no
+  box to hold a room, an open table can spell the name's room but not its
+  width, and Chrome leaves a partly covered button where it is whatever the
+  padding says. **Only a focus no pointer caused** (`:focus-visible`), so a
+  press never scrolls its control out from under the pointer before release;
+  a focus restored after a rebuild asks not to scroll and needs nothing, since
+  its new scroller is at the start, where no name covers anything.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.
@@ -1469,8 +1492,25 @@ or no after its key in the note.` on a flag, `… is not a number of marks. Writ
 whole number after its key in the note.` on a run. Those six are every refusal a
 component makes of its sheet block: Card, Card set and Pool read every value as
 text, Passport's other refusals are of its layout, and Roster's of its markdown
-table, which is not this rule's subject. The layout-side refusal of a fence key is not one of them, and still
-gives its reason without its fix (`docs/BACKLOG.md` § UI).
+table, which is not this rule's subject.
+
+**A fence key's refusal is the parser's reason and the caller's fix, and on the
+sheet the fix names the layout editor** [checked: `card.test.ts`,
+`roster.test.ts`, `record-set.test.ts`, `track.test.ts`]. A key holding a colon
+is the layout's fault, not the note's, so `fencedKeyProblem` states the rule
+and its reason and stops: `The key cannot contain a colon or a line break,
+because the sheet block separates key from value with a colon. Rename it under
+Key in the layout editor.` on a Card (`sheet-error`: Armour class, Carried,
+Load), and the same clause ending `Rename it under Stats …`, `… under Fields …`
+and `… under Rows in the layout editor.` on a Roster's stat, a Record set's
+field and a Track's row key. **The fix is each caller's because the clause has
+three readers who repair it in three places**: Track's **Add** form refuses a
+row name the character just typed with `Take the colon out of the name.`,
+since the draft is kept in the field beside the message; and the layout
+editor's own key fields end the clause with what the field was left holding,
+the grammar of every field mark in the pane, since the mark sits under the
+field it refuses. Passport's `nameKey` and field keys fall back silently and
+draw no message.
 
 ---
 

@@ -66,9 +66,15 @@
  *     its padding, fits in that room. It prints each table's scroller, name and
  *     room, which are the figures the §4 ruling quotes, and the same at
  *     `text=24` without holding them: the residue that ruling records.
+ *  9. Beside every sticky name, in every table and Roster that scrolls, at a
+ *     520px container and at a true 380 under phone staging, each at the
+ *     default type size and at `text=24`: scrolled fully right, a real Shift-Tab
+ *     onto each control leaves it clear of its row's name (`docs/UI.md` §4,
+ *     `ui/pinned-column-focus.ts`). Real key events, not `focus()`: the
+ *     browser's own scroll is half of what is measured.
  */
 import { fileURLToPath } from 'node:url';
-import { CHROME, launch, wait as sleep } from './cdp.mjs';
+import { CHROME, checkPlatform, launch, stagePlatform, unstagePlatform, wait as sleep } from './cdp.mjs';
 
 if (!CHROME) {
 	console.error('No Chrome-family browser found.');
@@ -347,6 +353,58 @@ for (const one of tables.filter((each) => each.overflows)) {
 	// one case the room may be under a number cell; (b) still holds there.
 	if (!one.byHeading) check(one.room >= one.band - 0.5, `520 ${one.label}: (8a) the room beside the sticky name is at least its band: one number cell, or one glyph where every trailing cell is one`, `${one.room} against ${one.band}`);
 	check(one.cut.length === 0, `520 ${one.label}: (8b) every cell's content but prose shows whole beside it`, JSON.stringify(one.cut.slice(0, 3)));
+}
+
+// 9. Focus moved back along a scrolled table never lands behind its sticky name.
+const SHIFT_TAB = { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: 8 };
+const SCROLLERS = `(()=>{
+ const tabbable=e=>e.tabIndex>=0&&!e.disabled&&e.getClientRects().length>0;
+ window.__controls=w=>[...w.querySelectorAll('input, select, textarea, button, a[href]')].filter(tabbable);
+ window.__behind=(a)=>{const pin=a.closest('tr')?.querySelector(':scope > .sheetsmith-table-name');if(!pin||pin.contains(a))return 0;
+  const p=pin.getBoundingClientRect(),r=a.getBoundingClientRect();const over=Math.min(p.right,r.right)-Math.max(p.left,r.left);return over>0.5?Math.round(over*10)/10:0;};
+ const all=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-wrapper')].filter(w=>w.scrollWidth>w.clientWidth+1&&__controls(w).length>1);
+ all.forEach((w,i)=>{w.dataset.measure=String(i);});
+ return all.map(w=>({label:w.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?',controls:__controls(w).length}));
+})()`;
+async function loadFocus(text, phone) {
+	const [viewport, width] = phone ? [380, 0] : [620, 520];
+	// `shot.mjs`'s `platform=phone`, through the one staging both share, so 380
+	// is a phone and not a squeezed frame.
+	const staged = phone ? await stagePlatform(send, 'phone') : null;
+	await send('Emulation.setDeviceMetricsOverride', { width: viewport, height: 1900, deviceScaleFactor: 1, mobile: false });
+	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=populated&width=${width}&text=${text}` });
+	await sleep(2500);
+	if (staged !== null) {
+		let took = true;
+		try {
+			await checkPlatform(evaluate, staged);
+		} catch {
+			took = false;
+		}
+		check(took, `(9) 380 phone${text ? ` text=${text}` : ''}: phone staging took, every class of it`);
+		await unstagePlatform(send, staged);
+	}
+}
+await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+for (const [phone, text] of [[false, 0], [false, 24], [true, 0], [true, 24]]) {
+	await loadFocus(text, phone);
+	const at = `${phone ? '380 phone' : '520'}${text ? ` text=${text}` : ''}`;
+	const scrollers = await evaluate(SCROLLERS);
+	if (!phone && text === 0) check(scrollers.length > 0, '(9) at 520 at least one table scrolls, or this check holds nothing');
+	for (const [index, one] of scrollers.entries()) {
+		const W = `document.querySelector('[data-measure="${index}"]')`;
+		const behind = [];
+		// Each control but the first: the one after it focused, the table
+		// scrolled fully right, and a real Shift-Tab, not a script's focus().
+		for (let i = 1; i < one.controls; i++) {
+			await evaluate(`(()=>{const w=${W};__controls(w)[${i}].focus({preventScroll:true});w.scrollLeft=w.scrollWidth;})()`);
+			await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...SHIFT_TAB });
+			await send('Input.dispatchKeyEvent', { type: 'keyUp', ...SHIFT_TAB });
+			const landed = await evaluate(`(()=>{const a=document.activeElement;return {over:__behind(a),name:a.getAttribute('aria-label')??a.tagName};})()`);
+			if (landed.over > 0) behind.push(`${landed.name} ${landed.over}px`);
+		}
+		check(behind.length === 0, `${at} ${one.label}: (9) Shift-Tab back from scrolled right lands clear of the sticky name, ${one.controls} controls`, behind.slice(0, 3).join(', '));
+	}
 }
 
 await browser.close();

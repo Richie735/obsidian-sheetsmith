@@ -350,7 +350,9 @@ export function configError(config: TrackConfig): string | null {
 			const key = (row.key ?? '').trim();
 			if (key === '') return 'Every row needs a key.';
 			const problem = fencedKeyProblem(key);
-			if (problem !== null) return `The row key "${key}" ${problem}.`;
+			if (problem !== null) {
+				return `The row key "${key}" ${problem}. Rename it under Rows in the layout editor.`;
+			}
 			if (seen.has(key)) return `Two rows are both called "${key}".`;
 			seen.add(key);
 		}
@@ -1046,7 +1048,9 @@ function refuseRowName(text: string, taken: readonly string[]): string | null {
 		return 'A row needs a name.';
 	}
 	const problem = fencedKeyProblem(name);
-	if (problem !== null) return `A row name ${problem}.`;
+	// The one component caller whose fix is not the layout editor: the reader typed this
+	// name into the field beside the message, and a refused draft is kept there.
+	if (problem !== null) return `A row name ${problem}. Take the colon out of the name.`;
 	const link = fencedLinkRefusal(name, {
 		subject: 'Row names',
 		instead:

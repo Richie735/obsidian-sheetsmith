@@ -35,6 +35,16 @@ const ENTRY = /^([^:]+?)([ \t]*:[ \t]*)(.*)$/;
  * *subject* stays the caller's, because only the caller knows whether it is
  * refusing a stat, a row key or a field; the rule does not vary.
  *
+ * **So does the fix, and that is the one way this clause departs from
+ * `readFenced`'s refusals below**, which carry their own because every caller
+ * hands them on verbatim and all of them mean the note. This refusal has no
+ * one place to be repaired. A component refusing its layout's key on the
+ * sheet names the layout editor's field (`docs/UI.md` §10); a Track row the
+ * character names on the sheet is repaired in the field beside the message;
+ * and the layout editor's own fields draw the message under the field it
+ * refuses, ending it with what the field was left holding. A fix written here
+ * would be wrong for two of the three.
+ *
  * Read at two moments, and both are needed: a component refuses a key a
  * hand-edited layout file carries, and the layout editor refuses one before
  * it is committed — which matters more than it looks, because a committed key
