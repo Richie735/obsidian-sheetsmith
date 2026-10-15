@@ -741,8 +741,8 @@ of a meaningful glyph; **at 16px the `zap-off` slash is three short strokes, so 
 that ratio the whole mark reads as a grey smudge.** The one channel there is is
 only a channel while it can be seen, so dimming the shape was subtraction rather
 than reinforcement. Muted measures 6.41 and 7.50, and the step is unconditional
-rather than behind `prefers-contrast: more`, which §12 records as a query nothing
-here can render. Deliberately not `--text-error`: the value resolved perfectly
+rather than behind `prefers-contrast: more`, which no shot could render when this
+was decided (the `sheet-contrast-more` views emulate it now). Deliberately not `--text-error`: the value resolved perfectly
 well and is exactly what the note says, so §4.2's "rendered, not corrected"
 governs.
 
@@ -797,7 +797,9 @@ suggestion, and the form the fallback — Tab cycles
 within it, and Escape closes it and returns focus to the control, which is the
 platform's own contract for a dialog and what makes `aria-haspopup="dialog"` true
 rather than decorative; and a phone regime, **owed and read rather than seen**,
-since nothing below a 500px viewport has ever been photographed (§12).
+since nothing below a 500px viewport had been photographed when this was
+written. `sheet-viewport-380` and `sheet-modifier-form-viewport-380` now draw the
+sheet and this panel at a true 380, and no pass has read them yet (§12).
 
 **What it holds is a list and one disclosure**, and the state each line carries is
 its own words plus its own mark: `zap` / `zap-off` per line, the same mark the
@@ -1283,13 +1285,15 @@ Run `npm run harness`. Check each of these, because none is visible in code.
   programmatic focus paints what a tab press paints
 - **hover, which needs a browser being driven rather than pointed at a file.**
   `:hover` matches on the real pointer position and nothing in the page can move
-  it, so a `hover:` view in `harness/shot.mjs` opens the headless Chrome it
-  already launches over the DevTools Protocol and dispatches a real `mouseMoved`.
+  it, so a `hover:` view in `harness/shot.mjs` drives headless Chrome over the
+  DevTools Protocol (`harness/cdp.mjs`) and dispatches a real `mouseMoved`.
   It adds no dependency — `fetch` and Node's own `WebSocket`, the technique
   `harness/inspect.mjs` already uses against the installed app — and a real move
   rather than `CSS.forcePseudoState`, because half of what a hover does here is a
   `pointerenter` handler. Until it existed no hover treatment on a sheet had ever
-  been photographed
+  been photographed. The same path takes `hold:` (a press held mid-gesture),
+  `media:` (an emulated feature such as `prefers-contrast: more`) and any frame
+  under 500px wide, which `--screenshot` renders at 500 and crops
 - **a refusal at the commit**, which is a class of surface no fixture can hold:
   `editable.ts` reports one on *blur*, so the sentence exists only after somebody
   types and looks away. `&type=<selector>|<text>` sets a field and leaves it, and

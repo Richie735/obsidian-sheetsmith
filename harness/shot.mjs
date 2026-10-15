@@ -11,19 +11,33 @@
  * Views are addressed by the harness's own query parameters, so anything
  * reachable by clicking is reachable by a shot. Output lands in harness/shots/,
  * which is gitignored.
+ *
+ * **Two capture paths.** A view is shot by `--screenshot` unless it needs
+ * something only a *driven* browser can do, and then it is shot over the
+ * DevTools Protocol (`cdp.mjs`, `shootDriven` below). A view is driven when it
+ * names any of these, as a field on a default view or as an argument here:
+ *
+ *   size=380,1400                     # a frame under 500px wide: a true viewport
+ *   media=prefers-contrast:more       # an emulated media feature; repeatable
+ *   media=forced-colors:active
+ *   hover=<selector>                  # a real pointer resting on the element
+ *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held
+ *
+ * and `flag=<chrome flag>` passes a launch flag on either path, so a custom view
+ * can ask for `--force-high-contrast` as a default view does. The values are
+ * read here and never reach the page; everything else is the harness's query.
+ *
+ * `--screenshot` cannot do any of the four: headless Chrome floors the viewport
+ * at 500px whatever `--window-size` says (a narrower frame is a 500px render
+ * cropped), `--force-prefers-contrast` renders a byte-identical PNG, and nothing
+ * in the page can move the real pointer that `:hover` and a pointer capture
+ * answer to.
  */
 
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
-const CHROME = [
-	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	'/Applications/Chromium.app/Contents/MacOS/Chromium',
-	'/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-	'/usr/bin/google-chrome',
-	'/usr/bin/chromium',
-].find((path) => existsSync(path));
+import { CHROME, launch, wait } from './cdp.mjs';
 
 if (!CHROME) {
 	console.error('No Chrome-family browser found. Install one, or open harness/index.html by hand.');
@@ -435,6 +449,23 @@ const DEFAULTS = [
 	},
 	{
 		/*
+		 * **A true 380px viewport**, which `sheet-narrow` is not: that one is a
+		 * 380 *container* in a 520 window, because `--screenshot` floors the
+		 * viewport at 500. A frame under 500 wide is driven (`driven` below), so
+		 * this is the first sheet shot whose `innerWidth` is the phone's, and the
+		 * first where a rule sized against the viewport — `100vw`, a media query,
+		 * the anchored panel's cap — sees the number the frame says.
+		 *
+		 * No `&width=`: the stage fills the viewport, as a pane fills a phone.
+		 * Measured off `document.body` at this viewport, harness built first:
+		 * **18459**.
+		 */
+		name: 'sheet-viewport-380',
+		query: 'surface=sheet&theme=dark',
+		size: '380,18800',
+	},
+	{
+		/*
 		 * **A 520px container, which is a different question from a 520px
 		 * viewport** — and the one a design review had to generate for itself
 		 * before it could rule on a look criterion that names the number.
@@ -448,8 +479,9 @@ const DEFAULTS = [
 		 *
 		 * A 620px window rather than a 620px container: `&width=` is the harness's
 		 * own container width and the window only has to be wide enough not to
-		 * clip it, which is also why this one clears the 500px floor the row in
-		 * `docs/UI.md` §12 records.
+		 * clip it, which is also why this one cleared the 500px floor `--screenshot`
+		 * imposed when it was added. A frame under 500 wide is now a true viewport
+		 * (`driven` below; `sheet-viewport-380`), so the window is a choice here.
 		 */
 		// Raised to 6000 for the "Ability checks" six-up: at 520 the sheet has
 		// not collapsed, so the outer group's six pairs still sit two-per-row —
@@ -584,10 +616,11 @@ const DEFAULTS = [
 		size: '1400,1000',
 	},
 	{
-		// The same list at a phone's width. **A 520px window, not 380**: headless
-		// Chrome floors a viewport at 500 (`docs/BACKLOG.md`), and the modal sizes
-		// against the viewport rather than the harness's own container, so a
-		// `width=380` query would photograph a 520px modal and call it 380.
+		// The same list at a phone's width. **A 520px window, not a `width=380`
+		// query**: the modal sizes against the viewport rather than the harness's
+		// own container, so the query in this window would photograph a 520px
+		// modal and call it 380. Chosen while `--screenshot` floored the viewport at 500; a frame
+		// under 500 is now a true viewport (the driven path, `driven` below).
 		name: 'sheet-reset-confirm-narrow',
 		query: 'surface=sheet&theme=light&confirm=Short%20rest',
 		size: '520,1000',
@@ -663,6 +696,30 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light',
 		size: SHEET_FRAME,
 		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The first view at `prefers-contrast: more`, for any component.** The
+		 * sheet carries several of these blocks — the card's border, the
+		 * abbreviation, the unresolved glyph, a dropdown's chevron, a record
+		 * group's outline — and none had been rendered: Chrome's
+		 * `--force-prefers-contrast` flag draws a byte-identical PNG, so the
+		 * feature is emulated over the DevTools Protocol instead (`media` below,
+		 * which makes this a driven view).
+		 *
+		 * Both palettes, because what the blocks do is strengthen a muted mark, and
+		 * the page a muted mark fades against is the other half of the question.
+		 */
+		name: 'sheet-contrast-more',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-contrast-more-dark',
+		query: 'surface=sheet&theme=dark',
+		size: SHEET_FRAME,
+		media: { 'prefers-contrast': 'more' },
 	},
 	{
 		/*
@@ -946,12 +1003,10 @@ const DEFAULTS = [
 		 * sheet.
 		 *
 		 * **Driving the wrap needs `Emulation.setDeviceMetricsOverride` over the
-		 * DevTools protocol, not `--window-size`**, which is the same instrument
-		 * three backlog rows already wait on — the sub-500px floor,
-		 * `prefers-contrast: more`, and the bad-drag border that exists only during
-		 * a drag. So it joins that queue rather than being a gap of its own, and the
-		 * expectation this view was added under was wrong about the mechanism as
-		 * well as about the outcome.
+		 * DevTools protocol, not `--window-size`**, and the expectation this view
+		 * was added under was wrong about the mechanism as well as about the
+		 * outcome. That override is now the driven path's: a frame under 500 wide
+		 * gets it, as `sheet-modifier-form-viewport-380` does.
 		 */
 		name: 'sheet-modifier-form-multi-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MULTI_FORM}`,
@@ -1019,15 +1074,28 @@ const DEFAULTS = [
 	{
 		/*
 		 * **The panel on a narrow pane**, where it clamps to the viewport minus a
-		 * gutter and sits inside a table that is itself scrolling. `docs/UI.md` §12
-		 * holds the sub-500px floor; 520 is the narrowest a shot can honestly show,
-		 * and it is still narrower than the panel's own 30em.
+		 * gutter and sits inside a table that is itself scrolling. A 520 window
+		 * with a 380 container, from when 520 was the narrowest a shot could
+		 * honestly show; `sheet-modifier-form-viewport-380` is the true 380.
 		 */
 		name: 'sheet-modifier-form-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
 		// Kept equal to `sheet-narrow`'s own frame, for the same reason as
 		// `sheet-modifier-form-large-text` above.
 		size: '520,11800',
+	},
+	{
+		/*
+		 * **The panel at a true 380px viewport**, which the view above cannot be:
+		 * the panel hangs off `document.body` and is capped against the viewport,
+		 * so a 380 container in a 520 window draws it at its wide size. Here the
+		 * cap bites — 348 wide, the viewport less its gutter — inside a table that
+		 * is itself scrolling. Measured at this viewport: the panel is 348 x 500
+		 * with 498 of content, and the sheet 18240 tall.
+		 */
+		name: 'sheet-modifier-form-viewport-380',
+		query: `surface=sheet&theme=dark&bar=off&${OPEN_MIXED_FORM}`,
+		size: '380,18800',
 	},
 	{
 		/*
@@ -1205,6 +1273,23 @@ const DEFAULTS = [
 		query:
 			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abilities.',
 		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **A real pointer resting on the third member**, which is the half of
+		 * `docs/BACKLOG.md`'s suggestion-popup row a driven browser can reach — and
+		 * what it shows is that nothing moves. Obsidian writes no `:hover` rule for
+		 * a suggestion item: its `mousemove` moves `is-selected` (`app.js`'s
+		 * `onSuggestionMouseover`), and `obsidian-stub.ts` binds no `mousemove`, so
+		 * the highlight stays on the first item under the pointer. Kept as the
+		 * picture that row points at, so the gap is seen rather than asserted. A
+		 * window-sized frame: the popup sits about 900px down, beside the field.
+		 */
+		name: 'editor-suggest-hover',
+		query:
+			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abilities.',
+		size: '1500,1400',
+		hover: '.suggestion-item:nth-child(3)',
 	},
 	{
 		// Inside an aggregate's second argument, where the named table's own
@@ -1869,6 +1954,12 @@ const DEFAULTS = [
 		// entirely. It is here *because* it is wrong: `docs/UI.md` §12 has the row
 		// and this is the picture it points at, and a regime with no shot is how
 		// this shipped. 380 to match the sheet's own narrow view.
+		//
+		// **A true 380 since the driven path**: a frame under 500 wide is driven
+		// (`driven` below), where before it was a 500px render cropped to 380. The
+		// frame is stale, and not by that: the pane measures 29749 at 380 and 28381
+		// at 500, so the 7252 below was taken long before either. Left at 8050,
+		// since raising it is a measuring pass of its own.
 		name: 'editor-narrow',
 		query: 'surface=editor&theme=light&open=weapons',
 		// 7300 against a measured 7252 at 380, where every row is at its tallest.
@@ -1916,9 +2007,9 @@ const DEFAULTS = [
 	{
 		// The same state in a 380px pane, because the dropdown's selected label
 		// is now a whole vault path. **`&width=380` rather than a 380-wide
-		// window**, which is `sheet-narrow`'s own spelling and for its reason:
-		// headless Chrome floors the viewport at 500 (`docs/BACKLOG.md` § UI), so
-		// a `380,…` frame is a 500px render cropped to 380 — and it drew this
+		// window**, which is `sheet-narrow`'s own spelling, and chosen when
+		// `--screenshot` was the only path: it floors the viewport at 500, so a
+		// `380,…` frame was a 500px render cropped to 380 — and it drew this
 		// row's description as cut off mid-sentence at the frame's edge, which
 		// looks exactly like a line that fails to wrap. Measured in a true 380px
 		// pane the row is 354 wide, the controls and the description 322 each,
@@ -2049,7 +2140,7 @@ const DEFAULTS = [
 	{
 		// Below the pane's missing narrow regime (`docs/BACKLOG.md` § UI).
 		// `&width=` rather than a narrow window, `editor-outside-folder-narrow`'s
-		// spelling and for its reason: headless Chrome floors the viewport at 500.
+		// spelling, chosen when `--screenshot` floored the viewport at 500.
 		name: 'picker-narrow-480',
 		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&width=480',
 		size: '520,4600',
@@ -2130,6 +2221,42 @@ const DEFAULTS = [
 		name: 'canvas-drag-grid',
 		query: 'surface=editor&theme=dark&layout=canvas-demo&drag=front%3A180%2C120',
 		size: '1400,1400',
+	},
+	/*
+	 * **A bad drag, held by a real pointer** (`hold` below, so these are driven
+	 * views). `-clamped` exists only while a gesture runs, and `-overlap` is
+	 * repainted by it, so a still reaches either only with the press held:
+	 * `&drag=` does that with synthetic `PointerEvent`s, and these do it with the
+	 * browser's own mouse, which `setPointerCapture` and `:hover` both answer to.
+	 * `Front` is the block, found by its focus token rather than by position.
+	 */
+	{
+		// Carried past the grid's right edge: the block stops at the last column
+		// and is marked `-clamped`.
+		name: 'canvas-drag-clamped',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+		hold: { at: '[data-sheetsmith-focus="preview-front"]', by: [700, 0] },
+	},
+	{
+		// The same, in forced colors, where every border is one system colour.
+		// The launch flag rather than emulated `forced-colors: active`, as every
+		// forced-colors view here: emulation repaints the page's own colours but
+		// not native controls, so its buttons lose the ButtonFace fill this flag
+		// draws and its placeholders change colour.
+		name: 'canvas-drag-clamped-forced-colors',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+		hold: { at: '[data-sheetsmith-focus="preview-front"]', by: [700, 0] },
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// Nudged left and still over `Behind`: both blocks are marked `-overlap`.
+		name: 'canvas-drag-overlap-forced-colors',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+		hold: { at: '[data-sheetsmith-focus="preview-front"]', by: [-60, 0] },
+		flags: ['--force-high-contrast'],
 	},
 	/*
 	 * **The tree** (`docs/features/layout-editor-tree.md`): nesting drawn as a
@@ -2409,7 +2536,7 @@ const DEFAULTS = [
 		 * answers it is the pointer resting on a field with the name beside it.
 		 *
 		 * Hovered rather than queried, because `:hover` matches on the real pointer
-		 * position and nothing in the page can move it. `shootHovered` below is the
+		 * position and nothing in the page can move it. `shootDriven` below is the
 		 * whole of what that costs.
 		 */
 		name: 'sheet-passport-hover',
@@ -2626,8 +2753,8 @@ const DEFAULTS = [
 		/*
 		 * **A container narrower than the wide Table, scrolled to each end.** The
 		 * control is outside the scroller, so its label has to be fully in view at
-		 * both. 520 is the narrowest a shot can honestly show (the 500px floor, UI.md
-		 * §12), so the table is made wide enough to scroll at it.
+		 * both. 520 was the narrowest a shot could honestly show when this was
+		 * added (the 500px floor), so the table is made wide enough to scroll at it.
 		 */
 		name: 'sheet-pinned-add-scrolled-left',
 		query: `${WIDE}left`,
@@ -2824,128 +2951,192 @@ const DEFAULTS = [
 ];
 
 const args = process.argv.slice(2);
+
+/** The arguments `shot.mjs` reads itself, which never reach the page's query. */
+const OWN = ['size', 'media', 'hover', 'hold', 'flag'];
+const own = (name) =>
+	args.filter((arg) => arg.startsWith(`${name}=`)).map((arg) => decodeURIComponent(arg.slice(name.length + 1)));
+
+/** `name:value` pairs into the object a view's `media` field holds. */
+function mediaOf(pairs) {
+	if (pairs.length === 0) return undefined;
+	return Object.fromEntries(
+		pairs.map((pair) => {
+			const at = pair.indexOf(':');
+			if (at < 1) throw new Error(`Bad media "${pair}"; want "<feature>:<value>".`);
+			return [pair.slice(0, at), pair.slice(at + 1)];
+		}),
+	);
+}
+
+/** `<selector>|<dx>,<dy>` into the object a view's `hold` field holds. */
+function holdOf(spec) {
+	if (spec === undefined) return undefined;
+	const at = spec.lastIndexOf('|');
+	const by = spec.slice(at + 1).split(',').map(Number);
+	if (at < 1 || by.length !== 2 || !by.every(Number.isFinite)) {
+		throw new Error(`Bad hold "${spec}"; want "<selector>|<dx>,<dy>".`);
+	}
+	return { at: spec.slice(0, at), by };
+}
+
 const views =
 	args.length === 0
 		? DEFAULTS
 		: [
 				{
 					name: 'custom',
-					query: args.filter((arg) => !arg.startsWith('size=')).join('&'),
+					query: args.filter((arg) => !OWN.some((name) => arg.startsWith(`${name}=`))).join('&'),
 					// `size=1500,3000` for a view that runs longer than the
 					// default frame: an open component form is most of one.
-					size: args.find((arg) => arg.startsWith('size='))?.slice(5) ?? '1500,1500',
+					size: own('size')[0] ?? '1500,1500',
+					media: mediaOf(own('media')),
+					hover: own('hover')[0],
+					hold: holdOf(own('hold')[0]),
+					flags: own('flag'),
 				},
 			];
 
 /**
- * Capture a view with the pointer resting on one element, over the DevTools
- * Protocol.
+ * Whether a view needs the driven path: anything `--screenshot` cannot reach.
  *
- * **A second capture path, and it is here because `:hover` cannot be reached any
- * other way.** Every other state a still cannot get to is a query on the harness
- * page — `&focus=`, `&press=`, `&scroll=` — because each of them is something
- * JavaScript can do. Hover is not: `:hover` matches on the real pointer position
- * and nothing in the page can move it. So a hover shot needs a browser being
- * *driven* rather than a browser being pointed at a file, and until this existed
- * no hover treatment on the sheet had ever been photographed — a table cell's
- * field revealing its border, a record's name, a delete glyph stepping from faint
- * to muted, all of them reviewed by hand or on trust.
+ * **A frame under 500px wide is driven without asking**, because on the other
+ * path it is a lie rather than a limitation: Chrome lays the page out at 500 and
+ * the PNG is cut to the frame, which looks exactly like a narrow sheet that
+ * overflows its pane. `editor-narrow` was that picture until this existed.
+ */
+function driven(view) {
+	const width = Number(view.size.split(',')[0]);
+	return view.media !== undefined || view.hover !== undefined || view.hold !== undefined || width < 500;
+}
+
+/**
+ * Real time the page is given to draw before anything is driven or captured:
+ * the budget `--virtual-time-budget` gives the other path, as wall-clock time,
+ * since a driven page runs on the real clock.
+ */
+const DRAW_BUDGET = 3000;
+
+/**
+ * Where an element's centre is, for a pointer to go to. Throws on no match,
+ * because a hover shot of nothing looks exactly like a hover shot.
+ */
+async function centreOf(browser, view, selector) {
+	const at = await browser.evaluate(`(() => {
+		const el = document.querySelector(${JSON.stringify(selector)});
+		if (el === null) return null;
+		el.scrollIntoView({ block: 'nearest' });
+		const b = el.getBoundingClientRect();
+		return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+	})()`);
+	if (at === null) {
+		throw new Error(`nothing matches "${selector}" in ${view.name}: the selector is stale.`);
+	}
+	return at;
+}
+
+/**
+ * Capture a view by driving Chrome over the DevTools Protocol.
  *
- * **It adds no dependency**, which is the constraint this file opens with.
- * `harness/inspect.mjs` already speaks CDP to the *installed Obsidian* with
- * nothing but `fetch` and Node's built-in `WebSocket`, and this is that technique
- * pointed at the headless Chrome this file already launches.
+ * **The second capture path, and it exists for four states the first cannot
+ * reach** (the header lists them). It started as the hover path alone: every
+ * other state a still could not get to became a query on the harness page —
+ * `&focus=`, `&press=`, `&scroll=` — because each is something JavaScript can
+ * do, and `:hover` is not. A viewport, a media feature and a held press are the
+ * same kind of thing: properties of the browser, not of the page.
+ *
+ * The page loads *after* the viewport and the media are set, so it never draws
+ * at another width first and reflows: what is captured is a first layout at the
+ * frame's own size, as `--screenshot`'s is.
  *
  * A real `mouseMoved` rather than `CSS.forcePseudoState`, deliberately: forcing
  * the pseudo-state paints the CSS and fires none of the listeners, and half of
  * what a hover does on this sheet is a `pointerenter` handler — `ui/truncation.ts`
- * decides whether to reveal a clipped string on exactly that event. Moving the
- * pointer exercises both.
+ * decides whether to reveal a clipped string on exactly that event. And a real
+ * press for a hold, rather than the synthetic `PointerEvent`s `&drag=` sends,
+ * so the gesture is the browser's own: `setPointerCapture`, `:active` and the
+ * pointer's own position all answer to it.
  *
- * The clip is the whole window, so the file matches what `--screenshot` produces
+ * The clip is the whole frame, so the file matches what `--screenshot` produces
  * for every other view and a reviewer can diff the two.
  */
-async function shootHovered(view, out) {
+async function shootDriven(view, out) {
 	const [width, height] = view.size.split(',').map(Number);
-	// A high port rather than 9222, which a developer's own Chrome may hold.
-	const port = 9500 + Math.floor(Math.random() * 400);
-	const child = spawn(
-		CHROME,
-		[
-			'--headless=new',
-			'--disable-gpu',
-			'--hide-scrollbars',
-			`--remote-debugging-port=${port}`,
-			...(view.flags ?? []),
-			`--window-size=${view.size}`,
-			`${page}?${view.query}`,
-		],
-		{ stdio: ['ignore', 'ignore', 'ignore'] },
-	);
-	const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-	/** The same budget `--virtual-time-budget` gives every other view, plus slack. */
-	await wait(4000);
-	const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-	const target = targets.find((one) => one.type === 'page');
-	const socket = new WebSocket(target.webSocketDebuggerUrl);
-	await new Promise((resolve) => {
-		socket.onopen = resolve;
-	});
-	let id = 0;
-	const pending = new Map();
-	socket.onmessage = (event) => {
-		const message = JSON.parse(event.data);
-		pending.get(message.id)?.(message.result);
-	};
-	const send = (method, params) =>
-		new Promise((resolve) => {
-			id += 1;
-			pending.set(id, resolve);
-			socket.send(JSON.stringify({ id, method, params }));
+	const browser = await launch([...(view.flags ?? []), `--window-size=${view.size}`]);
+	try {
+		await browser.send('Page.enable');
+		// A headless page is unfocused until its first input event, and the
+		// window focus that event delivers is itself a state change: it closed
+		// the name suggester before a pointer resting on it could be captured.
+		// An Obsidian window being used has focus, so the page starts with it.
+		await browser.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+		// No floor: this is what the 500px `--window-size` cannot do.
+		await browser.send('Emulation.setDeviceMetricsOverride', {
+			width,
+			height,
+			deviceScaleFactor: 1,
+			mobile: false,
 		});
+		if (view.media !== undefined) {
+			await browser.send('Emulation.setEmulatedMedia', {
+				features: Object.entries(view.media).map(([name, value]) => ({ name, value })),
+			});
+		}
+		const loaded = browser.next('Page.loadEventFired');
+		await browser.send('Page.navigate', { url: `${page}?${view.query}` });
+		await loaded;
+		await wait(DRAW_BUDGET);
 
-	const box = await send('Runtime.evaluate', {
-		expression: `(() => {
-			const el = document.querySelector(${JSON.stringify(view.hover)});
-			if (el === null) return null;
-			el.scrollIntoView({ block: 'nearest' });
-			const b = el.getBoundingClientRect();
-			return JSON.stringify({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-		})()`,
-		returnByValue: true,
-	});
-	if (box.result.value === null || box.result.value === undefined) {
-		throw new Error(
-			`nothing matches "${view.hover}" in ${view.name}: the selector is stale, ` +
-				'and a hover shot of nothing looks exactly like a hover shot.',
-		);
+		if (view.hover !== undefined) {
+			const at = await centreOf(browser, view, view.hover);
+			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+		}
+		if (view.hold !== undefined) {
+			const at = await centreOf(browser, view, view.hold.at);
+			const [dx, dy] = view.hold.by;
+			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+			await browser.send('Input.dispatchMouseEvent', {
+				type: 'mousePressed',
+				x: at.x,
+				y: at.y,
+				button: 'left',
+				buttons: 1,
+				clickCount: 1,
+			});
+			// In steps, as a hand moves, so a gesture that reads each move — a
+			// drag snapping cell by cell — sees a path and not a teleport.
+			const STEPS = 8;
+			for (let step = 1; step <= STEPS; step++) {
+				await browser.send('Input.dispatchMouseEvent', {
+					type: 'mouseMoved',
+					x: at.x + (dx * step) / STEPS,
+					y: at.y + (dy * step) / STEPS,
+					button: 'left',
+					buttons: 1,
+				});
+			}
+			// No `mouseReleased`: the press is what is being photographed.
+		}
+		// A `title` is the host's own tooltip and never appears in a screenshot,
+		// so nothing here waits for one; what this pause is for is the transition
+		// a hovered surface runs (160ms on a card, per `sheet.css`).
+		if (view.hover !== undefined || view.hold !== undefined) await wait(400);
+
+		const shot = await browser.send('Page.captureScreenshot', {
+			format: 'png',
+			captureBeyondViewport: true,
+			clip: { x: 0, y: 0, width, height, scale: 1 },
+		});
+		writeFileSync(out, Buffer.from(shot.data, 'base64'));
+	} finally {
+		await browser.close();
 	}
-	const at = JSON.parse(box.result.value);
-	await send('Input.dispatchMouseEvent', {
-		type: 'mouseMoved',
-		x: at.x,
-		y: at.y,
-		button: 'none',
-		buttons: 0,
-	});
-	// A `title` is the host's own tooltip and never appears in a screenshot, so
-	// nothing here waits for one; what this pause is for is the transition a
-	// hovered surface runs (160ms on a card, per `sheet.css`).
-	await wait(400);
-	const shot = await send('Page.captureScreenshot', {
-		format: 'png',
-		captureBeyondViewport: true,
-		clip: { x: 0, y: 0, width, height, scale: 1 },
-	});
-	writeFileSync(out, Buffer.from(shot.data, 'base64'));
-	socket.close();
-	child.kill();
 }
 
 for (const view of views) {
 	const out = `${outDir}/${view.name}.png`;
-	if (view.hover !== undefined) {
-		await shootHovered(view, out);
+	if (driven(view)) {
+		await shootDriven(view, out);
 		console.log(`${view.name.padEnd(16)} ${out}`);
 		continue;
 	}
