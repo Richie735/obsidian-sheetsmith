@@ -23,6 +23,7 @@
  *   hover=<selector>                  # a real pointer resting on the element
  *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held
  *   platform=tablet                   # Obsidian's tablet body classes, and touch
+ *   platform=phone                    # the phone's, `is-mobile is-phone`, and touch
  *   frame=<selector>                  # the PNG clipped to that element, plus 16px
  *   pad=<px>                          # what a frame adds round the element
  *
@@ -2071,23 +2072,60 @@ const DEFAULTS = [
 		size: '1210,900',
 	},
 	{
-		// The narrow regime, which had no view at all: `editor-stacked` at 1190 was
-		// the narrowest editor shot, and everything below it was unlooked at. This
-		// one shows a pane that does not fit — the picker's delete clipped, the
-		// schematic running off the right, the panel's `height` field off-screen
-		// entirely. It is here *because* it is wrong: `docs/UI.md` §12 has the row
-		// and this is the picture it points at, and a regime with no shot is how
-		// this shipped. 380 to match the sheet's own narrow view.
-		//
-		// **A true 380 since the driven path**: a frame under 500 wide is driven
-		// (`driven` below), where before it was a 500px render cropped to 380. The
-		// frame is stale, and not by that: the pane measures 29749 at 380 and 28381
-		// at 500, so the 7252 below was taken long before either. Left at 8050,
-		// since raising it is a measuring pass of its own.
+		// The narrow regime (`docs/features/layout-editor-narrow-regime.md`), at a
+		// true 380: the canvas drawn as one column with its note, the rows
+		// stacked, **Back to the selection** in the panel's title row. Framed whole,
+		// which it had not been since the driven path made it a true viewport:
+		// measured off `document.body` through this view's own query, harness
+		// built first, **30087**.
 		name: 'editor-narrow',
 		query: 'surface=editor&theme=light&open=weapons',
-		// 7300 against a measured 7252 at 380, where every row is at its tallest.
-		size: '380,8050',
+		size: '380,30200',
+	},
+	{
+		// The same pane under the app's phone CSS: 44px fields, so every row is
+		// taller, and the position fields' 75px, which the app's text-width rule
+		// does not reach because they are `number` inputs. Measured the same way:
+		// **33971**.
+		name: 'editor-phone',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '380,34250',
+		platform: 'phone',
+	},
+	{
+		// The pane on a tablet, stacked at 820, where `.is-tablet
+		// button:not(.clickable-icon)` took 4px 20px of padding off the tree's
+		// names and chevrons until they were doubled past it (`editor.css`).
+		// Measured: **23841**.
+		name: 'editor-tablet',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '820,23950',
+		platform: 'tablet',
+	},
+	{
+		// The canvas's threshold, bracketed: 530 is a 504 pane, so the canvas's
+		// view is under 480 of content and draws one column with its note; 546 is
+		// a 520 pane and a grid. Measured: **28853** and **21294**.
+		name: 'editor-canvas-column',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '530,28950',
+	},
+	{
+		name: 'editor-canvas-grid',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '546,21400',
+	},
+	{
+		// The rows' threshold, bracketed: 600 is a 574 pane, stacked; 620 a 594
+		// pane, side by side. Measured: **21066** and **20922**.
+		name: 'editor-rows-stacked',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '600,21150',
+	},
+	{
+		name: 'editor-rows-beside',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '620,21000',
 	},
 	{
 		// No layouts at all: the first thing a new vault shows, and one of the
@@ -3189,9 +3227,13 @@ async function centreOf(browser, view, selector) {
 
 /**
  * The body classes Obsidian sets for a platform, which the stub never does. A
- * tablet is mobile as well, so it carries both, as the app's `body` does.
+ * tablet is mobile as well, so it carries both, as the app's `body` does, and so
+ * is a phone: `.is-mobile`'s bare-control rules and the phone's own variables
+ * are what `calibrate.mjs` carries under them, so `phone` stages the app's phone
+ * CSS — its 44px inputs and `.is-mobile input[type='text']`'s width among them —
+ * at whatever width the view gives it. It is not a device.
  */
-const PLATFORMS = { tablet: ['is-mobile', 'is-tablet'] };
+const PLATFORMS = { tablet: ['is-mobile', 'is-tablet'], phone: ['is-mobile', 'is-phone'] };
 
 /**
  * Capture a view by driving Chrome over the DevTools Protocol.
