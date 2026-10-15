@@ -275,6 +275,23 @@ sheet.
   A glyph on a partly lit segment is not a case, since part of it sits on
   `Canvas`, so it keeps the mode's own colour and plate
   (`docs/features/forced-colors-track-and-table.md`).
+- **`prefers-contrast: more` raises every line that is a surface's or a control's
+  only edge to `--text-muted`, and leaves the rest** [judgement; seen block by
+  block in `sheet-contrast-more`, `-dark` and `sheet-record-groups-contrast-more`].
+  That is a card's border and pill, a table's box and cells, a pool's box and
+  steppers, a track's box, segments and dividers, a placed box, a record group's
+  outline and header rule, the record strip's rule, and a record's menu, which
+  was the one edge left faint until this was looked at. Two marks go further: a
+  card dropdown's chevron to `--text-normal`, and every marked level ring and harm
+  segment to the full fill, since a ramp trades contrast for shape. **The
+  abbreviation and the unresolved `?` have no block**: both are muted at every
+  contrast (the faint rule below). **Left alone, as the ruling and not an
+  omission**: a container's heading rule and a tab strip's baseline, whose
+  heading text carries the structure; a Passport's chips, whose fill is the
+  field; a Pool's bar track, which repeats the number above it; the Rich text,
+  Image and record body placeholders, the asymmetry `sheet.css` records at
+  Passport's block; and an unresolved link, which takes the app's own
+  `--link-unresolved-*` tokens, so a theme that answers the query answers it here.
 - **One focus treatment per component.** The same gesture in the same component
   must not produce two different rings. **A round control takes a round ring**,
   so a Record set's summary line can show three same-size circles — a focused

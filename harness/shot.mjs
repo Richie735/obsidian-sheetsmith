@@ -2805,6 +2805,24 @@ const DEFAULTS = [
 		size: '1400,1900',
 	},
 	{
+		/*
+		 * The same sheet at `prefers-contrast: more`, both palettes, because the
+		 * record group's outline and its header's rule are the one contrast block
+		 * the populated sheet cannot show: no grouped list is on it. The rest of
+		 * the sheet's blocks are in `sheet-contrast-more` and its dark twin.
+		 */
+		name: 'sheet-record-groups-contrast-more',
+		query: 'surface=sheet&theme=light&state=record-groups',
+		size: '1400,1900',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-record-groups-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=record-groups',
+		size: '1400,1900',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
 		name: 'sheet-record-groups-collapsed',
 		query:
 			'surface=sheet&theme=light&state=record-groups&press=.sheetsmith-record-group-toggle',

@@ -7382,6 +7382,17 @@ a.sheetsmith-notice-action {
 	color: var(--text-normal);
 }
 
+/* The siblings' pattern again: this border is the whole of the control's shape,
+   since the fill is transparent and no chevron is drawn, so it is the one edge on
+   a record that faded at higher contrast while the list's own box, a card's pill
+   and a pool's steppers rose round it (`sheet-contrast-more`, the Spells list and
+   the recharging lists). Below the rule it raises, which it ties on (0,2,0). */
+@media (prefers-contrast: more) {
+	.sheetsmith-view .sheetsmith-record-select {
+		border-color: var(--text-muted);
+	}
+}
+
 /* The body, indented to the name rather than to the chevron, so an open record
    reads as one block with its own text under its own heading.
 
