@@ -960,6 +960,29 @@ describe('table.render', () => {
 		]);
 	});
 
+	it('wraps a level drawn as a dropdown, so it can wear the chevron', () => {
+		// A select carries no pseudo-element, and the app draws its own chevron
+		// on `.dropdown` alone, so without the wrapper a cell's menu reads as a
+		// text box (`docs/UI.md` §9's one chevron).
+		const el = render(note({}), {
+			...levelled,
+			columns: [
+				{
+					key: 'Training',
+					type: 'level' as const,
+					input: 'select' as const,
+					levels: ['Untrained', 'Proficient'],
+				},
+			],
+		});
+		const selects = Array.from(el.querySelectorAll('tbody select'));
+		expect(selects.length).toBeGreaterThan(0);
+		for (const select of selects) {
+			expect(select.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+			expect(select.parentElement?.parentElement?.tagName).toBe('TD');
+		}
+	});
+
 	it('leaves a colon inside a level name alone', () => {
 		// A mark is one character in a circle. A layout that named a level
 		// "Trained: the useful one" before this syntax existed is a name with

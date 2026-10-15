@@ -1384,7 +1384,12 @@ function drawRow(
 			};
 
 			if (graded && column.input === 'select') {
-				const select = td.createEl('select', { cls: 'sheetsmith-table-select' });
+				// The chevron rides on a wrapper, since a select carries no
+				// pseudo-element, and sits inside the select's own field
+				// (`docs/UI.md` §9's one chevron): the app draws its own only on
+				// `.dropdown`, so a bare select read as a text box.
+				const menu = td.createSpan({ cls: 'sheetsmith-table-menu' });
+				const select = menu.createEl('select', { cls: 'sheetsmith-table-select' });
 				for (let i = 0; i <= count; i++) {
 					const option = select.createEl('option', { text: levelName(column, i) });
 					option.value = String(i);

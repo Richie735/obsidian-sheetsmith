@@ -1495,11 +1495,12 @@ body {
    cannot run underneath it.
 
    **One mark for every menu on a sheet, by selector list**: a record's select
-   wears the same chevron, drawn by these same declarations, so a reader learns
-   one sign for "this opens a list" (`docs/UI.md` §9). Where it sits is each
-   menu's own, and follows this rule. */
+   and a Table's or a Roster's cell select wear the same chevron, drawn by these
+   same declarations, so a reader learns one sign for "this opens a list"
+   (`docs/UI.md` §9). Where it sits is each menu's own, and follows this rule. */
 .sheetsmith-card-dropdown::after,
-.sheetsmith-view .sheetsmith-record-menu::after {
+.sheetsmith-view .sheetsmith-record-menu::after,
+.sheetsmith-view .sheetsmith-table-menu::after {
 	/* Named here because each placement below centres on them: a placement that
 	   restated 0.34em or the lift as its own number would decentre the moment
 	   this rule was retuned. On the mark itself, not `body`, so not a knob (§3 of
@@ -1847,9 +1848,10 @@ body {
 
 /* One step further for someone who asked for it, since the default is
 	   already what this block would otherwise raise it to. A record's menu
-	   wears the same mark, so it rises with it. */
+	   and a cell's wear the same mark, so they rise with it. */
 .sheetsmith-card-dropdown::after,
-.sheetsmith-view .sheetsmith-record-menu::after {
+.sheetsmith-view .sheetsmith-record-menu::after,
+.sheetsmith-view .sheetsmith-table-menu::after {
 		border-color: var(--text-normal);
 	}
 
@@ -2848,7 +2850,11 @@ body {
 
 .sheetsmith-view .sheetsmith-table-select {
 	max-width: 100%;
-	padding: var(--size-2-1) var(--size-4-1);
+	/* The end holds the chevron its wrapper draws inside the field: the mark's
+	   inset, its width and the gap the text keeps from it, as a record's
+	   select keeps. */
+	padding-block: var(--size-2-1);
+	padding-inline: var(--size-4-1) var(--size-4-4);
 	font-size: var(--font-ui-small);
 }
 
@@ -4683,7 +4689,7 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-level-ring,
 .sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-input,
-.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-select {
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-menu {
 	display: inline-flex;
 	vertical-align: middle;
 }
@@ -7450,8 +7456,16 @@ a.sheetsmith-notice-action {
    hairline is the control's shape and a mark outside it would read as a
    second, separate thing. It takes no pointer, so a press on the mark is a
    press on the select under it. Sized at the select's own text so the mark's
-   `em` is the menu's. */
-.sheetsmith-view .sheetsmith-record-menu {
+   `em` is the menu's.
+
+   **A Table's and a Roster's cell select sit the same way**, on
+   `.sheetsmith-table-menu`: there the select keeps the app's field box, so
+   the mark goes inside it at its end. On a tablet that box is a pill about
+   1.03:1 against its row, so there the mark is the only sign (`docs/UI.md`
+   §9). Both are at `--font-ui-small`, so one
+   placement serves both. */
+.sheetsmith-view .sheetsmith-record-menu,
+.sheetsmith-view .sheetsmith-table-menu {
 	position: relative;
 	display: inline-flex;
 	min-width: 0;
@@ -7459,7 +7473,8 @@ a.sheetsmith-notice-action {
 	font-size: var(--font-ui-small);
 }
 
-.sheetsmith-view .sheetsmith-record-menu::after {
+.sheetsmith-view .sheetsmith-record-menu::after,
+.sheetsmith-view .sheetsmith-table-menu::after {
 	position: absolute;
 	/* Centred on the line by half its own size, then lifted by the shared
 	   correction. */

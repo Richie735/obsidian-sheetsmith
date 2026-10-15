@@ -2516,10 +2516,15 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					};
 
 					if (graded && column.input === 'select') {
+						// The chevron rides on a wrapper, since a select carries no
+						// pseudo-element, and the mark sits inside the select's own
+						// field (`docs/UI.md` §9's menu row): the app draws its own
+						// only on `.dropdown`, so a bare select read as a text box.
+						const menu = element('span', 'sheetsmith-table-menu', td);
 						const select = element(
 							'select',
 							'sheetsmith-table-select',
-							td,
+							menu,
 						);
 						for (let i = 0; i <= count; i++) {
 							const option = element(
