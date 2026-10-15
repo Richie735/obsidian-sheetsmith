@@ -175,6 +175,16 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   split in a wide window must reflow too, and a media query cannot see that.
   `.sheetsmith-view` sets `container-type: inline-size`; the grid collapses to a
   column under 480px of *container* width.
+- **So a phone's 380px viewport draws the sheet a 380px container draws, and the
+  narrow views stay container widths** [judgement; seen in `sheet-viewport-380`
+  against `sheet-narrow`]. Diffed with the harness bar's height taken off, the
+  two differ by antialiasing alone, under 40 levels a channel anywhere on the
+  sheet: nothing on it reads the viewport, which is the rule above doing its job.
+  What a true viewport changes is what hangs off `document.body`, the anchored
+  panel and the shared popover, whose caps read `100vw` (§9), so a view earns a
+  true viewport when it holds one of them. Neither picture carries Obsidian's
+  `.is-mobile` rules, which the stub never sets
+  (`docs/features/phone-input-width.md`), and neither is a device.
 - **A container is its own reflow context** (`SPEC` §8). A Group four columns
   wide inside a wide pane is narrow even though the sheet is not, so
   `.sheetsmith-subgrid` carries `container-type` and the grid inside it collapses
