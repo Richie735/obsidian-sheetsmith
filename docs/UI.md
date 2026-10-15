@@ -93,6 +93,24 @@ button was discarded. Every rule whose subject is a control in there now reads
 `.sheetsmith-panel .sheetsmith-panel-…`, at (0,2,0), and `styles.test.ts` checks
 the weight rather than the spelling.
 
+**And (0,2,0) is not the ceiling, because the app has platform rules above it.**
+On a phone `.is-mobile input[type='text']` sets a width at (0,2,1)
+(`docs/features/phone-input-width.md`), and on a tablet
+`.is-tablet button:not(.clickable-icon)` sets `padding: var(--size-4-1)
+var(--size-4-5)` at (0,2,1) — so every sheet button's own padding was dropped
+there, a 1.6em glyph button took 40px of padding, and a level ring drew as a
+42 × 33 oval [checked: `styles.test.ts`; seen in `sheet-tablet`]. Both answers
+are one shape: the declaration the platform rule replaces moves into a rule of
+its own on a doubled class, at (0,3,0), and nothing else moves with it, since a
+doubled whole rule would lift a control's border and fill over its own `:hover`
+and `:focus-visible`. A button that takes the app's chrome whole — the
+anchored panel's **Save**, **Cancel**, **Confirm** and **Remove** — takes the
+app's tablet padding too, which is the app's own control doing what it does
+everywhere. The harness stages a tablet by putting `is-mobile is-tablet` on
+`body` over CDP (`platform=tablet` in `shot.mjs`), against the platform rules
+and variables `harness:calibrate` now carries; it is the app's tablet CSS, not
+a device.
+
 ---
 
 ## 3. Sheetsmith's own knobs

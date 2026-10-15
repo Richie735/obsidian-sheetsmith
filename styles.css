@@ -387,7 +387,7 @@ body {
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -595,7 +595,7 @@ body {
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -611,6 +611,20 @@ body {
 .sheetsmith-panel .sheetsmith-panel-add:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
+}
+
+/* **The panel's two list buttons' padding, past Obsidian's tablet rule.** On a
+   tablet the app adds `.is-tablet button:not(.clickable-icon)` with
+   `padding: var(--size-4-1) var(--size-4-5)` at (0,2,1), over this panel's
+   (0,2,0) scope, so a line drew 20px in from its edge. The padding alone, on a
+   doubled class at (0,3,0), as the sheet's own block at the foot of `sheet.css`
+   does and for its reason: doubling the whole rule would lift it over the
+   lines' own `:hover` and `:focus-visible`. **Save**, **Cancel**, **Confirm**
+   and **Remove** are not here, because they take the app's button chrome whole
+   (`docs/UI.md` §2), so the app's tablet padding is theirs too. */
+.sheetsmith-panel .sheetsmith-panel-line.sheetsmith-panel-line,
+.sheetsmith-panel .sheetsmith-panel-add.sheetsmith-panel-add {
+	padding: var(--size-2-2) var(--size-2-3);
 }
 
 /* A rule above the promote row, because it is a different question from the five
@@ -1126,7 +1140,7 @@ body {
    Obsidian's own button styling would never reveal the loss on a control that
    painted its own surface (§2). */
 .sheetsmith-view .sheetsmith-tabset-tab {
-	padding: var(--size-2-2) 0 var(--size-2-3);
+	/* Padding: the tablet block at this file's foot. */
 	border: 0;
 	/* Reserves the mark the active tab paints, so nothing shifts by two pixels
 	   when the selection moves. */
@@ -2225,7 +2239,7 @@ body {
 	vertical-align: middle;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: 1.5px solid var(--text-faint);
 	border-radius: 50%;
@@ -2630,7 +2644,7 @@ body {
 	vertical-align: middle;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -2763,7 +2777,7 @@ body {
 	width: 100%;
 	min-height: var(--sheetsmith-inline-control, 1.6em);
 	margin-top: auto;
-	padding: var(--size-2-2);
+	/* Padding: the tablet block at this file's foot. */
 	border: none;
 	border-top: 1px solid var(--background-modifier-border);
 	border-radius: 0;
@@ -2874,7 +2888,7 @@ body {
 	vertical-align: middle;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: var(--radius-s);
@@ -3426,7 +3440,7 @@ body {
 	flex: none;
 	width: var(--sheetsmith-pool-control, var(--size-4-8));
 	height: var(--sheetsmith-pool-control, var(--size-4-8));
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
@@ -3605,7 +3619,7 @@ body {
 	flex: none;
 	width: var(--sheetsmith-pool-control, var(--size-4-8));
 	height: var(--sheetsmith-pool-control, var(--size-4-8));
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
@@ -4044,7 +4058,7 @@ body {
 }
 
 .sheetsmith-trigger {
-	padding: var(--size-2-1) var(--size-4-2);
+	/* Padding: the tablet block at this file's foot. */
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
@@ -4481,7 +4495,7 @@ a.sheetsmith-notice-action {
 	justify-content: center;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -6332,7 +6346,7 @@ a.sheetsmith-notice-action {
 	justify-content: center;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -6834,7 +6848,7 @@ a.sheetsmith-notice-action {
 	min-width: 0;
 	height: auto;
 	min-height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: var(--radius-s);
@@ -6910,7 +6924,7 @@ a.sheetsmith-notice-action {
 	flex: 0 0 auto;
 	width: var(--sheetsmith-inline-control, 1.6em);
 	height: var(--sheetsmith-inline-control, 1.6em);
-	padding: 0;
+	/* Padding: the tablet block at this file's foot. */
 	margin: 0;
 	border: none;
 	border-radius: 50%;
@@ -8900,6 +8914,55 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider th,
 .sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider td {
 	border-bottom-color: var(--text-muted);
+}
+
+/* **A sheet button's padding, past Obsidian's tablet rule.** On a tablet the
+   app adds `.is-tablet button:not(.clickable-icon)` with
+   `padding: var(--size-4-1) var(--size-4-5)` at (0,2,1), and every sheet
+   button rule setting padding was (0,2,0) or lighter — the scope's, or a bare
+   class on the pool's steppers and the reset bar's triggers — so each button's
+   own padding was dropped there. A glyph button sized by `--sheetsmith-inline-control` is border-box,
+   so 40px of padding outgrew its width: a level ring drew as a 42 × 33 oval,
+   and a tab gained 40px. Seen in `sheet-tablet`, a driven shot that puts the
+   app's tablet classes on `body`.
+
+   **The padding alone, on a doubled class at (0,3,0)**, the phone width fix's
+   shape (`docs/features/phone-input-width.md`): doubling each whole rule would
+   lift its border and background over the button's own `:hover` and
+   `:focus-visible`, and a rule on the app's selector would have to beat (0,2,1)
+   and still lose to these. No `!important`. The rules this padding came out of
+   say so where it was. `styles.test.ts` holds every sheet button's padding
+   above the tablet rule. */
+.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring,
+.sheetsmith-view .sheetsmith-table-remove-button.sheetsmith-table-remove-button,
+.sheetsmith-view .sheetsmith-table-modifier-button.sheetsmith-table-modifier-button,
+.sheetsmith-view .sheetsmith-pool-step.sheetsmith-pool-step,
+.sheetsmith-view .sheetsmith-pool-adjust-trigger.sheetsmith-pool-adjust-trigger,
+.sheetsmith-view .sheetsmith-pool-adjust-direction.sheetsmith-pool-adjust-direction,
+.sheetsmith-view .sheetsmith-track-action-button.sheetsmith-track-action-button,
+.sheetsmith-view .sheetsmith-track-modifier-button.sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-pool-modifier-button.sheetsmith-pool-modifier-button,
+.sheetsmith-view .sheetsmith-note-mark.sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-passport-part-remove.sheetsmith-passport-part-remove,
+.sheetsmith-view .sheetsmith-passport-add.sheetsmith-passport-add,
+.sheetsmith-view .sheetsmith-record-group-toggle.sheetsmith-record-group-toggle,
+.sheetsmith-view .sheetsmith-record-disclosure.sheetsmith-record-disclosure,
+.sheetsmith-view .sheetsmith-record-modifier.sheetsmith-record-modifier,
+.sheetsmith-view .sheetsmith-record-remove.sheetsmith-record-remove {
+	padding: 0;
+}
+
+.sheetsmith-view .sheetsmith-tabset-tab.sheetsmith-tabset-tab {
+	padding: var(--size-2-2) 0 var(--size-2-3);
+}
+
+.sheetsmith-view .sheetsmith-table-add-button.sheetsmith-table-add-button,
+.sheetsmith-view .sheetsmith-record-add.sheetsmith-record-add {
+	padding: var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-trigger.sheetsmith-trigger {
+	padding: var(--size-2-1) var(--size-4-2);
 }
 
 /*
