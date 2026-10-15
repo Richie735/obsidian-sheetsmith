@@ -9062,6 +9062,11 @@ a.sheetsmith-notice-action {
    that (docs/UI.md §4). */
 .sheetsmith-layout-editor-pane {
 	container-type: inline-size;
+	/* Named for the rows' stacking rule, which has to ask the pane and not the
+	   nearest container: the canvas's own `.sheetsmith-view` and every
+	   `.sheetsmith-entry-list` are containers too, and an unnamed query from a
+	   row inside one would read that one's width. */
+	container-name: sheetsmith-editor-pane;
 	/* The leaf's height, so the two columns below can bound themselves against
 	   something definite. Unconditional, because this element is the query
 	   container and a rule inside `@container` cannot reach it — an element
@@ -9182,6 +9187,91 @@ a.sheetsmith-notice-action {
 		max-height: 100%;
 		overflow-y: auto;
 	}
+
+/* **Back to the selection**, in the panel's title row
+   (`docs/features/layout-editor-narrow-regime.md` §4), shown only while the
+   pane is stacked: beside the tree it has nowhere to go back to. In this block
+   rather than a query of its own, so the button and the split are one number
+   and cannot disagree about which regime this is. Hidden with `display`, so it
+   leaves the tab order and the accessibility tree with its box; scoped, so the
+   app's `button` rules cannot outrank it. The app's own button otherwise,
+   chrome and tablet padding whole. */
+.sheetsmith-layout-editor-pane .sheetsmith-panel-back {
+		display: none;
+	}
+}
+
+/* **The setting rows stack below 584px of pane**
+   (`docs/features/layout-editor-narrow-regime.md` §3), as Obsidian stacks them
+   on a phone: its phone-modal declarations copied verbatim, so the stacked row
+   is the app's shape and not a lookalike, with the app's own exclusions and one
+   of ours. A tree row is a name and two glyph buttons; it fits at 320, and
+   stacked it would double the tree's height for nothing.
+
+   **584 is the narrowest width these forms have been seen side by side**:
+   `editor-threshold`'s panel, the measured floor of the two-column regime
+   above. That is the 1176 rule's own derivation — the width a form is known to
+   work at, not one assumed for it — put to the question it did not ask. Below
+   it no side-by-side form has been looked at. Stacked, the panel is the pane's
+   full width, so 584 of pane is 584 of panel; split, the pane is at least 1176,
+   so this never fires there.
+
+   The cost of leaving the rows alone, measured with `weapons`, `skills` and the
+   layout's own panel open: the narrowest info column is 185px at a 674 pane,
+   145 at 594, 105 at 514, 75 at 454 and 44 at 334, where **Position** clips to
+   `Posi…`, and the longest description runs 3, 4, 5, 7 and 12 lines over the
+   same widths (14 for **Grid columns** at 334). It worsens at a steady rate
+   with no knee, which is why the floor is the reviewed width rather than a
+   number read off that table; at 574 a side-by-side row is still legible, so
+   584 is conservative.
+
+   Asked of the pane by name, because the canvas's `.sheetsmith-view` and every
+   list field are nearer containers to some of these rows. The app's
+   `:not(:is(…))` is spelled as a chain of `:not()`s, which selects the same
+   rows: a comma inside a selector is what this stylesheet's guards split
+   selector lists on. */
+@container sheetsmith-editor-pane (max-width: 583px) {
+.sheetsmith-layout-editor-pane
+		.setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row) {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+.sheetsmith-layout-editor-pane
+		.setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row)
+		> .setting-item-control {
+		width: 100%;
+	}
+
+/* **And a stacked row's own field fills it**, which `width: 100%` on the
+   control above promises and does not deliver alone: a text field keeps the
+   form's shared 14em and a select the app's `max-width: 400px`
+   (`.setting-item-control select`), so **Layout file** filled the row at 380
+   and stopped at 400px of a 472px row at 530, and **Label** was 182px under
+   its name at every stacked width. A field directly in the control, so the
+   position fields, which sit in pairs, keep their 5em; a control's buttons beside
+   the field wrap under it, as they already did at 380. */
+.sheetsmith-layout-editor-pane
+		.setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row)
+		> .setting-item-control
+		> input,
+.sheetsmith-layout-editor-pane
+		.setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row)
+		> .setting-item-control
+		> select {
+		width: 100%;
+		max-width: none;
+	}
+
+/* The panel's title row is a heading, so the rule above leaves it alone, and
+   **Back to the selection** is in it: on a narrow panel a long name beside the
+   button was squeezed to 77px, three lines and clipped. Allowed to wrap, the
+   button drops under the title wherever the two do not fit side by side, and a
+   short name keeps it beside. */
+.sheetsmith-layout-editor-pane .sheetsmith-panel-title-row {
+		flex-wrap: wrap;
+	}
+
 }
 
 /* No layouts yet: the one state with neither a tree nor a panel to draw.
@@ -9237,7 +9327,7 @@ a.sheetsmith-notice-action {
    specificity (0,2,0) is what actually clears (0,1,1); the name is always
    inside its own row, so nesting the selector costs nothing. */
 .sheetsmith-tree-row .sheetsmith-tree-name {
-	padding: 0;
+	/* Padding is the doubled rule below the canvas's, past the tablet rule. */
 	border: none;
 	border-radius: 0;
 	background: none;
@@ -9258,8 +9348,14 @@ a.sheetsmith-notice-action {
    at all — found photographing the tree's focus state. An outline around the
    name alone, 2px, so it cannot be mistaken for the selected row's 1px accent
    edge around the whole card, and an outline rather than a shadow so forced
-   colors keeps it (docs/UI.md §6). */
-.sheetsmith-tree-row .sheetsmith-tree-name:focus-visible {
+   colors keeps it (docs/UI.md §6).
+
+   **The panel's title takes the same ring**, once a press has brought the panel
+   to the reader (`docs/features/layout-editor-narrow-regime.md` §4) and a
+   keyboard press left it `:focus-visible`: one focus treatment for a name,
+   wherever in the pane it is focused. */
+.sheetsmith-tree-row .sheetsmith-tree-name:focus-visible,
+.sheetsmith-layout-editor-pane .sheetsmith-panel-title:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 1px;
 	border-radius: var(--radius-s);
@@ -9331,6 +9427,37 @@ a.sheetsmith-notice-action {
 	margin-inline-end: var(--size-4-4);
 }
 
+/* **A row's controls stay on its line however narrow the pane**
+   (`docs/features/layout-editor-narrow-regime.md` §3). The row wraps, so a
+   refused move's reason can take a line of its own (`.sheetsmith-wrapping-row`),
+   and a wrapping row breaks wherever its items' base sizes outgrow it: the info
+   column's base was its content, so a long name or description put the grip and
+   the menu on a line under it — 16 rows at 320, most of them nested. A base of
+   zero lets the column take whatever the controls leave and wrap its own text
+   inside it, while the reason's `flex-basis: 100%` still breaks the line. A name
+   too long for what is left wraps inside the column (the rule below), so it is
+   never cut. */
+.sheetsmith-tree-row > .setting-item-info {
+	flex-basis: 0;
+}
+
+/* **And the slack goes to the name, which wraps rather than clipping.** The
+   control column grows by default, so with the info column's base at zero the
+   two split the free space and a 189px name got 106px of it, cut mid-letter:
+   the app's ellipsis is on `.setting-item-name`, and the text is inside a
+   child button, so nothing drew one. Held at its glyphs' width, the control
+   gives the rest to the info column, and the name wraps inside it, whole on
+   two lines rather than an ellipsis hiding the half that tells two rows apart
+   ("Abilities, as cards" against "Abilities"). */
+.sheetsmith-tree-row > .setting-item-control {
+	flex-grow: 0;
+}
+
+.sheetsmith-tree-row .sheetsmith-tree-name.sheetsmith-tree-name {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
 /* The chevron: a glyph `<button>` with the app's button chrome taken off,
    Record set's disclosure one surface over — the same icon pair, the same
    `aria-expanded`, and muted rather than faint for the same measured reason:
@@ -9344,7 +9471,7 @@ a.sheetsmith-notice-action {
 	justify-content: center;
 	width: var(--size-4-6);
 	height: var(--size-4-6);
-	padding: 0;
+	/* Padding is the doubled rule below the canvas's, past the tablet rule. */
 	margin: 0;
 	border: none;
 	border-radius: var(--radius-s);
@@ -10339,6 +10466,15 @@ a.sheetsmith-notice-action {
 	white-space: normal;
 }
 
+/* A panel's place pair and size pair (`config-panel.ts`): the control wraps
+   between pairs, never inside one, so a narrow panel draws `col row` over
+   `width height`. The gap is the control's own, so the four fields sit as they
+   did on one line. */
+.sheetsmith-position-pair {
+	display: flex;
+	gap: var(--size-4-2);
+}
+
 .sheetsmith-position-field {
 	display: flex;
 	flex-direction: column;
@@ -10801,7 +10937,7 @@ a.sheetsmith-notice-action {
 	inset: 0;
 	height: 100%;
 	margin: 0;
-	padding: 0;
+	/* Padding is the doubled rule below, past the tablet rule. */
 	border: 1px solid transparent;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -11171,6 +11307,71 @@ a.sheetsmith-notice-action {
 		transition: none;
 	}
 
+}
+
+/* The line saying why a press only selects: in the DOM always, displayed only
+   under the query below, so it is in the accessibility tree exactly when it is
+   true. It is the first child of the canvas's own view because a container
+   query can only ask an ancestor.
+
+   **It belongs to the canvas, not to the first component under it**, so the
+   space under it is the space over it: 24px, the **Sample values** row's bottom
+   to the note across the canvas's margin and the view's padding, and 24px to the
+   first cell. At 8px under and 24 over it read as a gloss on that component. */
+.sheetsmith-canvas-column-note {
+	display: none;
+	margin-bottom: var(--size-4-6);
+}
+
+/* **Where the canvas draws the sheet as one column, it takes no gesture**
+   (`docs/features/layout-editor-narrow-regime.md` §1). The canvas wears the
+   sheet's own `.sheetsmith-view`, so the sheet's own collapse reaches it, and
+   these rules sit under the same named query rather than a number of their
+   own: the gestures leave on the pixel where the grid stops. `schematic-
+   gestures.ts` refuses the press, the corner and the arrow keys there, through
+   `drawnAsGrid`, which asks the grid itself.
+
+   A touch on a block scrolls the pane, where `touch-action: none` above made
+   the overlays, 322 of the canvas's 354px for 17,228px of height at 380, a
+   scroll trap only the gutters escaped. The corner goes, since it is a handle
+   for a resize that is not offered and a coarse pointer drew it on every cell.
+   And the cursor says a press selects.
+
+   **A nested grid that collapsed on its own width is not reached**: it sits in
+   a sheet that has not, so this query does not fire, and its overlays keep
+   `touch-action: none`. Its gestures are refused by the same guard; the cost
+   is that a touch scroll cannot start on it. Cut, in the feature doc. Below the
+   rules it overrides, since `@container` adds no specificity. */
+@container sheetsmith-sheet (max-width: 480px) {
+.sheetsmith-view .sheetsmith-canvas-overlay {
+		cursor: pointer;
+		touch-action: manipulation;
+	}
+
+.sheetsmith-editor-canvas .sheetsmith-preview-resize {
+		display: none;
+	}
+
+.sheetsmith-canvas-column-note {
+		display: block;
+	}
+
+}
+
+/* **The pane's own buttons, past Obsidian's tablet rule**, which is
+   `.is-tablet button:not(.clickable-icon)` at (0,2,1): sheet.css's foot, one
+   surface over (`docs/UI.md` §2). A tree row's name and its chevron took
+   `4px 20px` there, the name growing from 49 to 89px wide and the chevron from
+   24 to 40. The overlay's box did not move, since it is border-box, inset and
+   empty, and it is here so the guard needs no exception for a rule that loses.
+   **The padding alone, on a doubled class**, so neither button's fill is lifted
+   over its own `:hover` or `:focus-visible`. A rule of the editor's own rather
+   than a line in sheet.css's list, because the sheet knows nothing of the
+   editor; `styles.test.ts` keeps the two bodies apart on purpose. */
+.sheetsmith-tree-row .sheetsmith-tree-name.sheetsmith-tree-name,
+.sheetsmith-tree-row .sheetsmith-tree-disclosure.sheetsmith-tree-disclosure,
+.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-canvas-overlay {
+	padding: 0;
 }
 
 /* The attribute list has two fixed tracks; these lists vary by what the

@@ -73,6 +73,17 @@ import { innerPlacement, walkLayout } from '../view/grid-cells';
 export const SHEET_DESTINATION = '::sheet::';
 
 /**
+ * The focus token of a tree row's name, the layout's own row included: minted
+ * here and read wherever focus is put back on a row — after a removal or a
+ * paste, and by the way back (`docs/features/layout-editor-narrow-regime.md`
+ * §4). `tree-moves.ts` spells it once more, since it imports only this module's
+ * types and a value import would close a cycle.
+ */
+export function rowToken(id: string): string {
+	return `edit-${id}`;
+}
+
+/**
  * What the tree needs from the editor drawing it. The same shape
  * `SchematicHost` and `ConfigPanelHost` already are: a handful of commands
  * plus the one shared, mutable cursor a drag needs to survive between the row
@@ -83,8 +94,16 @@ export interface TreeHost {
 	persist(): void;
 	/** Rebuild both regions from the layout as it now stands. */
 	redraw(): void;
-	/** Select a component, or the layout itself, and rebuild both regions. */
-	select(id: string): void;
+	/**
+	 * Select a component, or the layout itself, and rebuild both regions.
+	 *
+	 * `from` is the focus token of the row name a press selected it with, and
+	 * only a press passes one: it is what lets a stacked pane bring the panel to
+	 * the reader and offer the way back to the row
+	 * (`docs/features/layout-editor-narrow-regime.md` §4). A selection a fold, a
+	 * removal or a paste makes is not a press and moves nothing.
+	 */
+	select(id: string, from?: string): void;
 	readonly selection: string;
 	/** Focus this token once the next redraw has happened. */
 	focusAfterRedraw(token: string): void;
@@ -554,7 +573,7 @@ function removeComponent(entry: WalkEntry, tree: TreeRender): void {
 		layout.components.push(child);
 	}
 	host.persistUndoable(removalSentence(config, held.length));
-	host.focusAfterRedraw(`edit-${SHEET_DESTINATION}`);
+	host.focusAfterRedraw(rowToken(SHEET_DESTINATION));
 	if (host.selection !== SHEET_DESTINATION) host.select(SHEET_DESTINATION);
 	else host.redraw();
 }
@@ -597,7 +616,7 @@ function renderRow(
 		cls: 'sheetsmith-tree-name',
 		text: name,
 	});
-	button.dataset.sheetsmithFocus = `edit-${id}`;
+	button.dataset.sheetsmithFocus = rowToken(id);
 	// What a paste marks once it lands (`docs/features/component-copy-paste.md`
 	// §4 step 8): the pane's own flash, read over the whole pane.
 	row.settingEl.dataset.sheetsmithFlash = `tree-${id}`;
@@ -614,7 +633,7 @@ function renderRow(
 	 */
 	const choose = (): void => {
 		button.focus({ preventScroll: true });
-		host.select(id);
+		host.select(id, rowToken(id));
 	};
 	button.addEventListener('click', choose);
 	row.settingEl.addEventListener('click', (event) => {

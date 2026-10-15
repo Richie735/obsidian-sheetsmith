@@ -961,7 +961,14 @@ export class Setting {
 		return this.add(new TextAreaComponent(this.controlEl), cb);
 	}
 	addToggle(cb?: (c: ToggleComponent) => unknown): this {
-		return this.add(new ToggleComponent(this.controlEl), cb);
+		// The app marks the row after the callback, as 1.14.4's `app.js` reads:
+		// `e(t), this.settingEl.addClass("mod-toggle")`. Its phone rows stack
+		// every setting but this kind, and so does the layout editor's narrow
+		// regime, so a double without it stacked every toggle the app leaves
+		// side by side.
+		this.add(new ToggleComponent(this.controlEl), cb);
+		this.settingEl.classList.add('mod-toggle');
+		return this;
 	}
 	addDropdown(cb?: (c: DropdownComponent) => unknown): this {
 		return this.add(new DropdownComponent(this.controlEl), cb);

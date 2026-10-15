@@ -19,6 +19,7 @@ import {
 	reads,
 	position,
 	unevenSchematic,
+	panelHeading,
 } from '../test/layout-editor-pane';
 
 /*
@@ -237,6 +238,80 @@ describe('dragging a block around the schematic', () => {
 		dragTo(cell, 4, 1);
 		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
 		expect(cell.hasPointerCapture(1)).toBe(false);
+	});
+
+	/*
+	 * A grid drawn as one column (`docs/features/layout-editor-narrow-regime.md`
+	 * §1). The collapse is staged as the sheet's own query writes it, a
+	 * `display: flex` on the schematic's element, which happy-dom reads back
+	 * through `getComputedStyle` as the browser does. Measured first, so the
+	 * refusal is the guard's and not the unmeasured grid's above.
+	 */
+	function collapsed(): HTMLElement {
+		const grid = sheetGrid(harness);
+		grid.setCssStyles({ display: 'flex' });
+		return grid;
+	}
+
+	it('selects on a press on a grid drawn as one column, and moves nothing', async () => {
+		collapsed();
+		const wrote = writes(harness);
+		const cell = control(harness, 'preview-left');
+		let down: Event | undefined;
+		cell.addEventListener('pointerdown', (event) => {
+			down = event;
+		});
+		pressDown(cell, { cancelable: true, ...at(1, 1) });
+		// Left to the browser, so the press goes on to its click.
+		expect(down?.defaultPrevented).toBe(false);
+		expect(cell.hasPointerCapture(1)).toBe(false);
+		dragTo(cell, 4, 1);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+		expect(harness.container.querySelector('.sheetsmith-grid-guides')).toBeNull();
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+
+		expect(await position(harness, 'left')).toEqual({ col: 1, row: 1, width: 2, height: 1 });
+		expect(wrote()).toBe(0);
+		expect(control(harness, 'preview-left').classList.contains('sheetsmith-preview-editing')).toBe(
+			true,
+		);
+	});
+
+	it('resizes nothing from a corner pressed on a grid drawn as one column', async () => {
+		collapsed();
+		const wrote = writes(harness);
+		const cell = control(harness, 'preview-left');
+		const handle = cell.querySelector('.sheetsmith-preview-resize');
+		if (!handle?.instanceOf(HTMLElement)) throw new Error('left has no resize corner');
+		pressDown(handle, at(2, 1));
+		dragTo(cell, 5, 2);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+		expect(cell.hasPointerCapture(1)).toBe(false);
+		release(cell);
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({ col: 1, row: 1, width: 2, height: 1 });
+		expect(wrote()).toBe(0);
+	});
+
+	it('moves nothing on an arrow key on a grid drawn as one column, and leaves its default', async () => {
+		collapsed();
+		const wrote = writes(harness);
+		const cell = control(harness, 'preview-left');
+		for (const shiftKey of [false, true]) {
+			const key = new KeyboardEvent('keydown', {
+				key: 'ArrowRight',
+				shiftKey,
+				bubbles: true,
+				cancelable: true,
+			});
+			cell.dispatchEvent(key);
+			expect(key.defaultPrevented).toBe(false);
+		}
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({ col: 1, row: 1, width: 2, height: 1 });
+		expect(wrote()).toBe(0);
 	});
 
 	it('follows the pointer on the cell itself, and writes the file once on release', async () => {
@@ -582,11 +657,7 @@ describe('dragging a block around the schematic', () => {
 		 * keeps the guard from being a way to break selection outright.
 		 */
 		sheetGrid(harness);
-		const heading = () =>
-			harness.container
-				.querySelector('.sheetsmith-editor-panel')
-				?.querySelector('.setting-item-heading')?.textContent;
-		expect(heading()).toBe('Layout');
+		expect(panelHeading(harness)).toBe('Layout');
 
 		const cell = control(harness, 'preview-left');
 		pressDown(cell, at(1, 1));
@@ -596,7 +667,7 @@ describe('dragging a block around the schematic', () => {
 		// on the next turn of the loop.
 		cell.click();
 		await settle(harness.pane);
-		expect(heading()).toBe('Layout');
+		expect(panelHeading(harness)).toBe('Layout');
 
 		// A whole press with no move in it, which is what the guard has to tell
 		// apart from the drag above: `finish` leaves early when nothing moved, so
@@ -606,7 +677,7 @@ describe('dragging a block around the schematic', () => {
 		release(pressed);
 		pressed.click();
 		await settle(harness.pane);
-		expect(heading()).toBe('Left');
+		expect(panelHeading(harness)).toBe('Left');
 	});
 });
 

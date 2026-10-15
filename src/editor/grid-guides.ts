@@ -194,6 +194,28 @@ export function previewMetrics(
 }
 
 /**
+ * Whether a schematic's element is drawn as a grid, and so whether a gesture on
+ * it can mean anything (`docs/features/layout-editor-narrow-regime.md` §1).
+ *
+ * False where the computed `display` is `flex`, which is what both of the
+ * sheet's collapses write: the sheet's own grid under 480px of its view, and a
+ * container's subgrid on its own width or following the sheet down. A flex item
+ * ignores `grid-column` and `grid-row`, so a drag there writes a placement that
+ * nothing on screen shows.
+ *
+ * **Spelled "is not flex" rather than "is grid"**, because happy-dom computes a
+ * plain `block` for a grid no stylesheet has reached, and every gesture test
+ * would otherwise read as collapsed. Read per element and at the moment of the
+ * gesture, so a nested grid that collapsed inside one that did not is refused
+ * alone, and no width is restated here.
+ */
+export function drawnAsGrid(el: HTMLElement): boolean {
+	const view = el.ownerDocument.defaultView;
+	if (!view) return true;
+	return view.getComputedStyle(el).display !== 'flex';
+}
+
+/**
  * Every interior track boundary on one axis, from track 1 until `limit`, as the
  * offset of the middle of the gutter before that track.
  *

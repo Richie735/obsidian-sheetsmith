@@ -149,6 +149,14 @@ function positionToken(id: string, key: keyof GridPosition): string {
 	return `pos-${id}-${key}`;
 }
 
+/**
+ * The focus token of the panel's title, minted by `renderTitle` and read by the
+ * editor's reveal (`docs/features/layout-editor-narrow-regime.md` §4), so the
+ * two cannot spell it differently — `canvas.ts`'s `previewToken` and `tree.ts`'s
+ * `rowToken` beside it.
+ */
+export const PANEL_TITLE_TOKEN = 'panel-title';
+
 /** A `text-list` value as the layout holds it, copied, with anything not a string left out. */
 function namesOf(value: unknown): string[] {
 	return Array.isArray(value)
@@ -268,6 +276,13 @@ export interface ConfigPanelHost {
 		label: string,
 		sentence: (notes: number) => string | null,
 	): void;
+	/**
+	 * **Back to the selection**: put the reader back on the control the selection
+	 * came from (`docs/features/layout-editor-narrow-regime.md` §4). The editor's
+	 * to answer, since which press made the selection is the editor's to know and
+	 * the control it names is in the other region.
+	 */
+	returnToOutline(): void;
 }
 
 /**
@@ -368,6 +383,43 @@ export class ConfigPanel {
 		}
 	}
 
+	/**
+	 * The panel's title row: what it configures, at the rank `form-group.ts`
+	 * gives a title, plus the two things the pane's narrow regime asks of it
+	 * (`docs/features/layout-editor-narrow-regime.md` §4). Here rather than in
+	 * `form-group.ts`, whose one job is the ranks of a form's headings; a way
+	 * back and a focus target are this panel's behaviour, not a heading's.
+	 */
+	private renderTitle(form: HTMLElement, name: string): void {
+		const title = panelTitle(form, name);
+		/*
+		 * **Focusable, and not a tab stop**: a press that selects something far
+		 * from the panel brings the panel to the reader and puts focus here, so
+		 * Tab continues into the form and a screen reader says what was selected.
+		 * The name and not the row, so what is announced is the name alone.
+		 */
+		title.nameEl.setAttribute('tabindex', '-1');
+		title.nameEl.addClass('sheetsmith-panel-title');
+		title.settingEl.addClass('sheetsmith-panel-title-row');
+		title.nameEl.dataset.sheetsmithFocus = PANEL_TITLE_TOKEN;
+		/*
+		 * **Back to the selection**, the way to wherever that press came from.
+		 * Named by its destination, which is the selection's own row or block,
+		 * whichever region the press came from, and naming no component, since the
+		 * title beside it already does (`docs/UI.md` §6). Drawn always and displayed only while
+		 * the pane is stacked (`editor.css`), since beside the tree it has nowhere
+		 * to go back to. The app's own button, whole, so its tablet padding is the
+		 * app's too.
+		 */
+		const button = title.controlEl.createEl('button', {
+			cls: 'sheetsmith-panel-back',
+			text: 'Back to the selection',
+			attr: { type: 'button' },
+		});
+		button.dataset.sheetsmithFocus = 'panel-back';
+		button.addEventListener('click', () => this.host.returnToOutline());
+	}
+
 	/** Show an inline error, and remember it across the next rebuild. */
 	private fieldError(input: HTMLInputElement, message: string | null): void {
 		showFieldError(input, message, this.host.errors);
@@ -406,7 +458,7 @@ export class ConfigPanel {
 		// The tree row that got here says `Layout`, so this does too. The layout's
 		// own name is the picker's, one column over, and saying it twice would be
 		// two answers to "which layout is this".
-		panelTitle(form, 'Layout');
+		this.renderTitle(form, 'Layout');
 		this.renderColumnCount(form, layout);
 		this.triggers = renderTriggerList(form, layout, {
 			persist: () => this.host.persist(),
@@ -582,7 +634,7 @@ export class ConfigPanel {
 	): void {
 		const form = container.createDiv('sheetsmith-component-form');
 		const definition = getComponent(config.type);
-		panelTitle(form, config.label);
+		this.renderTitle(form, config.label);
 
 		form.createDiv(
 			{ cls: ['setting-item-description', 'sheetsmith-component-reference'] },
@@ -722,8 +774,17 @@ export class ConfigPanel {
 							(entry) => entry.config === parent,
 						)?.parent ?? null,
 					).width;
-		for (const key of placed ? GRID_POSITION_KEYS : []) {
-			const holder = position!.controlEl.createDiv('sheetsmith-position-field');
+		/*
+		 * Two pairs, `col` with `row` and `width` with `height`, each held on one
+		 * line: where the control is too narrow for all four, they wrap two by two,
+		 * place over size, rather than leaving `height` alone under the other three
+		 * (`docs/features/layout-editor-narrow-regime.md` §3).
+		 */
+		const pairs = placed
+			? [position!.controlEl.createDiv('sheetsmith-position-pair'), position!.controlEl.createDiv('sheetsmith-position-pair')]
+			: [];
+		for (const [index, key] of (placed ? GRID_POSITION_KEYS : []).entries()) {
+			const holder = (pairs[Math.floor(index / 2)] as HTMLElement).createDiv('sheetsmith-position-field');
 			holder.createSpan({
 				cls: 'sheetsmith-position-label',
 				text: key,

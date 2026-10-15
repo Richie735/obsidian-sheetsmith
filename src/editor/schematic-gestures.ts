@@ -72,6 +72,7 @@
 
 import { ComponentConfig } from '../types';
 import {
+	drawnAsGrid,
 	freezeGrid,
 	hideGridGuides,
 	markGridTarget,
@@ -311,6 +312,10 @@ export class SchematicGestures {
 		/** Where the grid placement itself is written. `cell` for every caller but the canvas. */
 		target: HTMLElement = cell,
 	): void {
+		// Before anything else, and before `preventDefault` above all: on a grid
+		// drawn as one column the press goes on to its `click` and selects, which
+		// is all a press there can mean (`grid-guides.ts`, `drawnAsGrid`).
+		if (!drawnAsGrid(schematic.el)) return;
 		if (event.button !== 0) return;
 		const metrics = previewMetrics(schematic.el, schematic.columns);
 		if (!metrics) return;
@@ -476,6 +481,10 @@ export class SchematicGestures {
 			ArrowUp: [0, -1],
 			ArrowDown: [0, 1],
 		};
+		// Left to the key's default, unprevented and unannounced, where the grid
+		// is drawn as one column: nothing would move on screen, and an arrow key
+		// on a button there scrolls the pane as it does on any other.
+		if (!drawnAsGrid(schematic.el)) return;
 		const delta = deltas[event.key];
 		if (!delta) return;
 		event.preventDefault();

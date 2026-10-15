@@ -275,6 +275,17 @@ be the control's at another font size reads the factor, never the length.
   placement — so the view stamps the column count as a class and `sheet.css`
   writes the formula out once per count. `styles.test.ts` holds every entry to
   the rule, so a table cannot drift off the thing it tabulates.
+- **The layout editor pane has two narrow rules, because it asks two
+  questions** [judgement; seen in `editor-narrow`, `editor-phone` and the four
+  threshold views] (`docs/features/layout-editor-narrow-regime.md`). Whether
+  the canvas is a grid takes no number of its own: the canvas wears the sheet's
+  `.sheetsmith-view`, so the sheet's own 480px collapse reaches it, and its
+  gestures leave under the same named query, `sheetsmith-sheet`, on the pixel
+  the grid stops — a grid drawn as one column takes no drag, resize or arrow
+  key, and a touch there scrolls. Whether a setting row fits beside its name is
+  the pane's, `sheetsmith-editor-pane` below 584px, the narrowest width the
+  panel's forms have been looked at side by side; the rows then stack as the
+  app stacks them on a phone, toggles, headings and tree rows excepted.
 - **Media queries are for user preference and device capability only**:
   `prefers-reduced-motion`, `forced-colors`, pointer coarseness. Never for space.
 - **Cascade order is load-bearing.** `@container` adds no specificity, so an
@@ -540,6 +551,13 @@ case obeys it.
   answers with silence. The measurement is the argument: a menu's box is as wide
   as the chosen option, so the same card gives a field 432x29 and a menu 28x29
   with nothing stored, and neither grows under a coarse pointer.
+  **And where the outcome is far from the press, the press brings it**: in a
+  stacked layout editor a selection made on the tree or the canvas puts its
+  form up to 30,000px below, so the press scrolls the panel's title to the top
+  and moves focus there, and **Back to the selection** returns
+  (`docs/features/layout-editor-narrow-regime.md` §4). That is focus moved by
+  the reader's own press, not focus moved without one, and it fires only where
+  the panel is out of sight, never beside the tree.
 - **A field inside a row is at least the pointer minimum on both axes, and the
   row takes that as its floor** [judgement]. `--size-4-5`, 20px, which is
   `legibility.md` §5's 20x20. The floor goes on the row as well as the field so

@@ -2226,6 +2226,149 @@ describe('the tree', () => {
 	});
 });
 
+describe('a selection made far from the panel', () => {
+	/*
+	 * `docs/features/layout-editor-narrow-regime.md` §4. A stacked pane puts the
+	 * panel under the canvas and the tree, 30,000px down at 380, so a press that
+	 * selects brings it to the reader and offers the way back.
+	 *
+	 * Geometry is staged, since happy-dom lays nothing out: the pane's own
+	 * element is made the leaf's scroller, 600px tall from the top of the
+	 * window, and the panel is put wherever the case needs it. `scrollIntoView`
+	 * is recorded rather than run.
+	 */
+	let panelTop = 30000;
+	let scrolled: string[] = [];
+	const restore: (() => void)[] = [];
+
+	beforeEach(async () => {
+		harness = await open(furnished());
+		panelTop = 30000;
+		scrolled = [];
+		harness.container.setCssStyles({ overflowY: 'auto' });
+		const rect = vi
+			.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+			.mockImplementation(function (this: HTMLElement) {
+				const top = this === harness.container
+					? 0
+					: this.classList.contains('sheetsmith-editor-panel')
+						? panelTop
+						: 0;
+				const bottom = this === harness.container ? 600 : top;
+				return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top } as DOMRect;
+			});
+		const scroll = vi
+			.spyOn(HTMLElement.prototype, 'scrollIntoView')
+			.mockImplementation(function (this: HTMLElement) {
+				scrolled.push(this.dataset.sheetsmithFocus ?? '');
+			});
+		restore.push(() => rect.mockRestore(), () => scroll.mockRestore());
+	});
+
+	afterEach(() => {
+		for (const undo of restore.splice(0)) undo();
+	});
+
+	it('brings an off-screen panel title to the top on a tree press, and focuses it', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Armour class');
+		expect(scrolled).toEqual(['panel-title']);
+		expect(document.activeElement).toBe(control(harness, 'panel-title'));
+	});
+
+	it('does the same for a press on a canvas block, after the block takes focus', async () => {
+		// The block's own press puts the keyboard on it as its last act, so the
+		// reveal has to come after that or the block takes focus back.
+		const block = control(harness, 'preview-armour');
+		pressDown(block, { cancelable: true });
+		release(block);
+		block.click();
+		await settle(harness.pane);
+		expect(scrolled).toEqual(['panel-title']);
+		expect(document.activeElement).toBe(control(harness, 'panel-title'));
+	});
+
+	it('returns to the press\'s source on Back to the selection', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(scrolled.at(-1)).toBe('edit-armour');
+		expect(document.activeElement).toBe(control(harness, 'edit-armour'));
+
+		const block = control(harness, 'preview-defences');
+		block.click();
+		await settle(harness.pane);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(scrolled.at(-1)).toBe('preview-defences');
+		expect(document.activeElement).toBe(control(harness, 'preview-defences'));
+	});
+
+	it('returns to the selection\'s own row once something else selected it', async () => {
+		// Pressed on the canvas, then selected by folding its container, which is
+		// not a press: the block is still drawn, and going back to it would be
+		// going back to a component the panel no longer shows.
+		harness = await open(deep());
+		control(harness, 'preview-armour').click();
+		await settle(harness.pane);
+		control(harness, 'tree-disclosure-defences').click();
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Defences');
+		expect(has(harness, 'preview-armour')).toBe(true);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, 'edit-defences'));
+	});
+
+	it('falls back to the layout\'s row when the pressed component is removed', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, `edit-${SHEET_DESTINATION}`));
+	});
+
+	it('falls back to the selection\'s tree row when the source is gone', async () => {
+		// Nothing pressed yet, so there is no source to return to.
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, `edit-${SHEET_DESTINATION}`));
+	});
+
+	it('scrolls nothing where the panel is already in sight, as it is beside the tree', async () => {
+		panelTop = 40;
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Armour class');
+		expect(scrolled).toEqual([]);
+		expect(document.activeElement).toBe(control(harness, 'edit-armour'));
+	});
+
+	it('scrolls nothing for a selection that is not a press', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		scrolled.length = 0;
+		// A removal selects the layout's own row, and is not a press on it.
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Layout');
+		expect(scrolled).toEqual([]);
+	});
+
+	it('scrolls nothing for a press on what is already selected', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		scrolled.length = 0;
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(scrolled).toEqual([]);
+	});
+});
+
 describe('removing from the tree', () => {
 	beforeEach(() => {
 		Notice.instances = [];

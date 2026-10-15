@@ -3781,11 +3781,32 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		'sheetsmith-panel-remove',
 		'sheetsmith-track-harm',
 	];
+	/**
+	 * The layout editor pane's own buttons that set padding
+	 * (`docs/features/layout-editor-narrow-regime.md` §5), a list of the pane's
+	 * rather than more lines in the sheet's, since the two are held to one rule
+	 * from two stylesheets that must not know each other. Taken the same way, over
+	 * CDP at 820 with each tree row selected in turn: the name and the chevron
+	 * moved, and the overlay's computed padding moved under a box that did not.
+	 */
+	const EDITOR_BUTTONS = [
+		'sheetsmith-tree-name',
+		'sheetsmith-tree-disclosure',
+		'sheetsmith-canvas-overlay',
+	];
+	/**
+	 * Classes on a pane `<button>` that set no padding of the plugin's own. Every
+	 * **Add …** footer button, **Add row** among them, takes the app's chrome
+	 * whole, and so its tablet padding; `clickable-icon` is the class the app's
+	 * tablet rule excludes by name; and **Back to the selection** is a text button
+	 * in the app's own chrome.
+	 */
+	const EDITOR_APP_CHROME = ['mod-cta', 'clickable-icon', 'sheetsmith-panel-back'];
 
-	/** Every literal class the sheet's source writes onto a `<button>` it creates. */
-	function buttonClassesInSource(): string[] {
+	/** Every literal class the source in `dirs` writes onto a `<button>` it creates. */
+	function buttonClassesInSource(dirs: readonly string[]): string[] {
 		const found = new Set<string>();
-		for (const dir of ['components', 'view', 'interaction']) {
+		for (const dir of dirs) {
 			const at = new URL(`./${dir}/`, import.meta.url);
 			for (const file of readdirSync(at)) {
 				if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
@@ -3809,10 +3830,29 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 	}
 
 	it('lists every class the source writes onto a sheet button, or exempts it', () => {
-		const inSource = buttonClassesInSource();
+		const inSource = buttonClassesInSource(['components', 'view', 'interaction']);
 		// The read finds the bulk of them, or it holds nothing.
 		expect(inSource.length).toBeGreaterThanOrEqual(20);
 		expect(inSource.filter((cls) => !BUTTONS.includes(cls) && !APP_CHROME.includes(cls))).toEqual([]);
+	});
+
+	it('lists every class the source writes onto a pane button, or exempts it', () => {
+		const inSource = buttonClassesInSource(['editor']);
+		// The three, and the app-chrome classes beside them: a read that found
+		// none of the pane's own would pass on an empty list. The editor's level
+		// sample wears `.sheetsmith-view` and the sheet's ring, so the sheet's list
+		// holds it.
+		expect(inSource.filter((cls) => EDITOR_BUTTONS.includes(cls)).sort()).toEqual(
+			[...EDITOR_BUTTONS].sort(),
+		);
+		expect(
+			inSource.filter(
+				(cls) =>
+					!EDITOR_BUTTONS.includes(cls) &&
+					!EDITOR_APP_CHROME.includes(cls) &&
+					!BUTTONS.includes(cls),
+			),
+		).toEqual([]);
 	});
 
 	/** Every selector giving a sheet button padding, and those too light to keep it. */
@@ -3823,7 +3863,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 			if (!declarations(rule.body).some((one) => /^padding(-[\w-]+)?\s*:/.test(one))) continue;
 			for (const selector of selectorList(rule.selector)) {
 				const classes = (subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
-				if (!classes.some((cls) => BUTTONS.includes(cls))) continue;
+				if (!classes.some((cls) => BUTTONS.includes(cls) || EDITOR_BUTTONS.includes(cls))) continue;
 				found.push(selector);
 				if (!heavier(specificity(selector), TABLET_RULE)) light.push(selector);
 			}
@@ -3837,7 +3877,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		// padding rule went missing cannot hide behind another's count.
 		const classesIn = (selector: string) =>
 			(subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
-		const unmatched = BUTTONS.filter(
+		const unmatched = [...BUTTONS, ...EDITOR_BUTTONS].filter(
 			(cls) => !found.some((selector) => classesIn(selector).includes(cls)),
 		);
 		expect(unmatched).toEqual([]);
@@ -3854,6 +3894,10 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 			padded('.sheetsmith-view .sheetsmith-tabset-tab { padding-inline: 0; }').light,
 		).toHaveLength(1);
 		expect(padded('.sheetsmith-pool-step { padding: 0; }').light).toHaveLength(1);
+		// The pane's own, at the (0,2,0) every one of them shipped at.
+		expect(padded('.sheetsmith-tree-row .sheetsmith-tree-name { padding: 0; }').light).toEqual([
+			'.sheetsmith-tree-row .sheetsmith-tree-name',
+		]);
 		expect(
 			padded(
 				'.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring { padding: 0; }\n' +
@@ -4147,5 +4191,130 @@ describe('the floating surfaces\' viewport gutter', () => {
 		);
 		const theme = readFileSync(new URL('../harness/theme.css', import.meta.url), 'utf8');
 		expect(/--size-4-4:\s*(\d+)px/.exec(theme)?.[1]).toBe(String(EDGE_GUTTER));
+	});
+});
+
+describe("the layout editor's rows stack below the width its forms are known at", () => {
+	/*
+	 * `docs/features/layout-editor-narrow-regime.md` §3. The rule copies
+	 * Obsidian's phone-modal shape, and its exclusions are the whole of what
+	 * keeps a toggle beside its switch and a tree row on one line: a selector in
+	 * the block that lost one would stack every row of that kind at a phone's
+	 * width, which no unit test lays out and only a narrow shot would show.
+	 */
+	const EXCLUDED = [
+		'mod-toggle',
+		'mod-navigable',
+		'mod-action',
+		'setting-item-heading',
+		'sheetsmith-tree-row',
+	];
+	const QUERY = /^@container sheetsmith-editor-pane \(max-width: 583px\)$/;
+
+	function stacking(text: string): string[] {
+		return rules(text)
+			.filter((rule) => rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))))
+			.flatMap((rule) => selectorList(rule.selector));
+	}
+
+	/** Every selector under the query that reaches a row without excluding all five. */
+	function unexcluded(text: string): string[] {
+		return stacking(text).filter(
+			(selector) =>
+				/\.setting-item(?![\w-])/.test(selector) &&
+				!EXCLUDED.every((cls) => selector.includes(`:not(.${cls})`)),
+		);
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The row and its control: a block that went would pass on nothing.
+		expect(stacking(CSS_WITHOUT_COMMENTS).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('excludes toggles, the other two app kinds, headings and tree rows on every selector', () => {
+		expect(unexcluded(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would catch a selector that dropped one', () => {
+		const block = (selector: string) =>
+			`@container sheetsmith-editor-pane (max-width: 583px) { ${selector} { flex-direction: column; } }`;
+		expect(
+			unexcluded(
+				block(
+					'.sheetsmith-layout-editor-pane .setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading)',
+				),
+			),
+		).toHaveLength(1);
+		expect(
+			unexcluded(
+				block(
+					'.sheetsmith-layout-editor-pane .setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row)',
+				),
+			),
+		).toEqual([]);
+	});
+});
+
+describe("every rule asking about the sheet's width asks it at one number", () => {
+	/*
+	 * The sheet's grid collapses under 480px of its view (`sheet.css`), and the
+	 * layout editor's canvas, which wears that view, withdraws its gestures under
+	 * the same named query (`editor.css`,
+	 * `docs/features/layout-editor-narrow-regime.md` §1). A query cannot read a
+	 * custom property, so the number is written at each, and two that drifted
+	 * would leave a canvas offering a drag on a column, or refusing one on a grid,
+	 * with nothing in a unit test laying either out.
+	 */
+	const QUERY = /@container\s+sheetsmith-sheet\s*\(\s*max-width:\s*([\d.]+px)\s*\)/g;
+
+	function widths(text: string): string[] {
+		return [...text.matchAll(QUERY)].map((match) => match[1] as string);
+	}
+
+	it('finds the queries it is meant to be checking, in both stylesheets', () => {
+		const sheet = readFileSync(new URL('./styles/sheet.css', import.meta.url), 'utf8');
+		const editor = readFileSync(new URL('./styles/editor.css', import.meta.url), 'utf8');
+		expect(widths(sheet.replace(/\/\*[\s\S]*?\*\//g, ' ')).length).toBeGreaterThanOrEqual(1);
+		expect(widths(editor.replace(/\/\*[\s\S]*?\*\//g, ' ')).length).toBeGreaterThanOrEqual(1);
+	});
+
+	/**
+	 * The width of the query that collapses the sheet's own grid. It is unnamed
+	 * (`sheet.css`, "SPEC §8"), so `QUERY` cannot see it, yet it is the rule
+	 * whose `display: flex` `drawnAsGrid` reads: drifted alone, it would move the
+	 * collapse and leave the canvas's touch rules, corner and note where they were.
+	 */
+	function collapseWidths(text: string): string[] {
+		return rules(text)
+			.filter(
+				(rule) =>
+					selectorList(rule.selector).includes('.sheetsmith-view > .sheetsmith-grid') &&
+					/display:\s*flex/.test(rule.body),
+			)
+			.flatMap((rule) =>
+				rule.context.flatMap((one) => {
+					const found = /^@container\s*\(\s*max-width:\s*([\d.]+px)\s*\)$/.exec(one.trim());
+					return found ? [found[1] as string] : [];
+				}),
+			);
+	}
+
+	it('gives every one of them the same width', () => {
+		expect(new Set(widths(CSS_WITHOUT_COMMENTS)).size).toBe(1);
+	});
+
+	it("holds the sheet grid's own unnamed collapse to that width too", () => {
+		const collapse = collapseWidths(CSS_WITHOUT_COMMENTS);
+		expect(collapse).toHaveLength(1);
+		expect(new Set([...widths(CSS_WITHOUT_COMMENTS), ...collapse]).size).toBe(1);
+	});
+
+	it('would catch one that drifted', () => {
+		const one = '@container sheetsmith-sheet (max-width: 480px) { .a { display: flex; } }';
+		const other = '@container sheetsmith-sheet (max-width: 512px) { .b { display: none; } }';
+		expect(new Set(widths(one + other)).size).toBe(2);
+		const collapse =
+			'@container (max-width: 500px) { .sheetsmith-view > .sheetsmith-grid { display: flex; } }';
+		expect(new Set([...widths(one), ...collapseWidths(collapse)]).size).toBe(2);
 	});
 });

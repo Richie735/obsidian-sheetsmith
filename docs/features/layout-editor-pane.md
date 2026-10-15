@@ -214,7 +214,11 @@ component's form there.
 
 That is one selection model rather than two, and it is why the panel needs no
 chrome of its own — no tab strip, no mode switch, no fourth kind of panel, which
-is what UI §9 opens by forbidding. The tree becomes the pane's complete table of
+is what UI §9 opens by forbidding. *One button has since joined its title row:
+**Back to the selection**, shown only while the pane is stacked, which returns from
+the panel to the row or block a selection came from
+(`docs/features/layout-editor-narrow-regime.md` §4). It is a way back inside the
+regions that exist, not a mode switch or a second kind of panel.* The tree becomes the pane's complete table of
 contents: the layout, then everything in it, in the depth-first walk the sheet
 reads in. The sentinel is already spelled in this module — `SHEET_DESTINATION`,
 `'::sheet::'`, the add row's word for the top level — and the selection reuses it
@@ -653,7 +657,8 @@ fields sideways along with the schematic. `docs/UI.md` §12 holds the row and
 `editor-narrow` holds the picture. It is out of scope here because only half of
 it is contained: stacking the setting rows is a straightforward answer to CSS a
 leaf never receives, and what a twelve-column schematic does at phone width is a
-design question this spec never asked.
+design question this spec never asked. *Answered in
+`docs/features/layout-editor-narrow-regime.md`.*
 
 **Four UI §12 rows and one PATTERNS §11 row survive this slice on purpose**, and
 a reviewer should not report them as gaps in it:

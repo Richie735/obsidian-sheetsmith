@@ -669,6 +669,8 @@ existing reflow already gives it. `docs/UI.md` §12's *the layout editor pane
 has no narrow regime* row explicitly named this as adjacent to the M4 canvas
 and still unresolved; this slice does not resolve it. A live canvas at phone
 width is read rather than seen here, same as the row already says.
+*Answered in `docs/features/layout-editor-narrow-regime.md`: a canvas drawn
+as one column takes no gesture.*
 
 **`docs/PATTERNS.md` §11's picker-cluster row is not closed.** Recorded in
 §4 above: the reasons that row gives for the picker staying in
