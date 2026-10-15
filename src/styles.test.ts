@@ -4194,6 +4194,67 @@ describe('the floating surfaces\' viewport gutter', () => {
 	});
 });
 
+describe("the layout editor's rows stack below the width its forms are known at", () => {
+	/*
+	 * `docs/features/layout-editor-narrow-regime.md` §3. The rule copies
+	 * Obsidian's phone-modal shape, and its exclusions are the whole of what
+	 * keeps a toggle beside its switch and a tree row on one line: a selector in
+	 * the block that lost one would stack every row of that kind at a phone's
+	 * width, which no unit test lays out and only a narrow shot would show.
+	 */
+	const EXCLUDED = [
+		'mod-toggle',
+		'mod-navigable',
+		'mod-action',
+		'setting-item-heading',
+		'sheetsmith-tree-row',
+	];
+	const QUERY = /^@container sheetsmith-editor-pane \(max-width: 583px\)$/;
+
+	function stacking(text: string): string[] {
+		return rules(text)
+			.filter((rule) => rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))))
+			.flatMap((rule) => selectorList(rule.selector));
+	}
+
+	/** Every selector under the query that reaches a row without excluding all five. */
+	function unexcluded(text: string): string[] {
+		return stacking(text).filter(
+			(selector) =>
+				/\.setting-item(?![\w-])/.test(selector) &&
+				!EXCLUDED.every((cls) => selector.includes(`:not(.${cls})`)),
+		);
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The row and its control: a block that went would pass on nothing.
+		expect(stacking(CSS_WITHOUT_COMMENTS).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('excludes toggles, the other two app kinds, headings and tree rows on every selector', () => {
+		expect(unexcluded(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would catch a selector that dropped one', () => {
+		const block = (selector: string) =>
+			`@container sheetsmith-editor-pane (max-width: 583px) { ${selector} { flex-direction: column; } }`;
+		expect(
+			unexcluded(
+				block(
+					'.sheetsmith-layout-editor-pane .setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading)',
+				),
+			),
+		).toHaveLength(1);
+		expect(
+			unexcluded(
+				block(
+					'.sheetsmith-layout-editor-pane .setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row)',
+				),
+			),
+		).toEqual([]);
+	});
+});
+
 describe("every rule asking about the sheet's width asks it at one number", () => {
 	/*
 	 * The sheet's grid collapses under 480px of its view (`sheet.css`), and the

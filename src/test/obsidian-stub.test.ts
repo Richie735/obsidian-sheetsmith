@@ -581,6 +581,19 @@ function tabFor(definitions: SettingDefinition[]): { tab: PluginSettingTab } {
 	return { tab };
 }
 
+describe('a setting row', () => {
+	it('marks a toggle row mod-toggle, as the app does, and no other kind', () => {
+		// 1.14.4's `addToggle` adds the class after its callback runs, and the
+		// app's phone rows and the editor's narrow regime both leave such a row
+		// side by side: without it the harness stacks what the app does not.
+		const host = createDiv();
+		const toggled = new Setting(host).setName('Sample values').addToggle(() => undefined);
+		const texted = new Setting(host).setName('Label').addText(() => undefined);
+		expect(toggled.settingEl.classList.contains('mod-toggle')).toBe(true);
+		expect(texted.settingEl.classList.contains('mod-toggle')).toBe(false);
+	});
+});
+
 describe('the setting definition renderer', () => {
 	it('nests a row the way the app nests one, wrappers and all', () => {
 		/*

@@ -722,8 +722,17 @@ export class ConfigPanel {
 							(entry) => entry.config === parent,
 						)?.parent ?? null,
 					).width;
-		for (const key of placed ? GRID_POSITION_KEYS : []) {
-			const holder = position!.controlEl.createDiv('sheetsmith-position-field');
+		/*
+		 * Two pairs, `col` with `row` and `width` with `height`, each held on one
+		 * line: where the control is too narrow for all four, they wrap two by two,
+		 * place over size, rather than leaving `height` alone under the other three
+		 * (`docs/features/layout-editor-narrow-regime.md` §3).
+		 */
+		const pairs = placed
+			? [position!.controlEl.createDiv('sheetsmith-position-pair'), position!.controlEl.createDiv('sheetsmith-position-pair')]
+			: [];
+		for (const [index, key] of (placed ? GRID_POSITION_KEYS : []).entries()) {
+			const holder = (pairs[Math.floor(index / 2)] as HTMLElement).createDiv('sheetsmith-position-field');
 			holder.createSpan({
 				cls: 'sheetsmith-position-label',
 				text: key,
