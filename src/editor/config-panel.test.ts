@@ -18,6 +18,7 @@ import {
 	writes,
 	furnished,
 	nested,
+	panelHeading,
 } from '../test/layout-editor-pane';
 
 /*
@@ -610,7 +611,7 @@ describe('the panel says what it is configuring', () => {
 			'.sheetsmith-editor-panel',
 		) as HTMLElement;
 		const heading = panel.querySelector('.setting-item-heading');
-		expect(heading?.textContent).toBe('Defences');
+		expect(panelHeading(harness)).toBe('Defences');
 		// Above the reference line and the fields, which is what makes it a title
 		// rather than another row.
 		expect(panel.querySelector('.sheetsmith-component-form')?.firstElementChild)
@@ -619,12 +620,7 @@ describe('the panel says what it is configuring', () => {
 
 	it('heads the layout\'s own settings too', async () => {
 		harness = await open(furnished());
-		const panel = harness.container.querySelector(
-			'.sheetsmith-editor-panel',
-		) as HTMLElement;
-		expect(panel.querySelector('.setting-item-heading')?.textContent).toBe(
-			'Layout',
-		);
+		expect(panelHeading(harness)).toBe('Layout');
 	});
 
 	it('follows a rename, so the title is never the old name', async () => {
@@ -634,11 +630,7 @@ describe('the panel says what it is configuring', () => {
 		type(control<HTMLInputElement>(harness, 'label-defences'), 'Saves');
 		await settle(harness.pane);
 
-		expect(
-			harness.container
-				.querySelector('.sheetsmith-editor-panel')
-				?.querySelector('.setting-item-heading')?.textContent,
-		).toBe('Saves');
+		expect(panelHeading(harness)).toBe('Saves');
 	});
 });
 

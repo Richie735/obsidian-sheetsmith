@@ -10,15 +10,30 @@
  * own `HTMLElement`, where the bare global does not.
  */
 export function focusToken(scope: HTMLElement, token: string): void {
+	tokenTarget(scope, token)?.focus({ preventScroll: true });
+}
+
+/**
+ * The element under `scope` a focus token names, or null where none can take
+ * focus: the one spelling of that lookup, so a way back, a reveal and a restore
+ * cannot resolve one token to two elements.
+ *
+ * **An element inside `inert` is passed over**, decided here once: it cannot
+ * take focus, so a caller handed one would focus nothing and stop looking,
+ * where the token's next match — or the caller's own fallback — could have
+ * answered (`docs/features/layout-editor-narrow-regime.md` §4).
+ */
+export function tokenTarget(scope: HTMLElement, token: string): HTMLElement | null {
 	for (const candidate of Array.from(
 		scope.querySelectorAll('[data-sheetsmith-focus]'),
 	)) {
 		if (
 			candidate.instanceOf(HTMLElement) &&
-			candidate.dataset.sheetsmithFocus === token
+			candidate.dataset.sheetsmithFocus === token &&
+			candidate.closest('[inert]') === null
 		) {
-			candidate.focus({ preventScroll: true });
-			return;
+			return candidate;
 		}
 	}
+	return null;
 }

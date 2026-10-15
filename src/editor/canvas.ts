@@ -48,6 +48,15 @@ import { describeCell, findOverlaps } from './preview-grid';
 import { Schematic, SchematicGestures, SchematicHost } from './schematic-gestures';
 
 /**
+ * The focus token of a component's overlay on the canvas: minted here and read
+ * by the way back (`docs/features/layout-editor-narrow-regime.md` §4), so the
+ * two cannot spell it differently.
+ */
+export function previewToken(id: string): string {
+	return `preview-${id}`;
+}
+
+/**
  * What the canvas needs from the editor hosting it.
  *
  * The same shape as `SchematicHost` minus the two members this module now
@@ -60,7 +69,14 @@ export interface CanvasHost {
 	persist(): void;
 	persistSoon(): void;
 	syncPositionFields(config: ComponentConfig): void;
-	select(id: string): void;
+	/**
+	 * Select a component. `from` is the focus token of the block a press
+	 * selected it with, and required: every selection the canvas makes is a
+	 * press (`docs/features/layout-editor-narrow-regime.md` §4), so a caller that
+	 * left it out would lose the reveal and the way back with nothing saying so.
+	 * `TreeHost.select` keeps it optional, since a fold selects without a press.
+	 */
+	select(id: string, from: string): void;
 	readonly selection: string;
 	/**
 	 * Whether to fill the canvas with each component's own sample values rather
@@ -108,7 +124,7 @@ export class Canvas {
 			markOverlaps: (schematic) => this.markOverlaps(schematic),
 			syncPositionFields: (config) => this.host.syncPositionFields(config),
 			redrawSchematics: () => this.redraw(),
-			select: (id) => this.host.select(id),
+			select: (id) => this.host.select(id, previewToken(id)),
 			focusBlock: (id) => this.focusBlock(id),
 		};
 		this.gestures = new SchematicGestures(hostForGestures);
@@ -209,7 +225,7 @@ export class Canvas {
 	private focusBlock(id: string): void {
 		if (!this.root) return;
 		const active = this.root.ownerDocument.activeElement;
-		const token = `preview-${id}`;
+		const token = previewToken(id);
 		if (active?.instanceOf(HTMLElement)) {
 			if (active.dataset.sheetsmithFocus === token && this.root.contains(active)) {
 				return;
@@ -363,7 +379,9 @@ export class Canvas {
 				overlay.addClass('sheetsmith-preview-editing');
 			}
 			overlay.setAttribute('aria-label', child.label);
-			overlay.addEventListener('click', () => this.host.select(child.id));
+			overlay.addEventListener('click', () =>
+				this.host.select(child.id, previewToken(child.id)),
+			);
 			this.wireChildren(cell, child, walk);
 		});
 	}
@@ -402,7 +420,7 @@ export class Canvas {
 			cls: 'sheetsmith-canvas-overlay',
 			attr: { type: 'button' },
 		});
-		overlay.dataset.sheetsmithFocus = `preview-${config.id}`;
+		overlay.dataset.sheetsmithFocus = previewToken(config.id);
 		// Moved to the front after creation — `createEl` only ever appends —
 		// which is what the header above explains the stacking-order reason
 		// for.

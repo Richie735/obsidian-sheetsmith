@@ -19,6 +19,7 @@ import {
 	reads,
 	position,
 	unevenSchematic,
+	panelHeading,
 } from '../test/layout-editor-pane';
 
 /*
@@ -656,11 +657,7 @@ describe('dragging a block around the schematic', () => {
 		 * keeps the guard from being a way to break selection outright.
 		 */
 		sheetGrid(harness);
-		const heading = () =>
-			harness.container
-				.querySelector('.sheetsmith-editor-panel')
-				?.querySelector('.setting-item-heading')?.textContent;
-		expect(heading()).toBe('Layout');
+		expect(panelHeading(harness)).toBe('Layout');
 
 		const cell = control(harness, 'preview-left');
 		pressDown(cell, at(1, 1));
@@ -670,7 +667,7 @@ describe('dragging a block around the schematic', () => {
 		// on the next turn of the loop.
 		cell.click();
 		await settle(harness.pane);
-		expect(heading()).toBe('Layout');
+		expect(panelHeading(harness)).toBe('Layout');
 
 		// A whole press with no move in it, which is what the guard has to tell
 		// apart from the drag above: `finish` leaves early when nothing moved, so
@@ -680,7 +677,7 @@ describe('dragging a block around the schematic', () => {
 		release(pressed);
 		pressed.click();
 		await settle(harness.pane);
-		expect(heading()).toBe('Left');
+		expect(panelHeading(harness)).toBe('Left');
 	});
 });
 

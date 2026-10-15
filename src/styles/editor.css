@@ -147,6 +147,18 @@
 		max-height: 100%;
 		overflow-y: auto;
 	}
+
+/* **Back to the selection**, in the panel's title row
+   (`docs/features/layout-editor-narrow-regime.md` §4), shown only while the
+   pane is stacked: beside the tree it has nowhere to go back to. In this block
+   rather than a query of its own, so the button and the split are one number
+   and cannot disagree about which regime this is. Hidden with `display`, so it
+   leaves the tab order and the accessibility tree with its box; scoped, so the
+   app's `button` rules cannot outrank it. The app's own button otherwise,
+   chrome and tablet padding whole. */
+.sheetsmith-layout-editor-pane .sheetsmith-panel-back {
+		display: none;
+	}
 }
 
 /* **The setting rows stack below 584px of pane**
@@ -209,6 +221,15 @@
 		> select {
 		width: 100%;
 		max-width: none;
+	}
+
+/* The panel's title row is a heading, so the rule above leaves it alone, and
+   **Back to the selection** is in it: on a narrow panel a long name beside the
+   button was squeezed to 77px, three lines and clipped. Allowed to wrap, the
+   button drops under the title wherever the two do not fit side by side, and a
+   short name keeps it beside. */
+.sheetsmith-layout-editor-pane .sheetsmith-panel-title-row {
+		flex-wrap: wrap;
 	}
 
 }
@@ -287,8 +308,14 @@
    at all — found photographing the tree's focus state. An outline around the
    name alone, 2px, so it cannot be mistaken for the selected row's 1px accent
    edge around the whole card, and an outline rather than a shadow so forced
-   colors keeps it (docs/UI.md §6). */
-.sheetsmith-tree-row .sheetsmith-tree-name:focus-visible {
+   colors keeps it (docs/UI.md §6).
+
+   **The panel's title takes the same ring**, once a press has brought the panel
+   to the reader (`docs/features/layout-editor-narrow-regime.md` §4) and a
+   keyboard press left it `:focus-visible`: one focus treatment for a name,
+   wherever in the pane it is focused. */
+.sheetsmith-tree-row .sheetsmith-tree-name:focus-visible,
+.sheetsmith-layout-editor-pane .sheetsmith-panel-title:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 1px;
 	border-radius: var(--radius-s);
