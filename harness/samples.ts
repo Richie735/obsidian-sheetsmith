@@ -3575,12 +3575,43 @@ export function brokenSamples(): Sample[] {
 		 *
 		 * On the flag, because that card is where the two spellings meet and so
 		 * where the wrong sentence is easiest to write: it has to say "not yes or
-		 * no" rather than the run's "not a number of marks". Broadening it to the
-		 * other fenced cards is a choice per component about which breakage is
-		 * worth a picture, and is a `docs/UI.md` §12 row rather than this diff.
+		 * no" rather than the run's "not a number of marks".
 		 */
 		let body =
 			config.id === 'inspiration' ? '```sheet\nvalue: maybe\n```' : sample.body;
+		/*
+		 * **The other three fenced components' read errors, one breakage each**, so
+		 * three of the four ways `readFenced` refuses a block are on screen and
+		 * none of them twice. The fourth, `Section has more than one sheet
+		 * block.`, is not drawn: it is the same one-line refusal in the same
+		 * cell, and a second fence is a paste rather than a retyped value. A
+		 * value of the wrong kind is not among
+		 * them: Card, Card set and Pool read every value as text and leave the
+		 * meaning to the face, so their `read` fails only on the block's shape.
+		 *
+		 * - **Card set, a line with its colon gone**: `GP 7` in the purse, which
+		 *   is what retyping a value by hand leaves. On `currency` rather than
+		 *   `abilities`, because a broken Abilities would turn every card reading a
+		 *   modifier into `?` and drown the states this view sets out to show; the
+		 *   one formula reading the purse, `gold_value`, shows `?` beside it, which
+		 *   is the cascade a reader meets and worth having in the frame.
+		 * - **Pool, a key written twice**: a second `max:` after a level-up,
+		 *   appended rather than edited. On `rolled_health`, the pool whose ceiling
+		 *   the character owns, so `max` is a key a player does type, and one
+		 *   nothing reads, so the error stays one cell.
+		 * - **Card, a fence never closed**: the closing line deleted. On `origin`,
+		 *   a keyed card inside a group, because every top-level keyed card already
+		 *   carries the `bad:key` config error above and `read` checks the key
+		 *   first. `parseCharacter` splits sections with no fence awareness, so in a
+		 *   real note this stays one section's failure rather than swallowing the
+		 *   next heading.
+		 */
+		if (config.id === 'currency') body = '```sheet\nCP: 42\nSP: 18\nGP 7\nPP: 1\n```';
+		if (config.id === 'rolled_health') body = '```sheet\ncurrent: 14\nmax: 22\nmax: 24\n```';
+		const children =
+			config.id === 'background' && sample.children !== undefined
+				? { ...sample.children, origin: '```sheet\norigin: Neverwinter\nnote: guild artisan\n' }
+				: sample.children;
 		/*
 		 * A picture written the way every analogue accepts it and this one refuses:
 		 * a bare path. `image.read` cannot fail, so this is refused in `render` like
@@ -3688,7 +3719,7 @@ export function brokenSamples(): Sample[] {
 			// the editor and not yet typed would be.
 			config.fields = [{ key: 'Notes', type: 'text' }];
 		}
-		return { config, body, children: sample.children };
+		return { config, body, children };
 	});
 }
 

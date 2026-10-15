@@ -1314,6 +1314,16 @@ pane's place, not a global one, and it never displaces the row.
 Error text names the fix: `"max: 'con' is not defined on this sheet"`, not
 `"could not resolve"`.
 
+**Every fenced component's read failure is drawn in `sheet-error`, one breakage
+each, so no message appears twice** [judgement]: a Track flag holding `maybe`, a
+Card set line with its colon gone, a Pool key written twice and a Card fence never
+closed. The last three are three of the four shapes `readFenced` refuses; the
+fourth, a section holding a second sheet block, is not drawn. A value
+of the wrong kind is not one for Card, Card set or Pool, which read every value as
+text. Which component carries which is argued in `harness/samples.ts`'s
+`brokenSamples()`. **These three fail the rule above**, naming the fault and not
+the fix, where a record's copy adds one; tracked in `docs/BACKLOG.md` § UI.
+
 ---
 
 ## 11. Reviewing appearance
