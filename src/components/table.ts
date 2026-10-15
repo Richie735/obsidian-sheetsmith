@@ -1662,6 +1662,27 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			? element('div', 'sheetsmith-table-box', container)
 			: container;
 		if (open) container.addClass('sheetsmith-table-open');
+		/*
+		 * **The room beside the sticky name is set per table, from its own
+		 * trailing cells, in two values** (`docs/UI.md` §4). Where every column
+		 * but the name is a modifier glyph whose heading is hidden — and the
+		 * remove glyph an open table always draws is one too — no cell beside the
+		 * name is wider than a glyph, so the band one number cell wide that every
+		 * other table keeps would cost the names about 31px for nothing: Worn
+		 * items at 520 clipped `Ring of …` and still scrolled 5px of padding.
+		 * Stamped from the config rather than measured, because both widths are
+		 * CSS lengths here and the headings are sr-only; a toggle or a level is
+		 * left out, since its heading may show and a note mark may sit beside it.
+		 */
+		if (
+			open &&
+			columns.every(
+				(column) =>
+					columnType(column) === 'modifier' && column.hideHeading === true,
+			)
+		) {
+			box.addClass('sheetsmith-table-glyph-band');
+		}
 		const wrapper = element(
 			'div',
 			open

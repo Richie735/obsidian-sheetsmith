@@ -3889,7 +3889,7 @@ describe('the add control pinned to the foot of the card', () => {
 		const coarse = all.filter(
 			(rule) =>
 				rule.context.includes('@media (pointer: coarse)') &&
-				/--sheetsmith-inline-control:\s*2\.2em/.test(rule.body),
+				/--sheetsmith-inline-control-factor:\s*2\.2;/.test(rule.body),
 		);
 		expect(coarse.length).toBeGreaterThan(0);
 	});
@@ -4028,21 +4028,36 @@ describe('the room beside an open table\'s sticky name', () => {
 		all.find((rule) => rule.selector.trim() === selector && rule.context.length === 0)
 			?.body ?? '';
 
+	const GLYPH_BAND = '.sheetsmith-view .sheetsmith-table-box.sheetsmith-table-glyph-band';
+
 	it('declares the room once, on the box that is the scroller\'s container', () => {
 		const box = body('.sheetsmith-view .sheetsmith-table-box');
 		expect(box).toMatch(/container-type:\s*inline-size/);
 		expect(box).toMatch(/--sheetsmith-table-name-room:\s*calc\(\s*100cqi/);
+		expect(box).toMatch(/--sheetsmith-table-name-room:[^;]*var\(--sheetsmith-table-band\)/);
 		expect(
 			all.filter((rule) => /--sheetsmith-table-name-room:/.test(rule.body)),
 		).toHaveLength(1);
 	});
 
+	it('varies only the band, on the box and on a glyph band', () => {
+		const declaring = all.filter((rule) => /--sheetsmith-table-band:/.test(rule.body));
+		expect(declaring.map((rule) => rule.selector.trim()).sort()).toEqual(
+			['.sheetsmith-view .sheetsmith-table-box', GLYPH_BAND].sort(),
+		);
+		// One glyph cell: the inline control's own factor over the cells' size, so
+		// the coarse-pointer block's factor reaches it with no copy of the number.
+		expect(body(GLYPH_BAND).replace(/\s+/g, ' ')).toContain(
+			'--sheetsmith-table-band: calc( var(--sheetsmith-inline-control-factor) * var(--font-ui-small) + 2 * var(--size-4-2) )',
+		);
+	});
+
 	it("sizes the room's one number cell as the number field is sized", () => {
-		// The room is `4 * var(--font-ui-small)` because the number field is
+		// The band is `4 * var(--font-ui-small)` because the number field is
 		// `width: 4em` at its own `--font-ui-small`. Widen the field without the
 		// room and a number cell no longer shows whole beside the name, which no
 		// unit test can see: so the two are read from the stylesheet and compared.
-		const room = /--sheetsmith-table-name-room:\s*calc\(([^;]*)\);/.exec(
+		const room = /--sheetsmith-table-band:\s*calc\(([^;]*)\);/.exec(
 			body('.sheetsmith-view .sheetsmith-table-box'),
 		)?.[1];
 		const roomCells = /([\d.]+)\s*\*\s*var\(--font-ui-small\)/.exec(room ?? '')?.[1];

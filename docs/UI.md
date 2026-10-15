@@ -126,6 +126,11 @@ constant moved.
 
 A knob is public API once shipped. Renaming it breaks someone's snippet.
 
+**Where a knob is spelt as a factor and a length derived from it, the factor
+is the override point**, on `body`: `--sheetsmith-inline-control-factor`, from
+which `--sheetsmith-inline-control` is derived, because a length that has to
+be the control's at another font size reads the factor, never the length.
+
 ---
 
 ## 4. Space, and how the sheet reflows
@@ -156,13 +161,28 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   slack: the reason it yields, "row names are a fixed vocabulary", is false on
   an `openRows` table, where the character types them.
 - **At the default sheet size, beside its sticky name an open table leaves one
-  number cell of room, short only where the name's heading is wider, and every
-  cell's content but prose is seen whole there** [judgement; held at 520 by
+  number cell of room, or one glyph cell where every cell beside the name is a
+  glyph, short only where the name's heading is wider, and every cell's
+  content but prose is seen whole there** [judgement; held at 520 by
   `harness/measure-groups.mjs` check 8, which prints these figures, and prints
   the `text=24` ones below without holding them]. The name's two floors,
   its longest name and its field's `6em`, are held under one room declared on
-  the table's box: the scroller less one number cell
-  (`docs/features/table-name-column-floor.md`). The field's floor used to
+  the table's box: the scroller less one band
+  (`docs/features/table-name-column-floor.md`). **The band is set per table
+  from its own trailing cells, in two values, chosen from the config and never
+  measured.** Where every column is a modifier glyph with its heading hidden,
+  beside the remove glyph, the band is one glyph cell (the inline control at
+  `--font-ui-small` plus its padding, 36.8px, 44.6 under a coarse pointer);
+  everywhere else it is one number cell. One constant cost Worn items 31px of
+  names for nothing — at 520 it held them to 86.7px beside two 36.8px glyphs
+  and still scrolled 5px of the remove cell's padding; with the glyph band they
+  are 117.9, `Shackles` is whole, and the scroll brings the remove glyph whole
+  into a 37.1px room. Measuring each table's widest cell in code was refused:
+  a column is as wide as its heading when that is wider, and a heading is
+  laid-out text, so it needs a layout read on every render that happy-dom
+  cannot see. That is also why a toggle or a level is left out, even with its
+  heading hidden: its heading may show, and a note mark may sit beside its
+  ring. The field's floor used to
   outweigh it, so at 520 Attacks' 155px scroller held a 102px name beside a 68px
   number cell and left 53; it now leaves 68.3, and the name gives with an
   ellipsis: `Longsword`, whole at 102px, reads `Longsw…` at 86.7, which is the
@@ -181,11 +201,15 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   and leaves 28.7px of a 155px scroller for an 86.2px `Active` cell, whose ring
   is wholly behind the name, so the card shows no toggle; Attacks' heading sets
   a 90px name and leaves 65px for its 68px `Hit` cell, and `Dagger` reads
-  `Dagg…`. Not a regression: the field's old `6em` floor was 144px there. It
-  reopens with the clause above, since only clipping or wrapping the heading
-  reaches it. A declared row's
-  name is plain text and is not held, so a long one on an open table widens the
-  column as before.
+  `Dagg…`. Magic items, in a 319px scroller, leaves 67.7px beside its name for
+  a 77.3px `Worn` toggle cell, which its heading widens: the ring is centred
+  and shows whole, so the content holds and the box does not. Not a
+  regression: the field's old `6em` floor was 144px there. It reopens with the
+  clause above, since only clipping or wrapping the heading reaches it, and
+  the seventh rulings pass did not reopen it: the per-table band changes no
+  name heading, so a heading wider than its bound stays the case it was.
+  A declared row's name is plain text and is not held, so a long one on an
+  open table widens the column as before.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.

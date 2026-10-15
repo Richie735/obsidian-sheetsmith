@@ -1990,6 +1990,26 @@ describe('table with open rows', () => {
 		).not.toBeNull();
 	});
 
+	it('narrows the room to a glyph only where every column beside the name is a hidden-heading modifier glyph', () => {
+		// `docs/UI.md` §4: such a table has no cell wider than a glyph beside the
+		// name, so the band one number cell wide is room no cell needs.
+		const band = (columns: TableConfig['columns'], openRows = true) =>
+			openRender(null, { ...inventory, openRows, columns })
+				.el.querySelector('.sheetsmith-table-box')
+				?.classList.contains('sheetsmith-table-glyph-band') ?? null;
+		const glyph = { key: 'Modifiers', type: 'modifier' as const, hideHeading: true };
+		expect(band([glyph])).toBe(true);
+		// A list of names alone has only the remove glyph beside them.
+		expect(band([])).toBe(true);
+		// A heading that shows is laid-out text, wider than the glyph.
+		expect(band([{ ...glyph, hideHeading: false }])).toBe(false);
+		// A toggle may show its heading or carry a note mark beside its ring.
+		expect(band([glyph, { key: 'Worn', type: 'toggle', hideHeading: true }])).toBe(false);
+		expect(band([glyph, { key: 'Qty', type: 'number' }])).toBe(false);
+		// A closed table has no box to set the room on.
+		expect(band([glyph], false)).toBeNull();
+	});
+
 	it('gives only an open table the box that stretches', () => {
 		const { el } = openRender(PACK, { ...inventory, openRows: false });
 		expect(el.querySelector('.sheetsmith-table-box')).toBeNull();

@@ -43,8 +43,25 @@ body {
 	   The size is the whole of the agreement, and the treatments deliberately are
 	   not shared: `docs/UI.md` §9 records that each of these controls owns its own
 	   resting colour, hover surface and which state stands down for which. Grows
-	   for a coarse pointer, in sheet.css. */
-	--sheetsmith-inline-control: 1.6em;
+	   for a coarse pointer, in sheet.css.
+
+	   **Spelt as a unitless factor of `1em`**, so a length that has to be the
+	   control's at a different font size than the one it is used at can take the
+	   factor over that size instead: an open table's glyph band is one control at
+	   the cells' `--font-ui-small`, used in a name cell at the name's size, where
+	   this `em` would resolve 1.2 times too wide. The coarse-pointer block raises
+	   the factor, so both follow it.
+
+	   **So the factor is the knob, and the length is derived from it**: a
+	   snippet overrides `--sheetsmith-inline-control-factor`, on `body`.
+	   Overriding the length instead resizes the controls but not the table's
+	   glyph band, which reads the factor, and overriding the factor below
+	   `body` moves the band but not the controls, since the length is
+	   substituted here. */
+	--sheetsmith-inline-control-factor: 1.6;
+	--sheetsmith-inline-control: calc(
+		var(--sheetsmith-inline-control-factor) * 1em
+	);
 	/* **How wide a record's name may grow before its own fields stop following
 	   it.** Published as a knob because it is a judgement about reading rather
 	   than a measurement: pinned to the trailing edge instead, a design review
@@ -2409,11 +2426,13 @@ body {
    name as wide as the scroller hides every cell that scrolls under it, and in a
    narrow card no scroll position reached a row's modifier or remove control. The
    other cells need not all fit beside the name, only one at a time, since
-   scrolling brings each into the band left over in turn — so the band is one
-   constant and not a sum over each table's trailing cells: one number cell,
-   which takes a glyph, the remove control or a number field whole, and a text
-   field in part. Wide cards never reach the cap, so the floor is unchanged
-   there; in a narrow one the field's own `6em` minimum takes over again.
+   scrolling brings each into the band left over in turn — so the band is the
+   widest single cell, never a sum over each table's trailing cells. It is one
+   number cell, which takes a glyph, the remove control or a number field whole,
+   and a text field in part; or one glyph cell on a table whose every trailing
+   cell is a glyph, the rule after this one. Wide cards never reach the cap, so
+   the floor is unchanged there; in a narrow one the field's own `6em` minimum
+   takes over again.
 
    **`cqi`, against the box**, because nothing else can say how wide the
    scroller is. A percentage `max-width` inside a table cell resolves against
@@ -2428,7 +2447,9 @@ body {
    **The room is declared once, here, and both floors are held under it**: the
    sizer's, and the field's own `6em`, which outweighed the sizer in a narrow
    card until it was held too. A custom property's `cqi` resolves where it is
-   used, so in a name cell it is this box. One number cell:
+   used, so in a name cell it is this box. What it leaves is
+   `--sheetsmith-table-band`, which is the one thing a table varies: the glyph
+   band below overrides the band alone, never the room. One number cell:
    `.sheetsmith-table-input`'s `width: 4em` at its own `--font-ui-small`
    (border-box, so padding and border are inside it), plus its cell's inline
    padding. The name cell's own inline padding comes off too, since the cell is
@@ -2442,8 +2463,25 @@ body {
    name 35px. */
 .sheetsmith-view .sheetsmith-table-box {
 	container-type: inline-size;
+	--sheetsmith-table-band: calc(4 * var(--font-ui-small) + 2 * var(--size-4-2));
 	--sheetsmith-table-name-room: calc(
-		100cqi - 2 * var(--size-4-2) - 4 * var(--font-ui-small) - 2 *
+		100cqi - 2 * var(--size-4-2) - var(--sheetsmith-table-band)
+	);
+}
+
+/* **A table whose every trailing cell is a glyph keeps a band one glyph wide**,
+   stamped by `table.ts` where each column is a modifier glyph with its heading
+   hidden, beside the remove glyph (`docs/UI.md` §4). One number cell there was
+   a band no cell needed: Worn items at 520 held its names to 86.7px and
+   scrolled 5px of the remove cell's padding. A glyph cell is the inline
+   control at the cells' `--font-ui-small` plus its cell's padding: the token's
+   factor over that size, since the token itself is `em` and would resolve at
+   the name's size where the room is used. The coarse-pointer block raises the
+   factor on `body`, so this follows it with no twin of its own. The band
+   alone, so the room is still the one declared above. */
+.sheetsmith-view .sheetsmith-table-box.sheetsmith-table-glyph-band {
+	--sheetsmith-table-band: calc(
+		var(--sheetsmith-inline-control-factor) * var(--font-ui-small) + 2 *
 			var(--size-4-2)
 	);
 }
@@ -2843,7 +2881,7 @@ body {
    not measure differently under the same finger. */
 @media (pointer: coarse) {
 body {
-		--sheetsmith-inline-control: 2.2em;
+		--sheetsmith-inline-control-factor: 2.2;
 	}
 
 }
