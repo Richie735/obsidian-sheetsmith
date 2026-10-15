@@ -142,6 +142,18 @@ export class Canvas {
 		const { env } = buildSheet(layout, prepared, library);
 
 		const view = el.createDiv('sheetsmith-view sheetsmith-editor-canvas');
+		// Why a press here only selects, where the grid is drawn as one column
+		// (`docs/features/layout-editor-narrow-regime.md` §1). Always drawn, and
+		// shown only under the sheet's own named query, so it is displayed — and in
+		// the accessibility tree — exactly when it is true. **Inside the view and
+		// not beside the canvas**, because a container query can only ask an
+		// ancestor: outside it, the note would have to restate the collapse as a
+		// pane width, a second number for one fact. Before the grid, so the cells
+		// stay the grid's only children (`wireLevel`'s index contract).
+		view.createDiv({
+			cls: ['setting-item-description', 'sheetsmith-canvas-column-note'],
+			text: 'Select a component, then set where it sits with its position fields.',
+		});
 		const grid = view.createDiv('sheetsmith-grid');
 		const columns = layout.columns ?? DEFAULT_COLUMNS;
 		grid.style.setProperty('--sheetsmith-columns', String(columns));

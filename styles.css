@@ -11173,6 +11173,55 @@ a.sheetsmith-notice-action {
 
 }
 
+/* The line saying why a press only selects: in the DOM always, displayed only
+   under the query below, so it is in the accessibility tree exactly when it is
+   true. It is the first child of the canvas's own view because a container
+   query can only ask an ancestor.
+
+   **It belongs to the canvas, not to the first component under it**, so the
+   space under it is the space over it: 24px, the **Sample values** row's bottom
+   to the note across the canvas's margin and the view's padding, and 24px to the
+   first cell. At 8px under and 24 over it read as a gloss on that component. */
+.sheetsmith-canvas-column-note {
+	display: none;
+	margin-bottom: var(--size-4-6);
+}
+
+/* **Where the canvas draws the sheet as one column, it takes no gesture**
+   (`docs/features/layout-editor-narrow-regime.md` §1). The canvas wears the
+   sheet's own `.sheetsmith-view`, so the sheet's own collapse reaches it, and
+   these rules sit under the same named query rather than a number of their
+   own: the gestures leave on the pixel where the grid stops. `schematic-
+   gestures.ts` refuses the press, the corner and the arrow keys there, through
+   `drawnAsGrid`, which asks the grid itself.
+
+   A touch on a block scrolls the pane, where `touch-action: none` above made
+   the overlays, 322 of the canvas's 354px for 17,228px of height at 380, a
+   scroll trap only the gutters escaped. The corner goes, since it is a handle
+   for a resize that is not offered and a coarse pointer drew it on every cell.
+   And the cursor says a press selects.
+
+   **A nested grid that collapsed on its own width is not reached**: it sits in
+   a sheet that has not, so this query does not fire, and its overlays keep
+   `touch-action: none`. Its gestures are refused by the same guard; the cost
+   is that a touch scroll cannot start on it. Cut, in the feature doc. Below the
+   rules it overrides, since `@container` adds no specificity. */
+@container sheetsmith-sheet (max-width: 480px) {
+.sheetsmith-view .sheetsmith-canvas-overlay {
+		cursor: pointer;
+		touch-action: manipulation;
+	}
+
+.sheetsmith-editor-canvas .sheetsmith-preview-resize {
+		display: none;
+	}
+
+.sheetsmith-canvas-column-note {
+		display: block;
+	}
+
+}
+
 /* **The pane's own buttons, past Obsidian's tablet rule**, which is
    `.is-tablet button:not(.clickable-icon)` at (0,2,1): sheet.css's foot, one
    surface over (`docs/UI.md` §2). A tree row's name and its chevron took

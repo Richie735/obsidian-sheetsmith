@@ -4193,3 +4193,67 @@ describe('the floating surfaces\' viewport gutter', () => {
 		expect(/--size-4-4:\s*(\d+)px/.exec(theme)?.[1]).toBe(String(EDGE_GUTTER));
 	});
 });
+
+describe("every rule asking about the sheet's width asks it at one number", () => {
+	/*
+	 * The sheet's grid collapses under 480px of its view (`sheet.css`), and the
+	 * layout editor's canvas, which wears that view, withdraws its gestures under
+	 * the same named query (`editor.css`,
+	 * `docs/features/layout-editor-narrow-regime.md` §1). A query cannot read a
+	 * custom property, so the number is written at each, and two that drifted
+	 * would leave a canvas offering a drag on a column, or refusing one on a grid,
+	 * with nothing in a unit test laying either out.
+	 */
+	const QUERY = /@container\s+sheetsmith-sheet\s*\(\s*max-width:\s*([\d.]+px)\s*\)/g;
+
+	function widths(text: string): string[] {
+		return [...text.matchAll(QUERY)].map((match) => match[1] as string);
+	}
+
+	it('finds the queries it is meant to be checking, in both stylesheets', () => {
+		const sheet = readFileSync(new URL('./styles/sheet.css', import.meta.url), 'utf8');
+		const editor = readFileSync(new URL('./styles/editor.css', import.meta.url), 'utf8');
+		expect(widths(sheet.replace(/\/\*[\s\S]*?\*\//g, ' ')).length).toBeGreaterThanOrEqual(1);
+		expect(widths(editor.replace(/\/\*[\s\S]*?\*\//g, ' ')).length).toBeGreaterThanOrEqual(1);
+	});
+
+	/**
+	 * The width of the query that collapses the sheet's own grid. It is unnamed
+	 * (`sheet.css`, "SPEC §8"), so `QUERY` cannot see it, yet it is the rule
+	 * whose `display: flex` `drawnAsGrid` reads: drifted alone, it would move the
+	 * collapse and leave the canvas's touch rules, corner and note where they were.
+	 */
+	function collapseWidths(text: string): string[] {
+		return rules(text)
+			.filter(
+				(rule) =>
+					selectorList(rule.selector).includes('.sheetsmith-view > .sheetsmith-grid') &&
+					/display:\s*flex/.test(rule.body),
+			)
+			.flatMap((rule) =>
+				rule.context.flatMap((one) => {
+					const found = /^@container\s*\(\s*max-width:\s*([\d.]+px)\s*\)$/.exec(one.trim());
+					return found ? [found[1] as string] : [];
+				}),
+			);
+	}
+
+	it('gives every one of them the same width', () => {
+		expect(new Set(widths(CSS_WITHOUT_COMMENTS)).size).toBe(1);
+	});
+
+	it("holds the sheet grid's own unnamed collapse to that width too", () => {
+		const collapse = collapseWidths(CSS_WITHOUT_COMMENTS);
+		expect(collapse).toHaveLength(1);
+		expect(new Set([...widths(CSS_WITHOUT_COMMENTS), ...collapse]).size).toBe(1);
+	});
+
+	it('would catch one that drifted', () => {
+		const one = '@container sheetsmith-sheet (max-width: 480px) { .a { display: flex; } }';
+		const other = '@container sheetsmith-sheet (max-width: 512px) { .b { display: none; } }';
+		expect(new Set(widths(one + other)).size).toBe(2);
+		const collapse =
+			'@container (max-width: 500px) { .sheetsmith-view > .sheetsmith-grid { display: flex; } }';
+		expect(new Set([...widths(one), ...collapseWidths(collapse)]).size).toBe(2);
+	});
+});
