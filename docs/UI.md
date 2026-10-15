@@ -225,6 +225,29 @@ be the control's at another font size reads the factor, never the length.
   hand` move. A table with prose keeps the one line, since its name column is
   `auto` and would fall to its longest word, and a declared name on an open
   table with prose still widens its column as before.
+- **A control focused behind a sticky name is scrolled clear of it, in every
+  table and Roster that scrolls** [checked: `ui/pinned-column-focus.test.ts`;
+  held by `harness/measure-groups.mjs` check 9, real Shift-Tab at 520 and at a
+  true 380 under phone staging, each at `text=24` too]. The browser scrolls a
+  focused control only into the scrollport, whose start the name covers, so
+  Shift-Tab back along a table scrolled right landed behind it. Counted one
+  press per control, the table scrolled fully right before each (check 9's
+  measure): at 520, 4 of Attacks' 8 controls and 18 of Inventory's 34 (its
+  three links aside, none covered), and at a true 380, 2 and 18. Counted as one
+  walk back from the last control, the scroll carried from press to press: the
+  same at 520, and 2 and 13 at 380. Now none by either count, at either size
+  or width.
+  The cell's start goes against the name, as a text cell's already does above,
+  unless that carries a control that fits the room past the far edge, when the
+  control's own start does: Conditions' `Active` ring at `text=24`, in a
+  28.7px room. **Measured on focus, not declared**: a `scroll-padding` the
+  name's width cannot be written for a closed table or a Roster, which have no
+  box to hold a room, an open table can spell the name's room but not its
+  width, and Chrome leaves a partly covered button where it is whatever the
+  padding says. **Only a focus no pointer caused** (`:focus-visible`), so a
+  press never scrolls its control out from under the pointer before release;
+  a focus restored after a rebuild asks not to scroll and needs nothing, since
+  its new scroller is at the start, where no name covers anything.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.

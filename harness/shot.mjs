@@ -56,7 +56,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { CHROME, launch, wait } from './cdp.mjs';
+import { CHROME, checkPlatform, launch, stagePlatform, wait } from './cdp.mjs';
 
 if (!CHROME) {
 	console.error('No Chrome-family browser found. Install one, or open harness/index.html by hand.');
@@ -3226,16 +3226,6 @@ async function centreOf(browser, view, selector) {
 }
 
 /**
- * The body classes Obsidian sets for a platform, which the stub never does. A
- * tablet is mobile as well, so it carries both, as the app's `body` does, and so
- * is a phone: `.is-mobile`'s bare-control rules and the phone's own variables
- * are what `calibrate.mjs` carries under them, so `phone` stages the app's phone
- * CSS — its 44px inputs and `.is-mobile input[type='text']`'s width among them —
- * at whatever width the view gives it. It is not a device.
- */
-const PLATFORMS = { tablet: ['is-mobile', 'is-tablet'], phone: ['is-mobile', 'is-phone'] };
-
-/**
  * Capture a view by driving Chrome over the DevTools Protocol.
  *
  * **The second capture path, and it exists for four states the first cannot
@@ -3278,28 +3268,12 @@ async function shootDriven(view, out) {
 			deviceScaleFactor: 1,
 			mobile: false,
 		});
-		const platform = view.platform === undefined ? undefined : PLATFORMS[view.platform];
-		if (view.platform !== undefined && platform === undefined) {
-			throw new Error(`Bad platform "${view.platform}"; want one of ${Object.keys(PLATFORMS).join(', ')}.`);
-		}
 		// Before the load, so the page's first layout already answers to a
-		// coarse pointer and no hover, as a tablet's does.
-		if (platform !== undefined) {
-			await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-			// On `body` as soon as the parser makes it, ahead of the module script:
-			// a class added after the load would restyle a panel already placed.
-			// The observer watches `document` itself, because this runs before the
-			// parser has made even `<html>`: observing `documentElement` threw on
-			// null, the script died silently, and the "tablet" drew at desktop scale.
-			const classes = platform.map((one) => `'${one}'`).join(', ');
-			await browser.send('Page.addScriptToEvaluateOnNewDocument', {
-				source: `(() => {
-					const add = () => document.body !== null && (document.body.classList.add(${classes}), true);
-					if (!add()) new MutationObserver((_, watch) => { if (add()) watch.disconnect(); })
-						.observe(document, { childList: true, subtree: true });
-				})()`,
-			});
-		}
+		// coarse pointer and no hover, as a tablet's does, and the body classes
+		// are on before the module script: a class added after the load would
+		// restyle a panel already placed (`cdp.mjs`, `stagePlatform`).
+		const platform =
+			view.platform === undefined ? undefined : await stagePlatform(browser.send, view.platform);
 		if (view.media !== undefined) {
 			await browser.send('Emulation.setEmulatedMedia', {
 				features: Object.entries(view.media).map(([name, value]) => ({ name, value })),
@@ -3311,12 +3285,7 @@ async function shootDriven(view, out) {
 		await wait(DRAW_BUDGET);
 		// Held rather than trusted: a staging that silently fails draws a
 		// plausible desktop sheet, which is the failure above.
-		if (platform !== undefined) {
-			const missing = await browser.evaluate(
-				`${JSON.stringify(platform)}.filter((one) => !document.body.classList.contains(one))`,
-			);
-			if (missing.length > 0) throw new Error(`platform=${view.platform}: body lacks ${missing.join(', ')}`);
-		}
+		if (platform !== undefined) await checkPlatform(browser.evaluate, platform);
 
 		if (view.hover !== undefined) {
 			const at = await centreOf(browser, view, view.hover);

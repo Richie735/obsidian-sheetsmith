@@ -170,3 +170,63 @@ async function connect(url) {
 		close: () => socket.close(),
 	};
 }
+
+/**
+ * The body classes Obsidian sets for a platform, which the stub never does. A
+ * tablet is mobile as well, so it carries both, as the app's `body` does, and so
+ * is a phone: `.is-mobile`'s bare-control rules and the phone's own variables
+ * are what `calibrate.mjs` carries under them, so `phone` stages the app's phone
+ * CSS — its 44px inputs and `.is-mobile input[type='text']`'s width among them —
+ * at whatever width the view gives it. It is not a device.
+ *
+ * Here rather than in `shot.mjs` because `measure-groups.mjs` stages a phone
+ * too, and its own copy had already drifted: a hardcoded pair, and a check on
+ * one class of the two.
+ */
+export const PLATFORMS = { tablet: ['is-mobile', 'is-tablet'], phone: ['is-mobile', 'is-phone'] };
+
+/**
+ * Stage a platform before the next navigation: touch emulated, so a coarse
+ * pointer's rules answer as they do on the device, and the platform's body
+ * classes added the moment `body` exists, ahead of the page's own script, so
+ * nothing is placed against desktop sizes first. Resolves to a handle for
+ * `checkPlatform` and `unstagePlatform`.
+ *
+ * The observer watches `document` itself, because this runs before the parser
+ * has made even `<html>`: observing `documentElement` threw on null, the script
+ * died silently, and the "tablet" drew at desktop scale.
+ */
+export async function stagePlatform(send, name) {
+	const classes = PLATFORMS[name];
+	if (classes === undefined) {
+		throw new Error(`Bad platform "${name}"; want one of ${Object.keys(PLATFORMS).join(', ')}.`);
+	}
+	await send('Page.enable');
+	await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+	const list = classes.map((one) => `'${one}'`).join(', ');
+	const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', {
+		source: `(() => {
+			const add = () => document.body !== null && (document.body.classList.add(${list}), true);
+			if (!add()) new MutationObserver((_, watch) => { if (add()) watch.disconnect(); })
+				.observe(document, { childList: true, subtree: true });
+		})()`,
+	});
+	return { name, classes, identifier };
+}
+
+/**
+ * Throw unless the loaded page's `body` carries every class staged. Held rather
+ * than trusted: a staging that silently fails draws a plausible desktop sheet.
+ */
+export async function checkPlatform(evaluate, staged) {
+	const missing = await evaluate(
+		`${JSON.stringify(staged.classes)}.filter((one) => !document.body.classList.contains(one))`,
+	);
+	if (missing.length > 0) throw new Error(`platform=${staged.name}: body lacks ${missing.join(', ')}`);
+}
+
+/** Undo `stagePlatform` for later navigations in the same session. */
+export async function unstagePlatform(send, staged) {
+	await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: staged.identifier });
+	await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+}

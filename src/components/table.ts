@@ -95,6 +95,7 @@ import {
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
 import { showPopover } from '../ui/popover';
+import { keepFocusClearOfPinned } from '../ui/pinned-column-focus';
 import { revealWhenTruncated } from '../ui/truncation';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
@@ -1690,6 +1691,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				: 'sheetsmith-table-wrapper',
 			box,
 		);
+		// The name cell is pinned at the scroller's start, so a control focused
+		// behind it is scrolled clear (`ui/pinned-column-focus.ts`).
+		keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 		const grid = element('table', 'sheetsmith-table', wrapper);
 		// Two facts the stylesheet needs about the whole table, stamped here
 		// because both were `:has()` selectors and Obsidian's review asks for
