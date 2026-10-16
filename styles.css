@@ -324,8 +324,8 @@ body {
 	--no-tooltip: true;
 	/* The cap is on the box and the scroll is on the body, one element in, so the
 	   panel's own edge stays put while its contents move. Deliberately **not**
-	   `.sheetsmith-list-scroll`, whose `20em` cap is a layout-editor list's and
-	   whose purpose SPEC §13 still asks about.
+	   `.sheetsmith-list-scroll`, whose cap is a layout-editor list's own
+	   distance down the pane, floored by that list's tallest entry.
 
 	   **In px, because the em was measured against a number the em did not mean.**
 	   The rule sets its own `font-size: var(--font-ui-small)`, and `em` outside
@@ -9763,9 +9763,59 @@ a.sheetsmith-notice-action {
 /* Long lists are bounded so they cannot bury the fields under them: a skill
    card with eighteen rows otherwise puts the whole columns section — and its
    add control — eight hundred pixels below the fold of the form. The cap only
-   bites once there is more list than that. */
+   bites once there is more list than that. Two lists take it, the Rows and the
+   Columns editors in `editor/list-fields.ts`
+   (`docs/features/list-scroll-cap.md`).
+
+   **A distance in px, floored by one whole entry, and every number is a
+   measurement.** It was once sized in em of a desktop row, and nothing recorded
+   what that was measured against: a phone's stacked entry is about eight
+   desktop rows tall, so at 380 under phone staging, touch emulated, Skills'
+   first column entry (321.4px) could not show whole in the 320 the em came to.
+   **Measured with the staging on**: with touch off the same entry is 312.4px,
+   since the coarse-pointer rules are what grow it, and that is not a phone.
+
+   - **Ceiling, 400px, which is the stacked floor below with its headroom**,
+     so a phone's cap is one number at every window height. Under it an
+     eighteen-row Skills list puts the Columns
+     heading 592.8px below the Rows heading at 1500 (83.8 + 400 + 93 + 16) and
+     691.8px below it at 380 under phone staging (137.8 + 400 + 137 + 17), so
+     in an 800px window the columns section stays on the form's first screen.
+     That is the distance this rule is for.
+   - **Window term, `100dvh - 300px`.** 300 is what a capped Rows list carries
+     above and below itself to the Columns heading: 291.8px at the phone,
+     192.8 at 1500, rounded up from the larger. It keeps that heading inside a
+     short desktop window until the floor stops it. `dvh` is the window, not a
+     split pane, so in a split it is an upper bound. **Inert in the harness's
+     default frames**, which are the page's whole height (`EDITOR_FRAME` is
+     16800), so only `measure-lists.mjs`'s real windows reach it.
+   - **Wide floor, 244px.** The tallest entry plus the 23px sticky header
+     wherever the rows sit side by side, and an entry showing its message
+     counts. **The binding one is 230px**, at 820 under tablet staging, where
+     the app's taller tablet controls make *Recharging features*' entry 207px;
+     with 6% headroom, 243.8, rounded up. At 1500, 1210 and 620 the tallest is
+     204px and does not bind: *Recharging features, broken*'s 181px Columns
+     entry with its **Shown when** message drawn, one message that wraps to
+     three lines (45px) at those widths.
+   - **Stacked floor, 400px**, below in the 380 query, where the header is
+     `display: none`: *Recharging features, broken*'s entry with its message,
+     which wraps to five lines (75px) there, 376.4px at 380 under phone
+     staging, with the same 6% (399, rounded). **So at 380 the floor is
+     the cap and the window cannot win**: one whole entry beats a heading on
+     screen, and on a phone window under about 692px an eighteen-row list's
+     Columns heading starts below the first screen. That nested scroller is
+     the phone's accepted cost (`SPEC` §13).
+
+   A list that cannot show one entry whole fails where no reader sees it: the
+   entry's foot is cut and the list looks complete, the half-line cut
+   `editor/list-field-height.ts` calls a fault, a whole entry deep.
+
+   **Re-measure rather than adjusting by eye**: `npm run harness`, then
+   `node harness/measure-lists.mjs`, which prints the tallest entry at every
+   width and fails when one outgrows its cap. */
 .sheetsmith-list-scroll {
-	max-height: 20em;
+	--sheetsmith-list-floor: 244px;
+	max-height: clamp(var(--sheetsmith-list-floor), calc(100dvh - 300px), 400px);
 	overflow-y: auto;
 }
 
@@ -11515,7 +11565,7 @@ a.sheetsmith-notice-action {
    **Scoped to the Modifiers list, and that is the cause rather than a
    convenience.** It was written unscoped and met two markup shapes it had never
    been checked against. `list-fields.ts` builds `.sheetsmith-list-entry` for
-   *columns* only, inside `.sheetsmith-list-scroll` — a 20em scrollport — so a
+   *columns* only, inside `.sheetsmith-list-scroll` — a capped scrollport — so a
    bordered entry past the fold showed 28px of side and no bottom rule at all,
    with **Add column** below the scroller reading as though it were inside the
    unclosed box; and the *rows* editor builds no entry element at all, so its list
@@ -11640,6 +11690,14 @@ a.sheetsmith-notice-action {
 /* The header is gone, so the per-field labels have to appear. */
 .sheetsmith-field-name {
 		display: block;
+	}
+
+/* A stacked entry is about twice a side-by-side one, so the list's floor is
+	   the stacked entry's (the measurement is at `.sheetsmith-list-scroll`).
+	   Keyed to this query and not to a viewport, so the floor and the stacking
+	   always agree. */
+.sheetsmith-list-scroll {
+		--sheetsmith-list-floor: 400px;
 	}
 
 }

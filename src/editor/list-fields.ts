@@ -408,7 +408,8 @@ export function renderRowsEditor(
 	// eight hundred pixels between this field and the next one, and the add
 	// control at the bottom of it is below all of them. The header rides
 	// inside the same scroller so the two keep identical widths — a
-	// scrollbar on the rows alone would pull them out of line.
+	// scrollbar on the rows alone would pull them out of line. The cap itself
+	// is a measured distance in `styles/editor.css`, floored by one whole entry.
 	const scroller = listEl.createDiv('sheetsmith-list-scroll');
 
 	if (rows.length === 0) {
@@ -1625,13 +1626,15 @@ export function renderColumnsEditor(
 
 		/*
 		 * **The two controls a modifier column used to need are gone**, and their
-		 * going is what answers half of SPEC §13's question about
-		 * `.sheetsmith-list-scroll`'s cap: **Modifier** and **Bonus type** put
-		 * seven controls on a column's detail line, the line wrapped, and a
-		 * four-column table overran the columns list's `20em`. An amount and a
-		 * bonus type are the definition's now, so a column's detail line is one
-		 * line again. The cap question stays open for the lists still inside the
-		 * scroller.
+		 * going keeps a rule of its own: **a column's detail line holds one
+		 * message line**. **Modifier** and **Bonus type** put seven controls on
+		 * it, the line wrapped, and a four-column table overran the columns
+		 * list's cap. An amount and a bonus type are the definition's now, so the
+		 * line is one line again. The rule is not the cap's answer and the cap
+		 * does not relax it: the cap is a measured distance floored by the
+		 * tallest entry (`styles/editor.css`, `.sheetsmith-list-scroll`), and a
+		 * second wrapping line is one the author scrolls an entry to read
+		 * whatever the cap.
 		 */
 
 		// Every column has this one — unless the component draws no heading for it

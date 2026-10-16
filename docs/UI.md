@@ -309,6 +309,16 @@ be the control's at another font size reads the factor, never the length.
   the pane's, `sheetsmith-editor-pane` below 584px, the narrowest width the
   panel's forms have been looked at side by side; the rows then stack as the
   app stacks them on a phone, toggles, headings and tree rows excepted.
+- **A Rows or Columns list in the pane is capped by a distance in px and
+  floored by its tallest staged entry plus its header** [judgement; held by
+  `harness/measure-lists.mjs`, seen in `editor-phone-skills`]
+  (`docs/features/list-scroll-cap.md`). The cap is what keeps an eighteen-row
+  list from burying the fields under it, so it is a distance down the pane,
+  400px at most and bounded by the window, never an em of a desktop row. The
+  floor is one whole entry, an entry showing its message included: 244px where
+  the rows sit side by side, 400px under the list's own 380px query where they
+  stack. So one entry is always whole, and on a phone, where the floor is the
+  cap, the nested scroller is the accepted cost.
 - **Media queries are for user preference and device capability only**:
   `prefers-reduced-motion`, `forced-colors`, pointer coarseness. Never for space.
 - **Cascade order is load-bearing.** `@container` adds no specificity, so an

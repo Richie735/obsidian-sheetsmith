@@ -74,7 +74,7 @@
  *     browser's own scroll is half of what is measured.
  */
 import { fileURLToPath } from 'node:url';
-import { CHROME, checkPlatform, launch, stagePlatform, unstagePlatform, wait as sleep } from './cdp.mjs';
+import { CHROME, launch, loadStaged, wait as sleep } from './cdp.mjs';
 
 if (!CHROME) {
 	console.error('No Chrome-family browser found.');
@@ -370,20 +370,15 @@ async function loadFocus(text, phone) {
 	const [viewport, width] = phone ? [380, 0] : [620, 520];
 	// `shot.mjs`'s `platform=phone`, through the one staging both share, so 380
 	// is a phone and not a squeezed frame.
-	const staged = phone ? await stagePlatform(send, 'phone') : null;
-	await send('Emulation.setDeviceMetricsOverride', { width: viewport, height: 1900, deviceScaleFactor: 1, mobile: false });
-	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=populated&width=${width}&text=${text}` });
-	await sleep(2500);
-	if (staged !== null) {
-		let took = true;
-		try {
-			await checkPlatform(evaluate, staged);
-		} catch {
-			took = false;
-		}
-		check(took, `(9) 380 phone${text ? ` text=${text}` : ''}: phone staging took, every class of it`);
-		await unstagePlatform(send, staged);
-	}
+	const { took, unstage } = await loadStaged(
+		browser,
+		`file://${root}index.html?surface=sheet&theme=light&state=populated&width=${width}&text=${text}`,
+		{ width: viewport, height: 1900, platform: phone ? 'phone' : null },
+	);
+	if (took !== null) check(took, `(9) 380 phone${text ? ` text=${text}` : ''}: phone staging took, every class of it`);
+	// Off before the walk, as it always was here: check 9 drives real keys,
+	// and what it measures is where focus lands, not how tall a control is.
+	await unstage();
 }
 await send('Emulation.setFocusEmulationEnabled', { enabled: true });
 for (const [phone, text] of [[false, 0], [false, 24], [true, 0], [true, 24]]) {

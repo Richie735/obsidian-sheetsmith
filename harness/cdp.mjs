@@ -230,3 +230,40 @@ export async function unstagePlatform(send, staged) {
 	await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: staged.identifier });
 	await send('Emulation.setTouchEmulationEnabled', { enabled: false });
 }
+
+/**
+ * Load a page at a window, staged as a platform or not, the sequence both
+ * measure scripts run: stage, size the window, navigate, wait for the load
+ * (both bounded, so a reply or an event that never arrives cannot stall a
+ * run), give the page
+ * its draw budget, and check the staging took.
+ *
+ * **The staging stays on until the caller undoes it**, which is the point of
+ * the handle: touch emulation is what makes a coarse pointer's rules answer, so
+ * a measurement taken after `unstagePlatform` is a measurement of a fine
+ * pointer on a phone's body classes. `measure-lists.mjs` once did exactly that
+ * and measured Skills' first column entry 9px short. `took` is null where
+ * nothing was staged.
+ */
+export async function loadStaged({ send, evaluate, next }, url, { width, height, platform = null }) {
+	const staged = platform === null ? null : await stagePlatform(send, platform);
+	await send('Page.enable');
+	await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+	const loaded = next('Page.loadEventFired');
+	// The navigation's own reply is bounded too, so no reply that fails to
+	// arrive can hold a long run for ever; one such stall was seen and its
+	// cause not isolated (`measure-lists.mjs`, `evaluate`).
+	await Promise.race([send('Page.navigate', { url }), wait(15000)]);
+	await Promise.race([loaded, wait(15000)]);
+	await wait(2500);
+	let took = null;
+	if (staged !== null) {
+		took = true;
+		try {
+			await checkPlatform(evaluate, staged);
+		} catch {
+			took = false;
+		}
+	}
+	return { took, unstage: async () => (staged === null ? undefined : unstagePlatform(send, staged)) };
+}
