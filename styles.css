@@ -11595,8 +11595,22 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-entry-row {
 		grid-template-columns: 1fr;
-		gap: var(--size-2-2);
+		/* **No row gap: the fields carry it as a margin instead.** The controls
+		   below sit on line 99 so they come after however many fields a row
+		   holds, which leaves every line between the last field and 99 as an
+		   empty, zero-height track — and a row gap is drawn between empty
+		   tracks too. Measured at 380 under phone staging, that was 97 gaps of
+		   4px, 388px of nothing in every stacked row: Skills' first row came out
+		   556px tall for 148px of fields and buttons, in a list capped at 320,
+		   and the six-row Abilities list ran to 2935px. A margin belongs to the
+		   item, so an empty track carries none, and the spacing the gap gave
+		   between filled lines is kept to the pixel. */
+		gap: 0 var(--size-2-2);
 		padding: var(--size-4-2) var(--size-2-2);
+	}
+
+.sheetsmith-entry-row > :not(button.clickable-icon) {
+		margin-bottom: var(--size-2-2);
 	}
 
 .sheetsmith-list .sheetsmith-entry-row,

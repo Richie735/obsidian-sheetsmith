@@ -4255,6 +4255,80 @@ describe("the layout editor's rows stack below the width its forms are known at"
 	});
 });
 
+describe('a stacked list row draws no gap across the lines its controls skip', () => {
+	/*
+	 * Under 380px of list a row's controls go to line 99, so they follow however
+	 * many fields the row holds. Every line between the last field and 99 is then
+	 * an empty track, and a row gap is drawn between empty tracks as between full
+	 * ones: 97 gaps of 4px, 388px of empty box in every stacked row of all four
+	 * list fields, measured at 380 under phone staging. So the row's own gap has to
+	 * be zero on the block axis, and the spacing it gave comes from a margin on
+	 * the fields, which an empty track does not carry.
+	 */
+	const QUERY = /^@container \(max-width: 380px\)$/;
+	const ROW = '.sheetsmith-entry-row';
+
+	function stacked(text: string): Rule[] {
+		return rules(text).filter((rule) =>
+			rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))),
+		);
+	}
+
+	/** The far line a child of the row is sent to, when anything sends one past 2. */
+	function farLine(text: string): number | undefined {
+		const lines = stacked(text)
+			.filter((rule) => selectorList(rule.selector).some((one) => one.startsWith(`${ROW} >`)))
+			.flatMap((rule) => declarations(rule.body))
+			.map((one) => /^grid-row: (\d+)$/.exec(one)?.[1])
+			.filter((one): one is string => one !== undefined)
+			.map(Number);
+		const far = Math.max(0, ...lines);
+		return far > 2 ? far : undefined;
+	}
+
+	/** The row's block-axis gap as the query declares it, `row-gap` winning a later `gap`'s first value. */
+	function rowGap(text: string): string | undefined {
+		let found: string | undefined;
+		for (const rule of stacked(text)) {
+			if (!selectorList(rule.selector).includes(ROW)) continue;
+			for (const one of declarations(rule.body)) {
+				const gap = /^gap: (\S+)/.exec(one)?.[1];
+				const row = /^row-gap: (\S+)$/.exec(one)?.[1];
+				if (gap !== undefined) found = gap;
+				if (row !== undefined) found = row;
+			}
+		}
+		return found;
+	}
+
+	/** Whether the query puts the spacing back as a margin on what is not a control. */
+	function fieldMargin(text: string): boolean {
+		return stacked(text).some(
+			(rule) =>
+				selectorList(rule.selector).includes(`${ROW} > :not(button.clickable-icon)`) &&
+				declarations(rule.body).includes('margin-bottom: var(--size-2-2)'),
+		);
+	}
+
+	it('finds the controls it is meant to be checking, on a far line', () => {
+		// A placement that went would pass every case below on nothing.
+		expect(farLine(CSS_WITHOUT_COMMENTS)).toBe(99);
+	});
+
+	it('gives the stacked row no gap on the block axis, and its fields the margin instead', () => {
+		expect(rowGap(CSS_WITHOUT_COMMENTS)).toBe('0');
+		expect(fieldMargin(CSS_WITHOUT_COMMENTS)).toBe(true);
+	});
+
+	it('would catch the row gap coming back', () => {
+		const block = (gap: string) =>
+			`@container (max-width: 380px) { ${ROW} { gap: ${gap}; } ${ROW} > button.clickable-icon { grid-row: 99; } }`;
+		expect(farLine(block('var(--size-2-2)'))).toBe(99);
+		expect(rowGap(block('var(--size-2-2)'))).toBe('var(--size-2-2)');
+		expect(rowGap(block('0 var(--size-2-2)'))).toBe('0');
+	});
+});
+
 describe("every rule asking about the sheet's width asks it at one number", () => {
 	/*
 	 * The sheet's grid collapses under 480px of its view (`sheet.css`), and the
