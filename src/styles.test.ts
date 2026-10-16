@@ -4329,6 +4329,67 @@ describe('a stacked list row draws no gap across the lines its controls skip', (
 	});
 });
 
+describe('a list field\'s scroll cap is a distance in px with a floor per regime', () => {
+	/*
+	 * The cap was an em of a desktop row, and a phone's stacked entry is about
+	 * eight of them, so at 380 under phone staging an entry was taller than its
+	 * own list could show (`docs/features/list-scroll-cap.md`). The numbers are
+	 * measurements, held by `harness/measure-lists.mjs` because happy-dom lays
+	 * nothing out; what this holds is the shape: no `em` or `rem` in the cap, and
+	 * the stacked query setting the floor, so the floor and the stacking cannot
+	 * answer to two different widths.
+	 */
+	const SCROLL = '.sheetsmith-list-scroll';
+	const QUERY = /^@container \(max-width: 380px\)$/;
+
+	/** Every `max-height` the scroller is given, in any context, with whether it is top-level. */
+	function capsOf(text: string): { value: string; topLevel: boolean }[] {
+		return rules(text)
+			.filter((rule) => selectorList(rule.selector).includes(SCROLL))
+			.flatMap((rule) =>
+				declarations(rule.body).map((one) => ({ one, topLevel: rule.context.length === 0 })),
+			)
+			.map(({ one, topLevel }) => ({ value: /^max-height: (.+)$/.exec(one)?.[1], topLevel }))
+			.filter((one): one is { value: string; topLevel: boolean } => one.value !== undefined);
+	}
+
+	function stackedFloor(text: string): boolean {
+		return rules(text).some(
+			(rule) =>
+				rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))) &&
+				selectorList(rule.selector).includes(SCROLL) &&
+				declarations(rule.body).some((one) => one.startsWith('--sheetsmith-list-floor:')),
+		);
+	}
+
+	it('finds the cap it is meant to be checking', () => {
+		// A renamed class would pass every case below on nothing.
+		expect(capsOf(CSS_WITHOUT_COMMENTS).filter((one) => one.topLevel)).toHaveLength(1);
+	});
+
+	it('names no em or rem in the cap, in any query or media block either', () => {
+		for (const cap of capsOf(CSS_WITHOUT_COMMENTS)) {
+			expect(cap.value).not.toMatch(/\d(r?em)\b/);
+		}
+	});
+
+	it('sets the stacked floor inside the stacking query', () => {
+		expect(stackedFloor(CSS_WITHOUT_COMMENTS)).toBe(true);
+	});
+
+	it('would catch the em coming back, and a floor set outside the query', () => {
+		const overridden = capsOf(
+			`${SCROLL} { max-height: 400px; } @container (max-width: 380px) { ${SCROLL} { max-height: 20em; } }`,
+		);
+		expect(overridden.map((one) => one.value)).toEqual(['400px', '20em']);
+		expect(overridden[1]?.value).toMatch(/\d(r?em)\b/);
+		expect(stackedFloor(`${SCROLL} { --sheetsmith-list-floor: 400px; }`)).toBe(false);
+		expect(
+			stackedFloor(`@container (max-width: 380px) { ${SCROLL} { --sheetsmith-list-floor: 400px; } }`),
+		).toBe(true);
+	});
+});
+
 describe("every rule asking about the sheet's width asks it at one number", () => {
 	/*
 	 * The sheet's grid collapses under 480px of its view (`sheet.css`), and the

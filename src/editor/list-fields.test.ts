@@ -305,9 +305,10 @@ describe('columns editor', () => {
 		// beside the total and refused on a text column for its own reason: a
 		// cell holding a link has no one value for a name to mean.
 		//
-		// **A column's detail line is one line again**, which is half of SPEC §13's
-		// answer about `.sheetsmith-list-scroll`'s cap: the **Modifier** flag and
-		// the **Bonus type** select that overran it are the definition's now.
+		// **A column's detail line is one line again**, which is its own
+		// constraint and not the scroll cap's answer: a column's detail line holds
+		// one message line. The **Modifier** flag and the **Bonus type** select
+		// that overran it are the definition's now.
 		expect(checks).toEqual([
 			['Secondary text', 'Hide heading'],
 			['Show a total', 'Publish per row', 'Hide heading'],
@@ -2073,10 +2074,10 @@ describe('the columns editor and a modifier column', () => {
 	it('puts a modifier column\'s detail line back to one line', () => {
 		/*
 		 * The two controls the shipped design needed here are gone: an amount and
-		 * a bonus type are the definition's now. That is the half of SPEC §13's
-		 * `.sheetsmith-list-scroll` question this feature answers by deletion — a
-		 * modifier column cost two lines instead of one and a four-column table
-		 * overran the cap.
+		 * a bonus type are the definition's now. That holds the one-message-line
+		 * rule for a column's detail line, a constraint of its own beside
+		 * `.sheetsmith-list-scroll`'s cap — a modifier column cost two lines
+		 * instead of one and a four-column table overran the cap.
 		 */
 		const el = columnsEditor({ columns: [{ key: 'Effect', type: 'modifier' }] });
 		expect(checks(el)).toEqual(['Hide heading']);

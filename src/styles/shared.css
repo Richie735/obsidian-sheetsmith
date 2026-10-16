@@ -178,8 +178,8 @@
 	--no-tooltip: true;
 	/* The cap is on the box and the scroll is on the body, one element in, so the
 	   panel's own edge stays put while its contents move. Deliberately **not**
-	   `.sheetsmith-list-scroll`, whose `20em` cap is a layout-editor list's and
-	   whose purpose SPEC §13 still asks about.
+	   `.sheetsmith-list-scroll`, whose cap is a layout-editor list's own
+	   distance down the pane, floored by that list's tallest entry.
 
 	   **In px, because the em was measured against a number the em did not mean.**
 	   The rule sets its own `font-size: var(--font-ui-small)`, and `em` outside

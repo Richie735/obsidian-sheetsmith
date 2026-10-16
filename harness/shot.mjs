@@ -54,11 +54,23 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CHROME, checkPlatform, launch, stagePlatform, wait } from './cdp.mjs';
 
-if (!CHROME) {
+/**
+ * Whether this file is being run, or imported for its view list. Imported, it
+ * shoots nothing: `measure-lists.mjs` reads `DEFAULTS` so the widths it
+ * measures are the widths these views stage, rather than a copy of them.
+ *
+ * Through `realpathSync`, because Node realpaths the entry module's
+ * `import.meta.url` and leaves `argv[1]` as typed: run through a symlink — the
+ * repository is symlinked into the test vault's plugins folder — the two
+ * differed, and a run shot nothing and exited 0.
+ */
+const MAIN = process.argv[1] !== undefined && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+
+if (MAIN && !CHROME) {
 	console.error('No Chrome-family browser found. Install one, or open harness/index.html by hand.');
 	process.exit(1);
 }
@@ -66,7 +78,7 @@ if (!CHROME) {
 const root = fileURLToPath(new URL('.', import.meta.url));
 const page = `file://${root}index.html`;
 const outDir = `${root}shots`;
-mkdirSync(outDir, { recursive: true });
+if (MAIN) mkdirSync(outDir, { recursive: true });
 
 /**
  * The views worth having by default: both themes, both surfaces, and narrow.
@@ -382,7 +394,7 @@ const TABLE_SELECT = ".sheetsmith-cell:has([aria-label='Common Fluency'])";
  */
 const TABLE_SELECT_PAD = 6;
 
-const DEFAULTS = [
+export const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
 	{
@@ -3362,7 +3374,7 @@ async function shootDriven(view, out) {
 	}
 }
 
-for (const view of views) {
+for (const view of MAIN ? views : []) {
 	const out = `${outDir}/${view.name}.png`;
 	if (driven(view)) {
 		await shootDriven(view, out);
