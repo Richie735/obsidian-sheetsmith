@@ -2093,6 +2093,21 @@ const DEFAULTS = [
 		platform: 'phone',
 	},
 	{
+		// A list field at phone width, which `editor-phone` does not stage: it
+		// opens Weapons, and no other view puts a Rows or Columns list under the
+		// app's phone CSS. Skills holds both, stacked, inside their scroll cap
+		// (`docs/features/list-scroll-cap.md`). Framed to the form, so the PNG is
+		// the panel and not the 33,000px of canvas and tree above it; the page is
+		// still laid out at the frame's full height. Measured off
+		// `document.body` through this view's own query, harness built first:
+		// **36025** under the 320px cap, **36185** under 400.
+		name: 'editor-phone-skills',
+		query: 'surface=editor&theme=light&open=skills',
+		size: '380,36400',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
 		// The pane on a tablet, stacked at 820, where `.is-tablet
 		// button:not(.clickable-icon)` took 4px 20px of padding off the tree's
 		// names and chevrons until they were doubled past it (`editor.css`).
