@@ -599,6 +599,7 @@ export class ConfigPanel {
 			// since a fixed value belongs in the stylesheet.
 			row.settingEl.addClass('sheetsmith-row-child');
 			row.addExtraButton((button) => {
+				const arrow = button.extraSettingsEl;
 				button
 					// The arrows every other reorder control in the plugin uses —
 					// the entry list and both list fields — rather than a
@@ -609,16 +610,35 @@ export class ConfigPanel {
 					.setIcon('arrow-up')
 					.setTooltip('Move earlier')
 					.setDisabled(index === 0)
-					.onClick(() => moveItem(tabs, index, index - 1, this.host.listContext()));
-				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-up-${tab.id}`;
+					.onClick(() => {
+						// Landing first disables this arrow, so focus goes to the
+						// other one rather than falling to the body, and only where
+						// the reader already stood on it (`docs/UI.md` §6). The
+						// same handoff `addControls` spells for the list fields.
+						const context = this.host.listContext();
+						if (index === 1 && arrow.ownerDocument.activeElement === arrow) {
+							context.focusAfterRedraw(`tab-down-${tab.id}`);
+						}
+						moveItem(tabs, index, index - 1, context);
+					});
+				markDisabledArrow(arrow, index === 0);
+				arrow.dataset.sheetsmithFocus = `tab-up-${tab.id}`;
 			});
 			row.addExtraButton((button) => {
+				const arrow = button.extraSettingsEl;
 				button
 					.setIcon('arrow-down')
 					.setTooltip('Move later')
 					.setDisabled(index === tabs.length - 1)
-					.onClick(() => moveItem(tabs, index, index + 1, this.host.listContext()));
-				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-down-${tab.id}`;
+					.onClick(() => {
+						const context = this.host.listContext();
+						if (index === tabs.length - 2 && arrow.ownerDocument.activeElement === arrow) {
+							context.focusAfterRedraw(`tab-up-${tab.id}`);
+						}
+						moveItem(tabs, index, index + 1, context);
+					});
+				markDisabledArrow(arrow, index === tabs.length - 1);
+				arrow.dataset.sheetsmithFocus = `tab-down-${tab.id}`;
 			});
 		});
 	}
@@ -1237,4 +1257,20 @@ export class ConfigPanel {
 			});
 		}
 	}
+}
+
+/**
+ * Say what `setDisabled` does not. The app's extra button is a `div` with no
+ * role, and its `setDisabled` only takes it out of the tab order: it sets no
+ * `aria-disabled`, and `app.css` paints `.clickable-icon.is-disabled` as
+ * enabled. So the arrow gains `role="button"`, without which `aria-disabled`
+ * on a div is not reliably exposed (ARIA 1.3 no longer treats it as global),
+ * and `aria-disabled` to match, which the app's own
+ * `.clickable-icon[aria-disabled='true']` rule paints. From HTML-AAM and the
+ * ARIA spec, not from a screen reader (`docs/features/disabled-controls.md`).
+ */
+function markDisabledArrow(arrow: HTMLElement, disabled: boolean): void {
+	arrow.setAttribute('role', 'button');
+	if (disabled) arrow.setAttribute('aria-disabled', 'true');
+	else arrow.removeAttribute('aria-disabled');
 }

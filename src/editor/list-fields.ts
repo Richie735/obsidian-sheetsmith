@@ -129,6 +129,13 @@ export function moveItem<T>(
 	context.redraw();
 }
 
+/** A reorder arrow at its end: out of the tab order, ignoring a press, announced. */
+function disableAtEnd(arrow: HTMLButtonElement, atEnd: boolean): void {
+	if (!atEnd) return;
+	arrow.disabled = true;
+	arrow.setAttribute('aria-disabled', 'true');
+}
+
 /**
  * Reorder and remove controls, and the drop target that goes with them —
  * every list field's, named for the item they act on (`docs/UI.md` §6).
@@ -179,13 +186,30 @@ export function addControls<T>(
 	if (Platform.isMobile) {
 		// HTML5 drag-and-drop is inert on touch, and there is no keyboard —
 		// reordering needs real buttons there.
+		//
+		// **Each arrow disables at its end** (`docs/UI.md` §6): `disabled` takes
+		// it out of the tab order, and `aria-disabled` is what the app's
+		// `.clickable-icon[aria-disabled='true']` paints and the pane's sibling
+		// rule keys on, so a button and the tab order's div read alike. No role:
+		// a `<button>` has one.
+		const first = index === 0;
+		const last = index === list.length - 1;
 		const up = row.createEl('button', {
 			cls: 'clickable-icon',
 			attr: { 'aria-label': `Move ${label} up` },
 		});
 		setIcon(up, 'arrow-up');
 		up.dataset.sheetsmithFocus = `${token}-up`;
-		up.addEventListener('click', () => moveItem(list, index, index - 1, context));
+		disableAtEnd(up, first);
+		up.addEventListener('click', () => {
+			// Landing first disables this arrow, so focus goes to the other one
+			// rather than falling to the body — and only where it already stood
+			// here, since a tap that focused nothing must not be given focus.
+			if (index === 1 && up.ownerDocument.activeElement === up) {
+				context.focusAfterRedraw(`${token}-down`);
+			}
+			moveItem(list, index, index - 1, context);
+		});
 
 		const down = row.createEl('button', {
 			cls: 'clickable-icon',
@@ -193,7 +217,13 @@ export function addControls<T>(
 		});
 		setIcon(down, 'arrow-down');
 		down.dataset.sheetsmithFocus = `${token}-down`;
-		down.addEventListener('click', () => moveItem(list, index, index + 1, context));
+		disableAtEnd(down, last);
+		down.addEventListener('click', () => {
+			if (index === list.length - 2 && down.ownerDocument.activeElement === down) {
+				context.focusAfterRedraw(`${token}-up`);
+			}
+			moveItem(list, index, index + 1, context);
+		});
 	} else {
 		const handle = row.createEl('button', {
 			cls: 'clickable-icon sheetsmith-entry-handle',

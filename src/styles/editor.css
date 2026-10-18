@@ -1267,7 +1267,7 @@
    a closed list has a longest member, and it is knowable without measuring. */
 /* **A control a note-only change gives nothing to do reads as disabled**
    (`docs/features/modifier-notes.md`). Obsidian draws a disabled `.dropdown`
-   exactly like an enabled one (`docs/BACKLOG.md` § UI), so these three take
+   exactly like an enabled one, so these three take
    their own: the field's label and the value go faint, and the select loses its
    surface and its pointer. Two channels and neither is colour alone — the box
    going away is a shape change, which holds in forced colors, where the system
@@ -1285,6 +1285,28 @@
 	background-color: transparent;
 	box-shadow: none;
 	cursor: not-allowed;
+}
+
+/* **A glyph-only control that is disabled takes the app's fade, and this adds
+   the two channels the app's rule lacks** (`docs/UI.md` §6,
+   `docs/features/disabled-controls.md`). The resting paint is Obsidian's own
+   `.clickable-icon[aria-disabled='true']` — muted, `opacity: 0.4`, no hover
+   surface — reached by the attribute both reorder sites carry, the list fields'
+   `<button>` arrows and the tab order's `div` ones. Not the Modifiers rule
+   above: a glyph has neither a label to fade nor a surface to drop. What is
+   added is the pointer's answer, and a forced-colors reading: the system paints
+   a disabled `<button>` in GrayText itself but cannot know the `div` is
+   disabled, so both take the system's own disabled colour, at full opacity
+   since the mode's palette already marks it. */
+.sheetsmith-layout-editor-pane .clickable-icon[aria-disabled='true'] {
+	cursor: not-allowed;
+}
+
+@media (forced-colors: active) {
+	.sheetsmith-layout-editor-pane .clickable-icon[aria-disabled='true'] {
+		color: GrayText;
+		opacity: 1;
+	}
 }
 
 .sheetsmith-list-modifiers .sheetsmith-detail-field-tight {

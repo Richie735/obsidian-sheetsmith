@@ -6,8 +6,9 @@ import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { renderGrid, walkLayout } from '../view/grid-cells';
 import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/modal';
 import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
+import { CardConfig } from '../components/card';
 import { cardSet, CardSetConfig } from '../components/card-set';
-import { App, Notice } from '../test/obsidian-stub';
+import { App, Notice, Platform } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { pressDown, release } from '../test/pointer';
 import { openView, showFile } from '../test/workspace';
@@ -1417,20 +1418,97 @@ describe('a container that shows one child at a time', () => {
 	});
 
 	it('will not move the first tab earlier or the last later', async () => {
-		// The outcome, not the styling: the buttons are disabled, and `moveItem`
+		// The outcome, not the styling: the arrows are disabled, and `moveItem`
 		// refuses an out-of-range move besides, so pressing them anyway has to
-		// leave the order alone. Asserting the class would have been asserting
-		// which of two `setDisabled` implementations the stub happens to be.
+		// leave the order alone. Disabled is the app's own spelling for an extra
+		// button, which the stub now models: `is-disabled`, out of the tab order.
 		const first = control<HTMLElement>(harness, 'tab-up-combat');
 		const last = control<HTMLElement>(harness, 'tab-down-rest');
-		expect(first.hasAttribute('disabled')).toBe(true);
-		expect(last.hasAttribute('disabled')).toBe(true);
+		for (const end of [first, last]) {
+			expect(end.classList.contains('is-disabled')).toBe(true);
+			expect(end.hasAttribute('tabindex')).toBe(false);
+		}
 		first.click();
 		last.click();
 		await settle(harness.pane);
 		expect(
 			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
 		).toEqual(['combat', 'spells', 'rest']);
+	});
+
+	it('announces its arrows as buttons, and as disabled exactly at the ends', () => {
+		// The app's extra button is a div with no role and sets no
+		// `aria-disabled` (`docs/features/disabled-controls.md`).
+		const arrows = Array.from(
+			harness.container.querySelectorAll<HTMLElement>('[data-sheetsmith-focus^="tab-"]'),
+		).filter((el) => /^tab-(up|down)-/.test(el.dataset.sheetsmithFocus ?? ''));
+		expect(arrows).toHaveLength(6);
+		const ends = ['tab-up-combat', 'tab-down-rest'];
+		for (const arrow of arrows) {
+			expect(arrow.getAttribute('role')).toBe('button');
+			const atEnd = ends.includes(arrow.dataset.sheetsmithFocus ?? '');
+			expect(arrow.getAttribute('aria-disabled')).toBe(atEnd ? 'true' : null);
+		}
+	});
+
+	it('hands focus to the other arrow when a focused arrow lands a tab at an end', async () => {
+		const earlier = control<HTMLElement>(harness, 'tab-up-spells');
+		earlier.focus();
+		earlier.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-down-spells',
+		);
+
+		const later = control<HTMLElement>(harness, 'tab-down-combat');
+		later.focus();
+		later.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'rest', 'combat']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-up-combat',
+		);
+	});
+
+	it('hands no focus off for a press on an arrow that does not hold it', async () => {
+		// A touch tap need not focus what it presses (WebKit does not), and the
+		// handoff moves focus only as the outcome of where the reader stood.
+		// Both directions, so each handler's own focus check is driven.
+		const focusedToken = () =>
+			(document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus;
+		(document.activeElement as HTMLElement | null)?.blur();
+		control<HTMLElement>(harness, 'tab-up-spells').click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect(focusedToken()).toBeUndefined();
+
+		(document.activeElement as HTMLElement | null)?.blur();
+		control<HTMLElement>(harness, 'tab-down-combat').click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'rest', 'combat']);
+		expect(focusedToken()).toBeUndefined();
+	});
+
+	it('leaves focus on the arrow pressed when a tab lands mid-list', async () => {
+		const later = control<HTMLElement>(harness, 'tab-down-combat');
+		later.focus();
+		later.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-down-combat',
+		);
 	});
 
 	it('gives a tab it adds the container\'s own size rather than a free row', async () => {
@@ -1730,6 +1808,11 @@ describe('overlap inside a tab, and never across tabs', () => {
  * its two headings from the field spec, and what is checked here is that both
  * callers get their own words out of one editor.
  */
+/** A stored component read as the Card it was written as. */
+function isCard(config: ComponentConfig): config is CardConfig {
+	return config.type === 'card';
+}
+
 function twoLists(): Layout {
 	return {
 		name: 'Two lists',
@@ -1803,6 +1886,31 @@ describe('a list field naming its own columns', () => {
 		await openForm('edit-race');
 		expect(headings()).toEqual(['Value', 'Label']);
 		expect(names()).toEqual(['Value', 'Label', 'Value', 'Label']);
+	});
+
+	it('hands a touch arrow\'s focus to the other arrow through the pane\'s own redraw', async () => {
+		// The one list-field handoff driven through the real pane, so the
+		// precedence `list-fields.test.ts` re-spells — an explicit request over
+		// the focused control's own token — is held where it lives
+		// (`docs/features/disabled-controls.md`). The arrows draw on mobile only.
+		Platform.isMobile = true;
+		try {
+			await openForm('edit-race');
+			const up = harness.container.querySelector<HTMLButtonElement>(
+				'button[aria-label="Move Dwarf up"]',
+			);
+			if (up === null) throw new Error('no touch arrow for Dwarf');
+			up.focus();
+			up.click();
+			await settle(harness.pane);
+			const race = (await harness.stored()).components[0];
+			if (race === undefined || !isCard(race)) throw new Error('Race is not a Card');
+			expect(race.options?.map((option) => option.value)).toEqual(['Dwarf', 'Elf']);
+			const focused = harness.container.ownerDocument.activeElement;
+			expect(focused?.getAttribute('aria-label')).toBe('Move Dwarf down');
+		} finally {
+			Platform.isMobile = false;
+		}
 	});
 
 	it('leaves a card set\'s entries exactly as they were', async () => {

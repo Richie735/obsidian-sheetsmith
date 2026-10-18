@@ -253,7 +253,8 @@ if (typeof HTMLElement !== 'undefined') installDomHelpers();
 
 /**
  * The two platform facts the plugin reads. `isMobile` is which controls
- * `addControls` renders, and the tests flip it to cover both; `isMacOS` is which
+ * `addControls` renders, and the tests flip it to cover both, while the harness
+ * reads it off the `is-mobile` body class a phone or tablet view stages; `isMacOS` is which
  * modifier name the layout editor's tree spells in its shortcut hint (Option
  * against Alt), false by default so a hint reads the same on every machine a
  * test runs on.
@@ -882,15 +883,56 @@ export class ButtonComponent extends ValueComponent<void, HTMLButtonElement> {
 	}
 }
 
-/** An icon-only button. Obsidian gives it `.clickable-icon`; styles.css relies on that. */
-export class ExtraButtonComponent extends ButtonComponent {
+/**
+ * An icon-only control, built as Obsidian 1.14.4's `app.js` builds it: a
+ * `div.clickable-icon.extra-setting-button` with `tabindex="0"` and no role,
+ * answering a click and Enter or Space through one handler that does nothing
+ * while disabled. `setDisabled` toggles `is-disabled` and removes or restores
+ * the `tabindex`, and sets neither `disabled`, which a div does not have, nor
+ * `aria-disabled`.
+ *
+ * It was a `<button>` here, with the base class's `disabled`, so the calibrated
+ * `button[disabled]` rule painted a disabled arrow in the harness while the app,
+ * which has no rule for `.clickable-icon.is-disabled`, painted it as enabled
+ * (`docs/features/disabled-controls.md`, "Staging"). The app's default icon,
+ * `lucide-settings`, is not drawn: every caller sets its own.
+ */
+export class ExtraButtonComponent extends ValueComponent<void, HTMLDivElement> {
 	/** Obsidian's name for this control's element. Callers reach for it by name. */
-	get extraSettingsEl(): HTMLButtonElement {
+	get extraSettingsEl(): HTMLDivElement {
 		return this.el;
 	}
 	constructor(parent: HTMLElement) {
-		super(parent);
-		this.el.classList.add('clickable-icon');
+		const el = parent.ownerDocument.createElement('div');
+		el.classList.add('clickable-icon', 'extra-setting-button');
+		el.setAttribute('tabindex', '0');
+		parent.appendChild(el);
+		super(el);
+		const press = (event: Event) => {
+			event.preventDefault();
+			if (!this.disabled) this.changeCallback?.();
+		};
+		el.addEventListener('click', press);
+		el.addEventListener('keydown', (event) => {
+			if (event.isComposing || event.defaultPrevented) return;
+			if (event.key === ' ' || event.key === 'Enter') press(event);
+		});
+	}
+	setDisabled(disabled: boolean): this {
+		this.disabled = disabled;
+		this.el.classList.toggle('is-disabled', disabled);
+		if (disabled) this.el.removeAttribute('tabindex');
+		else this.el.setAttribute('tabindex', '0');
+		return this;
+	}
+	setIcon(icon: string): this {
+		setIcon(this.el, icon);
+		return this;
+	}
+	/** The app's callback takes no event: the press is the whole message. */
+	onClick(cb: () => unknown): this {
+		this.changeCallback = () => void cb();
+		return this;
 	}
 }
 
