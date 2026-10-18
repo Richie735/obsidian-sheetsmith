@@ -246,8 +246,10 @@ be the control's at another font size reads the factor, never the length.
   width, and Chrome leaves a partly covered button where it is whatever the
   padding says. **Only a focus no pointer caused** (`:focus-visible`), so a
   press never scrolls its control out from under the pointer before release;
-  a focus restored after a rebuild asks not to scroll and needs nothing, since
-  its new scroller is at the start, where no name covers anything.
+  a rebuild restores each scroller's offset before it restores focus, so a
+  restored focus is held to this rule against the offset the reader left
+  [checked: `view/sheet-posture.test.ts`, the order both hosts call; held by
+  `harness/measure-groups.mjs` check 10].
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.

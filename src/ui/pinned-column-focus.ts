@@ -41,12 +41,16 @@
  * press into a partly covered field still brings it clear, where nothing
  * commits on release. A key, and a script's focus following one, always match.
  *
- * **And a focus that asked not to scroll is not scrolled, by construction
- * rather than by a check.** `view/cell-focus.ts` restores focus with
- * `preventScroll: true` after a rebuild, which is a new scroller at
- * `scrollLeft` 0: every pinned cell is in its own place there and covers
- * nothing, so the overlap below is never positive. Nothing here can read the
- * option off the event.
+ * **And a focus restored after a rebuild is held to this rule too, against the
+ * offset the reader left, which is deliberate.** `view/cell-focus.ts` restores
+ * focus with `preventScroll: true`, and nothing here can read the option off the
+ * event; but the view puts every scroller's offset back first
+ * (`view/cell-scroll.ts`), so the `focusin` that restore fires measures the real
+ * restored geometry. A control a commit left behind the name is scrolled clear,
+ * because what the reader can see wins over where they were. Restored the other
+ * way round, this would measure a scroller at `scrollLeft` 0, where no name
+ * covers anything, and the offset would then move the control with nothing left
+ * to correct it (`docs/features/table-scroll-across-rebuild.md`).
  *
  * In `ui/` because it knows no component: the pinned cell's selector arrives
  * from the caller. Two consumers, Table and Roster, which share the name cell's
