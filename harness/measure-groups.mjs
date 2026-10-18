@@ -72,9 +72,28 @@
  *     onto each control leaves it clear of its row's name (`docs/UI.md` §4,
  *     `ui/pinned-column-focus.ts`). Real key events, not `focus()`: the
  *     browser's own scroll is half of what is measured.
+ * 10. In the same tables and Rosters, at the same two widths and two type sizes
+ *     under the same staging: scrolled fully right, the rightmost control that
+ *     commits by key is committed with real keys (a new value and Enter in a
+ *     field, Space on a ring), and after the rebuild a. the same control has
+ *     focus, b. the scroller is back within a pixel of its offset, and c. the
+ *     control starts inside the scrollport, clear of its row's name
+ *     (`docs/features/table-scroll-across-rebuild.md`). Past the far edge is
+ *     printed, not failed, where it is a field wider than the room beside the
+ *     name and was already as far past before the commit, within a pixel
+ *     (`docs/UI.md` §4), or where
+ *     the commit widened a column ahead of it: the accepted drift. It prints
+ *     every offset before and after.
  */
 import { fileURLToPath } from 'node:url';
 import { CHROME, launch, loadStaged, wait as sleep } from './cdp.mjs';
+
+/**
+ * What counts as a control: `src/view/cell-focus.ts`'s `FOCUSABLE`, which check
+ * 10's same-control test has to count by. Spelled here once because this script
+ * runs in Node and cannot import the TypeScript.
+ */
+const FOCUSABLE = 'input, select, textarea, button, a[href]';
 
 if (!CHROME) {
 	console.error('No Chrome-family browser found.');
@@ -359,7 +378,7 @@ for (const one of tables.filter((each) => each.overflows)) {
 const SHIFT_TAB = { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: 8 };
 const SCROLLERS = `(()=>{
  const tabbable=e=>e.tabIndex>=0&&!e.disabled&&e.getClientRects().length>0;
- window.__controls=w=>[...w.querySelectorAll('input, select, textarea, button, a[href]')].filter(tabbable);
+ window.__controls=w=>[...w.querySelectorAll('${FOCUSABLE}')].filter(tabbable);
  window.__behind=(a)=>{const pin=a.closest('tr')?.querySelector(':scope > .sheetsmith-table-name');if(!pin||pin.contains(a))return 0;
   const p=pin.getBoundingClientRect(),r=a.getBoundingClientRect();const over=Math.min(p.right,r.right)-Math.max(p.left,r.left);return over>0.5?Math.round(over*10)/10:0;};
  const all=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-wrapper')].filter(w=>w.scrollWidth>w.clientWidth+1&&__controls(w).length>1);
@@ -400,6 +419,78 @@ for (const [phone, text] of [[false, 0], [false, 24], [true, 0], [true, 24]]) {
 		}
 		check(behind.length === 0, `${at} ${one.label}: (9) Shift-Tab back from scrolled right lands clear of the sticky name, ${one.controls} controls`, behind.slice(0, 3).join(', '));
 	}
+}
+
+// 10. A commit in a table scrolled right leaves it scrolled where it was.
+/**
+ * Every scroller that scrolls, by its index among all of them: stable across a
+ * commit, where an index among only the overflowing ones moved whenever a commit
+ * changed which tables overflow, and measured one table twice.
+ */
+const ALL = `[...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-wrapper')]`;
+const OVERFLOWING = `${ALL}.map((w,i)=>w.scrollWidth>w.clientWidth+1&&__controls(w).length>1?i:-1).filter(i=>i>=0)`;
+/** The scroller, its committing control and where both stand, read off the live page. */
+const STANDING = `(()=>{
+ const a=document.activeElement;const w=a?.closest('.sheetsmith-table-wrapper');if(!w)return null;
+ const cell=a.closest('.sheetsmith-cell');const index=[...cell.querySelectorAll('${FOCUSABLE}')].indexOf(a);
+ const s=w.getBoundingClientRect();const start=s.left+w.clientLeft,far=start+w.clientWidth;const r=a.getBoundingClientRect();const row=a.closest('tr').getBoundingClientRect();
+ return {name:a.getAttribute('aria-label')??a.tagName,index,left:w.scrollLeft,startInside:r.left>=start-0.5,past:Math.round(Math.max(0,r.right-far)*10)/10,behind:__behind(a),offset:Math.round((r.left-row.left)*10)/10};
+})()`;
+for (const [phone, text] of [[false, 0], [false, 24], [true, 0], [true, 24]]) {
+	await loadFocus(text, phone);
+	const at = `${phone ? '380 phone' : '520'}${text ? ` text=${text}` : ''}`;
+	await evaluate(SCROLLERS);
+	const indices = await evaluate(OVERFLOWING);
+	let measured = 0;
+	for (const index of indices) {
+		const W = `${ALL}[${index}]`;
+		const target = await evaluate(`(()=>{const w=${W};w.scrollLeft=w.scrollWidth;
+		 const s=w.getBoundingClientRect(),far=s.left+w.clientLeft+w.clientWidth;
+		 const commits=__controls(w).filter(c=>(c.matches('input')&&!c.readOnly&&c.type!=='checkbox')||c.matches('button.sheetsmith-level-ring')).filter(c=>c.getBoundingClientRect().right<=far+0.5);
+		 const c=commits.sort((x,y)=>x.getBoundingClientRect().right-y.getBoundingClientRect().right).pop();if(!c)return null;
+		 c.focus({preventScroll:true});if(document.activeElement!==c)return null;
+		 const label=w.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?';
+		 return {label,input:c.matches('input'),value:c.matches('input')?c.value:null};})()`);
+		if (target === null) continue;
+		const before = await evaluate(STANDING);
+		if (target.input) {
+			const typed = /^-?\d+$/.test(target.value.trim()) ? String(Number(target.value) + 1) : `${target.value}x`;
+			await evaluate('document.activeElement.select()');
+			await send('Input.insertText', { text: typed });
+			await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+			await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+		} else {
+			await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' });
+			await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+		}
+		await sleep(300);
+		const after = await evaluate(STANDING);
+		measured += before.left > 0 ? 1 : 0;
+		// A named level carries its state in its name (`docs/UI.md` §6), so the
+		// name is compared up to its state: `Rating: 0` and `Rating: 1` are one ring.
+		const bare = (name) => name.replace(/: [^:]*$/, '');
+		const kept = after !== null && bare(after.name) === bare(before.name) && after.index === before.index;
+		check(kept, `${at} ${target.label}: (10a) the committed control keeps focus across the rebuild`, `${before.name}#${before.index} -> ${after === null ? 'body' : `${after.name}#${after.index}`}`);
+		if (!kept) continue;
+		check(Math.abs(after.left - before.left) <= 1, `${at} ${target.label}: (10b) the scroller comes back at its offset`, `${before.left} -> ${after.left}`);
+		/*
+		 * Held: the control starts inside the scrollport and clear of the name.
+		 * Printed, not held: how far it runs past the far edge. Either it already
+		 * did before the commit — a field wider than the room beside the name,
+		 * whose cell's start goes against the name (`docs/UI.md` §4) — or a column
+		 * ahead of it widened in the commit, the accepted drift. Anything else past
+		 * the far edge fails.
+		 */
+		const widened = after.offset !== before.offset;
+		// Wider than its room excuses only what was already past before the
+		// commit, within a pixel: a scroller reset to 0 carried this same field
+		// from 43.7 to 111.7px past, and that is the failure, not the room.
+		const overhang = after.past > 0 && (widened || after.past <= before.past + 1);
+		if (overhang) console.log(`      ${at} ${target.label}: ${widened ? `drift ${after.past}px, a column ahead widened ${before.offset} -> ${after.offset}` : `wider than its room: past the far edge ${before.past} -> ${after.past}px, as before the commit`}`);
+		check(after.startInside && after.behind === 0 && (after.past === 0 || overhang), `${at} ${target.label}: (10c) the control starts on screen, clear of the sticky name`, `past ${after.past}px, behind ${after.behind}px`);
+	}
+	console.log(`      ${at}: ${indices.length} scrollers, ${measured} measured scrolled`);
+	if (!phone && text === 0) check(measured > 0, '(10) at 520 at least one scroller is measured scrolled, or this check holds nothing');
 }
 
 await browser.close();

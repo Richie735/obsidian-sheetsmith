@@ -36,6 +36,7 @@ import {
 } from '../src/types';
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
+import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
@@ -401,8 +402,15 @@ const openRecords = new Map<string, Set<number>>([
 	['rest_features', new Set([0])],
 ]);
 
+/**
+ * The sheet's own root, the element the view's `contentEl` stands for, so
+ * `draw` can carry focus and scroll across a rebuild as the view does.
+ */
+let sheetRoot: HTMLElement | null = null;
+
 function renderSheet(into: HTMLElement): void {
 	const view = into.createDiv('sheetsmith-view');
+	sheetRoot = view;
 
 	const grid = view.createDiv('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
@@ -607,6 +615,17 @@ function draw(): void {
 	// plugin does not have: without it the canvas's arrow keys stop after the
 	// first write, here and nowhere else.
 	const focused = document.activeElement;
+	/*
+	 * **And the sheet's focus and scroll, through the view's own function and so
+	 * in the view's own order** (`src/view/sheet-posture.ts`). A commit here redraws everything, and without them
+	 * focus fell to the body on every edit, which the app never does, so a check
+	 * of what a commit leaves on screen measured the instrument rather than the
+	 * plugin (`docs/features/table-scroll-across-rebuild.md`). Read from the old
+	 * sheet before it goes, as `renderSheet` reads `contentEl` before it empties
+	 * it. No pixels: every shot draws a fresh state, so there is nothing to carry.
+	 */
+	const before = sheetRoot?.isConnected === true ? sheetRoot : null;
+	const posture = before === null ? null : capturePosture(before);
 	stage.replaceChildren();
 
 	const column = (build: (into: HTMLElement) => void): void => {
@@ -620,6 +639,9 @@ function draw(): void {
 	}
 	if (surface === 'settings' && settingsPane) {
 		column((into) => into.appendChild(settingsPane as HTMLElement));
+	}
+	if (posture !== null && sheetRoot !== null && sheetRoot !== before) {
+		restorePosture(sheetRoot, posture);
 	}
 	if (
 		focused instanceof HTMLElement &&
