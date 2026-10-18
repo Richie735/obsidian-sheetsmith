@@ -1417,14 +1417,16 @@ describe('a container that shows one child at a time', () => {
 	});
 
 	it('will not move the first tab earlier or the last later', async () => {
-		// The outcome, not the styling: the buttons are disabled, and `moveItem`
+		// The outcome, not the styling: the arrows are disabled, and `moveItem`
 		// refuses an out-of-range move besides, so pressing them anyway has to
-		// leave the order alone. Asserting the class would have been asserting
-		// which of two `setDisabled` implementations the stub happens to be.
+		// leave the order alone. Disabled is the app's own spelling for an extra
+		// button, which the stub now models: `is-disabled`, out of the tab order.
 		const first = control<HTMLElement>(harness, 'tab-up-combat');
 		const last = control<HTMLElement>(harness, 'tab-down-rest');
-		expect(first.hasAttribute('disabled')).toBe(true);
-		expect(last.hasAttribute('disabled')).toBe(true);
+		for (const end of [first, last]) {
+			expect(end.classList.contains('is-disabled')).toBe(true);
+			expect(end.hasAttribute('tabindex')).toBe(false);
+		}
 		first.click();
 		last.click();
 		await settle(harness.pane);

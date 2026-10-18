@@ -40,7 +40,7 @@ import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
-import { App } from '../src/test/obsidian-stub';
+import { App, Platform } from '../src/test/obsidian-stub';
 import {
 	driveDrag,
 	drivePicker,
@@ -86,6 +86,17 @@ interface Live {
 	data: unknown;
 	error: string | null;
 }
+
+/*
+ * The platform the page was staged as, read once before anything renders.
+ * `platform=phone` and `platform=tablet` (`harness/cdp.mjs`'s `stagePlatform`)
+ * put `is-mobile` on `body` before this script runs, and the app sets
+ * `Platform.isMobile` on the same devices, so a phone shot draws the controls
+ * the app draws there — `addControls`' arrows rather than a desktop's drag
+ * handle. Here rather than in the stub, which tests import: a test sets the flag
+ * itself, so no body class left over from one case can reach the next.
+ */
+Platform.isMobile = document.body.classList.contains('is-mobile');
 
 const stage = document.getElementById('stage') as HTMLElement;
 

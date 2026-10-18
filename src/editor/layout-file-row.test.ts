@@ -91,10 +91,10 @@ describe('copying the open layout out', () => {
 	});
 
 	/** The row's copy control, which the tooltip names. */
-	function copyButton(from: Harness): HTMLButtonElement {
-		const el = from.container.querySelector('[aria-label="Copy layout JSON"]');
+	function copyButton(from: Harness): HTMLElement {
+		const el = from.container.querySelector<HTMLElement>('[aria-label="Copy layout JSON"]');
 		if (!el) throw new Error('no copy control on the layout row');
-		return el as HTMLButtonElement;
+		return el;
 	}
 
 	/**
@@ -214,11 +214,14 @@ describe('copying the open layout out', () => {
 		 */
 		harness = await open();
 		const stale = copyButton(harness);
-		expect(stale.hasAttribute('disabled')).toBe(false);
+		// The app's disabled extra button is `is-disabled` and out of the tab
+		// order, never `disabled`, which a div does not have.
+		expect(stale.classList.contains('is-disabled')).toBe(false);
+		expect(stale.getAttribute('tabindex')).toBe('0');
 
 		const trash = harness.container.querySelector(
 			'[aria-label="Delete layout"]',
-		) as HTMLButtonElement;
+		) as HTMLElement;
 		trash.click();
 		confirmAction();
 		await tick();
@@ -280,12 +283,13 @@ describe('starting a new layout from the pane', () => {
 
 		// A dropdown, then a plain button, then the two `.clickable-icon`s: the
 		// **Add component** row's own shape, and the trash stays last so a press
-		// that lands one control off its mark hits the harmless one.
+		// that lands one control off its mark hits the harmless one. The icons
+		// are divs, because that is what the app's extra button is.
 		expect(controls.map((el) => el.tagName)).toEqual([
 			'SELECT',
 			'BUTTON',
-			'BUTTON',
-			'BUTTON',
+			'DIV',
+			'DIV',
 		]);
 		expect(controls[1]?.textContent).toBe('New layout');
 		// Not a CTA: creating a layout is not this pane's primary action.
