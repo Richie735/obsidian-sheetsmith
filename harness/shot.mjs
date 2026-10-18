@@ -2130,6 +2130,46 @@ export const DEFAULTS = [
 		platform: 'tablet',
 	},
 	{
+		// A list field's touch arrows at their ends (`docs/features/disabled-controls.md`):
+		// Abilities' entries, STR's up arrow and CHA's down arrow disabled and
+		// faded by the app's `.clickable-icon[aria-disabled='true']`, the rest at
+		// full strength. An entry list has no scroll cap, so both ends are in the
+		// frame. Measured off `document.body` through this query at 380 under
+		// phone staging, harness built first: **35756**.
+		name: 'editor-reorder-arrows-phone',
+		query: 'surface=editor&theme=light&open=abilities',
+		size: '380,35900',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		// The same in forced colors, where the end arrows read GrayText: the
+		// system's own disabled colour, which `editor.css` gives both reorder
+		// sites since the system cannot know the tab order's div is disabled.
+		name: 'editor-reorder-arrows-phone-forced-colors',
+		query: 'surface=editor&theme=light&open=abilities',
+		size: '380,35900',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// A tab set's tab order: Combat's up arrow and Rest's down arrow
+		// disabled, Spells' two enabled. The app draws a disabled extra button
+		// as an enabled one, so the fade is the `aria-disabled` this feature adds.
+		name: 'editor-tab-order',
+		query: 'surface=editor&theme=light&open=pages',
+		size: EDITOR_FRAME,
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		name: 'editor-tab-order-forced-colors',
+		query: 'surface=editor&theme=light&open=pages',
+		size: EDITOR_FRAME,
+		frame: '.sheetsmith-editor-panel',
+		flags: ['--force-high-contrast'],
+	},
+	{
 		// The canvas's threshold, bracketed: 530 is a 504 pane, so the canvas's
 		// view is under 480 of content and draws one column with its note; 546 is
 		// a 520 pane and a grid. Measured: **28853** and **21294**.
