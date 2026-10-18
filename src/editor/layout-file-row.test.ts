@@ -209,8 +209,8 @@ describe('copying the open layout out', () => {
 		 * `deleteLayout`'s existing spelling one control to the right, and
 		 * deliberately **not** `setDisabled` — that reaches no paint on a
 		 * `.clickable-icon`, so a disabled copy icon would look identical to a
-		 * live one and this feature would become the fifth member of a
-		 * `docs/BACKLOG.md` row waiting on one decision about four.
+		 * live one, and "no layout selected" is not the end of a list, which is
+		 * the one place the pane paints a disabled glyph (`docs/UI.md` §6).
 		 */
 		harness = await open();
 		const stale = copyButton(harness);

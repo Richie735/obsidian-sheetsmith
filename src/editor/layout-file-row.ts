@@ -228,8 +228,9 @@ export function renderLayoutFileRow(
  * whose folder holds none — this returns silently, which is `deleteLayout`'s
  * existing spelling one control to the right. Disabling it would look
  * identical to a live control (`setDisabled` reaches no paint for a
- * `.clickable-icon`) and would make this the fifth member of a
- * `docs/BACKLOG.md` row waiting on one decision about four.
+ * `.clickable-icon`), and "no layout selected" is not the end of a list, so
+ * `docs/UI.md` §6's end-disabling rule, which paints through `aria-disabled`,
+ * does not reach it.
  *
  * The clipboard comes off the container's own window rather than the global
  * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.

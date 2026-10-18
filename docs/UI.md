@@ -468,9 +468,24 @@ sheet.
   announced. A drag handle has no ends to disable — it is one control, and an
   arrow key at an end does nothing. The cost falls on focus, which follows an
   item through a move by its token: a move that lands it at an end would leave
-  focus on the arrow just disabled, so focus goes to the opposite one. No
-  control does that handoff yet, the tab-order arrows included, and the list
-  fields' arrows do not disable at all (`docs/BACKLOG.md` § UI).
+  focus on the arrow just disabled, so focus goes to the opposite one, and only
+  where the pressed arrow held focus, since a tap that focused nothing must not
+  be given focus. Both arrowed lists do this: a list field's touch arrows
+  (`addControls` in `editor/list-fields.ts`) and a tab set's tab order
+  (`renderChildOrder` in `editor/config-panel.ts`), each spelling the handoff
+  at its own site (`docs/features/disabled-controls.md`).
+- **A glyph-only control shows a disabled state as muted paint plus
+  `aria-disabled`, and as GrayText in forced colors** [judgement]. It has no
+  surface to drop and no label to fade, which is what the Modifiers list's
+  disabled select and its label do (`docs/features/modifier-notes.md`), so the
+  visible channel is the app's own `.clickable-icon[aria-disabled='true']` fade,
+  and the pane adds `cursor: not-allowed` and the system's disabled colour under
+  `forced-colors: active`, since the system cannot know a `div` is disabled. A
+  `div` carrying `aria-disabled` also carries `role="button"`, without which the
+  state is not reliably exposed. A glyph has no shape to change, so "neither
+  colour alone" holds only through the channels a reader does not see: out of
+  the tab order, announced, and no pointer answer
+  (`docs/features/disabled-controls.md`).
 - **State goes in ARIA, not only in paint.** `aria-pressed` on a two-state mark;
   `aria-label` composed from the label and the state name the layout author
   chose, since "Stowed" says more than "not pressed".
