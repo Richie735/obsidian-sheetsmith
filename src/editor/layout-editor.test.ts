@@ -1436,6 +1436,81 @@ describe('a container that shows one child at a time', () => {
 		).toEqual(['combat', 'spells', 'rest']);
 	});
 
+	it('announces its arrows as buttons, and as disabled exactly at the ends', () => {
+		// The app's extra button is a div with no role and sets no
+		// `aria-disabled` (`docs/features/disabled-controls.md`).
+		const arrows = Array.from(
+			harness.container.querySelectorAll<HTMLElement>('[data-sheetsmith-focus^="tab-"]'),
+		).filter((el) => /^tab-(up|down)-/.test(el.dataset.sheetsmithFocus ?? ''));
+		expect(arrows).toHaveLength(6);
+		const ends = ['tab-up-combat', 'tab-down-rest'];
+		for (const arrow of arrows) {
+			expect(arrow.getAttribute('role')).toBe('button');
+			const atEnd = ends.includes(arrow.dataset.sheetsmithFocus ?? '');
+			expect(arrow.getAttribute('aria-disabled')).toBe(atEnd ? 'true' : null);
+		}
+	});
+
+	it('hands focus to the other arrow when a focused arrow lands a tab at an end', async () => {
+		const earlier = control<HTMLElement>(harness, 'tab-up-spells');
+		earlier.focus();
+		earlier.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-down-spells',
+		);
+
+		const later = control<HTMLElement>(harness, 'tab-down-combat');
+		later.focus();
+		later.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'rest', 'combat']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-up-combat',
+		);
+	});
+
+	it('hands no focus off for a press on an arrow that does not hold it', async () => {
+		// A touch tap need not focus what it presses (WebKit does not), and the
+		// handoff moves focus only as the outcome of where the reader stood.
+		// Both directions, so each handler's own focus check is driven.
+		const focusedToken = () =>
+			(document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus;
+		(document.activeElement as HTMLElement | null)?.blur();
+		control<HTMLElement>(harness, 'tab-up-spells').click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect(focusedToken()).toBeUndefined();
+
+		(document.activeElement as HTMLElement | null)?.blur();
+		control<HTMLElement>(harness, 'tab-down-combat').click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'rest', 'combat']);
+		expect(focusedToken()).toBeUndefined();
+	});
+
+	it('leaves focus on the arrow pressed when a tab lands mid-list', async () => {
+		const later = control<HTMLElement>(harness, 'tab-down-combat');
+		later.focus();
+		later.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-down-combat',
+		);
+	});
+
 	it('gives a tab it adds the container\'s own size rather than a free row', async () => {
 		// The numbers are not read, but they are in the file: `row: 4` on a tab
 		// would tell a hand-editor it sits somewhere. The box it actually fills is
