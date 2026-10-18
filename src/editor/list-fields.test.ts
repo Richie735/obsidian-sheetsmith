@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
 	ListContext,
 	renderColumnsEditor,
@@ -12,6 +12,7 @@ import { MAX_LEVELS } from '../components/level-ring';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { makeFieldResolver, NO_ENV } from '../formula/resolve';
 import { Notice, Platform } from '../test/obsidian-stub';
+import { focusToken } from './focus-token';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -1474,6 +1475,140 @@ describe('entries editor', () => {
 		expect(context.errors.size).toBe(1);
 		entriesEditor(record);
 		expect(context.errors.size).toBe(0);
+	});
+});
+
+describe('the touch arrows at the ends of a list', () => {
+	/*
+	 * `docs/UI.md` §6: a reorder control with ends disables at them, and a move
+	 * landing an item at an end hands focus to the other arrow
+	 * (`docs/features/disabled-controls.md`). The context here behaves as the
+	 * pane's does: `focusAfterRedraw` asks for a token, and `redraw` keeps that
+	 * request over the focused control's own token (`??=`), redraws, then focuses
+	 * whichever won. A copy of the pane's sequence, so the pane's own is held
+	 * once in `layout-editor.test.ts` ("hands a touch arrow's focus to the
+	 * other arrow through the pane's own redraw"), which goes red if it changes.
+	 */
+	const three = () => ({
+		entries: [{ key: 'STR' }, { key: 'DEX' }, { key: 'CHA' }],
+	});
+	let requested: string[];
+
+	/** Render `record` under a context that redraws and restores focus as the pane does. */
+	function paneLike(record: Record<string, unknown>): () => HTMLElement {
+		let el = entriesEditor(record);
+		let pending: string | null = null;
+		requested = [];
+		context.focusAfterRedraw = (token) => {
+			requested.push(token);
+			pending = token;
+		};
+		context.redraw = () => {
+			recorded.redraws++;
+			const focused = el.ownerDocument.activeElement;
+			pending ??= focused instanceof HTMLElement ? (focused.dataset.sheetsmithFocus ?? null) : null;
+			el = entriesEditor(record);
+			if (pending !== null) focusToken(el, pending);
+			pending = null;
+		};
+		return () => el;
+	}
+
+	function focused(): string | undefined {
+		const active = document.activeElement;
+		return active instanceof HTMLElement ? active.dataset.sheetsmithFocus : undefined;
+	}
+
+	beforeEach(() => {
+		Platform.isMobile = true;
+	});
+	afterEach(() => {
+		Platform.isMobile = false;
+	});
+
+	it('disables the first up and the last down, and nothing in between', () => {
+		const el = entriesEditor(three());
+		const ends = ['Move STR up', 'Move CHA down'];
+		const arrows = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).filter(
+			(button) => /^Move /.test(button.getAttribute('aria-label') ?? ''),
+		);
+		expect(arrows).toHaveLength(6);
+		for (const arrow of arrows) {
+			const atEnd = ends.includes(arrow.getAttribute('aria-label') ?? '');
+			expect(arrow.disabled).toBe(atEnd);
+			expect(arrow.getAttribute('aria-disabled')).toBe(atEnd ? 'true' : null);
+			// A `<button>` has its own role, so none is spelled.
+			expect(arrow.hasAttribute('role')).toBe(false);
+		}
+	});
+
+	it('disables both arrows of a list of one', () => {
+		const el = entriesEditor({ entries: [{ key: 'STR' }] });
+		for (const label of ['Move STR up', 'Move STR down']) {
+			expect(byLabel(el, label).disabled).toBe(true);
+			expect(byLabel(el, label).getAttribute('aria-disabled')).toBe('true');
+		}
+	});
+
+	it('hands focus to the down arrow when a focused up arrow lands its item first', () => {
+		const record = three();
+		const current = paneLike(record);
+		const up = byLabel(current(), 'Move DEX up');
+		up.focus();
+		up.click();
+		expect(record.entries.map((entry) => entry.key)).toEqual(['DEX', 'STR', 'CHA']);
+		expect(focused()).toBe('attr-abilities-DEX-down');
+		expect(byLabel(current(), 'Move DEX up').disabled).toBe(true);
+	});
+
+	it('hands focus to the up arrow when a focused down arrow lands its item last', () => {
+		const record = three();
+		const current = paneLike(record);
+		const down = byLabel(current(), 'Move DEX down');
+		down.focus();
+		down.click();
+		expect(record.entries.map((entry) => entry.key)).toEqual(['STR', 'CHA', 'DEX']);
+		expect(focused()).toBe('attr-abilities-DEX-up');
+	});
+
+	it('leaves focus on the arrow pressed when the move lands mid-list', () => {
+		const record = { entries: [{ key: 'STR' }, { key: 'DEX' }, { key: 'CON' }, { key: 'CHA' }] };
+		const current = paneLike(record);
+		const up = byLabel(current(), 'Move CON up');
+		up.focus();
+		up.click();
+		expect(record.entries.map((entry) => entry.key)).toEqual(['STR', 'CON', 'DEX', 'CHA']);
+		expect(requested).toEqual([]);
+		expect(focused()).toBe('attr-abilities-CON-up');
+	});
+
+	it('requests no focus for a press on an arrow that does not hold it', () => {
+		// A touch tap need not focus a button (WebKit does not), and the handoff
+		// moves focus only as the outcome of where the reader already stood.
+		const record = three();
+		const current = paneLike(record);
+		byLabel(current(), 'Move DEX up').click();
+		expect(record.entries.map((entry) => entry.key)).toEqual(['DEX', 'STR', 'CHA']);
+		expect(requested).toEqual([]);
+	});
+
+	it('refuses a press at either end, with disabled taken off', () => {
+		// An end press that reaches the handler past `disabled` changes nothing:
+		// `moveItem`'s range check refuses an index off either end, and the
+		// handoff's condition cannot hold at one, so nothing is moved, written,
+		// redrawn or focused.
+		const record = three();
+		const current = paneLike(record);
+		for (const label of ['Move STR up', 'Move CHA down']) {
+			const arrow = byLabel(current(), label);
+			arrow.disabled = false;
+			arrow.focus();
+			arrow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		}
+		expect(record.entries.map((entry) => entry.key)).toEqual(['STR', 'DEX', 'CHA']);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+		expect(requested).toEqual([]);
 	});
 });
 

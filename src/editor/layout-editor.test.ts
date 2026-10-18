@@ -6,8 +6,9 @@ import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { renderGrid, walkLayout } from '../view/grid-cells';
 import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/modal';
 import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
+import { CardConfig } from '../components/card';
 import { cardSet, CardSetConfig } from '../components/card-set';
-import { App, Notice } from '../test/obsidian-stub';
+import { App, Notice, Platform } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { pressDown, release } from '../test/pointer';
 import { openView, showFile } from '../test/workspace';
@@ -1732,6 +1733,11 @@ describe('overlap inside a tab, and never across tabs', () => {
  * its two headings from the field spec, and what is checked here is that both
  * callers get their own words out of one editor.
  */
+/** A stored component read as the Card it was written as. */
+function isCard(config: ComponentConfig): config is CardConfig {
+	return config.type === 'card';
+}
+
 function twoLists(): Layout {
 	return {
 		name: 'Two lists',
@@ -1805,6 +1811,31 @@ describe('a list field naming its own columns', () => {
 		await openForm('edit-race');
 		expect(headings()).toEqual(['Value', 'Label']);
 		expect(names()).toEqual(['Value', 'Label', 'Value', 'Label']);
+	});
+
+	it('hands a touch arrow\'s focus to the other arrow through the pane\'s own redraw', async () => {
+		// The one list-field handoff driven through the real pane, so the
+		// precedence `list-fields.test.ts` re-spells — an explicit request over
+		// the focused control's own token — is held where it lives
+		// (`docs/features/disabled-controls.md`). The arrows draw on mobile only.
+		Platform.isMobile = true;
+		try {
+			await openForm('edit-race');
+			const up = harness.container.querySelector<HTMLButtonElement>(
+				'button[aria-label="Move Dwarf up"]',
+			);
+			if (up === null) throw new Error('no touch arrow for Dwarf');
+			up.focus();
+			up.click();
+			await settle(harness.pane);
+			const race = (await harness.stored()).components[0];
+			if (race === undefined || !isCard(race)) throw new Error('Race is not a Card');
+			expect(race.options?.map((option) => option.value)).toEqual(['Dwarf', 'Elf']);
+			const focused = harness.container.ownerDocument.activeElement;
+			expect(focused?.getAttribute('aria-label')).toBe('Move Dwarf down');
+		} finally {
+			Platform.isMobile = false;
+		}
 	});
 
 	it('leaves a card set\'s entries exactly as they were', async () => {
