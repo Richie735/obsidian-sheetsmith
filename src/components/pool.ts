@@ -163,9 +163,12 @@ function landing(
  * the card is no taller than it was — and buys four things. The value field
  * holds only values again, so everything painted from it is true. There is no
  * caret to land in the wrong place, because the field starts empty. The
- * direction is a button rather than a character, which is what makes the whole
- * gesture reachable on iOS — the numeric keypad there has no minus key, so a
- * signed amount was untypeable on the device most likely to be at a table. And
+ * direction is a button rather than a character, so a spend never needs a sign
+ * typed — the value field then asked iOS for its numeric keypad, which has no
+ * minus key, so a signed amount was untypeable on the device most likely to be
+ * at a table. (Every field here now takes the full keyboard where its input can
+ * need a sign or an operator, `docs/UI.md` §7, but the press-type-Enter path
+ * still never asks for one.) And
  * it can be seen: the convention it replaces was three sentences of hint text on
  * a field that looked like any other number field.
  *
@@ -318,9 +321,12 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 
 	const amount = panel.createEl('input');
 	amount.type = 'text';
-	// Bare digits are enough, which is the point of the direction being a
-	// control: `numeric` on iOS is a keypad with no minus key on it.
-	amount.inputMode = 'numeric';
+	// The full keyboard, not the numeric keypad: the amount may be arithmetic —
+	// `2*3` spends six, through `amountOf` — and may carry a sign, and iOS's
+	// `numeric` keypad has digits and nothing else (`docs/UI.md` §7). A bare
+	// amount still needs no sign, which is the point of the direction being a
+	// control; the keypad was simply too small for what the field accepts.
+	amount.inputMode = 'text';
 	// So the on-screen keyboard's return key says what it does. Set as an
 	// attribute rather than through the property, which not every DOM
 	// implementation reflects.
@@ -498,7 +504,7 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 		const raw = amount.value.trim();
 		// An explicit sign wins and moves the toggle to match, so the control
 		// can never show a direction its outcome contradicts. A bare amount
-		// defers to the toggle, which is what makes the numeric keypad enough.
+		// defers to the toggle, so the common spend never needs a sign typed.
 		if (raw.startsWith('-')) direction = -1;
 		else if (raw.startsWith('+')) direction = 1;
 		showDirection();
@@ -894,7 +900,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 
 		const input = reading.createEl('input', 'sheetsmith-pool-current');
 		input.type = 'text';
-		input.inputMode = 'numeric';
+		// The full keyboard: the value settles arithmetic (`43-7`) and may run
+		// below zero, and iOS's numeric keypad has neither an operator nor a
+		// minus (`docs/UI.md` §7).
+		input.inputMode = 'text';
 		input.value = data?.current ?? '';
 		// SPEC §4.2: an empty value shows "—" everywhere.
 		input.placeholder = '—';
@@ -1279,7 +1288,9 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				 */
 				const field = ceiling.createEl('input');
 				field.type = 'text';
-				field.inputMode = 'numeric';
+				// The full keyboard: a max settles arithmetic (`31+7`), and iOS's
+				// numeric keypad has no operator to type it with (`docs/UI.md` §7).
+				field.inputMode = 'text';
 				field.classList.add('sheetsmith-pool-max', 'sheetsmith-pool-max-input');
 				field.value = maxText;
 				// The same "—" the value shows, and here it is also the only
@@ -1418,6 +1429,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 
 			tempInput = temp.createEl('input', 'sheetsmith-pool-temp-input');
 			tempInput.type = 'text';
+			// The keypad stays, the one field on the card it fits: every valid
+			// buffer is a non-negative whole number of points — floored at
+			// zero (SPEC §4.2), settling no arithmetic. Anything else typed
+			// here is stored or clamped, not meant (`docs/UI.md` §7).
 			tempInput.inputMode = 'numeric';
 			tempInput.value = data?.temp ?? '';
 			tempInput.placeholder = '—';

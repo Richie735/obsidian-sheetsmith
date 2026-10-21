@@ -1315,6 +1315,18 @@ describe('a row whose length the character owns', () => {
 		expect(runSegments(el, 0)).toHaveLength(4);
 	});
 
+	it('gives the length field the full keyboard, since it settles arithmetic', () => {
+		// iOS's `numeric` keypad has no operator to type `4+2` with
+		// (docs/UI.md §7).
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '1 / 4' } }, context);
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		expect(field?.inputMode).toBe('text');
+	});
+
 	it('prefills the length field from the stored ceiling', () => {
 		const el = document.createElement('div');
 		document.body.appendChild(el);
@@ -2036,6 +2048,14 @@ describe('a Track the character may add rows to', () => {
 			expect(form.lines).toHaveLength(0);
 			expect(form.name).toBeDefined();
 			expect(form.submit.textContent).toBe('Add');
+		});
+
+		it('keeps the keypad on the length, a segment count taking bare digits', () => {
+			// The one field here a digits-only keypad fits: it settles no
+			// arithmetic, unlike the row's own length field (docs/UI.md §7).
+			const form = openAddForm(renderEmpty(kills));
+			expect(form.length.inputMode).toBe('numeric');
+			expect(form.name.inputMode).toBe('');
 		});
 
 		it('sits under the declared rows a card still has to offer', () => {

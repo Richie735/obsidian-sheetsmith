@@ -431,8 +431,13 @@ export function renderCardFace(
 
 		const input = value.createEl('input');
 		input.type = 'text';
-		// A derived formula implies the value is used numerically.
-		if (options.derived) input.inputMode = 'numeric';
+		/*
+		 * No keyboard hint, though a derived formula implies the value is used
+		 * numerically: it is a number of any sign, and iOS's `numeric` keypad
+		 * has no minus and no decimal point (`docs/UI.md` §7). `text` is said
+		 * rather than left as the default so the decision is visible here.
+		 */
+		input.inputMode = 'text';
 		input.classList.add('sheetsmith-card-input');
 		/*
 		 * At rest the effective number, where the layout declared one. Focus puts

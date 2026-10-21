@@ -2152,7 +2152,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				if (characterOwned) {
 					const field = wrap.createEl('input');
 					field.type = 'text';
-					field.inputMode = 'numeric';
+					// The full keyboard: the length settles arithmetic, and
+					// iOS's `numeric` keypad has no operator (`docs/UI.md` §7).
+					field.inputMode = 'text';
 					// The reading and the chrome removal are both Pool's: no
 					// value sits beside this one to separate from (a run's
 					// segments are already that reading), but the field
@@ -3172,6 +3174,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const nameField = field('Name');
 			const nameProblem = problem('name');
 			const lengthField = field('Length');
+			// The keypad fits here, unlike the row's own length field: every
+			// valid length is a whole count of segments, and this field settles
+			// no arithmetic. What else it accepts is stored as typed and means
+			// nothing as a length (`docs/UI.md` §7).
 			lengthField.inputMode = 'numeric';
 			// **No placeholder, and the `—` it had was borrowed wrongly.** On a
 			// card that dash is a *reading*: it says this row has no ceiling,

@@ -1866,8 +1866,9 @@ describe('a ceiling that is a formula', () => {
 		for (const record of [typed, formula]) {
 			expect(ceilingField(record).inputMode).toBe('text');
 		}
-		// The value field keeps its keypad.
-		expect(valueField(typed).inputMode).toBe('numeric');
+		// And so does the value beside it, which may be negative or a fraction:
+		// iOS's `numeric` keypad is digits alone (docs/UI.md §7).
+		expect(valueField(typed).inputMode).toBe('text');
 		const step = (input: HTMLInputElement) => {
 			input.focus();
 			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));

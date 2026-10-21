@@ -3063,7 +3063,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const entry = splitBounded(raw);
 			const input = element('input', 'sheetsmith-record-input', cell);
 			input.type = 'text';
-			input.inputMode = 'numeric';
+			// The full keyboard, a Table number cell's own reason: a field's value
+			// may be negative or a fraction, and iOS's `numeric` keypad has neither
+			// a minus nor a decimal point (`docs/UI.md` §7).
+			input.inputMode = 'text';
 			input.value = entry.value;
 			input.setAttribute('aria-label', accessible);
 			/*
