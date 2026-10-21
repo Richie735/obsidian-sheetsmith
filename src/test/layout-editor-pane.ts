@@ -660,7 +660,7 @@ export async function redo(harness: Harness): Promise<boolean> {
 export function panelHeading(harness: Harness): string | null | undefined {
 	return harness.container
 		.querySelector('.sheetsmith-editor-panel')
-		?.querySelector('.setting-item-heading')?.textContent;
+		?.querySelector('.setting-item-heading .setting-item-name')?.textContent;
 }
 
 /**

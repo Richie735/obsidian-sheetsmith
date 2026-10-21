@@ -54,6 +54,7 @@ import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText } from '../parse/wikilink';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
+import { keepFocusClearOfPinned } from '../ui/pinned-column-focus';
 import { revealWhenTruncated } from '../ui/truncation';
 import { ColumnType, COLUMN_TYPES } from './column-types';
 import { effectiveReading, sameNumber } from './effective-value';
@@ -365,7 +366,9 @@ function configError(config: RosterConfig): string | null {
 		const key = (stat.key ?? '').trim();
 		if (key === '') return 'Every stat needs a key.';
 		const problem = fencedKeyProblem(key);
-		if (problem !== null) return `The stat "${key}" ${problem}.`;
+		if (problem !== null) {
+			return `The stat "${key}" ${problem}. Rename it under Stats in the layout editor.`;
+		}
 		if (statKeys.has(key.toLowerCase())) return `Two stats are both called "${key}".`;
 		statKeys.add(key.toLowerCase());
 	}
@@ -893,6 +896,8 @@ function renderShared(
 ): void {
 	const columns = config.columns ?? [];
 	const wrapper = container.createDiv('sheetsmith-table-wrapper');
+	// Table's pinned name cell, so Table's answer to a control focused behind it.
+	keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 	const grid = wrapper.createEl('table', { cls: 'sheetsmith-table sheetsmith-roster' });
 	const order = columnOrder(config);
 	const width = columns.length + 1;
@@ -1101,7 +1106,9 @@ function drawValueField(
 ): void {
 	const field = valueGroup.createEl('input', { cls: 'sheetsmith-card-input' });
 	field.type = 'text';
-	field.inputMode = 'numeric';
+	// The full keyboard: a stat holds a number of any sign or a word, and iOS's
+	// `numeric` keypad has digits alone (`docs/UI.md` §7).
+	field.inputMode = 'text';
 	const shown = effectiveReading(config.effective, stored, published, context.resolveField);
 	// Folds a reading that is only a respelling ("15.0" against "15") onto
 	// `stored` itself, exactly as a Card's own value field does
@@ -1384,7 +1391,12 @@ function drawRow(
 			};
 
 			if (graded && column.input === 'select') {
-				const select = td.createEl('select', { cls: 'sheetsmith-table-select' });
+				// The chevron rides on a wrapper, since a select carries no
+				// pseudo-element, and sits inside the select's own field
+				// (`docs/UI.md` §9's one chevron): the app draws its own only on
+				// `.dropdown`, so a bare select read as a text box.
+				const menu = td.createSpan({ cls: 'sheetsmith-table-menu' });
+				const select = menu.createEl('select', { cls: 'sheetsmith-table-select' });
 				for (let i = 0; i <= count; i++) {
 					const option = select.createEl('option', { text: levelName(column, i) });
 					option.value = String(i);
@@ -1447,7 +1459,10 @@ function drawRow(
 		input.type = 'text';
 		input.value = raw;
 		input.setAttribute('aria-label', label);
-		input.inputMode = 'numeric';
+		// The full keyboard, a Table number cell's own reason: a value of any
+		// sign or a fraction, neither of which iOS's `numeric` keypad can type
+		// (`docs/UI.md` §7).
+		input.inputMode = 'text';
 		renderNotesAt(
 			td,
 			context.modifiers,
@@ -1569,6 +1584,7 @@ function renderCards(
 		if (rowsOfStat.length === 0) continue;
 
 		const wrapper = card.createDiv('sheetsmith-table-wrapper sheetsmith-roster-card-table');
+		keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 		const grid = wrapper.createEl('table', { cls: 'sheetsmith-table sheetsmith-roster' });
 		if (config.hideColumnHeadings !== true) drawHead(grid, config, order);
 		const body = grid.createEl('tbody');

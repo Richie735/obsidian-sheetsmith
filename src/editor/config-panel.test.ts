@@ -18,6 +18,7 @@ import {
 	writes,
 	furnished,
 	nested,
+	panelHeading,
 } from '../test/layout-editor-pane';
 
 /*
@@ -157,6 +158,26 @@ describe('editing a component', () => {
 		expect(redrawn.parentElement?.textContent).toContain(
 			'Another component already uses this label.',
 		);
+	});
+
+	it("makes the position fields number inputs, which Obsidian's phone rule does not select", () => {
+		/*
+		 * `docs/features/layout-editor-narrow-regime.md`: the app's phone rule is
+		 * `.is-mobile input[type='text'] { width: 100% }` at (0,2,1), with no
+		 * `number` counterpart, so these four keep their 5em on a phone only for
+		 * as long as they are not text fields. Pinned, because a change to
+		 * `addText` here would bring the backlog row back with nothing reporting it.
+		 */
+		const fields = (['col', 'row', 'width', 'height'] as const).map((key) =>
+			control<HTMLInputElement>(harness, `pos-armour-${key}`),
+		);
+		expect(fields.map((field) => field.getAttribute('type'))).toEqual([
+			'number',
+			'number',
+			'number',
+			'number',
+		]);
+		expect(fields.every((field) => !field.matches("input[type='text']"))).toBe(true);
 	});
 
 	it('never touches the other components', async () => {
@@ -590,7 +611,7 @@ describe('the panel says what it is configuring', () => {
 			'.sheetsmith-editor-panel',
 		) as HTMLElement;
 		const heading = panel.querySelector('.setting-item-heading');
-		expect(heading?.textContent).toBe('Defences');
+		expect(panelHeading(harness)).toBe('Defences');
 		// Above the reference line and the fields, which is what makes it a title
 		// rather than another row.
 		expect(panel.querySelector('.sheetsmith-component-form')?.firstElementChild)
@@ -599,12 +620,7 @@ describe('the panel says what it is configuring', () => {
 
 	it('heads the layout\'s own settings too', async () => {
 		harness = await open(furnished());
-		const panel = harness.container.querySelector(
-			'.sheetsmith-editor-panel',
-		) as HTMLElement;
-		expect(panel.querySelector('.setting-item-heading')?.textContent).toBe(
-			'Layout',
-		);
+		expect(panelHeading(harness)).toBe('Layout');
 	});
 
 	it('follows a rename, so the title is never the old name', async () => {
@@ -614,11 +630,7 @@ describe('the panel says what it is configuring', () => {
 		type(control<HTMLInputElement>(harness, 'label-defences'), 'Saves');
 		await settle(harness.pane);
 
-		expect(
-			harness.container
-				.querySelector('.sheetsmith-editor-panel')
-				?.querySelector('.setting-item-heading')?.textContent,
-		).toBe('Saves');
+		expect(panelHeading(harness)).toBe('Saves');
 	});
 });
 

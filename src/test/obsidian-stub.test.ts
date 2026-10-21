@@ -581,6 +581,76 @@ function tabFor(definitions: SettingDefinition[]): { tab: PluginSettingTab } {
 	return { tab };
 }
 
+describe('a setting row', () => {
+	it('marks a toggle row mod-toggle, as the app does, and no other kind', () => {
+		// 1.14.4's `addToggle` adds the class after its callback runs, and the
+		// app's phone rows and the editor's narrow regime both leave such a row
+		// side by side: without it the harness stacks what the app does not.
+		const host = createDiv();
+		const toggled = new Setting(host).setName('Sample values').addToggle(() => undefined);
+		const texted = new Setting(host).setName('Label').addText(() => undefined);
+		expect(toggled.settingEl.classList.contains('mod-toggle')).toBe(true);
+		expect(texted.settingEl.classList.contains('mod-toggle')).toBe(false);
+	});
+});
+
+describe('an extra button', () => {
+	// 1.14.4's `app.js`: `createDiv({cls: "clickable-icon extra-setting-button",
+	// attr: {tabIndex: 0}})`, a click and Enter or Space through one handler
+	// gated on `disabled`, and a `setDisabled` that toggles `is-disabled` and the
+	// `tabindex` and nothing else.
+	function extra(): { el: HTMLElement; presses: () => number; disable: (on: boolean) => void } {
+		let count = 0;
+		let component: { setDisabled(on: boolean): unknown } | undefined;
+		new Setting(root()).addExtraButton((button) => {
+			component = button.setIcon('arrow-up').onClick(() => count++);
+		});
+		const el = document.body.querySelector<HTMLElement>('.extra-setting-button');
+		if (el === null || component === undefined) throw new Error('no extra button drawn');
+		const target = component;
+		return { el, presses: () => count, disable: (on) => target.setDisabled(on) };
+	}
+
+	it('is a focusable div with no role, as the app draws it', () => {
+		const { el } = extra();
+		expect(el.tagName).toBe('DIV');
+		expect(el.classList.contains('clickable-icon')).toBe(true);
+		expect(el.getAttribute('tabindex')).toBe('0');
+		expect(el.hasAttribute('role')).toBe(false);
+	});
+
+	it('answers a click, Enter and Space', () => {
+		const { el, presses } = extra();
+		el.click();
+		el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		el.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+		el.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+		expect(presses()).toBe(3);
+	});
+
+	it('disables by class and tabindex, and sets neither disabled nor aria-disabled', () => {
+		const { el, presses, disable } = extra();
+		disable(true);
+		expect(el.classList.contains('is-disabled')).toBe(true);
+		expect(el.hasAttribute('tabindex')).toBe(false);
+		expect(el.hasAttribute('disabled')).toBe(false);
+		expect(el.hasAttribute('aria-disabled')).toBe(false);
+		el.click();
+		el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		expect(presses()).toBe(0);
+	});
+
+	it('restores the tabindex and the press when enabled again', () => {
+		const { el, presses, disable } = extra();
+		disable(true);
+		disable(false);
+		expect(el.classList.contains('is-disabled')).toBe(false);
+		expect(el.getAttribute('tabindex')).toBe('0');
+		el.click();
+		expect(presses()).toBe(1);
+	});
+});
+
 describe('the setting definition renderer', () => {
 	it('nests a row the way the app nests one, wrappers and all', () => {
 		/*

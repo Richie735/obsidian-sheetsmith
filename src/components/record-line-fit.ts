@@ -27,6 +27,11 @@
  * the vault's text size nor the sheet's `em`, and a zoom scales both sides
  * alike. Every constant is the harness's measurement. Pure: no DOM, no
  * `obsidian`.
+ *
+ * **Measured at desktop's 13px, and on mobile it does not follow.** There
+ * `--font-ui-small` is 15px and a line is drawn plain up to 42.5px short of its
+ * fit, with the name giving as above. Ruled to stay, with what following it
+ * would cost and when it reopens, in `docs/UI.md` §9's summary-line row.
  */
 
 /** A summary-line field, as much of it as its width depends on. */
@@ -58,11 +63,16 @@ const COMPUTED_PX = 14.2;
 const NAME_CHAR_PX = 6.73;
 /**
  * Per character of a dropdown's longest option, and the dropdown's own chrome.
- * Measured: `Abjuration` (10) in 73px, `Short rest` (10) beside `Always-on` in
- * 74px, with 10.9px of padding, border and arrow. 6.32 is what holds the second.
+ * Measured: `Abjuration` (10) in 85px, `Short rest` (10) beside `Always-on` in
+ * 86px, with 22.9px of padding, border and chevron — read off the harness's
+ * `populated` sheet at 16px as each select's `getBoundingClientRect().width`,
+ * which lands on whole pixels, and exactly 12 over the old 73 and 74 because
+ * the 12px of end padding is the only change. 6.32 is what holds the
+ * second. The chrome was 10.9 until the select drew its chevron inside its own
+ * hairline (`docs/UI.md` §9), which keeps 12px more padding at its end for it.
  */
 const SELECT_CHAR_PX = 6.32;
-const SELECT_CHROME_PX = 10.9;
+const SELECT_CHROME_PX = 22.9;
 /** A number's value field and the gap before it: 76.1px less a 28.6px name. */
 const NUMBER_PX = 47.5;
 /** A ceiling the reader types: its separator, its field and their gaps. */

@@ -35,6 +35,16 @@ const ENTRY = /^([^:]+?)([ \t]*:[ \t]*)(.*)$/;
  * *subject* stays the caller's, because only the caller knows whether it is
  * refusing a stat, a row key or a field; the rule does not vary.
  *
+ * **So does the fix, and that is the one way this clause departs from
+ * `readFenced`'s refusals below**, which carry their own because every caller
+ * hands them on verbatim and all of them mean the note. This refusal has no
+ * one place to be repaired. A component refusing its layout's key on the
+ * sheet names the layout editor's field (`docs/UI.md` §10); a Track row the
+ * character names on the sheet is repaired in the field beside the message;
+ * and the layout editor's own fields draw the message under the field it
+ * refuses, ending it with what the field was left holding. A fix written here
+ * would be wrong for two of the three.
+ *
  * Read at two moments, and both are needed: a component refuses a key a
  * hand-edited layout file carries, and the layout editor refuses one before
  * it is committed — which matters more than it looks, because a committed key
@@ -47,7 +57,20 @@ export function fencedKeyProblem(key: string): string | null {
 		: null;
 }
 
-/** Parse the `sheet` fence in a section body into keyed raw values. */
+/**
+ * Parse the `sheet` fence in a section body into keyed raw values.
+ *
+ * **Every refusal is two sentences, the fault and then the fix** (`docs/UI.md`
+ * §10). A failed read reaches a player who did not write the block's grammar
+ * and may never have opened the note in source mode, so "is not a `key: value`
+ * entry" alone tells them what is wrong and not what to type. The fix is here
+ * rather than in each caller because every fenced component hands this error
+ * on verbatim, and a copy of the same advice per component would drift. A caller adds only what it alone knows: a
+ * record says that every other record still works.
+ *
+ * **The fix names the note**, since that is where the edit happens: nothing on
+ * the sheet can repair a block it cannot read.
+ */
 export function readFenced(body: string): FencedResult {
 	const lines = splitLines(body);
 	const values = new Map<string, string>();
@@ -59,7 +82,11 @@ export function readFenced(body: string): FencedResult {
 		if (!inFence) {
 			if (FENCE_OPEN.test(text)) {
 				if (sawFence) {
-					return { ok: false, error: 'Section has more than one sheet block.' };
+					return {
+						ok: false,
+						error:
+							'Section has more than one sheet block. Merge them into one in the note, or delete the extra one.',
+					};
 				}
 				inFence = true;
 				sawFence = true;
@@ -75,13 +102,16 @@ export function readFenced(body: string): FencedResult {
 		if (!entry) {
 			return {
 				ok: false,
-				error: `Line "${text.trim()}" is not a "key: value" entry.`,
+				error: `Line "${text.trim()}" is not a "key: value" entry. Put a colon between its key and its value in the note, or delete the line.`,
 			};
 		}
 		const key = (entry[1] ?? '').trim();
 		const value = (entry[3] ?? '').trim();
 		if (values.has(key)) {
-			return { ok: false, error: `Duplicate key "${key}" in sheet block.` };
+			return {
+				ok: false,
+				error: `Duplicate key "${key}" in sheet block. Keep one "${key}" line in the note and delete the rest.`,
+			};
 		}
 		values.set(key, value);
 	}
@@ -90,7 +120,11 @@ export function readFenced(body: string): FencedResult {
 		return { ok: true, values: null };
 	}
 	if (inFence) {
-		return { ok: false, error: 'Sheet block is never closed.' };
+		return {
+			ok: false,
+			error:
+				'Sheet block is never closed. Add a line holding only ``` after its last entry in the note.',
+		};
 	}
 	return { ok: true, values };
 }

@@ -33,14 +33,12 @@
  * a modifier aimed at a value that reads no slot — can be reported *completely*
  * rather than for the declared rows only.
  *
- * **Deliberately not inside `.sheetsmith-list-scroll`.** SPEC §13 asks what that
- * `20em` cap is for and hoped the authoring change would answer it by deletion.
- * It is answered in that direction — the two controls that overran a column's
- * detail line are gone — but this is a *new* list with five controls on a detail
- * line, so putting it in the capped scroller would recreate the clip the cap
- * caused. It sizes to its content, which is `editor/list-field-height.ts`'s
- * argument applied to a third kind of field, and the cap question stays open for
- * the lists still inside it.
+ * **Deliberately not inside `.sheetsmith-list-scroll`.** That cap is a distance
+ * down the pane, floored by the tallest Rows or Columns entry the harness stages
+ * (SPEC §13, `docs/features/list-scroll-cap.md`), and this list is neither: a
+ * definition has five controls on a detail line, the case a cap clipped, and no
+ * floor was measured against it. It sizes to its content, which is
+ * `editor/list-field-height.ts`'s argument applied to a third kind of field.
  *
  * **The form is its own rather than `list-fields.ts`'s**, and the helpers it
  * borrows are the geometry rather than the form: `listField`, `labelled`,

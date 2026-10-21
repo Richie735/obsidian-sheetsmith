@@ -93,6 +93,24 @@ button was discarded. Every rule whose subject is a control in there now reads
 `.sheetsmith-panel .sheetsmith-panel-…`, at (0,2,0), and `styles.test.ts` checks
 the weight rather than the spelling.
 
+**And (0,2,0) is not the ceiling, because the app has platform rules above it.**
+On a phone `.is-mobile input[type='text']` sets a width at (0,2,1)
+(`docs/features/phone-input-width.md`), and on a tablet
+`.is-tablet button:not(.clickable-icon)` sets `padding: var(--size-4-1)
+var(--size-4-5)` at (0,2,1) — so every sheet button's own padding was dropped
+there, a 1.6em glyph button took 40px of padding, and a level ring drew as a
+42 × 33 oval [checked: `styles.test.ts`; seen in `sheet-tablet`]. Both answers
+are one shape: the declaration the platform rule replaces moves into a rule of
+its own on a doubled class, at (0,3,0), and nothing else moves with it, since a
+doubled whole rule would lift a control's border and fill over its own `:hover`
+and `:focus-visible`. A button that takes the app's chrome whole — the
+anchored panel's **Save**, **Cancel**, **Confirm** and **Remove** — takes the
+app's tablet padding too, which is the app's own control doing what it does
+everywhere. The harness stages a tablet by putting `is-mobile is-tablet` on
+`body` over CDP (`platform=tablet` in `shot.mjs`), against the platform rules
+and variables `harness:calibrate` now carries; it is the app's tablet CSS, not
+a device.
+
 ---
 
 ## 3. Sheetsmith's own knobs
@@ -107,6 +125,11 @@ comment on `--sheetsmith-card-abbr-space` states the test: re-deriving
 constant moved.
 
 A knob is public API once shipped. Renaming it breaks someone's snippet.
+
+**Where a knob is spelt as a factor and a length derived from it, the factor
+is the override point**, on `body`: `--sheetsmith-inline-control-factor`, from
+which `--sheetsmith-inline-control` is derived, because a length that has to
+be the control's at another font size reads the factor, never the length.
 
 ---
 
@@ -137,6 +160,96 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   But the name column never falls below its longest name while any column holds
   slack: the reason it yields, "row names are a fixed vocabulary", is false on
   an `openRows` table, where the character types them.
+- **At the default sheet size, beside its sticky name an open table leaves one
+  number cell of room, or one glyph cell where every cell beside the name is a
+  glyph, short only where the name's heading is wider, and every cell's
+  content but prose is seen whole there** [judgement; held at 520 by
+  `harness/measure-groups.mjs` check 8, which prints these figures, and prints
+  the `text=24` ones below without holding them]. The name's two floors,
+  its longest name and its field's `6em`, are held under one room declared on
+  the table's box: the scroller less one band
+  (`docs/features/table-name-column-floor.md`). **The band is set per table
+  from its own trailing cells, in two values, chosen from the config and never
+  measured.** Where every column is a modifier glyph with its heading hidden,
+  beside the remove glyph, the band is one glyph cell (the inline control at
+  `--font-ui-small` plus its padding, 36.8px, 44.6 under a coarse pointer);
+  everywhere else it is one number cell. One constant cost Worn items 31px of
+  names for nothing — at 520 it held them to 86.7px beside two 36.8px glyphs
+  and still scrolled 5px of the remove cell's padding; with the glyph band they
+  are 117.9, `Shackles` is whole, and the scroll brings the remove glyph whole
+  into a 37.1px room. Measuring each table's widest cell in code was refused:
+  a column is as wide as its heading when that is wider, and a heading is
+  laid-out text, so it needs a layout read on every render that happy-dom
+  cannot see. That is also why a toggle or a level is left out, even with its
+  heading hidden: its heading may show, and a note mark may sit beside its
+  ring. The field's floor used to
+  outweigh it, so at 520 Attacks' 155px scroller held a 102px name beside a 68px
+  number cell and left 53; it now leaves 68.3, and the name gives with an
+  ellipsis: `Longsword`, whole at 102px, reads `Longsw…` at 86.7, which is the
+  cost taken. **A text cell is the one seen in part**: its field clips prose at
+  every width and starts it at the left, so a scroll that puts the cell's start
+  against the name shows the prose's start, and focus reads the rest. Widening
+  the room to a text field's `8em` floor would leave that card's name 35px.
+  **A name heading is never clipped**, so one wider than the bound narrows the
+  room by the difference: Conditions' `Condition` heading is 92.3px and leaves
+  62.8px for a 64.6px `Active` cell, whose ring and heading are centred and show
+  whole with under a pixel of padding a side behind the name: the cell's box is
+  not whole there, its content is. **At `text=24` the claim does not hold, and
+  that is the residue** (520, `surface=sheet theme=light width=520 text=24`):
+  the heading is `--font-smallest`, which is `em`, so it grows with the sheet
+  where the cells' `--font-ui-small` does not. Conditions' heading is 126.3px
+  and leaves 28.7px of a 155px scroller for an 86.2px `Active` cell, whose ring
+  is wholly behind the name at rest, so the card shows no toggle until it is
+  scrolled, and then only the ring and none of its cell; Attacks' heading sets
+  a 90px name and leaves 65px for its 68px `Hit` cell, and `Dagger` reads
+  `Dagg…`. Magic items, in a 319px scroller, leaves 67.7px beside its name for
+  a 77.3px `Worn` toggle cell, which its heading widens: the ring is centred
+  and shows whole, so the content holds and the box does not. Not a
+  regression: the field's old `6em` floor was 144px there. It reopens with the
+  clause above, since only clipping or wrapping the heading reaches it, and
+  the seventh rulings pass did not reopen it: the per-table band changes no
+  name heading, so a heading wider than its bound stays the case it was.
+  **A declared row's name is plain text and is not held under the room, so on
+  a table with no prose column it wraps instead** [judgement; seen at
+  `surface=sheet theme=light width=520 text=24`]. A closed table has no box to
+  declare a room on, and the scroller cannot be a container, since Roster
+  shares it. Before the wrap, Tool training at `text=24` in a 520 container
+  drew `Thieves' tools` at 158.2px in a 155px scroller (195px of content): no
+  scroll moved its toggle out from under the name, a pointer at the ring hit
+  the name, and Tab still landed on the ring behind it, its focus ring hidden.
+  Wrapped, the name takes 118px on two lines and the toggle shows whole beside
+  it. Where the table has no prose column the name takes the slack, so it
+  wraps only where the slack is shorter than the name: on the default sheet at
+  1400, 520 and 380, and at `text=24` at 1400, every table measures exactly as
+  it did, and at `text=24` in 520 only Tool training and a Roster's `Sleight of
+  hand` move. A table with prose keeps the one line, since its name column is
+  `auto` and would fall to its longest word, and a declared name on an open
+  table with prose still widens its column as before.
+- **A control focused behind a sticky name is scrolled clear of it, in every
+  table and Roster that scrolls** [checked: `ui/pinned-column-focus.test.ts`;
+  held by `harness/measure-groups.mjs` check 9, real Shift-Tab at 520 and at a
+  true 380 under phone staging, each at `text=24` too]. The browser scrolls a
+  focused control only into the scrollport, whose start the name covers, so
+  Shift-Tab back along a table scrolled right landed behind it. Counted one
+  press per control, the table scrolled fully right before each (check 9's
+  measure): at 520, 4 of Attacks' 8 controls and 18 of Inventory's 34 (its
+  three links aside, none covered), and at a true 380, 2 and 18. Counted as one
+  walk back from the last control, the scroll carried from press to press: the
+  same at 520, and 2 and 13 at 380. Now none by either count, at either size
+  or width.
+  The cell's start goes against the name, as a text cell's already does above,
+  unless that carries a control that fits the room past the far edge, when the
+  control's own start does: Conditions' `Active` ring at `text=24`, in a
+  28.7px room. **Measured on focus, not declared**: a `scroll-padding` the
+  name's width cannot be written for a closed table or a Roster, which have no
+  box to hold a room, an open table can spell the name's room but not its
+  width, and Chrome leaves a partly covered button where it is whatever the
+  padding says. **Only a focus no pointer caused** (`:focus-visible`), so a
+  press never scrolls its control out from under the pointer before release;
+  a rebuild restores each scroller's offset before it restores focus, so a
+  restored focus is held to this rule against the offset the reader left
+  [checked: `view/sheet-posture.test.ts`, the order both hosts call; held by
+  `harness/measure-groups.mjs` check 10].
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.
@@ -144,6 +257,19 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   split in a wide window must reflow too, and a media query cannot see that.
   `.sheetsmith-view` sets `container-type: inline-size`; the grid collapses to a
   column under 480px of *container* width.
+- **So a phone's 380px viewport draws the sheet a 380px container draws, and the
+  narrow views stay container widths** [judgement; seen in `sheet-viewport-380`
+  against `sheet-narrow`]. Diffed with the harness bar's height taken off, the
+  two differ by antialiasing alone, under 40 levels a channel anywhere on the
+  sheet: nothing on it reads the viewport, which is the rule above doing its job.
+  What a true viewport changes is what hangs off `document.body`, the anchored
+  panel and the shared popover, whose caps read `100vw` (§9), so a view earns a
+  true viewport when it holds one of them. **That reading is the ruling, not a
+  gap**: both are bounded by the window, never by the sheet's container, so in a
+  narrow pane in a wide window the panel overhangs the sheet as the app's own
+  `Menu` would (§9 gives the reasons). Neither picture carries Obsidian's
+  `.is-mobile` rules, which the stub never sets
+  (`docs/features/phone-input-width.md`), and neither is a device.
 - **A container is its own reflow context** (`SPEC` §8). A Group four columns
   wide inside a wide pane is narrow even though the sheet is not, so
   `.sheetsmith-subgrid` carries `container-type` and the grid inside it collapses
@@ -174,6 +300,27 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   placement — so the view stamps the column count as a class and `sheet.css`
   writes the formula out once per count. `styles.test.ts` holds every entry to
   the rule, so a table cannot drift off the thing it tabulates.
+- **The layout editor pane has two narrow rules, because it asks two
+  questions** [judgement; seen in `editor-narrow`, `editor-phone` and the four
+  threshold views] (`docs/features/layout-editor-narrow-regime.md`). Whether
+  the canvas is a grid takes no number of its own: the canvas wears the sheet's
+  `.sheetsmith-view`, so the sheet's own 480px collapse reaches it, and its
+  gestures leave under the same named query, `sheetsmith-sheet`, on the pixel
+  the grid stops — a grid drawn as one column takes no drag, resize or arrow
+  key, and a touch there scrolls. Whether a setting row fits beside its name is
+  the pane's, `sheetsmith-editor-pane` below 584px, the narrowest width the
+  panel's forms have been looked at side by side; the rows then stack as the
+  app stacks them on a phone, toggles, headings and tree rows excepted.
+- **A Rows or Columns list in the pane is capped by a distance in px and
+  floored by its tallest staged entry plus its header** [judgement; held by
+  `harness/measure-lists.mjs`, seen in `editor-phone-skills`]
+  (`docs/features/list-scroll-cap.md`). The cap is what keeps an eighteen-row
+  list from burying the fields under it, so it is a distance down the pane,
+  400px at most and bounded by the window, never an em of a desktop row. The
+  floor is one whole entry, an entry showing its message included: 244px where
+  the rows sit side by side, 400px under the list's own 380px query where they
+  stack. So one entry is always whole, and on a phone, where the floor is the
+  cap, the nested scroller is the accepted cost.
 - **Media queries are for user preference and device capability only**:
   `prefers-reduced-motion`, `forced-colors`, pointer coarseness. Never for space.
 - **Cascade order is load-bearing.** `@container` adds no specificity, so an
@@ -191,16 +338,27 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
 
 ## 5. Type
 
-- **Relative units for anything that should follow the vault's text-size
-  setting** [judgement]. The card's headline number is `1.75em`, not a pixel
-  size, so the card scales with the user's setting.
+- **Relative units for anything that should scale with the sheet's own type**
+  [judgement]. The card's headline number is `1.75em`, not a pixel size, so the
+  card scales with whatever sets the sheet's size.
+- **What sets the sheet's size is not the vault's text-size setting**, which
+  this section used to claim [judgement]. Obsidian 1.14.4 sets `body` to `--font-ui-medium`, 15px, and
+  nothing on a view, and the vault's text size reaches only `--font-text-size`,
+  which the markdown views read — so the sheet's `em` moves for a theme or a
+  snippet that sets it, and for nothing in Settings. The harness's `text=`
+  stands for that, not for the setting, and its default is 16px against the
+  app's 15. **So a width that has to agree with fixed-px chrome is px, never
+  `em`**: a record line's stacking tiers and its strip's thresholds are, since
+  every width on the line is a fixed-px token
+  (`docs/features/record-set-stacking-tiers.md`). The strip's were `em`, and the
+  app drew each at 15/16 of the width it was measured at.
 - `--font-ui-small` / `--font-ui-smaller` for secondary and tertiary text;
   `--font-smallest` below that.
 - **A surface hung off `document.body` is app chrome, and takes the app's UI
   sizes rather than the sheet's** [judgement]. The anchored panel and the shared
-  popover are `--font-ui-small` and `--font-ui-smaller`, so the reader's
-  **Text** setting does not reach them: at `text=24` the panel measures 390 x
-  479, as at the default, beside a sheet that grew 650px. That is right: they do
+  popover are `--font-ui-small` and `--font-ui-smaller`, so whatever sets the
+  sheet's size does not reach them: at `text=24` the panel's body measures
+  390 x 547, as at the default (re-measured in the fifth rulings pass), beside a sheet that grew 650px. That is right: they do
   the job of Obsidian's own `Menu` and `Modal`, which keep the same sizes, and
   §1 is why the plugin invents no type scale of its own.
 - **`font-variant-numeric: tabular-nums` on every number that changes.** A value
@@ -233,6 +391,23 @@ sheet.
   A glyph on a partly lit segment is not a case, since part of it sits on
   `Canvas`, so it keeps the mode's own colour and plate
   (`docs/features/forced-colors-track-and-table.md`).
+- **`prefers-contrast: more` raises every line that is a surface's or a control's
+  only edge to `--text-muted`, and leaves the rest** [judgement; seen block by
+  block in `sheet-contrast-more`, `-dark` and `sheet-record-groups-contrast-more`].
+  That is a card's border and pill, a table's box and cells, a pool's box and
+  steppers, a track's box, segments and dividers, a placed box, a record group's
+  outline and header rule, the record strip's rule, and a record's menu, which
+  was the one edge left faint until this was looked at. Two marks go further: a
+  menu's chevron, a card's and a record's alike (§9), to `--text-normal`, and every marked level ring and harm
+  segment to the full fill, since a ramp trades contrast for shape. **The
+  abbreviation and the unresolved `?` have no block**: both are muted at every
+  contrast (the faint rule below). **Left alone, as the ruling and not an
+  omission**: a container's heading rule and a tab strip's baseline, whose
+  heading text carries the structure; a Passport's chips, whose fill is the
+  field; a Pool's bar track, which repeats the number above it; the Rich text,
+  Image and record body placeholders, the asymmetry `sheet.css` records at
+  Passport's block; and an unresolved link, which takes the app's own
+  `--link-unresolved-*` tokens, so a theme that answers the query answers it here.
 - **One focus treatment per component.** The same gesture in the same component
   must not produce two different rings. **A round control takes a round ring**,
   so a Record set's summary line can show three same-size circles — a focused
@@ -251,6 +426,29 @@ sheet.
   was the case that taught this: it copied Obsidian's own markup, which puts the
   link target in `aria-label`. `aria-label` is for a control whose visible mark is
   *not* words — a ring, a glyph button — which is the next rule.
+- **Obsidian draws a tooltip of its own from every `aria-label`, and the sheet
+  turns it off** [checked: `styles.test.ts`]. In 1.14.4 the app listens for a
+  pointer over any `[aria-label]` and shows the label about a second later,
+  unless the element's computed `--no-tooltip` is `true`, a switch its own
+  `app.css` sets on five surfaces. Left on, it overrode every `title` decision
+  below: over Traits' clipped record name it said "Feature" while the name sat
+  in `title`, a Notes cell said "Barkskin Notes", and a Track run said its
+  composed name at every pass. So `.sheetsmith-view` and `.sheetsmith-panel` set
+  it, and two exceptions set it back. Markdown the app rendered is the first,
+  since an aliased link there carries its only drawn target in `aria-label`. A
+  control named only by `aria-label` is the second — the note mark, Pool's door
+  and Track's door — since nothing else gives it a hover name. **Read from Obsidian 1.14.4's
+  `app.js` and `app.css`, not yet seen working in the app**: the check holds the
+  declarations, not their effect, which the owner confirms in the vault.
+  **Rejected:** naming controls by
+  `aria-labelledby`, which keeps the name and misses the app's selector, but
+  costs a node and a unique id at each of 51 `aria-label` sites in sixteen
+  modules, and about 270 test lines that read one; and letting the reveal set the app's tooltip,
+  which means writing the value into `aria-label` (`setTooltip` does) and so
+  replacing the name the rule above gives, at one site of many. **The cost
+  taken:** the switch is in `app.css`, not `obsidian.d.ts`, so a rename brings
+  the app's tooltip back, which is today's behaviour rather than a break, and the
+  harness cannot show either state, since the stub draws no tooltip.
 - **A control names every party its context does not already announce**
   [judgement]. A move names where it goes, a remove names what it removes —
   unless the reader reached the control through something already named for
@@ -270,9 +468,24 @@ sheet.
   announced. A drag handle has no ends to disable — it is one control, and an
   arrow key at an end does nothing. The cost falls on focus, which follows an
   item through a move by its token: a move that lands it at an end would leave
-  focus on the arrow just disabled, so focus goes to the opposite one. No
-  control does that handoff yet, the tab-order arrows included, and the list
-  fields' arrows do not disable at all (`docs/BACKLOG.md` § UI).
+  focus on the arrow just disabled, so focus goes to the opposite one, and only
+  where the pressed arrow held focus, since a tap that focused nothing must not
+  be given focus. Both arrowed lists do this: a list field's touch arrows
+  (`addControls` in `editor/list-fields.ts`) and a tab set's tab order
+  (`renderChildOrder` in `editor/config-panel.ts`), each spelling the handoff
+  at its own site (`docs/features/disabled-controls.md`).
+- **A glyph-only control shows a disabled state as muted paint plus
+  `aria-disabled`, and as GrayText in forced colors** [judgement]. It has no
+  surface to drop and no label to fade, which is what the Modifiers list's
+  disabled select and its label do (`docs/features/modifier-notes.md`), so the
+  visible channel is the app's own `.clickable-icon[aria-disabled='true']` fade,
+  and the pane adds `cursor: not-allowed` and the system's disabled colour under
+  `forced-colors: active`, since the system cannot know a `div` is disabled. A
+  `div` carrying `aria-disabled` also carries `role="button"`, without which the
+  state is not reliably exposed. A glyph has no shape to change, so "neither
+  colour alone" holds only through the channels a reader does not see: out of
+  the tab order, announced, and no pointer answer
+  (`docs/features/disabled-controls.md`).
 - **State goes in ARIA, not only in paint.** `aria-pressed` on a two-state mark;
   `aria-label` composed from the label and the state name the layout author
   chose, since "Stowed" says more than "not pressed".
@@ -352,6 +565,14 @@ sheet.
   beside its reason (`docs/features/text-faint-audit.md`, which measured every
   instance; `docs/features/track-row-legibility-and-clipped-fields.md` was the
   first, for a Track row's name column).
+  **So a placeholder never carries anything the row does not also say at full
+  contrast** [judgement], in its description or its value; one that repeats the
+  description is accepted as redundant. The settings tab's **Character folder**
+  is the instance: the app's `setPlaceholder` draws `Same as new notes` at
+  2.30:1 light and 2.36:1 dark, nothing inside it can raise that, and the
+  description names the same destination. It stays rather than going because,
+  with an `aria-label` as the name, a placeholder is exposed as the input's
+  accessible description (per HTML-AAM, not tested with a screen reader).
 
 The numbers these rules are judged against, and the way to measure them, are in
 `.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
@@ -380,6 +601,13 @@ case obeys it.
   answers with silence. The measurement is the argument: a menu's box is as wide
   as the chosen option, so the same card gives a field 432x29 and a menu 28x29
   with nothing stored, and neither grows under a coarse pointer.
+  **And where the outcome is far from the press, the press brings it**: in a
+  stacked layout editor a selection made on the tree or the canvas puts its
+  form up to 30,000px below, so the press scrolls the panel's title to the top
+  and moves focus there, and **Back to the selection** returns
+  (`docs/features/layout-editor-narrow-regime.md` §4). That is focus moved by
+  the reader's own press, not focus moved without one, and it fires only where
+  the panel is out of sight, never beside the tree.
 - **A field inside a row is at least the pointer minimum on both axes, and the
   row takes that as its floor** [judgement]. `--size-4-5`, 20px, which is
   `legibility.md` §5's 20x20. The floor goes on the row as well as the field so
@@ -391,6 +619,42 @@ case obeys it.
   `min-width` scoped to Track so Pool's max field does not move
   (`docs/features/track-row-legibility-and-clipped-fields.md`). A later touch pass
   starts here.
+- **A field asks for the numeric keypad only where every valid value is a
+  non-negative whole number, and otherwise for `text`** [checked:
+  `src/numeric-keypad-sites.test.ts`]. On an iPhone `inputMode = 'numeric'` is
+  the digits 0 to 9 and nothing else: no minus, no plus, no operator, no decimal
+  point, no letter, and no Done key; `decimal` adds the point and nothing more.
+  iPadOS draws a full number-and-symbol keyboard for the same modes, so only the
+  phone shows it, and the harness and desktop show nothing either way. So the
+  question at each field is what its *valid* values are, never what it usually
+  holds: a valid negative (a `-1` Bonus, a pool run below zero), a fraction (a
+  `0.5` Weight), arithmetic the field settles (`43-7`, `2*3`), or a word or a
+  formula (a stat's word, a ceiling's `prof`) each needs a key the keypad lacks,
+  and one of them is enough for `text`. Text a field merely accepts without
+  meaning anything by it — stored as typed, or clamped — does not count, since
+  the keypad refusing it costs nothing. **On a field this rule decides**, one
+  whose value is or may be a number, `text` is set explicitly rather than left
+  as the default, so the decision is visible at the site and its test has
+  something to assert; a field that only ever holds words needs no say. **A
+  keypad that switches on what the field holds is not offered**: from an empty
+  or numeric field it could never be left, which is
+  `docs/features/record-ceiling-formula.md`'s argument. Two fields keep the
+  keypad today, Pool's temporary points (floored at zero, no arithmetic) and
+  the length in Track's **Add** form (a segment count, no arithmetic); the scan
+  holds that population, so a third is a decision made here.
+- **A focused number is selected, because a finger cannot aim a caret**
+  [checked: the focus-kind cases in `card.test.ts`, `table.test.ts` and
+  `pool.test.ts`]. A field bound with `step` or `arithmetic` that holds a
+  finite number when focus arrives — after a pill's swap to the stored number —
+  selects the whole of it, so a tap and a typed number replace the value rather
+  than appending to it. Touch, the keyboard, a press routed from a card's
+  padding and a focus from code all select. **The one exemption is a mouse or
+  pen press on the field itself**, which aimed its caret; a pen tip being aimed
+  is an assumption until a Pencil has been tried by hand. **A second press into
+  a field that already has focus places the caret** and selects nothing, so one
+  digit can still be fixed. One rule in `editable.ts`, no option and no
+  component code; the field list is
+  `docs/features/number-field-focus-select.md`.
 
 ---
 
@@ -467,7 +731,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name, a Passport's name, a Record set's group header name and a text field's value. **"Its own text" is `value` on an `<input>` and `textContent` everywhere else**, which the fourth consumer forced: a field has no `textContent`, so the first three's spelling would have set the tooltip to the empty string on a clipped field — a reveal that decided there was nothing to reveal. A copy in the caller is forbidden and unguardable, since `scrollWidth` and `clientWidth` are both 0 under happy-dom |
 | A list inside one row of another list | `editor/nested-list-field.ts`; `.sheetsmith-nested-list`, `-line`, `-controls`, `-controls-reserved` | a modifier definition's **Changes**. **The frame only**: the caller draws each line's own controls and names them, so the module knows that no modifier exists — `linked-text.ts`'s arrangement, in the editor. What it owns is the indent, the trailing control track, the remove, and the **Add** footer in `.sheetsmith-entry-footer`'s own clothes. **Indented by geometry rather than a background**, `--size-4-2`, so the nesting survives `forced-colors: active` where an author background is repainted one system colour — and little enough that a definition with one change is still the form that shipped. **A hairline between one line and the next, and spacing alone could not do it**: the forced break puts each line's six controls on two rows, measured 63px apart, against 56px between one line and the next — so the gap said the opposite of the grouping, and raising it far enough would make a two-line entry twice the object a one-line one is. A rule is a difference in kind, it survives forced colors as a border, and it costs a pixel. **The remove is reserved and hidden on the only line there is**, `.sheetsmith-detail-field-reserved`'s argument one element over: a control that is not created gives its width back to the line's grow, so a list holding one-line and two-line entries would read as two forms down the pane. **No reorder and no drag**, which is a refusal: order inside this list is not observable, since a breakdown lists contributors in *definition* order and two changes at one target contest by size (`docs/features/multi-change-definitions.md`) |
 | A problem list under a textarea field | `.sheetsmith-field-problems`, `-problem`, `-problem-line` | the function library, the reset triggers, the bonus types |
-| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select` | Card's options, Table's and Record set's `level` set to a select |
+| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select`; the chevron on its wrapper, `.sheetsmith-card-dropdown::after` and `.sheetsmith-record-menu::after`, one mark by selector list | Card's options, Table's, Roster's and Record set's `level` set to a select. **One chevron, placed by each control** (the paragraph below): beside a card's value, inside a record's hairline and inside a cell select's field (`.sheetsmith-table-menu::after`) |
 | The one sentence a fenced value says about a wikilink | `components/fenced-link.ts` | Record set's fields, a Passport's name and values. **A row for a *sentence*, on `arm-to-confirm.ts`'s precedent** — that row already carries "(the sentences only)" for the same reason: Obsidian indexes no link inside a code fence, so a component whose values live in one refuses a link at the commit, and the sentence is the whole of what the reader is told. Two copies of it is one design pass away from saying two things, which is what `components/isolation.test.ts` scans for by clause. The two words that differ arrive as arguments, so the module knows that neither a record nor a passport exists: a record has a name and a body to move a link into, and a passport has neither |
 | A form anchored to the control that opened it | `ui/anchored-panel.ts`; `.sheetsmith-panel`, `-body`, `-line`, `-fields`, `-field`, `-why`, `-problem` | Table's `modifier` column, Record set's `modifier` field |
 | A value read against its ceiling | `.sheetsmith-pool-ceiling`, `-separator`, `-max` | Pool's max, a Record set `number` field whose ceiling the layout declares or the record holds — **one vocabulary**: the value at full contrast, a `/`, and the ceiling muted with tabular figures. A record overrides the size only, since the pool's ceiling qualifies a headline number and a record's a 13px one; where the ceiling is the record's it is a *field* rather than a span, wearing the record's own chrome and this reading. **Where that field holds a formula** (`Uses: 1 / prof`) it is stacked under a layer drawing what the formula came to (`.sheetsmith-record-worked-out`, `-layer`, `-focused`), §9's stacked arrangement: the number at rest in this same reading and box, so it cannot be told from a typed one, the text on focus, the layer taking no press, and `?` in `.sheetsmith-pool-max-unresolved` with a `.sheetsmith-error` line under the record where it cannot be worked out; a typed number draws no stack at all (`docs/features/record-ceiling-formula.md`). **A Track row whose length the character types takes only the ceiling half** (`.sheetsmith-pool-max`, `.sheetsmith-pool-max-input`), narrowed again to its own row-name scale (`.sheetsmith-track-row-length-input`) — there is no value beside it to separate from, since a run's segments are already the reading of the value the way Pool's own numeral is the reading of its own (`docs/features/track-row-length.md`) |
@@ -481,7 +745,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Which glyph a modifier surface takes | `zap` / `zap-off` against `info` | **`zap` is the modifier-*authoring* glyph and `info` is the read-only account of what reaches a value — its arithmetic, its notes, or both.** Every bolt on a sheet opens something a reader can change — a modifier cell's picker, the form behind it — while a Track's breakdown button, a Pool's ceiling door and the note mark open something they can only read, so all three take `info`. **The note mark was `sticky-note` until the modifier-notes land stop, and that was reversed on sight**: beside a Card's own editable note line it read as *that card's* note, and a sticky note suggests something you write in. The note mark stays distinct from the arithmetic mark on Card, Table and Roster, because the arithmetic mark is the underline and not a glyph. Written down because the choice was made twice without being: the bolt is the better *association*, since a reader learns "what is affecting this" from the modifier column three cards up the same screen, and it is the worse *affordance*, since it teaches a press that edits. A third consumer picks a side from this row rather than from whichever surface it happened to read first |
 | A disclosure that opens a block in place | `.sheetsmith-record-disclosure`, `.sheetsmith-record-body` | Record set's records, **and the layout editor's tree** (`.sheetsmith-tree-disclosure`): the same `chevron-down` / `chevron-right` pair, `aria-expanded` and `aria-controls` (left off an open empty container, which draws no region to name), a label that changes with the state (**Collapse "Weapons"** / **Expand "Weapons"**) and `--text-muted` for the same measured reason. What differs is the body: a shut container's children are not rendered at all rather than `hidden="until-found"`, since the tree is not find-in-page content and the tree opens the ancestors of whatever is selected (`docs/features/layout-editor-tree.md` §3). **A Record set's group header borrows it**: the same chevron pair, muted, on an `h3` holding one `<button>` whose name is the group's name alone, with the count outside the name and attached by `aria-describedby`; one press route on the heading row, a band that is a 60% mix of `--background-modifier-hover` and a semibold name, and a group drawn as one outlined block (`docs/features/record-set-groups.md`) |
 | A tree's nesting | `editor/tree.ts`; `.sheetsmith-tree-children`, `.sheetsmith-tree-slot` | the layout editor's tree. **The card steps in, not its text**: a container's rows render into a `role="group"` wrapper named `Inside <container>`, indented as a whole, and the wrapper's own `border-inline-start` is the guide, so it runs the full height of what the container holds, gaps included, and two containers deep draws two. Placed under the centre of the container's chevron. A border rather than a background, so forced colors repaints it. The slot before every component row's name holds the chevron or an empty spacer of its width, so names at one depth share a column (`docs/features/layout-editor-tree.md` §2) |
-| A record's summary line | `.sheetsmith-record`, `-summary`, `-name`, `-fields`, `-field` | Record set. **On a headed list wide enough for the strip the fields sit on column tracks shared across every record** — the list is one grid and each record, summary and fields wrapper a subgrid of it, so a heading centres over its field whatever the records hold — and below the threshold the line is the one it always was (`docs/features/record-set-heading-strip.md`). **A field placed in the body is not on this line at all**: it draws in `.sheetsmith-record-body-fields`, a wrapping flex block that is the opened body's first child, with no track and no heading, and the body gains `-has-fields` and a second grid row only when it holds one (`docs/features/record-set-body-fields.md`). **Under a group header the line is unchanged**: the group body is a subgrid of the same tracks, so the fields line up across groups and under the one strip. **The line stacks — name and delete on a row, the fields under the name — below the width its own declared fields fit at, not at one number** [judgement]: 320px was derived for a name, a labelled number, a ring and a glyph, and at containers of 338, 346 and 361px every multi-field list wrapped its fields inside their own track. So the component estimates the fit from its declared summary fields (`components/record-line-fit.ts`: each field's kind, and its name or longest option by character count at a cautious width per character), stamps it rounded up to a step of 16px as `.sheetsmith-record-set-fit-N`, and `sheet.css` tabulates one threshold per step (§4), N × 16px, in px because every width on the line is a fixed-px token and the sheet's `em` is not (it is `--font-ui-medium` in Obsidian). A line is stacked at most 2em (32px) past its measured fit, 20px at worst in the harness, and is never drawn unstacked short of it; a field name or option of unusually wide letters can still outrun the estimate. **The plain line's fields take their width before the name grows** [judgement]: the fields' track is `max-content`, so the name gets only what is left, up to its cap, and a line fits where its name reaches six ems beside its fields, `192 + F`, a plain sum and up to 73px narrower than when the two tracks grew together. The rule is gated on a style query, so an engine without one keeps the old `auto` track and its line wraps exactly as before; the strip keeps its own `repeat(N, auto)` tracks, unchanged. Where an estimate runs short the name is what gives: it clips with an ellipsis and reveals itself on hover (`ui/truncation.ts`), and never overlaps its fields (`docs/features/record-summary-fields-first.md`). **Outside the strip and the group headers, records in one list may start their fields at different offsets** [judgement]: each record's line is its own grid, so a record with fewer fields gives its name more room, and nothing lines one record's fields up with the next. **A headed list draws its plain line below its strip** wherever it fits there: plain, stacked or under its strip, one at a time. **Stacked is the narrowest layout, and below it the fields wrap** [judgement]: under about the fields' own width plus 47px (measured 46.3 to 46.8 on every harness list) a stacked line's fields flow onto a second row under the name, as the wrapping flex row they are, and there is no third layout of one field per row. On a two-field line the wrap already is one field per row, and on a longer one it takes fewer rows than one per row would (Traits' five), which would have cost a second tabulated threshold (`docs/features/record-set-stacking-tiers.md`) |
+| A record's summary line | `.sheetsmith-record`, `-summary`, `-name`, `-fields`, `-field` | Record set. **On a headed list wide enough for the strip the fields sit on column tracks shared across every record** — the list is one grid and each record, summary and fields wrapper a subgrid of it, so a heading centres over its field whatever the records hold — and below the threshold the line is the one it always was (`docs/features/record-set-heading-strip.md`). **A field placed in the body is not on this line at all**: it draws in `.sheetsmith-record-body-fields`, a wrapping flex block that is the opened body's first child, with no track and no heading, and the body gains `-has-fields` and a second grid row only when it holds one (`docs/features/record-set-body-fields.md`). **Under a group header the line is unchanged**: the group body is a subgrid of the same tracks, so the fields line up across groups and under the one strip. **The line stacks — name and delete on a row, the fields under the name — below the width its own declared fields fit at, not at one number** [judgement]: 320px was derived for a name, a labelled number, a ring and a glyph, and at containers of 338, 346 and 361px every multi-field list wrapped its fields inside their own track. So the component estimates the fit from its declared summary fields (`components/record-line-fit.ts`: each field's kind, and its name or longest option by character count at a cautious width per character), stamps it rounded up to a step of 16px as `.sheetsmith-record-set-fit-N`, and `sheet.css` tabulates one threshold per step (§4), N × 16px, in px because every width on the line is a fixed-px token and the sheet's `em` is not (it is `--font-ui-medium` in Obsidian). A line is stacked at most 2em (32px) past its measured fit, 20px at worst in the harness, and is never drawn unstacked short of it; a field name or option of unusually wide letters can still outrun the estimate. **On mobile the estimate does not follow the app's text size** [judgement]: Obsidian sets `body` to 16px there, so the line's `--font-ui-small` is 15px against the 13px every constant was measured at, and a line is drawn plain up to 42.5px short of its fit (Recharging features, stamped 592 against a fit of 634.5 at a 390 phone, `docs/features/phone-input-width.md`). The name gives, as below, to no less than 53.5px, and the fields stay in their box. Following it costs either a tier table in an `em` the line's token sets, which scales the fixed-px chrome as well and stacks the measured lists up to about 48px early, or a mobile factor in `record-line-fit.ts` that no instrument here can measure, since the stub sets no `.is-mobile`. It reopens if a mobile shortfall reaches the 96px name floor, where the fields would leave the box. **The plain line's fields take their width before the name grows** [judgement]: the fields' track is `max-content`, so the name gets only what is left, up to its cap, and a line fits where its name reaches six ems beside its fields, `192 + F`, a plain sum and up to 73px narrower than when the two tracks grew together. The rule is gated on a style query, so an engine without one keeps the old `auto` track and its line wraps exactly as before; the strip keeps its own `repeat(N, auto)` tracks, unchanged. **The strip's thresholds are px for the tiers' reason, and under it a name caps where the plain line's does** [judgement]: `232px + 96px × N`, the widths it was measured at, where the `em` it was written in drew it at 15/16 of them in the app; and the list declares `--font-ui-small` and every record inherits it, since the name's `13em` resolves where it is used and on the list it came to 208px against the plain line's 169 (`harness/measure-groups.mjs` checks 7e and 7f). **The tiers' mobile ruling above governs the strip too**: its widths were measured at a 13px `--font-ui-small` and a phone draws 15px, so scaling the measured fits by 15/13 puts the strip in before its widest fields fit from two fields up, by 5px at two and up to 64px at eight (922 × 15/13 against 1000). That is arithmetic, not a measurement, and it reopens on the tiers' condition. Where an estimate runs short the name is what gives: it clips with an ellipsis and reveals itself on hover (`ui/truncation.ts`), and never overlaps its fields (`docs/features/record-summary-fields-first.md`). **Outside the strip and the group headers, records in one list may start their fields at different offsets** [judgement]: each record's line is its own grid, so a record with fewer fields gives its name more room, and nothing lines one record's fields up with the next. **A headed list draws its plain line below its strip** wherever it fits there: plain, stacked or under its strip, one at a time. **Stacked is the narrowest layout, and below it the fields wrap** [judgement]: under about the fields' own width plus 47px (measured 46.3 to 46.8 on every harness list) a stacked line's fields flow onto a second row under the name, as the wrapping flex row they are, and there is no third layout of one field per row. On a two-field line the wrap already is one field per row, and on a longer one it takes fewer rows than one per row would (Traits' five), which would have cost a second tabulated threshold (`docs/features/record-set-stacking-tiers.md`) |
 | A word a player types to name a group | `.sheetsmith-record-input.sheetsmith-record-input-text`; `RenderContext.suggestText`; `ui/arm-on-typing.ts` | Record set's `text` field, legal only as the field Group by names (`docs/features/free-text-group-key.md`). **The number field's clothes, so it takes the shared hover and focus lists with no new selector**, plus one width rule: at most 14ch and compressible to 5ch (`width: 100%` is what lets an input shrink in a flex cell), left-aligned because a name reads from its first letter, `—` as its empty state in both placements, spellcheck off. **A list with a text field on its summary line stacks sooner**: the line's fit tier sizes the text field at its 14ch and its name by character count, so a text field and a counter fit from 448.5px and are stacked up to 464px (`docs/features/record-set-stacking-tiers.md`, and `docs/features/record-summary-fields-first.md`, which brought it down from 519 and 528; the 480px and 420px rules that first did this are gone); measured at 321px before this, the fields took 186px and the name was left 40px. **A text column's strip heading starts over its first letter** (`.sheetsmith-record-strip-text`), where a number's is centred on its ink. **The type-ahead is Obsidian's own popup**, opened on typing and never on focus alone, which `ui/arm-on-typing.ts` holds for this field and the formula inputs both; the canvas and the harness pass no `suggestText`, so the popup is looked at in Obsidian only. A group header's name is one clipped line revealed whole on hover, `ui/truncation.ts`'s own rule, so a 90-character name moves nothing |
 | A field its condition hid | the `hidden` attribute on `.sheetsmith-record-field` and `.sheetsmith-record-body-fields`, answered by one `[hidden]` rule; `--sheetsmith-record-track` | Record set (`docs/features/conditional-field-visibility.md`). **Hidden in place, not removed**: the element stays so every control's index in the cell — what the view restores focus by — is the same whatever the conditions say, and `hidden` takes it out of layout, the accessibility tree, the tab order and find-in-page together, so no `aria-hidden` and no `visibility`, which would reserve its space. Plain `hidden`, never `until-found`. The rule exists because an author `display` beats the user-agent one, and `styles.test.ts` holds every such `display` to an answer. **Space is reserved exactly where alignment exists**: an unheaded line closes up, while on a headed list's wide regime every summary field is placed in its own track by number from `--sheetsmith-record-track`, so a field after a hidden one stays under its heading and a heading may sit over a column empty on every record. A body block whose every field is hidden is hidden too, and the prose takes its row |
 | A picture in a box, and every reason there is none | `components/picture-frame.ts`; `.sheetsmith-image-frame`, `.sheetsmith-image-picture`, `.sheetsmith-image-input` | Image, Passport. **The classes are spelled `sheetsmith-image-*` and are passed *into* the painter**, `linked-text.ts`'s own arrangement, because a module beside the components must not know that an image exists — so this row is the only record that the two agree on them, and without it the agreement lives in a comment, which is how `.sheetsmith-component-label` bred to six copies. The painter draws the frame, the field stacked over it, the press that hands the field over with its text selected, and all four failure states; what a caller keeps is the box and the chrome around it, which is the one thing the two do not share |
@@ -668,8 +932,8 @@ of a meaningful glyph; **at 16px the `zap-off` slash is three short strokes, so 
 that ratio the whole mark reads as a grey smudge.** The one channel there is is
 only a channel while it can be seen, so dimming the shape was subtraction rather
 than reinforcement. Muted measures 6.41 and 7.50, and the step is unconditional
-rather than behind `prefers-contrast: more`, which §12 records as a query nothing
-here can render. Deliberately not `--text-error`: the value resolved perfectly
+rather than behind `prefers-contrast: more`, which no shot could render when this
+was decided (the `sheet-contrast-more` views emulate it now). Deliberately not `--text-error`: the value resolved perfectly
 well and is exactly what the note says, so §4.2's "rendered, not corrected"
 governs.
 
@@ -723,8 +987,49 @@ none is: the list is the panel's primary offer, one press for the layout's own
 suggestion, and the form the fallback — Tab cycles
 within it, and Escape closes it and returns focus to the control, which is the
 platform's own contract for a dialog and what makes `aria-haspopup="dialog"` true
-rather than decorative; and a phone regime, **owed and read rather than seen**,
-since nothing below a 500px viewport has ever been photographed (§12).
+rather than decorative; and a phone regime, **seen at a true 380**
+(`sheet-modifier-form-viewport-380`, `sheet-modifier-form-three-parts-viewport-380`).
+There the `100vw` cap bites at 348px, and **the clamp's gutter is the cap's**,
+16px a side (`popover.ts`'s `EDGE_GUTTER`), so a capped panel is centred and sits
+on the sheet's own column. It was the 8px anchor gap, which pushed the panel to
+24px from one edge and 8 from the other; the bubble shared the arithmetic and the
+fault. The ordinary form wraps nothing at 348, and **it fits its cap at every
+width only since the fifth rulings pass raised the cap to 570px**: `shared.css` measured the
+mixed row's form at 479 before **Note** and **Only when** joined it, and it had
+reached 547 against a 498px body, so the promote row was cut and **Add a
+modifier** was off the end of the panel at 1400 as at 380. The box's own
+`scrollHeight` read 498 throughout, since the scroll is on the body; measure the
+body.
+
+**A row with three parts and one open scrolls inside the panel, and that is
+accepted** [judgement]. Two closed lines with their reasons over the typed part's
+fields measure 625px against the body's 568, so 57px scroll: the cut falls across
+the promote row, under **Remove**, and the box's edge stays drawn because the
+scroll is on the body one element in. It is not a scroll inside the table's: the
+panel is a fixed surface on `document.body`, so the table scrolling sideways under
+it is a second scroller beside it, and the table's scroll repositions the panel on
+its anchor rather than nesting one scroller in the other. No cap fits every row,
+since each part adds a line: 570 is the tallest ordinary state with headroom, a
+row past it scrolls, and the `100vh` term holds a short phone to its own height.
+
+**The panel is bounded by the window, not by the pane that opened it, so in a
+narrow pane it overhangs the sheet, and that is the ruling** [judgement; seen in
+`sheet-modifier-form-narrow`, and pinned by `anchored-panel.test.ts`]. A 380 pane
+in a 520 window draws it at its full 390, from 105 to 495 against a sheet ending
+at 449. Three reasons, in order of weight. It is app chrome hung off
+`document.body` (§4), and the app's own floating surfaces — `Menu`, a hover
+preview, the suggester — are bounded by the window and open over whatever is
+beside the pane they came from; a plugin surface that alone stayed inside its
+pane would be the inconsistency. It is on the body in the first place to escape
+a box that would clip it, the table's overflow, and capping it at the sheet's
+column reinstates that box by arithmetic. And the cost of the other answer lands
+on the narrowest panes: in a 300px sidebar a container cap would squeeze the form
+to 268 and wrap rows that fit at 348, to avoid covering a neighbour for the few
+seconds a transient surface is open. What a narrow pane still owes is that the
+panel stays in the window and on its anchor, which the shared clamp does. At a
+true phone width the two answers coincide, since the window is the pane — which
+is why §4 says a view earns a true viewport when it holds this panel, and why
+`sheet-modifier-form-narrow` is a picture of the overhang and not of a phone.
 
 **What it holds is a list and one disclosure**, and the state each line carries is
 its own words plus its own mark: `zap` / `zap-off` per line, the same mark the
@@ -972,8 +1277,8 @@ it is a floor rather than a height.** `--sheetsmith-grid-row` is `4.75em`
 genuinely has no row height to derive from — the sheet's rows are content-sized —
 so what a placed box actually gets is `max(the row's own height, 4.75em × rows)`,
 and `SPEC` §8's "`height` grid rows tall whatever is in it" is that, approximated.
-`em` rather than pixels so it follows the vault's text size the way a card's
-headline does.
+`em` rather than pixels so it follows the sheet's size the way a card's
+headline does (§5 says what sets that).
 
 **Why the approximation is safe is the direction it can be wrong in.** Where a
 card in the same grid row is taller, the row grows and a placed box fills it —
@@ -1057,6 +1362,36 @@ and two selects at two sizes are the card and the cell agreeing about what a men
 is. What they do share is the reason both have to carry the view scope (§2):
 Obsidian's bare `select` rule sets a height, a background, a shadow and a font
 size, and `styles.test.ts` covers the `-select` naming for it.
+
+**A menu on a sheet wears one chevron, drawn by one rule, and each control places
+it** [judgement; seen in `sheet-record-groups` and its contrast and dark twins,
+and a cell's in the Languages table on `sheet-light`, `sheet-dark`,
+`sheet-forced-colors` and `sheet-contrast-more`].
+A select that has had the app's chrome taken off is a word in a box, and nothing
+else says it opens a list: a record's Spells read `None` and its recharging lists
+`Short rest` as typed text until the sixth rulings pass gave them the
+card's mark. So the mark is one selector list, `.sheetsmith-card-dropdown::after`,
+`.sheetsmith-record-menu::after` and `.sheetsmith-table-menu::after`, carrying the shape, the size and the lift each placement centres on (`--sheetsmith-chevron-size`, `--sheetsmith-chevron-lift`, declared on the mark, not knobs) in the menu's
+own `em`, the muted stroke and its raise to `--text-normal` under
+`prefers-contrast: more`; **where it sits is the control's**, because the two
+are not the same object (the paragraph above). A card's chevron is a flex sibling
+beside a borderless value, so the pair centres together. A record's sits
+*inside* the select's hairline, at its end, over padding the select keeps for it,
+since there the hairline is the control's whole shape and a mark outside it would
+read as a second thing; it takes no pointer, so pressing it presses the select.
+Both ride on a wrapper because a `<select>` carries no pseudo-element, and both
+are borders rather than an image, so forced colors repaints them (§1). **One
+mark rather than two similar ones**, so a reader learns one sign; a third menu
+joins the list rather than drawing its own, which is what a Table's and a
+Roster's cell select did in the seventh rulings pass. That select keeps the
+app's field box as the platform draws it, so the mark sits inside it at its
+end on the record's placement rule, by selector list: `.sheetsmith-table-menu`,
+the wrapper both components draw. Before it a level column set to a select read
+as a text box. **The box is not the sign everywhere, so the chevron is**: on
+desktop the box is white with an inset shadow and outlines the control, but on
+a tablet `.is-mobile` takes the shadow off and draws a grey pill, `#f6f6f6` on
+a `#fafafa` row, about 1.03:1, which outlines nothing (`sheet-tablet`), and
+there the chevron is the one thing saying the word opens a list.
 
 The delete glyph is deliberately **not** a shared class. It borrows the level
 ring's measurements through `--sheetsmith-inline-control`, because two glyph
@@ -1168,6 +1503,15 @@ generated per instance there rather than being a module literal, because a modal
 can be opened, closed and opened again where a pane's row is replaced whole by a
 redraw.
 
+**An app path quoted in arrow notation keeps each multi-word label whole and
+breaks at its arrows; a line may end on an arrow but never begins with one**
+[judgement]. A trailing `→` says a step follows, where a leading one reads as a
+continuation of nothing. So a no-break space goes inside a label and before its
+arrow, never after one, which leaves the space after an arrow as the only break;
+binding the whole path is out too, since it overflows a narrow column. The
+**Character folder** description is the instance: at 620 it wraps
+`Settings → Files and links →` over `Default location for new notes.`
+
 ---
 
 ## 10. Failure appears in place
@@ -1182,6 +1526,54 @@ pane's place, not a global one, and it never displaces the row.
 
 Error text names the fix: `"max: 'con' is not defined on this sheet"`, not
 `"could not resolve"`.
+
+**Every fenced component's read failure is drawn in `sheet-error`, one breakage
+each, so no message appears twice** [judgement]: a Track flag holding `maybe`, a
+Card set line with its colon gone, a Pool key written twice and a Card fence never
+closed. The last three are three of the four shapes `readFenced` refuses; the
+fourth, a section holding a second sheet block, is not drawn. A value
+of the wrong kind is not one for Card, Card set or Pool, which read every value as
+text. Which component carries which is argued in `harness/samples.ts`'s
+`brokenSamples()`.
+
+**Each of `readFenced`'s four refusals is the fault and then the fix, and the fix
+names the note** [checked: `fenced.test.ts`]: `Line "GP 7" is not a "key: value"
+entry. Put a colon between its key and its value in the note, or delete the
+line.`, `Duplicate key "max" in sheet block. Keep one "max" line in the note and
+delete the rest.`, `Sheet block is never closed. Add a line holding only ``` after
+its last entry in the note.`, and `Section has more than one sheet block. Merge
+them into one in the note, or delete the extra one.` In the parser rather than in
+each component, because Card, Card set, Pool, Track, Passport and Roster all hand
+the message on verbatim and six copies of one piece of advice drift. **The fix
+says "in the note"** because nothing on the sheet can repair a block it cannot
+read, and the reader may never have opened the note in source mode. A record
+adds only what its list alone knows: `Every other spell on this list still
+works.`, where it used to add a fix of its own, which with the parser's would
+have said the fix twice. **Track's refusal of a value its run cannot read takes
+the same shape** [checked: `track.test.ts`]: `"maybe" is not yes or no. Write yes
+or no after its key in the note.` on a flag, `… is not a number of marks. Write a
+whole number after its key in the note.` on a run. Those six are every refusal a
+component makes of its sheet block: Card, Card set and Pool read every value as
+text, Passport's other refusals are of its layout, and Roster's of its markdown
+table, which is not this rule's subject.
+
+**A fence key's refusal is the parser's reason and the caller's fix, and on the
+sheet the fix names the layout editor** [checked: `card.test.ts`,
+`roster.test.ts`, `record-set.test.ts`, `track.test.ts`]. A key holding a colon
+is the layout's fault, not the note's, so `fencedKeyProblem` states the rule
+and its reason and stops: `The key cannot contain a colon or a line break,
+because the sheet block separates key from value with a colon. Rename it under
+Key in the layout editor.` on a Card (`sheet-error`: Armour class, Carried,
+Load), and the same clause ending `Rename it under Stats …`, `… under Fields …`
+and `… under Rows in the layout editor.` on a Roster's stat, a Record set's
+field and a Track's row key. **The fix is each caller's because the clause has
+three readers who repair it in three places**: Track's **Add** form refuses a
+row name the character just typed with `Take the colon out of the name.`,
+since the draft is kept in the field beside the message; and the layout
+editor's own key fields end the clause with what the field was left holding,
+the grammar of every field mark in the pane, since the mark sits under the
+field it refuses. Passport's `nameKey` and field keys fall back silently and
+draw no message.
 
 ---
 
@@ -1201,13 +1593,15 @@ Run `npm run harness`. Check each of these, because none is visible in code.
   programmatic focus paints what a tab press paints
 - **hover, which needs a browser being driven rather than pointed at a file.**
   `:hover` matches on the real pointer position and nothing in the page can move
-  it, so a `hover:` view in `harness/shot.mjs` opens the headless Chrome it
-  already launches over the DevTools Protocol and dispatches a real `mouseMoved`.
+  it, so a `hover:` view in `harness/shot.mjs` drives headless Chrome over the
+  DevTools Protocol (`harness/cdp.mjs`) and dispatches a real `mouseMoved`.
   It adds no dependency — `fetch` and Node's own `WebSocket`, the technique
   `harness/inspect.mjs` already uses against the installed app — and a real move
   rather than `CSS.forcePseudoState`, because half of what a hover does here is a
   `pointerenter` handler. Until it existed no hover treatment on a sheet had ever
-  been photographed
+  been photographed. The same path takes `hold:` (a press held mid-gesture),
+  `media:` (an emulated feature such as `prefers-contrast: more`) and any frame
+  under 500px wide, which `--screenshot` renders at 500 and crops
 - **a refusal at the commit**, which is a class of surface no fixture can hold:
   `editable.ts` reports one on *blur*, so the sentence exists only after somebody
   types and looks away. `&type=<selector>|<text>` sets a field and leaves it, and
@@ -1217,10 +1611,12 @@ Run `npm run harness`. Check each of these, because none is visible in code.
   drawn nowhere. A stored body cannot stand in for any of them, because a note
   that already holds the offending value is rendered and carried under SPEC §10
 - an error state and an empty state, not only the populated one
-- a larger text size (`Text → 24`, or `sheet-large-text.png`): does truncation
-  grow, does the hierarchy reorder, does anything collide. §5 rests the card on
-  relative units so it follows the vault setting, and that is where the claim is
-  either true or not
+- a larger sheet size (the harness's `Text → 24`, or `sheet-large-text.png`):
+  does truncation grow, does the hierarchy reorder, does anything collide. §5
+  rests the card on relative units so it follows the sheet's `em`, which a
+  theme or snippet moves and the vault's text-size setting does not, and that
+  is where the claim
+  is either true or not
 
 **A harness that rebuilds on hover cannot review anything a pointer does.** The
 fake link context redrew the sheet on a preview, so the element under the pointer

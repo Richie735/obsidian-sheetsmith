@@ -173,7 +173,7 @@ describe('track.read', () => {
 		const result = track.read('\n```sheet\nvalue: lots\n```\n', config);
 		expect(result).toEqual({
 			ok: false,
-			error: '"lots" is not a number of marks.',
+			error: '"lots" is not a number of marks. Write a whole number after its key in the note.',
 		});
 	});
 
@@ -280,8 +280,9 @@ describe('track config errors', () => {
 		expect(
 			configError({ ...slots, rows: [{ key: 'L1' }, { key: 'L1' }] }),
 		).toContain('both called');
-		expect(configError({ ...slots, rows: [{ key: 'a:b' }] })).toContain(
-			'cannot contain a colon',
+		// A layout refusal: the fix is the layout editor's field, not the note.
+		expect(configError({ ...slots, rows: [{ key: 'a:b' }] })).toBe(
+			'The row key "a:b" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Rows in the layout editor.',
 		);
 	});
 
@@ -1314,6 +1315,18 @@ describe('a row whose length the character owns', () => {
 		expect(runSegments(el, 0)).toHaveLength(4);
 	});
 
+	it('gives the length field the full keyboard, since it settles arithmetic', () => {
+		// iOS's `numeric` keypad has no operator to type `4+2` with
+		// (docs/UI.md §7).
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '1 / 4' } }, context);
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		expect(field?.inputMode).toBe('text');
+	});
+
 	it('prefills the length field from the stored ceiling', () => {
 		const el = document.createElement('div');
 		document.body.appendChild(el);
@@ -1985,14 +1998,15 @@ describe('a Track the character may add rows to', () => {
 			const read = track.read(body, kills);
 			expect(read).toEqual({
 				ok: false,
-				error: 'Duplicate key "Goblins" in sheet block.',
+				error:
+					'Duplicate key "Goblins" in sheet block. Keep one "Goblins" line in the note and delete the rest.',
 			});
 		});
 
 		it('is a malformed section where a value half is not marks', () => {
 			expect(track.read('\n```sheet\nGoblins: frog\n```\n', kills)).toEqual({
 				ok: false,
-				error: '"frog" is not a number of marks.',
+				error: '"frog" is not a number of marks. Write a whole number after its key in the note.',
 			});
 		});
 
@@ -2034,6 +2048,14 @@ describe('a Track the character may add rows to', () => {
 			expect(form.lines).toHaveLength(0);
 			expect(form.name).toBeDefined();
 			expect(form.submit.textContent).toBe('Add');
+		});
+
+		it('keeps the keypad on the length, a segment count taking bare digits', () => {
+			// The one field here a digits-only keypad fits: it settles no
+			// arithmetic, unlike the row's own length field (docs/UI.md §7).
+			const form = openAddForm(renderEmpty(kills));
+			expect(form.length.inputMode).toBe('numeric');
+			expect(form.name.inputMode).toBe('');
 		});
 
 		it('sits under the declared rows a card still has to offer', () => {
@@ -2192,8 +2214,10 @@ describe('a Track the character may add rows to', () => {
 			// pasted or typed, so the other half is unreachable from a
 			// single-line field and is refused for the hand-edited layout the
 			// shared clause is also read at.
-			expect(refusal('Armor: class')).toContain(
-				'cannot contain a colon or a line break',
+			// The fix is the field the name was typed into, which keeps the
+			// refused draft, and not the layout editor the other refusals name.
+			expect(refusal('Armor: class')).toBe(
+				'A row name cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Take the colon out of the name.',
 			);
 		});
 
@@ -3229,12 +3253,12 @@ describe('a flag track', () => {
 			// fix they could not use (SPEC §10).
 			expect(track.read('\n```sheet\nvalue: maybe\n```\n', flag)).toEqual({
 				ok: false,
-				error: '"maybe" is not yes or no.',
+				error: '"maybe" is not yes or no. Write yes or no after its key in the note.',
 			});
 			// And a run of segments still says marks, since that is what it holds.
 			expect(
 				track.read('\n```sheet\nvalue: maybe\n```\n', { ...flag, count: 6 }),
-			).toEqual({ ok: false, error: '"maybe" is not a number of marks.' });
+			).toEqual({ ok: false, error: '"maybe" is not a number of marks. Write a whole number after its key in the note.' });
 		});
 
 		it('round-trips a flag section byte for byte', () => {

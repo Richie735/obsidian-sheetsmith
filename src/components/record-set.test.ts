@@ -32,7 +32,7 @@ import { sampleOf } from '../test/sample';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { parseModifierPart } from '../parse/modifier-cell';
-import { hold } from '../test/pointer';
+import { hold, pressToFocus } from '../test/pointer';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
 import { hoverClip, setClip } from '../test/clipped';
@@ -290,10 +290,10 @@ describe('recordSet.read', () => {
 		const held = readData(body).records;
 		expect(held[0]?.error).toBeNull();
 		expect(held[1]?.error).toContain('not an entry');
-		// And it names the action rather than only the fault (PATTERNS §4).
-		expect(held[1]?.error).toContain(
-			'every other one on this list still works',
-		);
+		// And it names the action rather than only the fault (PATTERNS §4):
+		// the fence's own fix, then the list's word that the rest still works.
+		expect(held[1]?.error).toContain('Put a colon between its key and its value in the note');
+		expect(held[1]?.error).toMatch(/Every other \w+ on this list still works\.$/);
 	});
 
 	it('reports a fence that never closes, and keeps the record', () => {
@@ -612,7 +612,7 @@ describe('recordSet configuration', () => {
 
 	it('refuses a key a fence could not hold, and a repeated one', () => {
 		expect(refuses([{ key: 'Uses: left', type: 'number' }])).toContain(
-			'cannot contain a colon',
+			'The field "Uses: left" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Fields in the layout editor.',
 		);
 		expect(
 			refuses([
@@ -1866,8 +1866,9 @@ describe('a ceiling that is a formula', () => {
 		for (const record of [typed, formula]) {
 			expect(ceilingField(record).inputMode).toBe('text');
 		}
-		// The value field keeps its keypad.
-		expect(valueField(typed).inputMode).toBe('numeric');
+		// And so does the value beside it, which may be negative or a fraction:
+		// iOS's `numeric` keypad is digits alone (docs/UI.md §7).
+		expect(valueField(typed).inputMode).toBe('text');
 		const step = (input: HTMLInputElement) => {
 			input.focus();
 			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
@@ -3768,7 +3769,8 @@ describe('a strip of field names over the list', () => {
 
 		it('sizes a level drawn as a dropdown by its longest option', () => {
 			// Spells' line: `Level / 9`, a toggle and a school dropdown, measured to
-			// fit at 418px; estimated at 424.2, so 27 steps.
+			// fit at 430px since the dropdown keeps room for its chevron; estimated
+			// at 436.2, so 28 steps.
 			const spells = render(
 				{
 					...HEADED,
@@ -3786,7 +3788,7 @@ describe('a strip of field names over the list', () => {
 				},
 				HEADED_BODY,
 			);
-			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-27']);
+			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-28']);
 			// The same level as a ring is one mark wide: 96 + 178.9 + 96 = 370.9px, so 24.
 			const ring = render(
 				{
@@ -4320,6 +4322,9 @@ describe('a field inside the opened record', () => {
 			(record) => record.querySelector('.sheetsmith-record-select') as HTMLElement,
 			(control) => {
 				const select = control as HTMLSelectElement;
+				// The wrapper is what carries the chevron, which a select cannot
+				// (`docs/UI.md` §9): without it the menu reads as typed text.
+				expect(select.parentElement?.classList.contains('sheetsmith-record-menu')).toBe(true);
 				select.value = '2';
 				select.dispatchEvent(new Event('change'));
 			},
@@ -8161,5 +8166,21 @@ describe('a text field as the group key', () => {
 			const { host } = live({}, sample);
 			expect(groupNames(host)).toEqual(['Fighter', 'Wizard']);
 		});
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: a record's name does not step,
+ * so even a name that is a number keeps the caret where the tap put it.
+ */
+describe('record set: focusing a record name', () => {
+	it('does not select a name that happens to be a number', () => {
+		const el = render({}, ['', '### 1984', '```sheet', 'Uses: 1', '```', ''].join('\n'));
+		const name = nameFields(el)[0];
+		if (!name) throw new Error('expected the name field');
+		expect(name.value).toBe('1984');
+		name.setSelectionRange(2, 2);
+		pressToFocus(name, 'touch');
+		expect([name.selectionStart, name.selectionEnd]).toEqual([2, 2]);
 	});
 });

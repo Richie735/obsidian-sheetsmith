@@ -267,6 +267,12 @@ Nothing stored, nothing changed. CSS in `src/styles/sheet.css` (then
   `SelectedItem`) and not over an unlit part. This is pre-existing and is a
   question about where marks fall inside a segment, not about the value. If the
   review confirms it, the build adds a row for it rather than fixing it here.
+  **Since fixed** (the fourth sheet-UI rulings pass): the divider is a 1px
+  `border-left`, which the mode repaints `CanvasText`, and on a segment lit at
+  all it is two-toned on this block's `-on` key, a `SelectedItemText` pixel
+  beside a `CanvasText` one, as the slash is. The harness's Quartered card puts
+  a wholly lit, a partly lit and an unlit four-mark segment in
+  `sheet-forced-colors`.
 - The harm grade in this mode. It fills flat, by the `prefers-contrast` block's
   own rule.
 - A new harness view. The default `sheet-forced-colors` already stages a Track

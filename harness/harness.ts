@@ -36,10 +36,11 @@ import {
 } from '../src/types';
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
+import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
-import { App } from '../src/test/obsidian-stub';
+import { App, Platform } from '../src/test/obsidian-stub';
 import {
 	driveDrag,
 	drivePicker,
@@ -54,6 +55,7 @@ import {
 	emptySamples,
 	Sample,
 	SAMPLES,
+	threePartSamples,
 	unmodifiedSamples,
 	pinnedAddSamples,
 	recordGroupSamples,
@@ -73,7 +75,8 @@ type StateName =
 	| 'pinned-add'
 	| 'record-groups'
 	| 'text-groups'
-	| 'notes';
+	| 'notes'
+	| 'three-parts';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -83,6 +86,17 @@ interface Live {
 	data: unknown;
 	error: string | null;
 }
+
+/*
+ * The platform the page was staged as, read once before anything renders.
+ * `platform=phone` and `platform=tablet` (`harness/cdp.mjs`'s `stagePlatform`)
+ * put `is-mobile` on `body` before this script runs, and the app sets
+ * `Platform.isMobile` on the same devices, so a phone shot draws the controls
+ * the app draws there — `addControls`' arrows rather than a desktop's drag
+ * handle. Here rather than in the stub, which tests import: a test sets the flag
+ * itself, so no body class left over from one case can reach the next.
+ */
+Platform.isMobile = document.body.classList.contains('is-mobile');
 
 const stage = document.getElementById('stage') as HTMLElement;
 
@@ -102,6 +116,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'record-groups') return recordGroupSamples();
 	if (name === 'text-groups') return textGroupSamples();
 	if (name === 'notes') return notesSamples();
+	if (name === 'three-parts') return threePartSamples();
 	return SAMPLES;
 }
 
@@ -398,8 +413,15 @@ const openRecords = new Map<string, Set<number>>([
 	['rest_features', new Set([0])],
 ]);
 
+/**
+ * The sheet's own root, the element the view's `contentEl` stands for, so
+ * `draw` can carry focus and scroll across a rebuild as the view does.
+ */
+let sheetRoot: HTMLElement | null = null;
+
 function renderSheet(into: HTMLElement): void {
 	const view = into.createDiv('sheetsmith-view');
+	sheetRoot = view;
 
 	const grid = view.createDiv('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
@@ -604,6 +626,17 @@ function draw(): void {
 	// plugin does not have: without it the canvas's arrow keys stop after the
 	// first write, here and nowhere else.
 	const focused = document.activeElement;
+	/*
+	 * **And the sheet's focus and scroll, through the view's own function and so
+	 * in the view's own order** (`src/view/sheet-posture.ts`). A commit here redraws everything, and without them
+	 * focus fell to the body on every edit, which the app never does, so a check
+	 * of what a commit leaves on screen measured the instrument rather than the
+	 * plugin (`docs/features/table-scroll-across-rebuild.md`). Read from the old
+	 * sheet before it goes, as `renderSheet` reads `contentEl` before it empties
+	 * it. No pixels: every shot draws a fresh state, so there is nothing to carry.
+	 */
+	const before = sheetRoot?.isConnected === true ? sheetRoot : null;
+	const posture = before === null ? null : capturePosture(before);
 	stage.replaceChildren();
 
 	const column = (build: (into: HTMLElement) => void): void => {
@@ -618,6 +651,9 @@ function draw(): void {
 	if (surface === 'settings' && settingsPane) {
 		column((into) => into.appendChild(settingsPane as HTMLElement));
 	}
+	if (posture !== null && sheetRoot !== null && sheetRoot !== before) {
+		restorePosture(sheetRoot, posture);
+	}
 	if (
 		focused instanceof HTMLElement &&
 		focused.isConnected &&
@@ -628,16 +664,21 @@ function draw(): void {
 }
 
 /**
- * The base font size the sheet's relative units resolve against, which is the
- * thing a reader's vault text size setting actually moves. `0` leaves the
- * inherited size alone.
+ * The base font size the sheet's relative units resolve against. `0` leaves the
+ * inherited size alone, which is 16px here against the app's 15.
+ *
+ * **Not the vault's text-size setting**, which this used to claim. Obsidian
+ * 1.14.4 sets `body` to `--font-ui-medium` and nothing on a view, and the
+ * setting reaches only `--font-text-size`, which the markdown views read. So the
+ * sheet's `em` moves for a theme or a snippet that sets a size on it, and that is
+ * what `text=` stands for (UI.md §5).
  *
  * It moves every `em`-relative rule the plugin declares — the card's headline
  * number, the level ring and the delete glyph beside it, the 0.85 secondary
  * sizes — and deliberately not Obsidian's fixed-px `--font-ui-*` tokens, which
  * do not move for the user either. So a shot at 24 shows exactly what UI.md
- * §5's "relative units, so the card scales with the user's setting" is worth,
- * and claims nothing beyond it.
+ * §5's "relative units, so the card scales with whatever sets the sheet's size"
+ * is worth, and claims nothing beyond it.
  */
 function setText(size: string): void {
 	stage.style.fontSize = size === '0' ? '' : `${size}px`;
@@ -800,7 +841,8 @@ function applyQuery(): void {
 			wanted === 'pinned-add' ||
 			wanted === 'record-groups' ||
 			wanted === 'text-groups' ||
-			wanted === 'notes'
+			wanted === 'notes' ||
+			wanted === 'three-parts'
 			? wanted
 			: 'populated',
 	);

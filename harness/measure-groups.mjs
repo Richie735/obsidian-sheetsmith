@@ -10,8 +10,8 @@
  * (`docs/features/free-text-group-key.md`), where check 5 also holds the strip
  * to being centred over the text column's field.
  *
- * It drives Chrome over the DevTools Protocol, as `inspect.mjs` does, and exits
- * non-zero if any check fails. It prints the numbers.
+ * It drives Chrome over the DevTools Protocol through `cdp.mjs`, which
+ * `shot.mjs`'s driven path shares, and exits non-zero if any check fails. It prints the numbers.
  *
  *  1. The sheet does not move: every cell's and placed box's rectangle is
  *     identical across collapse of the tallest group, collapse of all, and
@@ -49,65 +49,60 @@
  *     c. no list is stacked and under its strip at once;
  *     d. in the forced-plain sweep, at every width from 150 to 1300px and not
  *        only past the fit, no record's name box passes the left edge of its
- *        fields: a name narrowed under its floor clips, and never overlaps.
+ *        fields: a name narrowed under its floor clips, and never overlaps;
+ *     e. under its strip, at every width it is drawn, no record's name is
+ *        under 96px and no field passes the delete glyph — the constraint the
+ *        strip's px thresholds were measured to;
+ *     f. at 1300px a name under the strip is exactly as wide as the plain
+ *        line's at the same width, so the cap does not move as the strip comes
+ *        in (`docs/features/record-set-heading-strip.md`).
  *     It prints, per list, where it is stacked to, where its plain line fits
  *     from and where its strip comes in.
+ *  8. At a 520px container in `populated`, beside every open table's sticky
+ *     name that its table scrolls under (`docs/UI.md` §4): a. the room is at
+ *     least its band — one number cell, or one glyph cell on a table stamped
+ *     `sheetsmith-table-glyph-band` — unless the name column is as wide as its heading,
+ *     which is never clipped; b. every cell's content but prose, its width less
+ *     its padding, fits in that room. It prints each table's scroller, name and
+ *     room, which are the figures the §4 ruling quotes, and the same at
+ *     `text=24` without holding them: the residue that ruling records.
+ *  9. Beside every sticky name, in every table and Roster that scrolls, at a
+ *     520px container and at a true 380 under phone staging, each at the
+ *     default type size and at `text=24`: scrolled fully right, a real Shift-Tab
+ *     onto each control leaves it clear of its row's name (`docs/UI.md` §4,
+ *     `ui/pinned-column-focus.ts`). Real key events, not `focus()`: the
+ *     browser's own scroll is half of what is measured.
+ * 10. In the same tables and Rosters, at the same two widths and two type sizes
+ *     under the same staging: scrolled fully right, the rightmost control that
+ *     commits by key is committed with real keys (a new value and Enter in a
+ *     field, Space on a ring), and after the rebuild a. the same control has
+ *     focus, b. the scroller is back within a pixel of its offset, and c. the
+ *     control starts inside the scrollport, clear of its row's name
+ *     (`docs/features/table-scroll-across-rebuild.md`). Past the far edge is
+ *     printed, not failed, where it is a field wider than the room beside the
+ *     name and was already as far past before the commit, within a pixel
+ *     (`docs/UI.md` §4), or where
+ *     the commit widened a column ahead of it: the accepted drift. It prints
+ *     every offset before and after.
  */
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import WebSocket from 'ws';
+import { CHROME, launch, loadStaged, wait as sleep } from './cdp.mjs';
 
-const CHROME = [
-	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	'/Applications/Chromium.app/Contents/MacOS/Chromium',
-	'/usr/bin/google-chrome',
-	'/usr/bin/chromium',
-].find((path) => existsSync(path));
+/**
+ * What counts as a control: `src/view/cell-focus.ts`'s `FOCUSABLE`, which check
+ * 10's same-control test has to count by. Spelled here once because this script
+ * runs in Node and cannot import the TypeScript.
+ */
+const FOCUSABLE = 'input, select, textarea, button, a[href]';
+
 if (!CHROME) {
 	console.error('No Chrome-family browser found.');
 	process.exit(1);
 }
 const root = fileURLToPath(new URL('.', import.meta.url));
-const PORT = 9334;
 const STATE = process.argv[2] ?? 'record-groups';
-const proc = spawn(
-	CHROME,
-	['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, '--window-size=1400,1900', 'about:blank'],
-	{ stdio: 'ignore' },
-);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-let tabs;
-for (let tries = 0; tries < 30 && !tabs; tries++) {
-	await sleep(300);
-	try {
-		tabs = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-	} catch {
-		/* not up yet */
-	}
-}
-const ws = new WebSocket(tabs.find((tab) => tab.type === 'page').webSocketDebuggerUrl);
-await new Promise((resolve) => ws.on('open', resolve));
-let next = 0;
-const pending = new Map();
-ws.on('message', (raw) => {
-	const message = JSON.parse(raw);
-	if (message.id && pending.has(message.id)) {
-		pending.get(message.id)(message);
-		pending.delete(message.id);
-	}
-});
-const send = (method, params = {}) =>
-	new Promise((resolve) => {
-		const id = ++next;
-		pending.set(id, resolve);
-		ws.send(JSON.stringify({ id, method, params }));
-	});
-const evaluate = async (expression) => {
-	const reply = await send('Runtime.evaluate', { expression, returnByValue: true });
-	if (reply.result.exceptionDetails) throw new Error(JSON.stringify(reply.result.exceptionDetails));
-	return reply.result.result.value;
-};
+const browser = await launch(['--window-size=1400,1900']);
+const { send, evaluate } = browser;
 async function load(theme, width, viewport) {
 	await send('Emulation.setDeviceMetricsOverride', { width: viewport, height: 1900, deviceScaleFactor: 1, mobile: false });
 	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=${theme}&state=${STATE}&width=${width}` });
@@ -285,7 +280,7 @@ await load('light', 520, 620);
 
 }
 
-// 7. Where every list's line stacks: checks a, b, c and d.
+// 7. Where every list's line stacks: checks a to f.
 async function loadState(state, text) {
 	await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1900, deviceScaleFactor: 1, mobile: false });
 	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${text}` });
@@ -296,7 +291,7 @@ const SWEEP = `(()=>{
  const overlaps=(s)=>{const f=s.querySelector('.sheetsmith-record-fields');if(!f||![...f.children].some(x=>!x.hidden))return false;return s.querySelector('.sheetsmith-record-name').getBoundingClientRect().right>f.getBoundingClientRect().left+0.5;};
  const lines=(fs)=>{const bs=fs.map(f=>f.getBoundingClientRect()).sort((a,b)=>a.top-b.top);let n=0,bottom=-1e9;for(const b of bs){if(b.top>=bottom-1){n++;bottom=b.bottom;}else bottom=Math.max(bottom,b.bottom);}return n;};
  const blocks=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-record-set')].filter(b=>b.querySelector('.sheetsmith-record-summary'));
- const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],overlap:[],stackedTo:null,stripFrom:null,fit:null}));
+ const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],overlap:[],stripBad:[],stripName:null,plainName:null,stackedTo:null,stripFrom:null,fit:null}));
  const sweep=(b,each)=>{b.style.flex='none';b.style.justifySelf='start';b.style.maxWidth='none';for(let w=150;w<=1300;w+=0.5){b.style.width=w+'px';void b.offsetWidth;if(each(w))break;}};
  blocks.forEach((b,i)=>{const o=out[i];sweep(b,(w)=>{
   const strip=getComputedStyle(b.querySelector('.sheetsmith-record-set-box')).getPropertyValue('--sheetsmith-record-strip').trim()==='on';
@@ -304,7 +299,7 @@ const SWEEP = `(()=>{
   let stacked=false,bad=false;
   for(const s of b.querySelectorAll('.sheetsmith-record-summary')){const f=s.querySelector('.sheetsmith-record-fields');
    if(getComputedStyle(f).gridRowStart==='2'){stacked=true;continue;}
-   if(strip)continue;
+   if(strip){if(s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))o.stripBad.push(w);if(w===1300)o.stripName=Math.max(o.stripName??0,s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width);continue;}
    if(lines([...f.children].filter(x=>!x.hidden))>1||s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))bad=true;}
   if(stacked)o.stackedTo=w; if(bad)o.wrap.push(w); if(stacked&&strip)o.both.push(w); return false;});});
  const force=document.createElement('style');force.textContent='.sheetsmith-record-set-box{--sheetsmith-record-stack: off !important}';document.head.appendChild(force);
@@ -312,6 +307,7 @@ const SWEEP = `(()=>{
   for(const f of b.querySelectorAll('.sheetsmith-record-summary .sheetsmith-record-field'))f.removeAttribute('hidden');
   sweep(b,(w)=>{const summaries=[...b.querySelectorAll('.sheetsmith-record-summary')];
    if(summaries.some(overlaps))o.overlap.push(w);
+   if(w===1300)o.plainName=Math.max(...summaries.map(s=>s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width));
    const ok=summaries.every(s=>{const f=s.querySelector('.sheetsmith-record-fields');return lines([...f.children])<=1&&s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width>=96&&!pastDelete(s);});if(ok&&o.fit===null)o.fit=w;return false;});});
  return out;})()`;
 /**
@@ -335,10 +331,167 @@ for (const state of [...new Set(['populated', STATE])]) {
 			check(one.fit !== null && past <= PAST_PX, `${at} ${one.name}: (b) stacked no more than 2em past its fit`, `${past}px past`);
 			check(one.both.length === 0, `${at} ${one.name}: (c) never stacked under its strip`, one.both.slice(0, 4).join(','));
 			check(one.overlap.length === 0, `${at} ${one.name}: (d) no name passes its fields`, one.overlap.slice(0, 4).join(','));
+			if (one.stripFrom !== null) {
+				check(one.stripBad.length === 0, `${at} ${one.name}: (e) under its strip no name is under 96px and no field passes the delete glyph`, one.stripBad.slice(0, 4).join(','));
+				check(one.stripName !== null && Math.abs(one.stripName - one.plainName) <= 0.5, `${at} ${one.name}: (f) under its strip a name caps where the plain line's does`, `${one.stripName} against ${one.plainName}`);
+			}
 		}
 	}
 }
 
-ws.close();
-proc.kill();
+// 8. The room beside an open table's sticky name, at a 520px container.
+const ROOM = `(()=>{
+ const px=(e,p)=>parseFloat(getComputedStyle(e)[p]);
+ return [...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-box')].map(box=>{
+  const sc=box.querySelector('.sheetsmith-table-wrapper');const t=sc.querySelector('.sheetsmith-table');
+  const glyph=box.classList.contains('sheetsmith-table-glyph-band');
+  const probe=document.createElement('div');probe.style.width=glyph?'calc(var(--sheetsmith-inline-control) + 2 * var(--size-4-2))':'calc(4 * var(--font-ui-small) + 2 * var(--size-4-2))';if(glyph)probe.style.fontSize='var(--font-ui-small)';box.appendChild(probe);const band=probe.getBoundingClientRect().width;probe.remove();
+  const name=t.querySelector('.sheetsmith-table-name').getBoundingClientRect().width;
+  const room=sc.clientWidth-name;
+  const head=t.querySelector('thead .sheetsmith-table-name');let heading=0;if(head){const g=document.createRange();g.selectNodeContents(head);heading=g.getBoundingClientRect().width+px(head,'paddingLeft')+px(head,'paddingRight');}
+  const cut=[...t.querySelectorAll('tr')].flatMap(tr=>[...tr.children].filter(c=>!c.classList.contains('sheetsmith-table-name')&&!c.classList.contains('sheetsmith-table-text')).map(c=>({h:c.textContent.trim().slice(0,12),w:c.getBoundingClientRect().width-px(c,'paddingLeft')-px(c,'paddingRight')}))).filter(c=>c.w>room+0.5);
+  return {label:box.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?',scroller:sc.clientWidth,overflows:t.getBoundingClientRect().width>sc.clientWidth+0.5,name:Math.round(name*10)/10,room:Math.round(room*10)/10,band,glyph,cut,byHeading:heading>=name-0.5};
+ });})()`;
+async function loadRoom(text) {
+	await send('Emulation.setDeviceMetricsOverride', { width: 620, height: 1900, deviceScaleFactor: 1, mobile: false });
+	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=populated&width=520&text=${text}` });
+	await sleep(2500);
+}
+// At `text=24` printed and not held: the name's heading is `em` and grows past
+// the room there, which `docs/UI.md` §4 records as the residue.
+await loadRoom(24);
+for (const one of (await evaluate(ROOM)).filter((each) => each.overflows)) {
+	console.log(`      520 text=24 ${one.label}: scroller ${one.scroller}, name ${one.name}, room ${one.room}, cut ${JSON.stringify(one.cut.slice(0, 3))}`);
+}
+await loadRoom(0);
+const tables = await evaluate(ROOM);
+check(tables.some((one) => one.overflows), '(8) at 520 at least one open table scrolls beside its sticky name, or this check holds nothing');
+for (const one of tables.filter((each) => each.overflows)) {
+	console.log(`      520 ${one.label}: scroller ${one.scroller}, name ${one.name}, room ${one.room}${one.glyph ? ', a glyph band' : ''}${one.byHeading ? ', the name column set by its heading' : ''}`);
+	// A name heading is never clipped (§4), so a column its heading sets is the
+	// one case the room may be under a number cell; (b) still holds there.
+	if (!one.byHeading) check(one.room >= one.band - 0.5, `520 ${one.label}: (8a) the room beside the sticky name is at least its band: one number cell, or one glyph where every trailing cell is one`, `${one.room} against ${one.band}`);
+	check(one.cut.length === 0, `520 ${one.label}: (8b) every cell's content but prose shows whole beside it`, JSON.stringify(one.cut.slice(0, 3)));
+}
+
+// 9. Focus moved back along a scrolled table never lands behind its sticky name.
+const SHIFT_TAB = { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: 8 };
+const SCROLLERS = `(()=>{
+ const tabbable=e=>e.tabIndex>=0&&!e.disabled&&e.getClientRects().length>0;
+ window.__controls=w=>[...w.querySelectorAll('${FOCUSABLE}')].filter(tabbable);
+ window.__behind=(a)=>{const pin=a.closest('tr')?.querySelector(':scope > .sheetsmith-table-name');if(!pin||pin.contains(a))return 0;
+  const p=pin.getBoundingClientRect(),r=a.getBoundingClientRect();const over=Math.min(p.right,r.right)-Math.max(p.left,r.left);return over>0.5?Math.round(over*10)/10:0;};
+ const all=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-wrapper')].filter(w=>w.scrollWidth>w.clientWidth+1&&__controls(w).length>1);
+ all.forEach((w,i)=>{w.dataset.measure=String(i);});
+ return all.map(w=>({label:w.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?',controls:__controls(w).length}));
+})()`;
+async function loadFocus(text, phone) {
+	const [viewport, width] = phone ? [380, 0] : [620, 520];
+	// `shot.mjs`'s `platform=phone`, through the one staging both share, so 380
+	// is a phone and not a squeezed frame.
+	const { took, unstage } = await loadStaged(
+		browser,
+		`file://${root}index.html?surface=sheet&theme=light&state=populated&width=${width}&text=${text}`,
+		{ width: viewport, height: 1900, platform: phone ? 'phone' : null },
+	);
+	if (took !== null) check(took, `(9) 380 phone${text ? ` text=${text}` : ''}: phone staging took, every class of it`);
+	// Off before the walk, as it always was here: check 9 drives real keys,
+	// and what it measures is where focus lands, not how tall a control is.
+	await unstage();
+}
+await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+for (const [phone, text] of [[false, 0], [false, 24], [true, 0], [true, 24]]) {
+	await loadFocus(text, phone);
+	const at = `${phone ? '380 phone' : '520'}${text ? ` text=${text}` : ''}`;
+	const scrollers = await evaluate(SCROLLERS);
+	if (!phone && text === 0) check(scrollers.length > 0, '(9) at 520 at least one table scrolls, or this check holds nothing');
+	for (const [index, one] of scrollers.entries()) {
+		const W = `document.querySelector('[data-measure="${index}"]')`;
+		const behind = [];
+		// Each control but the first: the one after it focused, the table
+		// scrolled fully right, and a real Shift-Tab, not a script's focus().
+		for (let i = 1; i < one.controls; i++) {
+			await evaluate(`(()=>{const w=${W};__controls(w)[${i}].focus({preventScroll:true});w.scrollLeft=w.scrollWidth;})()`);
+			await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...SHIFT_TAB });
+			await send('Input.dispatchKeyEvent', { type: 'keyUp', ...SHIFT_TAB });
+			const landed = await evaluate(`(()=>{const a=document.activeElement;return {over:__behind(a),name:a.getAttribute('aria-label')??a.tagName};})()`);
+			if (landed.over > 0) behind.push(`${landed.name} ${landed.over}px`);
+		}
+		check(behind.length === 0, `${at} ${one.label}: (9) Shift-Tab back from scrolled right lands clear of the sticky name, ${one.controls} controls`, behind.slice(0, 3).join(', '));
+	}
+}
+
+// 10. A commit in a table scrolled right leaves it scrolled where it was.
+/**
+ * Every scroller that scrolls, by its index among all of them: stable across a
+ * commit, where an index among only the overflowing ones moved whenever a commit
+ * changed which tables overflow, and measured one table twice.
+ */
+const ALL = `[...document.querySelectorAll('.sheetsmith-view .sheetsmith-table-wrapper')]`;
+const OVERFLOWING = `${ALL}.map((w,i)=>w.scrollWidth>w.clientWidth+1&&__controls(w).length>1?i:-1).filter(i=>i>=0)`;
+/** The scroller, its committing control and where both stand, read off the live page. */
+const STANDING = `(()=>{
+ const a=document.activeElement;const w=a?.closest('.sheetsmith-table-wrapper');if(!w)return null;
+ const cell=a.closest('.sheetsmith-cell');const index=[...cell.querySelectorAll('${FOCUSABLE}')].indexOf(a);
+ const s=w.getBoundingClientRect();const start=s.left+w.clientLeft,far=start+w.clientWidth;const r=a.getBoundingClientRect();const row=a.closest('tr').getBoundingClientRect();
+ return {name:a.getAttribute('aria-label')??a.tagName,index,left:w.scrollLeft,startInside:r.left>=start-0.5,past:Math.round(Math.max(0,r.right-far)*10)/10,behind:__behind(a),offset:Math.round((r.left-row.left)*10)/10};
+})()`;
+for (const [phone, text] of [[false, 0], [false, 24], [true, 0], [true, 24]]) {
+	await loadFocus(text, phone);
+	const at = `${phone ? '380 phone' : '520'}${text ? ` text=${text}` : ''}`;
+	await evaluate(SCROLLERS);
+	const indices = await evaluate(OVERFLOWING);
+	let measured = 0;
+	for (const index of indices) {
+		const W = `${ALL}[${index}]`;
+		const target = await evaluate(`(()=>{const w=${W};w.scrollLeft=w.scrollWidth;
+		 const s=w.getBoundingClientRect(),far=s.left+w.clientLeft+w.clientWidth;
+		 const commits=__controls(w).filter(c=>(c.matches('input')&&!c.readOnly&&c.type!=='checkbox')||c.matches('button.sheetsmith-level-ring')).filter(c=>c.getBoundingClientRect().right<=far+0.5);
+		 const c=commits.sort((x,y)=>x.getBoundingClientRect().right-y.getBoundingClientRect().right).pop();if(!c)return null;
+		 c.focus({preventScroll:true});if(document.activeElement!==c)return null;
+		 const label=w.closest('.sheetsmith-cell')?.querySelector('[class*=label]')?.textContent??'?';
+		 return {label,input:c.matches('input'),value:c.matches('input')?c.value:null};})()`);
+		if (target === null) continue;
+		const before = await evaluate(STANDING);
+		if (target.input) {
+			const typed = /^-?\d+$/.test(target.value.trim()) ? String(Number(target.value) + 1) : `${target.value}x`;
+			await evaluate('document.activeElement.select()');
+			await send('Input.insertText', { text: typed });
+			await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+			await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+		} else {
+			await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' });
+			await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+		}
+		await sleep(300);
+		const after = await evaluate(STANDING);
+		measured += before.left > 0 ? 1 : 0;
+		// A named level carries its state in its name (`docs/UI.md` §6), so the
+		// name is compared up to its state: `Rating: 0` and `Rating: 1` are one ring.
+		const bare = (name) => name.replace(/: [^:]*$/, '');
+		const kept = after !== null && bare(after.name) === bare(before.name) && after.index === before.index;
+		check(kept, `${at} ${target.label}: (10a) the committed control keeps focus across the rebuild`, `${before.name}#${before.index} -> ${after === null ? 'body' : `${after.name}#${after.index}`}`);
+		if (!kept) continue;
+		check(Math.abs(after.left - before.left) <= 1, `${at} ${target.label}: (10b) the scroller comes back at its offset`, `${before.left} -> ${after.left}`);
+		/*
+		 * Held: the control starts inside the scrollport and clear of the name.
+		 * Printed, not held: how far it runs past the far edge. Either it already
+		 * did before the commit — a field wider than the room beside the name,
+		 * whose cell's start goes against the name (`docs/UI.md` §4) — or a column
+		 * ahead of it widened in the commit, the accepted drift. Anything else past
+		 * the far edge fails.
+		 */
+		const widened = after.offset !== before.offset;
+		// Wider than its room excuses only what was already past before the
+		// commit, within a pixel: a scroller reset to 0 carried this same field
+		// from 43.7 to 111.7px past, and that is the failure, not the room.
+		const overhang = after.past > 0 && (widened || after.past <= before.past + 1);
+		if (overhang) console.log(`      ${at} ${target.label}: ${widened ? `drift ${after.past}px, a column ahead widened ${before.offset} -> ${after.offset}` : `wider than its room: past the far edge ${before.past} -> ${after.past}px, as before the commit`}`);
+		check(after.startInside && after.behind === 0 && (after.past === 0 || overhang), `${at} ${target.label}: (10c) the control starts on screen, clear of the sticky name`, `past ${after.past}px, behind ${after.behind}px`);
+	}
+	console.log(`      ${at}: ${indices.length} scrollers, ${measured} measured scrolled`);
+	if (!phone && text === 0) check(measured > 0, '(10) at 520 at least one scroller is measured scrolled, or this check holds nothing');
+}
+
+await browser.close();
 process.exit(failed === 0 ? 0 : 1);

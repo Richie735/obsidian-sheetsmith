@@ -350,7 +350,9 @@ export function configError(config: TrackConfig): string | null {
 			const key = (row.key ?? '').trim();
 			if (key === '') return 'Every row needs a key.';
 			const problem = fencedKeyProblem(key);
-			if (problem !== null) return `The row key "${key}" ${problem}.`;
+			if (problem !== null) {
+				return `The row key "${key}" ${problem}. Rename it under Rows in the layout editor.`;
+			}
 			if (seen.has(key)) return `Two rows are both called "${key}".`;
 			seen.add(key);
 		}
@@ -974,10 +976,12 @@ function marksProblem(config: TrackConfig, raw: string): string | null {
 	// a checkbox stores yes and no, so telling its author about marks points
 	// them at a spelling that card never produces. SPEC §10 wants the fix
 	// rather than the fault, and here the two are different sentences for the
-	// same fault.
+	// same fault. Each is the fault and then the fix, which names the note on
+	// `readFenced`'s own reasoning: nothing on the sheet can repair a value the
+	// card cannot read (`docs/UI.md` §10).
 	return isFlagCard(config)
-		? `"${text}" is not yes or no.`
-		: `"${text}" is not a number of marks.`;
+		? `"${text}" is not yes or no. Write yes or no after its key in the note.`
+		: `"${text}" is not a number of marks. Write a whole number after its key in the note.`;
 }
 
 /**
@@ -1044,7 +1048,9 @@ function refuseRowName(text: string, taken: readonly string[]): string | null {
 		return 'A row needs a name.';
 	}
 	const problem = fencedKeyProblem(name);
-	if (problem !== null) return `A row name ${problem}.`;
+	// The one component caller whose fix is not the layout editor: the reader typed this
+	// name into the field beside the message, and a refused draft is kept there.
+	if (problem !== null) return `A row name ${problem}. Take the colon out of the name.`;
 	const link = fencedLinkRefusal(name, {
 		subject: 'Row names',
 		instead:
@@ -2146,7 +2152,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				if (characterOwned) {
 					const field = wrap.createEl('input');
 					field.type = 'text';
-					field.inputMode = 'numeric';
+					// The full keyboard: the length settles arithmetic, and
+					// iOS's `numeric` keypad has no operator (`docs/UI.md` §7).
+					field.inputMode = 'text';
 					// The reading and the chrome removal are both Pool's: no
 					// value sits beside this one to separate from (a run's
 					// segments are already that reading), but the field
@@ -2641,6 +2649,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				: null;
 
 			const step = named ? line.createDiv('sheetsmith-track-step') : null;
+			// The run is centred alone and the step hangs after it, so a named
+			// run lines up with an unnamed one above it (`sheet.css`).
+			if (step !== null) line.classList.add('sheetsmith-track-row-stepped');
 
 			/**
 			 * The breakdown where there is no pointer.
@@ -3163,6 +3174,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const nameField = field('Name');
 			const nameProblem = problem('name');
 			const lengthField = field('Length');
+			// The keypad fits here, unlike the row's own length field: every
+			// valid length is a whole count of segments, and this field settles
+			// no arithmetic. What else it accepts is stored as typed and means
+			// nothing as a length (`docs/UI.md` §7).
 			lengthField.inputMode = 'numeric';
 			// **No placeholder, and the `—` it had was borrowed wrongly.** On a
 			// card that dash is a *reading*: it says this row has no ceiling,

@@ -305,18 +305,22 @@ describe('the character folder', () => {
 		).toBe('Character folder');
 	});
 
-	it('holds each app label in the description together', () => {
+	it('holds each app label together, and each arrow to the label before it', () => {
 		/*
 		 * `AGENTS.md` asks for arrow notation, and the labels in such a path are
 		 * the app's own. A wrap inside one turns "Files and links" into a line
 		 * ending "Files and" and a line opening "links →", which reads as a step
 		 * named "links" — so the spaces *inside* each multi-word label are
-		 * non-breaking and the ones around the arrows are not. Asserted on the
+		 * non-breaking, and so is the one before each arrow, which leaves the
+		 * space after an arrow as the path's only break: a line may end on an
+		 * arrow but never begin with one (`docs/UI.md` §9). Asserted on the
 		 * rendered text, because the whole failure is a line break.
 		 */
 		const harness = open();
 		const desc = descOf(harness.root, 'Character folder');
-		expect(desc).toContain('Settings → Files\u00a0and\u00a0links');
+		expect(desc).toContain(
+			'Settings\u00a0→ Files\u00a0and\u00a0links\u00a0→ Default',
+		);
 		expect(desc).toContain('Default\u00a0location\u00a0for\u00a0new\u00a0notes');
 	});
 

@@ -95,6 +95,7 @@ import {
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
 import { showPopover } from '../ui/popover';
+import { keepFocusClearOfPinned } from '../ui/pinned-column-focus';
 import { revealWhenTruncated } from '../ui/truncation';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
@@ -1662,6 +1663,27 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			? element('div', 'sheetsmith-table-box', container)
 			: container;
 		if (open) container.addClass('sheetsmith-table-open');
+		/*
+		 * **The room beside the sticky name is set per table, from its own
+		 * trailing cells, in two values** (`docs/UI.md` §4). Where every column
+		 * but the name is a modifier glyph whose heading is hidden — and the
+		 * remove glyph an open table always draws is one too — no cell beside the
+		 * name is wider than a glyph, so the band one number cell wide that every
+		 * other table keeps would cost the names about 31px for nothing: Worn
+		 * items at 520 clipped `Ring of …` and still scrolled 5px of padding.
+		 * Stamped from the config rather than measured, because both widths are
+		 * CSS lengths here and the headings are sr-only; a toggle or a level is
+		 * left out, since its heading may show and a note mark may sit beside it.
+		 */
+		if (
+			open &&
+			columns.every(
+				(column) =>
+					columnType(column) === 'modifier' && column.hideHeading === true,
+			)
+		) {
+			box.addClass('sheetsmith-table-glyph-band');
+		}
 		const wrapper = element(
 			'div',
 			open
@@ -1669,6 +1691,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				: 'sheetsmith-table-wrapper',
 			box,
 		);
+		// The name cell is pinned at the scroller's start, so a control focused
+		// behind it is scrolled clear (`ui/pinned-column-focus.ts`).
+		keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 		const grid = element('table', 'sheetsmith-table', wrapper);
 		// Two facts the stylesheet needs about the whole table, stamped here
 		// because both were `:has()` selectors and Obsidian's review asks for
@@ -2516,10 +2541,15 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					};
 
 					if (graded && column.input === 'select') {
+						// The chevron rides on a wrapper, since a select carries no
+						// pseudo-element, and the mark sits inside the select's own
+						// field (`docs/UI.md` §9's menu row): the app draws its own
+						// only on `.dropdown`, so a bare select read as a text box.
+						const menu = element('span', 'sheetsmith-table-menu', td);
 						const select = element(
 							'select',
 							'sheetsmith-table-select',
-							td,
+							menu,
 						);
 						for (let i = 0; i <= count; i++) {
 							const option = element(
@@ -2611,7 +2641,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				}
 				input.value = raw;
 				input.setAttribute('aria-label', label);
-				if (type === 'number') input.inputMode = 'numeric';
+				// A number cell takes the full keyboard, not the numeric keypad:
+				// `-1` is an ordinary Bonus and `0.5` an ordinary Weight, and iOS's
+				// `numeric` keypad has neither a minus nor a decimal point
+				// (`docs/UI.md` §7). A text cell needs no say here.
+				if (type === 'number') input.inputMode = 'text';
 				renderNotesAt(
 					td,
 					context.modifiers,

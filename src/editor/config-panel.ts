@@ -149,6 +149,20 @@ function positionToken(id: string, key: keyof GridPosition): string {
 	return `pos-${id}-${key}`;
 }
 
+/**
+ * The focus token of the panel's title, minted by `renderTitle` and read by the
+ * editor's reveal (`docs/features/layout-editor-narrow-regime.md` §4), so the
+ * two cannot spell it differently — `canvas.ts`'s `previewToken` and `tree.ts`'s
+ * `rowToken` beside it.
+ */
+export const PANEL_TITLE_TOKEN = 'panel-title';
+
+/** **Back to the selection**'s token, read by the same reveal as the button it lands in reach. */
+export const PANEL_BACK_TOKEN = 'panel-back';
+
+/** The title row's class, which the same reveal lands at the leaf's top. */
+export const PANEL_TITLE_ROW_CLASS = 'sheetsmith-panel-title-row';
+
 /** A `text-list` value as the layout holds it, copied, with anything not a string left out. */
 function namesOf(value: unknown): string[] {
 	return Array.isArray(value)
@@ -268,6 +282,13 @@ export interface ConfigPanelHost {
 		label: string,
 		sentence: (notes: number) => string | null,
 	): void;
+	/**
+	 * **Back to the selection**: put the reader back on the control the selection
+	 * came from (`docs/features/layout-editor-narrow-regime.md` §4). The editor's
+	 * to answer, since which press made the selection is the editor's to know and
+	 * the control it names is in the other region.
+	 */
+	returnToOutline(): void;
 }
 
 /**
@@ -368,6 +389,43 @@ export class ConfigPanel {
 		}
 	}
 
+	/**
+	 * The panel's title row: what it configures, at the rank `form-group.ts`
+	 * gives a title, plus the two things the pane's narrow regime asks of it
+	 * (`docs/features/layout-editor-narrow-regime.md` §4). Here rather than in
+	 * `form-group.ts`, whose one job is the ranks of a form's headings; a way
+	 * back and a focus target are this panel's behaviour, not a heading's.
+	 */
+	private renderTitle(form: HTMLElement, name: string): void {
+		const title = panelTitle(form, name);
+		/*
+		 * **Focusable, and not a tab stop**: a press that selects something far
+		 * from the panel brings the panel to the reader and puts focus here, so
+		 * Tab continues into the form and a screen reader says what was selected.
+		 * The name and not the row, so what is announced is the name alone.
+		 */
+		title.nameEl.setAttribute('tabindex', '-1');
+		title.nameEl.addClass('sheetsmith-panel-title');
+		title.settingEl.addClass(PANEL_TITLE_ROW_CLASS);
+		title.nameEl.dataset.sheetsmithFocus = PANEL_TITLE_TOKEN;
+		/*
+		 * **Back to the selection**, the way to wherever that press came from.
+		 * Named by its destination, which is the selection's own row or block,
+		 * whichever region the press came from, and naming no component, since the
+		 * title beside it already does (`docs/UI.md` §6). Drawn always and displayed only while
+		 * the pane is stacked (`editor.css`), since beside the tree it has nowhere
+		 * to go back to. The app's own button, whole, so its tablet padding is the
+		 * app's too.
+		 */
+		const button = title.controlEl.createEl('button', {
+			cls: 'sheetsmith-panel-back',
+			text: 'Back to the selection',
+			attr: { type: 'button' },
+		});
+		button.dataset.sheetsmithFocus = PANEL_BACK_TOKEN;
+		button.addEventListener('click', () => this.host.returnToOutline());
+	}
+
 	/** Show an inline error, and remember it across the next rebuild. */
 	private fieldError(input: HTMLInputElement, message: string | null): void {
 		showFieldError(input, message, this.host.errors);
@@ -406,7 +464,7 @@ export class ConfigPanel {
 		// The tree row that got here says `Layout`, so this does too. The layout's
 		// own name is the picker's, one column over, and saying it twice would be
 		// two answers to "which layout is this".
-		panelTitle(form, 'Layout');
+		this.renderTitle(form, 'Layout');
 		this.renderColumnCount(form, layout);
 		this.triggers = renderTriggerList(form, layout, {
 			persist: () => this.host.persist(),
@@ -547,6 +605,7 @@ export class ConfigPanel {
 			// since a fixed value belongs in the stylesheet.
 			row.settingEl.addClass('sheetsmith-row-child');
 			row.addExtraButton((button) => {
+				const arrow = button.extraSettingsEl;
 				button
 					// The arrows every other reorder control in the plugin uses —
 					// the entry list and both list fields — rather than a
@@ -557,16 +616,35 @@ export class ConfigPanel {
 					.setIcon('arrow-up')
 					.setTooltip('Move earlier')
 					.setDisabled(index === 0)
-					.onClick(() => moveItem(tabs, index, index - 1, this.host.listContext()));
-				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-up-${tab.id}`;
+					.onClick(() => {
+						// Landing first disables this arrow, so focus goes to the
+						// other one rather than falling to the body, and only where
+						// the reader already stood on it (`docs/UI.md` §6). The
+						// same handoff `addControls` spells for the list fields.
+						const context = this.host.listContext();
+						if (index === 1 && arrow.ownerDocument.activeElement === arrow) {
+							context.focusAfterRedraw(`tab-down-${tab.id}`);
+						}
+						moveItem(tabs, index, index - 1, context);
+					});
+				markDisabledArrow(arrow, index === 0);
+				arrow.dataset.sheetsmithFocus = `tab-up-${tab.id}`;
 			});
 			row.addExtraButton((button) => {
+				const arrow = button.extraSettingsEl;
 				button
 					.setIcon('arrow-down')
 					.setTooltip('Move later')
 					.setDisabled(index === tabs.length - 1)
-					.onClick(() => moveItem(tabs, index, index + 1, this.host.listContext()));
-				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-down-${tab.id}`;
+					.onClick(() => {
+						const context = this.host.listContext();
+						if (index === tabs.length - 2 && arrow.ownerDocument.activeElement === arrow) {
+							context.focusAfterRedraw(`tab-up-${tab.id}`);
+						}
+						moveItem(tabs, index, index + 1, context);
+					});
+				markDisabledArrow(arrow, index === tabs.length - 1);
+				arrow.dataset.sheetsmithFocus = `tab-down-${tab.id}`;
 			});
 		});
 	}
@@ -582,7 +660,7 @@ export class ConfigPanel {
 	): void {
 		const form = container.createDiv('sheetsmith-component-form');
 		const definition = getComponent(config.type);
-		panelTitle(form, config.label);
+		this.renderTitle(form, config.label);
 
 		form.createDiv(
 			{ cls: ['setting-item-description', 'sheetsmith-component-reference'] },
@@ -722,8 +800,17 @@ export class ConfigPanel {
 							(entry) => entry.config === parent,
 						)?.parent ?? null,
 					).width;
-		for (const key of placed ? GRID_POSITION_KEYS : []) {
-			const holder = position!.controlEl.createDiv('sheetsmith-position-field');
+		/*
+		 * Two pairs, `col` with `row` and `width` with `height`, each held on one
+		 * line: where the control is too narrow for all four, they wrap two by two,
+		 * place over size, rather than leaving `height` alone under the other three
+		 * (`docs/features/layout-editor-narrow-regime.md` §3).
+		 */
+		const pairs = placed
+			? [position!.controlEl.createDiv('sheetsmith-position-pair'), position!.controlEl.createDiv('sheetsmith-position-pair')]
+			: [];
+		for (const [index, key] of (placed ? GRID_POSITION_KEYS : []).entries()) {
+			const holder = (pairs[Math.floor(index / 2)] as HTMLElement).createDiv('sheetsmith-position-field');
 			holder.createSpan({
 				cls: 'sheetsmith-position-label',
 				text: key,
@@ -1176,4 +1263,20 @@ export class ConfigPanel {
 			});
 		}
 	}
+}
+
+/**
+ * Say what `setDisabled` does not. The app's extra button is a `div` with no
+ * role, and its `setDisabled` only takes it out of the tab order: it sets no
+ * `aria-disabled`, and `app.css` paints `.clickable-icon.is-disabled` as
+ * enabled. So the arrow gains `role="button"`, without which `aria-disabled`
+ * on a div is not reliably exposed (ARIA 1.3 no longer treats it as global),
+ * and `aria-disabled` to match, which the app's own
+ * `.clickable-icon[aria-disabled='true']` rule paints. From HTML-AAM and the
+ * ARIA spec, not from a screen reader (`docs/features/disabled-controls.md`).
+ */
+function markDisabledArrow(arrow: HTMLElement, disabled: boolean): void {
+	arrow.setAttribute('role', 'button');
+	if (disabled) arrow.setAttribute('aria-disabled', 'true');
+	else arrow.removeAttribute('aria-disabled');
 }

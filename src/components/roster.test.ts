@@ -906,6 +906,19 @@ describe('render', () => {
 		});
 	});
 
+	it('gives a stat and its number cells the full keyboard', () => {
+		// A stat holds a number of any sign or a word, and a cell a number of
+		// any sign or a fraction; iOS's `numeric` keypad is digits alone
+		// (docs/UI.md §7).
+		const result = roster.read(BODY, config);
+		const { el } = recording(config, result.ok ? result.data : null);
+		const stat = el.querySelector<HTMLInputElement>('.sheetsmith-card-input');
+		const cells = el.querySelectorAll<HTMLInputElement>('tbody .sheetsmith-table-input');
+		expect(stat?.inputMode).toBe('text');
+		expect(cells.length).toBeGreaterThan(0);
+		for (const cell of Array.from(cells)) expect(cell.inputMode).toBe('text');
+	});
+
 	describe('a fenced-link refusal on a stat field', () => {
 		it('declines a wikilink at the commit, on the values\' own sentence, and writes nothing', () => {
 			const result = roster.read(BODY, config);
@@ -973,6 +986,18 @@ describe('render', () => {
 				{ rows: { 0: { cells: { Training: '2' } } } },
 				{ rows: { 0: { cells: { Training: '0' } } } },
 			]);
+		});
+
+		it('wraps a level drawn as a dropdown, so it can wear the chevron', () => {
+			// Table's wrapper, for its reason (`docs/UI.md` §9's one chevron).
+			const select = { ...levelled, columns: [{ ...training, input: 'select' as const }] };
+			const result = roster.read(levelledBody, select);
+			const { el } = recording(select, result.ok ? result.data : null);
+			const menus = Array.from(el.querySelectorAll('tbody select'));
+			expect(menus).toHaveLength(2);
+			for (const menu of menus) {
+				expect(menu.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+			}
 		});
 
 		it('repaints as it cycles, without waiting for the view to rebuild', () => {
@@ -1380,5 +1405,17 @@ describe('a roster something has noted (docs/features/modifier-notes.md)', () =>
 		const el = document.createElement('div');
 		roster.render(el, clashing, null, contextFor(null, clashing));
 		expect(el.querySelector('.sheetsmith-error')).not.toBeNull();
+	});
+
+	it('refuses a stat key holding a colon, naming the layout editor field that fixes it', () => {
+		const colon: RosterConfig = {
+			...config,
+			stats: [{ key: 'STR: base', name: 'Strength' }],
+		};
+		const el = document.createElement('div');
+		roster.render(el, colon, null, contextFor(null, colon));
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toBe(
+			'The stat "STR: base" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Stats in the layout editor.',
+		);
 	});
 });

@@ -184,3 +184,21 @@ export function hold(el: Target, ms: number, init: PointerEventInit = {}): void 
 	pressDown(el, init);
 	vi.advanceTimersByTime(ms);
 }
+
+/**
+ * Press a field the way a browser does when the press focuses it: down, focus,
+ * up, click (`docs/features/number-field-focus-select.md`).
+ *
+ * Focus is the one step a dispatched event does not cause under happy-dom, so
+ * it is called here, and only where the field is not already focused — a press
+ * into a focused field moves no focus in a browser either, which is what the
+ * second-press rule is about. On a phone the focus comes after `pointerup`,
+ * from the synthesised mouse events; nothing under test reads that order, and
+ * `click` is last on every engine, which is what the touch reselect rides on.
+ */
+export function pressToFocus(field: HTMLElement, pointerType: string): void {
+	pressDown(field, { pointerType });
+	if (field.ownerDocument.activeElement !== field) field.focus();
+	release(field, { pointerType });
+	field.click();
+}

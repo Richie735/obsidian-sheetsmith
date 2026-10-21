@@ -756,7 +756,9 @@ function configError(config: RecordSetConfig): string | null {
 		// Validated because the file format requires it, not because it is tidy:
 		// the rule and its reason are the fence's own (`parse/fenced.ts`).
 		const problem = fencedKeyProblem(key);
-		if (problem !== null) return `The field "${key}" ${problem}.`;
+		if (problem !== null) {
+			return `The field "${key}" ${problem}. Rename it under Fields in the layout editor.`;
+		}
 		if (seen.has(key.toLowerCase())) {
 			return `Two fields are both called "${key}".`;
 		}
@@ -1772,9 +1774,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				name: block.name,
 				fields,
 				body: bodyText(block.rest),
+				// `readFenced` already says what to fix, and where; what only this
+				// list knows is that the damage stops at this one record.
 				error: parsed.ok
 					? null
-					: `${parsed.error} Fix this ${noun} in the note; every other one on this list still works.`,
+					: `${parsed.error} Every other ${noun} on this list still works.`,
 			};
 		});
 		return { ok: true, data: { records } };
@@ -3059,7 +3063,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const entry = splitBounded(raw);
 			const input = element('input', 'sheetsmith-record-input', cell);
 			input.type = 'text';
-			input.inputMode = 'numeric';
+			// The full keyboard, a Table number cell's own reason: a field's value
+			// may be negative or a fraction, and iOS's `numeric` keypad has neither
+			// a minus nor a decimal point (`docs/UI.md` §7).
+			input.inputMode = 'text';
 			input.value = entry.value;
 			input.setAttribute('aria-label', accessible);
 			/*
@@ -3562,10 +3569,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				graded ? String(level) : flagText(level > 0);
 
 			if (graded && field.input === 'select') {
+				// The chevron rides on a wrapper, because a select can carry no
+				// pseudo-element, and on a wrapper rather than the cell so the mark
+				// sits inside the select's own hairline (`docs/UI.md` §9's menu
+				// row). Without it the transparent select is a word in a box.
+				const menu = element('span', 'sheetsmith-record-menu', cell);
 				const select = element(
 					'select',
 					'sheetsmith-record-select',
-					cell,
+					menu,
 				);
 				for (let level = 0; level <= count; level++) {
 					const option = element(

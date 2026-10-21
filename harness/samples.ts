@@ -1842,7 +1842,7 @@ export const SAMPLES: Sample[] = [
 			id: 'rolled_health',
 			type: 'pool',
 			label: 'Rolled HP',
-			position: { col: 10, row: 46, width: 3, height: 1 },
+			position: { col: 10, row: 48, width: 3, height: 1 },
 			maxSource: 'character',
 		} as ComponentConfig,
 		body: '```sheet\ncurrent: 14\nmax: 22\n```',
@@ -1937,7 +1937,7 @@ export const SAMPLES: Sample[] = [
 					id: 'recharging',
 					type: 'record-set',
 					label: 'Recharging features',
-					position: { col: 1, row: 78, width: 7, height: 3 },
+					position: { col: 1, row: 80, width: 7, height: 3 },
 					recordName: 'Feature',
 					fieldHeadings: true,
 					fields: fields(false),
@@ -1949,7 +1949,7 @@ export const SAMPLES: Sample[] = [
 					id: 'recharging_plain',
 					type: 'record-set',
 					label: 'Recharging features, unheaded',
-					position: { col: 8, row: 78, width: 4, height: 3 },
+					position: { col: 8, row: 80, width: 4, height: 3 },
 					recordName: 'Feature',
 					fields: fields(false),
 					// A binding naming no field, which is **Every field**: the one
@@ -1965,7 +1965,7 @@ export const SAMPLES: Sample[] = [
 					id: 'recharging_broken',
 					type: 'record-set',
 					label: 'Recharging features, broken',
-					position: { col: 1, row: 81, width: 7, height: 3 },
+					position: { col: 1, row: 83, width: 7, height: 3 },
 					recordName: 'Feature',
 					fieldHeadings: true,
 					fields: fields(true),
@@ -2005,7 +2005,7 @@ export const SAMPLES: Sample[] = [
 			id: 'rest_features',
 			type: 'record-set',
 			label: 'Rest features',
-			position: { col: 1, row: 84, width: 7, height: 3 },
+			position: { col: 1, row: 86, width: 7, height: 3 },
 			recordName: 'Feature',
 			fieldHeadings: true,
 			fields: [
@@ -2100,7 +2100,7 @@ export const SAMPLES: Sample[] = [
 			id: 'rest_pool',
 			type: 'pool',
 			label: 'Focus points',
-			position: { col: 8, row: 84, width: 4, height: 1 },
+			position: { col: 8, row: 86, width: 4, height: 1 },
 			max: '4',
 			// Hand-written: a Pool resets as a whole and cannot check this, so the
 			// trigger leaves it alone and says why.
@@ -2401,9 +2401,9 @@ export const SAMPLES: Sample[] = [
 	 * above everything, and putting it there would renumber every row in this
 	 * file and every comment that names one — for no gain, since what a reviewer
 	 * judges here is the *face*: the name against the picture, the dotted line
-	 * against the name, and what both do when the sheet collapses. Row 43 is the
-	 * first free row under the six-up group above, so nothing already placed
-	 * moves.
+	 * against the name, and what both do when the sheet collapses. Row 45 is the
+	 * first free row under the six-up group above, which spans rows 39 to 44
+	 * since `cacbe54` moved it down two; everything below moved with it.
 	 *
 	 * 1. **A header**, the acceptance criterion's own configuration: a picture,
 	 *    three fields and a hidden label, two rows tall. It is the one shot that
@@ -2435,7 +2435,7 @@ export const SAMPLES: Sample[] = [
 			type: 'passport',
 			label: 'Passport',
 			hideLabel: true,
-			position: { col: 1, row: 43, width: 6, height: 2 },
+			position: { col: 1, row: 45, width: 6, height: 2 },
 			fields: [
 				{ key: 'species', name: 'Species' },
 				{ key: 'class', name: 'Class' },
@@ -2463,7 +2463,7 @@ export const SAMPLES: Sample[] = [
 			type: 'passport',
 			label: 'Playbook',
 			hidePicture: true,
-			position: { col: 7, row: 43, width: 6, height: 2 },
+			position: { col: 7, row: 45, width: 6, height: 2 },
 			fields: [
 				{ key: 'playbook', name: 'Playbook' },
 				{ key: 'heritage', name: 'Heritage' },
@@ -2506,7 +2506,7 @@ export const SAMPLES: Sample[] = [
 			type: 'passport',
 			label: 'Six fields',
 			hideLabel: true,
-			position: { col: 4, row: 46, width: 6, height: 2 },
+			position: { col: 4, row: 48, width: 6, height: 2 },
 			fields: [
 				{ key: 'class', name: 'Class' },
 				{ key: 'subclass', name: 'Subclass' },
@@ -2556,7 +2556,7 @@ export const SAMPLES: Sample[] = [
 			type: 'passport',
 			label: 'One column',
 			hideLabel: true,
-			position: { col: 1, row: 46, width: 1, height: 2 },
+			position: { col: 1, row: 48, width: 1, height: 2 },
 			fields: [{ key: 'class', name: 'Class' }],
 		} as ComponentConfig,
 		body: [
@@ -2577,7 +2577,7 @@ export const SAMPLES: Sample[] = [
 			label: 'Two columns',
 			hideLabel: true,
 			hidePicture: true,
-			position: { col: 2, row: 46, width: 2, height: 2 },
+			position: { col: 2, row: 48, width: 2, height: 2 },
 			fields: [
 				{ key: 'species', name: 'Species' },
 				{ key: 'level', name: 'Level' },
@@ -2600,14 +2600,14 @@ export const SAMPLES: Sample[] = [
 			derived: 'ceil(header.level / 4) + 1',
 			hideValue: true,
 			hideNote: true,
-			position: { col: 1, row: 45, width: 2, height: 1 },
+			position: { col: 1, row: 47, width: 2, height: 1 },
 		} as ComponentConfig,
 		body: null,
 	},
 	/*
 	 * Roster, in both directions, on the same six abilities `skills` above
 	 * already reads — the comparison settled answer 2 asks for: a card beside
-	 * a table (row 1), the six-up (`ability_checks`, row 37), and now one
+	 * a table (row 1), the six-up (`ability_checks`, row 39), and now one
 	 * grouped table holding all six at once. `skills.perception` moving to
 	 * `stat_roster.perception` on the day a layout converts is the measured
 	 * cost of the flat arrangement, so this reuses `skills`' own rows and
@@ -2633,7 +2633,7 @@ export const SAMPLES: Sample[] = [
 			id: 'stat_roster',
 			type: 'roster',
 			label: 'Abilities, as a roster',
-			position: { col: 1, row: 49, width: 8, height: 7 },
+			position: { col: 1, row: 51, width: 8, height: 7 },
 			stats: [
 				{ key: 'STR', name: 'Strength' },
 				{ key: 'DEX', name: 'Dexterity' },
@@ -2711,7 +2711,7 @@ export const SAMPLES: Sample[] = [
 			id: 'attributes_roster',
 			type: 'roster',
 			label: 'Attributes',
-			position: { col: 9, row: 49, width: 4, height: 7 },
+			position: { col: 9, row: 51, width: 4, height: 7 },
 			stats: [{ key: 'insight' }, { key: 'prowess' }, { key: 'resolve' }],
 			hideValue: true,
 			derived: 'count(self, Rating > 0)',
@@ -2750,7 +2750,7 @@ export const SAMPLES: Sample[] = [
 	 * fill instead, centred, and `stretch` fills it exactly, which the picture's
 	 * own disc draws as an ellipse. Both on Image and on Passport, since the two
 	 * share one painter and a review of one is not a review of the other's chrome
-	 * — `contain` on Passport is already on screen above (**Passport**, row 43),
+	 * — `contain` on Passport is already on screen above (**Passport**, row 45),
 	 * so this is the two settings that block adds rather than all three again.
 	 */
 	{
@@ -2758,7 +2758,7 @@ export const SAMPLES: Sample[] = [
 			id: 'portrait_cover',
 			type: 'image',
 			label: 'Cover',
-			position: { col: 1, row: 56, width: 4, height: 3 },
+			position: { col: 1, row: 58, width: 4, height: 3 },
 			fit: 'cover',
 		} as ComponentConfig,
 		body: '\n![[Sildar Hallwinter.png]]\n',
@@ -2768,7 +2768,7 @@ export const SAMPLES: Sample[] = [
 			id: 'portrait_stretch',
 			type: 'image',
 			label: 'Stretch',
-			position: { col: 5, row: 56, width: 4, height: 3 },
+			position: { col: 5, row: 58, width: 4, height: 3 },
 			fit: 'stretch',
 		} as ComponentConfig,
 		body: '\n![[Sildar Hallwinter.png]]\n',
@@ -2778,7 +2778,7 @@ export const SAMPLES: Sample[] = [
 			id: 'passport_cover',
 			type: 'passport',
 			label: 'Passport, cover',
-			position: { col: 9, row: 56, width: 4, height: 3 },
+			position: { col: 9, row: 58, width: 4, height: 3 },
 			fit: 'cover',
 			fields: [{ key: 'class', name: 'Class' }],
 		} as ComponentConfig,
@@ -2798,7 +2798,7 @@ export const SAMPLES: Sample[] = [
 			id: 'passport_stretch',
 			type: 'passport',
 			label: 'Passport, stretch',
-			position: { col: 1, row: 59, width: 4, height: 3 },
+			position: { col: 1, row: 61, width: 4, height: 3 },
 			fit: 'stretch',
 			fields: [{ key: 'class', name: 'Class' }],
 		} as ComponentConfig,
@@ -2817,7 +2817,7 @@ export const SAMPLES: Sample[] = [
 	 * A list field (`docs/features/passport-field-lists.md`): one declared
 	 * field holding several values, drawn as one chip per part rather than a
 	 * forked layout or a second field for a multiclass character. Beside the
-	 * fit row above rather than beside the header at row 43, on that block's
+	 * fit row above rather than beside the header at row 45, on that block's
 	 * own reasoning: inserting earlier renumbers every row below it and every
 	 * comment that cites one.
 	 *
@@ -2831,7 +2831,7 @@ export const SAMPLES: Sample[] = [
 			id: 'multiclass',
 			type: 'passport',
 			label: 'Multiclass',
-			position: { col: 5, row: 59, width: 6, height: 2 },
+			position: { col: 5, row: 61, width: 6, height: 2 },
 			fields: [
 				{ key: 'class', name: 'Class', list: true },
 				{ key: 'species', name: 'Species' },
@@ -2868,7 +2868,7 @@ export const SAMPLES: Sample[] = [
 			id: 'hit_dice',
 			type: 'track',
 			label: 'Hit dice',
-			position: { col: 1, row: 62, width: 4, height: 2 },
+			position: { col: 1, row: 64, width: 4, height: 2 },
 			rows: [
 				{ key: 'd6', name: 'd6', maxSource: 'character' },
 				{ key: 'd8', name: 'd8', maxSource: 'character' },
@@ -2896,7 +2896,7 @@ export const SAMPLES: Sample[] = [
 			id: 'mixed_dice',
 			type: 'track',
 			label: 'Mixed dice',
-			position: { col: 5, row: 62, width: 4, height: 2 },
+			position: { col: 5, row: 64, width: 4, height: 2 },
 			rows: [
 				{ key: 'bonus_die', name: 'Bonus die', count: 6 },
 				{ key: 'inspiration_die', name: 'Inspiration die', maxSource: 'character' },
@@ -2922,7 +2922,7 @@ export const SAMPLES: Sample[] = [
 			type: 'roster',
 			label: 'Abilities, as cards',
 			cardLayout: true,
-			position: { col: 1, row: 65, width: 6, height: 8 },
+			position: { col: 1, row: 67, width: 6, height: 8 },
 			stats: [
 				{ key: 'STR', name: 'Strength' },
 				{ key: 'DEX', name: 'Dexterity' },
@@ -2976,7 +2976,7 @@ export const SAMPLES: Sample[] = [
 			id: 'open_dice',
 			type: 'track',
 			label: 'Open hit dice',
-			position: { col: 1, row: 73, width: 4, height: 2 },
+			position: { col: 1, row: 75, width: 4, height: 2 },
 			openRows: true,
 			rows: [
 				{ key: 'd6', name: 'd6', maxSource: 'character' },
@@ -3003,9 +3003,31 @@ export const SAMPLES: Sample[] = [
 			label: 'Clocks',
 			count: 6,
 			openRows: true,
-			position: { col: 5, row: 73, width: 4, height: 2 },
+			position: { col: 5, row: 75, width: 4, height: 2 },
 		} as unknown as ComponentConfig,
 		body: '```sheet\nRescue the miners: 2 / 8\nHeat: 4\n```',
+	},
+	/*
+	 * **A multi-mark run in every state a segment's dividers can sit in**: four
+	 * marks a segment, five held, so the first segment is wholly lit, the second
+	 * lit for one mark of four, and the third unlit. The third is what
+	 * `sheet-forced-colors` needs and no other run here has: a divider on an unlit
+	 * multi-mark segment is the only count of the targets left in it, and while
+	 * dividers were a fill that mode repainted them `Canvas` and they vanished
+	 * (`docs/features/forced-colors-track-and-table.md`). Overfull (marks) below
+	 * has dividers only on lit or half-lit segments. In the cell row 75 leaves
+	 * free beside Clocks, so nothing on the sheet moves at 1400.
+	 */
+	{
+		config: {
+			id: 'quartered',
+			type: 'track',
+			label: 'Quartered',
+			position: { col: 9, row: 75, width: 4, height: 1 },
+			count: 3,
+			marks: 4,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
 	},
 	/*
 	 * **Tracks holding more than their run**
@@ -3039,7 +3061,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull',
 			type: 'track',
 			label: 'Overfull',
-			position: { col: 1, row: 75, width: 4, height: 1 },
+			position: { col: 1, row: 77, width: 4, height: 1 },
 			count: 3,
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 5\n```',
@@ -3049,7 +3071,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull_named',
 			type: 'track',
 			label: 'Overfull (named)',
-			position: { col: 5, row: 75, width: 4, height: 1 },
+			position: { col: 5, row: 77, width: 4, height: 1 },
 			levels: ['Clear', 'Touched', 'Marked', 'Lost:☠'],
 			sense: 'harm',
 		} as ComponentConfig,
@@ -3060,7 +3082,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull_marks',
 			type: 'track',
 			label: 'Overfull (marks)',
-			position: { col: 9, row: 75, width: 4, height: 1 },
+			position: { col: 9, row: 77, width: 4, height: 1 },
 			count: 3,
 			marks: 2,
 		} as ComponentConfig,
@@ -3071,7 +3093,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull_shackled',
 			type: 'track',
 			label: 'Overfull (shackled)',
-			position: { col: 1, row: 76, width: 4, height: 1 },
+			position: { col: 1, row: 78, width: 4, height: 1 },
 			count: '6 + mod.self',
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 5\n```',
@@ -3081,7 +3103,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull_far',
 			type: 'track',
 			label: 'Overfull (far)',
-			position: { col: 5, row: 76, width: 4, height: 1 },
+			position: { col: 5, row: 78, width: 4, height: 1 },
 			count: 3,
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 150\n```',
@@ -3091,7 +3113,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull_row',
 			type: 'track',
 			label: 'Overfull (row)',
-			position: { col: 9, row: 76, width: 4, height: 1 },
+			position: { col: 9, row: 78, width: 4, height: 1 },
 			rows: [
 				{ key: 'd6', name: 'd6', maxSource: 'character' },
 				{ key: 'd8', name: 'd8', maxSource: 'character' },
@@ -3104,7 +3126,7 @@ export const SAMPLES: Sample[] = [
 			id: 'overfull_long',
 			type: 'track',
 			label: 'Overfull (long)',
-			position: { col: 1, row: 77, width: 4, height: 1 },
+			position: { col: 1, row: 79, width: 4, height: 1 },
 			count: 6,
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 30\n```',
@@ -3130,7 +3152,7 @@ export const SAMPLES: Sample[] = [
 			id: 'grit',
 			type: 'track',
 			label: 'Grit',
-			position: { col: 5, row: 77, width: 4, height: 1 },
+			position: { col: 5, row: 79, width: 4, height: 1 },
 			count: '3 + mod.grit.count',
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 2\n```',
@@ -3140,7 +3162,7 @@ export const SAMPLES: Sample[] = [
 			id: 'carried',
 			type: 'card',
 			label: 'Carried',
-			position: { col: 9, row: 77, width: 2, height: 1 },
+			position: { col: 9, row: 79, width: 2, height: 1 },
 			key: 'Carried',
 			derived: 'value',
 			signed: false,
@@ -3152,12 +3174,46 @@ export const SAMPLES: Sample[] = [
 			id: 'load',
 			type: 'card',
 			label: 'Load',
-			position: { col: 11, row: 77, width: 2, height: 1 },
+			position: { col: 11, row: 79, width: 2, height: 1 },
 			key: 'Load',
 			derived: 'carried + mod.carried',
 			signed: false,
 		} as ComponentConfig,
 		body: '```sheet\nLoad: 0\n```',
+	},
+	/*
+	 * **A Table's level drawn as a select** (`docs/UI.md` §9's one chevron), which
+	 * no sample staged until a select in a cell had to be looked at: every other
+	 * menu on this sheet is a card's or a record's. Beside `roster_card_layout`,
+	 * in the six columns it leaves empty, so no default frame grows by it, and
+	 * appended at the end on this file's rule against renumbering. Three option
+	 * lengths, so the column's width is its longest option's and a shorter one
+	 * shows the chevron's inset holding.
+	 */
+	{
+		config: {
+			id: 'languages',
+			type: 'table',
+			label: 'Languages',
+			position: { col: 7, row: 67, width: 6, height: 2 },
+			rowHeader: 'Language',
+			columns: [
+				{
+					key: 'Fluency',
+					type: 'level',
+					levels: ['None', 'Understands', 'Fluent'],
+					input: 'select',
+				},
+			],
+			rows: [{ label: 'Common' }, { label: 'Elvish' }, { label: 'Dwarvish' }],
+		} as ComponentConfig,
+		body: [
+			'| Language | Fluency |',
+			'| --- | --- |',
+			'| Common | 2 |',
+			'| Elvish | 1 |',
+			'| Dwarvish | 0 |',
+		].join('\n'),
 	},
 ];
 
@@ -3290,6 +3346,33 @@ export function effectiveSamples(): Sample[] {
  * That is what the design axis needed to see to rule on the glyph's contrast, and
  * a review cannot rule on a state no shot contains.
  */
+/**
+ * **A row with three parts in one modifier cell**, for the one panel state the
+ * populated sample has no row for: `sheet-modifier-form-three-parts-viewport-380`.
+ * Open on its typed part it is the tallest form the panel draws — two closed
+ * lines with their reasons over the fields and the promote row — and the one
+ * `shared.css`'s `570px` cap says still scrolls (`docs/UI.md` §9).
+ *
+ * **A state of its own rather than a row in `SAMPLES`**, because a row there
+ * shifts every full-sheet shot by its height for the sake of one view. Every
+ * part waits on Worn and Worn is off, so even here it moves no number and adds
+ * no line to a breakdown. Appended as the table's last row, after `Chalk`.
+ */
+export function threePartSamples(): Sample[] {
+	let reached = 0;
+	const samples = SAMPLES.map((sample) => {
+		if (sample.config.id !== 'magic_items' || sample.body === null) return sample;
+		reached += 1;
+		const row =
+			'| Charm bracelet | Cloak of Elvenkind; Blessing of the Bear; armour_class += 3 as item when Worn |  | three parts, none applying |';
+		return { ...sample, body: `${sample.body}\n${row}` };
+	});
+	// `effectiveSamples`' guard: a renamed table must not leave this state
+	// silently drawing the populated sheet under its own name.
+	if (reached !== 1) throw new Error('threePartSamples: no magic_items table to extend');
+	return samples;
+}
+
 export function unmodifiedSamples(): Sample[] {
 	return SAMPLES.map((sample) => {
 		const columns = (sample.config as { columns?: { type?: string }[] }).columns;
@@ -3526,12 +3609,44 @@ export function brokenSamples(): Sample[] {
 		 *
 		 * On the flag, because that card is where the two spellings meet and so
 		 * where the wrong sentence is easiest to write: it has to say "not yes or
-		 * no" rather than the run's "not a number of marks". Broadening it to the
-		 * other fenced cards is a choice per component about which breakage is
-		 * worth a picture, and is a `docs/UI.md` §12 row rather than this diff.
+		 * no" rather than the run's "not a number of marks".
 		 */
 		let body =
 			config.id === 'inspiration' ? '```sheet\nvalue: maybe\n```' : sample.body;
+		/*
+		 * **The other three fenced components' read errors, one breakage each**, so
+		 * three of the four ways `readFenced` refuses a block are on screen and
+		 * none of them twice. The fourth, `Section has more than one sheet
+		 * block.` and its fix, is not drawn: it is the same two-sentence refusal,
+		 * fault then fix, in the same cell, and a second fence is a paste rather
+		 * than a retyped value. A
+		 * value of the wrong kind is not among
+		 * them: Card, Card set and Pool read every value as text and leave the
+		 * meaning to the face, so their `read` fails only on the block's shape.
+		 *
+		 * - **Card set, a line with its colon gone**: `GP 7` in the purse, which
+		 *   is what retyping a value by hand leaves. On `currency` rather than
+		 *   `abilities`, because a broken Abilities would turn every card reading a
+		 *   modifier into `?` and drown the states this view sets out to show; the
+		 *   one formula reading the purse, `gold_value`, shows `?` beside it, which
+		 *   is the cascade a reader meets and worth having in the frame.
+		 * - **Pool, a key written twice**: a second `max:` after a level-up,
+		 *   appended rather than edited. On `rolled_health`, the pool whose ceiling
+		 *   the character owns, so `max` is a key a player does type, and one
+		 *   nothing reads, so the error stays one cell.
+		 * - **Card, a fence never closed**: the closing line deleted. On `origin`,
+		 *   a keyed card inside a group, because every top-level keyed card already
+		 *   carries the `bad:key` config error above and `read` checks the key
+		 *   first. `parseCharacter` splits sections with no fence awareness, so in a
+		 *   real note this stays one section's failure rather than swallowing the
+		 *   next heading.
+		 */
+		if (config.id === 'currency') body = '```sheet\nCP: 42\nSP: 18\nGP 7\nPP: 1\n```';
+		if (config.id === 'rolled_health') body = '```sheet\ncurrent: 14\nmax: 22\nmax: 24\n```';
+		const children =
+			config.id === 'background' && sample.children !== undefined
+				? { ...sample.children, origin: '```sheet\norigin: Neverwinter\nnote: guild artisan\n' }
+				: sample.children;
 		/*
 		 * A picture written the way every analogue accepts it and this one refuses:
 		 * a bare path. `image.read` cannot fail, so this is refused in `render` like
@@ -3539,7 +3654,7 @@ export function brokenSamples(): Sample[] {
 		 * component drew, with the field still there to fix it. Nothing else stages a
 		 * body this component holds and will not draw, which is why it is worth
 		 * staging — and the message has to carry the fix rather than the fault:
-		 * "A picture is an embed" plus the syntax.
+		 * "Write the picture as an embed" plus the syntax.
 		 *
 		 * On the portrait alone. Breaking every Image sample would put one error
 		 * across the whole row on a view whose whole job is the states side by side,
@@ -3639,7 +3754,7 @@ export function brokenSamples(): Sample[] {
 			// the editor and not yet typed would be.
 			config.fields = [{ key: 'Notes', type: 'text' }];
 		}
-		return { config, body, children: sample.children };
+		return { config, body, children };
 	});
 }
 
@@ -4407,16 +4522,19 @@ export function notesSamples(): Sample[] {
 					{ key: 'DEX', name: 'Dexterity' },
 				],
 				derived: 'mod(value)',
+				// The computed row alone, which is what this sample is for. A stored
+				// `Bonus` beside it made the Check name, a 4em input and the Total
+				// wider than a six-column card at 520 (246px in 237), on the Roster's
+				// own columns rather than its notes.
 				columns: [
-					{ key: 'Bonus', type: 'number' },
-					{ key: 'Total', type: 'computed', formula: 'stat + Bonus', signed: true, publish: true },
+					{ key: 'Total', type: 'computed', formula: 'stat', signed: true, publish: true },
 				],
 				rows: [
 					{ label: 'Concentration', stat: 'CON', key: 'concentration' },
 					{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
 				],
 			} as ComponentConfig,
-			body: '```sheet\nCON: 14\nDEX: 16\n```\n\n| Check | Bonus |\n| --- | --- |\n| Concentration | 2 |\n| Stealth | 0 |\n',
+			body: '```sheet\nCON: 14\nDEX: 16\n```\n\n| Check |\n| --- |\n| Concentration |\n| Stealth |\n',
 		},
 		{
 			config: {

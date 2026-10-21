@@ -12,6 +12,7 @@ import {
 import { sampleOf } from '../test/sample';
 import { hoverClip, setClip } from '../test/clipped';
 import { closePopover } from '../ui/popover';
+import { cancel, pressDown, pressToFocus, release } from '../test/pointer';
 import { table, TableConfig } from './table';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import {
@@ -223,6 +224,14 @@ describe('card.render', () => {
 		expect(inputs(el).value?.getAttribute('aria-label')).toBe('Armour class');
 	});
 
+	it('gives the value the full keyboard, derived or not', () => {
+		// A derived implies a number, and a number may be negative or a
+		// fraction, which iOS's digits-only `numeric` keypad cannot type
+		// (docs/UI.md §7).
+		expect(inputs(render({ derived: '10 + value' })).value?.inputMode).toBe('text');
+		expect(inputs(render()).value?.inputMode).toBe('text');
+	});
+
 	it('computes the derived value, and updates it live while typing', () => {
 		const el = render({ derived: '10 + value' });
 		const derived = el.querySelector('.sheetsmith-card-derived');
@@ -333,6 +342,15 @@ describe('card.render', () => {
 		expect(
 			inputs(render({ hideValue: true, derived: '10 + value' })).value,
 		).toBeNull();
+	});
+
+	it('refuses a key holding a colon, naming the layout editor field that fixes it', () => {
+		// A layout refusal, so the fix is the layout's field: nothing in the note
+		// can repair a key the layout declares.
+		const el = render({ key: 'Armour: class' }, null);
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toBe(
+			'The key cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Key in the layout editor.',
+		);
 	});
 
 	it('reports a key it cannot store, even with no section to read', () => {
@@ -1766,5 +1784,216 @@ describe('the mark follows the card\'s own formula', () => {
 			readerEl.querySelector('.sheetsmith-card-derived')?.textContent,
 		).toContain('17');
 		expect(readerEl.querySelector('.sheetsmith-modified')).toBeNull();
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: a finger cannot aim a caret, so
+ * a focus nobody aimed selects the number and typing replaces it.
+ */
+describe('card.render: focusing the value selects its number', () => {
+	afterEach(() => {
+		document.body.replaceChildren();
+	});
+
+	const mounted = (
+		overrides: Partial<CardConfig> = {},
+		data: { value?: string; note?: string } | null = { value: '27' },
+		ctx: Partial<RenderContext> = {},
+	) => {
+		const el = render(overrides, data, ctx);
+		document.body.appendChild(el);
+		return el;
+	};
+
+	const selected = (input: HTMLInputElement | null) => [
+		input?.selectionStart,
+		input?.selectionEnd,
+	];
+
+	it('selects the whole number on a touch press', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		value.setSelectionRange(1, 1);
+		pressToFocus(value, 'touch');
+		expect(selected(value)).toEqual([0, 2]);
+	});
+
+	it('leaves the caret where a mouse press aimed it', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		value.setSelectionRange(1, 1);
+		pressToFocus(value, 'mouse');
+		expect(selected(value)).toEqual([1, 1]);
+	});
+
+	it('leaves the caret where a pen press aimed it', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		value.setSelectionRange(1, 1);
+		pressToFocus(value, 'pen');
+		expect(selected(value)).toEqual([1, 1]);
+	});
+
+	it('selects the whole number on keyboard or programmatic focus', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		value.setSelectionRange(1, 1);
+		value.focus();
+		expect(selected(value)).toEqual([0, 2]);
+	});
+
+	it('collapses the selection when a second touch press lands on it', () => {
+		// A tap on selected text opens iOS's edit menu, so the press clears it
+		// on the way down and the platform places the caret.
+		const value = inputs(mounted()).value;
+		if (!value) throw new Error('expected the field');
+		pressToFocus(value, 'touch');
+		expect(selected(value)).toEqual([0, 2]);
+		pressDown(value, { pointerType: 'touch' });
+		expect(value.selectionStart).toBe(value.selectionEnd);
+	});
+
+	for (const pointerType of ['mouse', 'pen']) {
+		it(`keeps the selection when a second ${pointerType} press lands on it`, () => {
+			const value = inputs(mounted()).value;
+			if (!value) throw new Error('expected the field');
+			value.focus();
+			expect(selected(value)).toEqual([0, 2]);
+			pressDown(value, { pointerType });
+			expect(selected(value)).toEqual([0, 2]);
+		});
+	}
+
+	it('does not reselect on a second touch press into the focused field', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		pressToFocus(value, 'touch');
+		expect(selected(value)).toEqual([0, 2]);
+		// Where the platform put the caret for the second tap.
+		value.setSelectionRange(1, 1);
+		pressToFocus(value, 'touch');
+		expect(selected(value)).toEqual([1, 1]);
+	});
+
+	it('selects again at the end of a touch press, after the tap placed a caret', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		pressDown(value, { pointerType: 'touch' });
+		value.focus();
+		// WebKit places the caret when the tap ends, after focus.
+		value.setSelectionRange(1, 1);
+		release(value, { pointerType: 'touch' });
+		value.click();
+		expect(selected(value)).toEqual([0, 2]);
+	});
+
+	it('forgets a cancelled touch, so the focus after it does not reselect', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		pressDown(value, { pointerType: 'touch' });
+		cancel(value);
+		value.focus();
+		// A caret placed after the focus, then a click that is no tap's end.
+		value.setSelectionRange(1, 1);
+		value.click();
+		expect(selected(value)).toEqual([1, 1]);
+	});
+
+	it('drops a touch reselect left pending when a mouse press refocuses', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		// A touch focus whose tap end never arrived, then the field left.
+		pressDown(value, { pointerType: 'touch' });
+		value.focus();
+		value.blur();
+		value.setSelectionRange(1, 1);
+		pressToFocus(value, 'mouse');
+		expect(selected(value)).toEqual([1, 1]);
+	});
+
+	it('drops a stale touch reselect on the next press into the focused field', () => {
+		const { value } = inputs(mounted());
+		if (!value) throw new Error('expected the value');
+		// A touch that slid off: down and up, no click, no focus.
+		pressDown(value, { pointerType: 'touch' });
+		release(value, { pointerType: 'touch' });
+		// Tab reads the stale touch and selects, as a Tab does anyway.
+		value.focus();
+		expect(selected(value)).toEqual([0, 2]);
+		// A mouse press into the focused field, its caret placed by the platform.
+		pressDown(value, { pointerType: 'mouse' });
+		value.setSelectionRange(1, 1);
+		release(value, { pointerType: 'mouse' });
+		value.click();
+		expect(selected(value)).toEqual([1, 1]);
+	});
+
+	it('selects the value when a press on the card padding routes focus to it', () => {
+		const el = mounted();
+		const face = el.querySelector('.sheetsmith-card') as HTMLElement;
+		const { value } = inputs(el);
+		if (!value) throw new Error('expected the value');
+		value.setSelectionRange(1, 1);
+		face.dispatchEvent(new MouseEvent('click', { bubbles: true, clientY: 5 }));
+		expect(value.ownerDocument.activeElement).toBe(value);
+		expect(selected(value)).toEqual([0, 2]);
+	});
+
+	it('selects the stored number, not the effective one the pill reads', () => {
+		const el = mounted(
+			{
+				derived: 'floor((value + mod.self - 10) / 2)',
+				effective: 'value + mod.self',
+			},
+			{ value: '15' },
+			{
+				resolveField: (field, scope) => {
+					const raw = typeof scope.value === 'string' ? Number(scope.value) : NaN;
+					if (Number.isNaN(raw)) return null;
+					if (field === 'effective') return raw + 102;
+					if (field === 'derived') return Math.floor((raw + 2 - 10) / 2);
+					return null;
+				},
+			},
+		);
+		const { value } = inputs(el);
+		if (!value) throw new Error('expected the value');
+		// Three digits at rest, two stored, so a selection of the pill's
+		// reading would end at 3 and this one ends at 2.
+		expect(value.value).toBe('117');
+		pressToFocus(value, 'touch');
+		expect(value.value).toBe('15');
+		expect(selected(value)).toEqual([0, 2]);
+		value.blur();
+		value.focus();
+		expect(value.value).toBe('15');
+		expect(selected(value)).toEqual([0, 2]);
+	});
+
+	it('does not select a word in the value field', () => {
+		const { value } = inputs(mounted({}, { value: 'Lawful' }));
+		if (!value) throw new Error('expected the value');
+		value.setSelectionRange(2, 2);
+		pressToFocus(value, 'touch');
+		expect(selected(value)).toEqual([2, 2]);
+	});
+
+	it('does not select the note on a touch press', () => {
+		const { note } = inputs(mounted({}, { value: '27', note: '42' }));
+		if (!note) throw new Error('expected the note');
+		note.setSelectionRange(1, 1);
+		pressToFocus(note, 'touch');
+		expect(selected(note)).toEqual([1, 1]);
+	});
+
+	it('commits nothing when a touch focus is followed by a blur', () => {
+		const onChange = vi.fn();
+		const { value } = inputs(mounted({}, { value: '27' }, { onChange }));
+		if (!value) throw new Error('expected the value');
+		pressToFocus(value, 'touch');
+		value.blur();
+		expect(onChange).not.toHaveBeenCalled();
+		expect(value.value).toBe('27');
 	});
 });

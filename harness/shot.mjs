@@ -11,21 +11,66 @@
  * Views are addressed by the harness's own query parameters, so anything
  * reachable by clicking is reachable by a shot. Output lands in harness/shots/,
  * which is gitignored.
+ *
+ * **Two capture paths.** A view is shot by `--screenshot` unless it needs
+ * something only a *driven* browser can do, and then it is shot over the
+ * DevTools Protocol (`cdp.mjs`, `shootDriven` below). A view is driven when it
+ * names any of these, as a field on a default view or as an argument here:
+ *
+ *   size=380,1400                     # a frame under 500px wide: a true viewport
+ *   media=prefers-contrast:more       # an emulated media feature; repeatable
+ *   media=forced-colors:active
+ *   hover=<selector>                  # a real pointer resting on the element
+ *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held
+ *   platform=tablet                   # Obsidian's tablet body classes, and touch
+ *   platform=phone                    # the phone's, `is-mobile is-phone`, and touch
+ *   frame=<selector>                  # the PNG clipped to that element, plus 16px
+ *   pad=<px>                          # what a frame adds round the element
+ *
+ * and `flag=<chrome flag>` passes a launch flag on either path, so a custom view
+ * can ask for `--force-high-contrast` as a default view does. The values are
+ * read here and never reach the page; everything else is the harness's query.
+ *
+ * `platform=` is a body class the page cannot be asked for: the stub never
+ * sets Obsidian's platform classes, so the driven path adds `is-mobile` and
+ * `is-tablet` to `body` the moment it exists, before the harness's script
+ * draws or presses anything, so a panel a `press=` opens is placed against
+ * the tablet's own sizes; and with touch emulated so a
+ * coarse pointer's rules answer as they do on the device. What the classes
+ * reach is what `calibrate.mjs` carries under them — the platform's own
+ * variables and its bare-control rules — so it is the app's tablet CSS, not a
+ * device.
+ *
+ * `frame=` clips the capture to one element's box, wherever it sits on the
+ * page, so a component deep in the sample sheet can be looked at without a
+ * frame the sheet's whole height: the page is still laid out at the view's
+ * `size`, so a frame shows the component at the width it has there.
+ *
+ * `--screenshot` cannot do any of the four: headless Chrome floors the viewport
+ * at 500px whatever `--window-size` says (a narrower frame is a 500px render
+ * cropped), `--force-prefers-contrast` renders a byte-identical PNG, and nothing
+ * in the page can move the real pointer that `:hover` and a pointer capture
+ * answer to.
  */
 
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CHROME, checkPlatform, launch, stagePlatform, wait } from './cdp.mjs';
 
-const CHROME = [
-	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	'/Applications/Chromium.app/Contents/MacOS/Chromium',
-	'/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-	'/usr/bin/google-chrome',
-	'/usr/bin/chromium',
-].find((path) => existsSync(path));
+/**
+ * Whether this file is being run, or imported for its view list. Imported, it
+ * shoots nothing: `measure-lists.mjs` reads `DEFAULTS` so the widths it
+ * measures are the widths these views stage, rather than a copy of them.
+ *
+ * Through `realpathSync`, because Node realpaths the entry module's
+ * `import.meta.url` and leaves `argv[1]` as typed: run through a symlink — the
+ * repository is symlinked into the test vault's plugins folder — the two
+ * differed, and a run shot nothing and exited 0.
+ */
+const MAIN = process.argv[1] !== undefined && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 
-if (!CHROME) {
+if (MAIN && !CHROME) {
 	console.error('No Chrome-family browser found. Install one, or open harness/index.html by hand.');
 	process.exit(1);
 }
@@ -33,7 +78,7 @@ if (!CHROME) {
 const root = fileURLToPath(new URL('.', import.meta.url));
 const page = `file://${root}index.html`;
 const outDir = `${root}shots`;
-mkdirSync(outDir, { recursive: true });
+if (MAIN) mkdirSync(outDir, { recursive: true });
 
 /**
  * The views worth having by default: both themes, both surfaces, and narrow.
@@ -207,7 +252,7 @@ mkdirSync(outDir, { recursive: true });
  * **8100**, 16600 to **17300**, 8600 to **9300**, 9600 to **10200**.
  *
  * **Raised again for the scoped reset** (`docs/features/record-set-reset-scope.md`):
- * `rest_features` and its pool take rows 84–86 at the foot of the sheet. Measured
+ * `rest_features` and its pool take rows 84–86 (now 86–88) at the foot of the sheet. Measured
  * off `document.body` over the DevTools Protocol, harness built first, through
  * each view's own query and window — and HEAD measured by the same script first,
  * which reproduced the four numbers above to the pixel, so the instrument is the
@@ -215,8 +260,19 @@ mkdirSync(outDir, { recursive: true });
  * against 17300, **9264** at 520 against 9300 and **10281** at `text=24` against
  * 10200: three over, and the 520 one inside by 36px. 8100 to **8500**, 17300 to
  * **17800**, 9300 to **9600**, 10200 to **10600**.
+ *
+ * **Raised again when the Passport row stopped sitting under the six-up group**:
+ * `cacbe54` moved the group down two rows and left Passport and Playbook over its
+ * foot, so they and everything below them moved two rows down. Measured off
+ * `document.body` over the DevTools Protocol, harness built first, through each
+ * view's own query: **8423** here against 8500, **9625** at 520 against 9600 and
+ * **10629** at `text=24` against 10600, two over and this one inside by 77px.
+ * `&width=380` is one column, where rows place nothing, and it measured
+ * **18338** both before and after the move, against 18300: already over by a
+ * stale 38px this pass did not cause. 8500 to **8800**, 9600 to **9900**, 10600
+ * to **10900**, 18300 to **18600**.
  */
-const SHEET_FRAME = '1400,8500';
+const SHEET_FRAME = '1400,8800';
 
 /**
  * The `pinned-add` state at a 520px container with its wide Table scrolled to one
@@ -329,7 +385,16 @@ const TRACK_ADD_TRIGGER =
 	"press=%5Baria-label%3D'Add%20to%20Open%20hit%20dice'%5D";
 const TRACK_REMOVE_TRIGGER =
 	"press=%5Baria-label%3D'Remove%20from%20Open%20hit%20dice'%5D";
-const DEFAULTS = [
+/** The Languages table's cell, the one sample whose Table level is a select. */
+const TABLE_SELECT = ".sheetsmith-cell:has([aria-label='Common Fluency'])";
+/**
+ * Under the grid's 8px gap, so the card beside it, whose border sits 8px from
+ * the cell's edge, stays out of the frame: at the default 16 its right border
+ * was a stray line down the left of every shot.
+ */
+const TABLE_SELECT_PAD = 6;
+
+export const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
 	{
@@ -415,9 +480,101 @@ const DEFAULTS = [
 		// while at one column each is a full-width row of its own. Measured
 		// 17893 against 17800, so the last cards on the sheet were the ones
 		// cropped. 17800 to **18300**.
+		//
+		// Found over at 18338 by the pass that moved the Passport row, which
+		// does not reach this view (SHEET_FRAME's note). 18300 to **18600**.
+		//
+		// Raised again for the Languages table, a Table select beside the cards
+		// roster: free columns at every other width, a full-width row of its own
+		// here. Measured 18575 against 18600, 25px of headroom. 18600 to
+		// **18900**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,18300',
+		size: '520,18900',
+	},
+	{
+		/*
+		 * **A true 380px viewport**, which `sheet-narrow` is not: that one is a
+		 * 380 *container* in a 520 window, because `--screenshot` floors the
+		 * viewport at 500. A frame under 500 wide is driven (`driven` below), so
+		 * this is the first sheet shot whose `innerWidth` is the phone's, and the
+		 * first where a rule sized against the viewport — `100vw`, a media query,
+		 * the anchored panel's cap — sees the number the frame says.
+		 *
+		 * No `&width=`: the stage fills the viewport, as a pane fills a phone.
+		 * Measured off `document.body` at this viewport, harness built first:
+		 * **18459**; **18632** once the Languages table joined the sample.
+		 */
+		name: 'sheet-viewport-380',
+		query: 'surface=sheet&theme=dark',
+		size: '380,19000',
+	},
+	{
+		/*
+		 * **A tablet**: Obsidian's `is-mobile is-tablet` on `body` and touch
+		 * emulated, at an 820px portrait viewport, so the app's tablet CSS that
+		 * `calibrate.mjs` carries applies — the platform's variables and
+		 * `.is-tablet button:not(.clickable-icon)`'s padding, at (0,2,1), which
+		 * outranked every sheet button rule until they were doubled (the foot of
+		 * `src/styles/sheet.css`). Every glyph button, ring and tab is the thing
+		 * to look at. Needs a calibrated harness: without
+		 * `obsidian.generated.css` the classes reach nothing and this is a
+		 * desktop sheet at 820. Measured off `document.body` through this
+		 * view's own staging, harness built first: **10596**.
+		 */
+		name: 'sheet-tablet',
+		query: 'surface=sheet&theme=light',
+		size: '820,11000',
+		platform: 'tablet',
+	},
+	{
+		/*
+		 * **The anchored panel on a tablet**: the modifier form open on a mixed
+		 * row, as `sheet-modifier-form-light` opens it, framed to the panel.
+		 * What to look at is the two kinds of button side by side: the list
+		 * lines and **Add**, whose padding is the plugin's and doubled past the
+		 * tablet rule, and **Save** and **Remove**, which take the app's chrome
+		 * whole and so its tablet padding, `var(--size-4-1) var(--size-4-5)`.
+		 * At the tablet's 44px inputs the form outgrows the panel's cap, so the
+		 * body is scrolled to **Save**, which brings **Remove** with it.
+		 */
+		name: 'sheet-tablet-panel',
+		query: `surface=sheet&theme=light&${OPEN_MIXED_FORM}&scroll=.sheetsmith-panel-save`,
+		size: '820,11000',
+		platform: 'tablet',
+		frame: '.sheetsmith-panel',
+	},
+	{
+		/*
+		 * **A Table's level drawn as a select**, framed: the Languages table, the
+		 * one sample staging a cell's menu, sits some 6800px down the default
+		 * sheet, where every full-sheet frame shows it at a twentieth of its
+		 * size. What to look at is `docs/UI.md` §9's one chevron inside the
+		 * select's own field, at its end, clear of the longest option's text.
+		 * Named by a select's accessible name, which only this table carries.
+		 */
+		name: 'sheet-table-select',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		frame: TABLE_SELECT,
+		pad: TABLE_SELECT_PAD,
+	},
+	{
+		name: 'sheet-table-select-dark',
+		query: 'surface=sheet&theme=dark',
+		size: SHEET_FRAME,
+		frame: TABLE_SELECT,
+		pad: TABLE_SELECT_PAD,
+	},
+	{
+		// The chevron is two borders, which forced colors repaints, where the
+		// app's own `.dropdown` chevron is invisible there (`docs/BACKLOG.md` § UI).
+		name: 'sheet-table-select-forced-colors',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		frame: TABLE_SELECT,
+		pad: TABLE_SELECT_PAD,
+		flags: ['--force-high-contrast'],
 	},
 	{
 		/*
@@ -434,8 +591,9 @@ const DEFAULTS = [
 		 *
 		 * A 620px window rather than a 620px container: `&width=` is the harness's
 		 * own container width and the window only has to be wide enough not to
-		 * clip it, which is also why this one clears the 500px floor the row in
-		 * `docs/UI.md` §12 records.
+		 * clip it, which is also why this one cleared the 500px floor `--screenshot`
+		 * imposed when it was added. A frame under 500 wide is now a true viewport
+		 * (`driven` below; `sheet-viewport-380`), so the window is a choice here.
 		 */
 		// Raised to 6000 for the "Ability checks" six-up: at 520 the sheet has
 		// not collapsed, so the outer group's six pairs still sit two-per-row —
@@ -464,18 +622,21 @@ const DEFAULTS = [
 		// Raised again with SHEET_FRAME for the scoped reset: measured 9264
 		// against 9300 — inside, by 36px, which is a frame that clips on the next
 		// row anybody adds. 9300 to **9600**.
+		//
+		// Raised again with SHEET_FRAME for the moved Passport row: measured 9625
+		// against 9600. 9600 to **9900**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,9600',
+		size: '620,9900',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
-		// "so it follows the vault's text size setting", and until this entry
-		// existed nothing had ever rendered a sheet at any size but the default:
-		// the claim was argued in a comment and never once looked at. 24px is
-		// half again the 16px default and well inside what Obsidian's Appearance
-		// setting offers, so it is a size a reader actually sets rather than an
-		// invented worst case. What it shows is truncation that grew, a
+		// so it follows the sheet's own size, and until this entry existed
+		// nothing had ever rendered a sheet at any size but the default: the
+		// claim was argued in a comment and never once looked at. 24px is half
+		// again the harness's 16px default. It stands for a theme or snippet that
+		// sets the sheet's size, not for the vault's text-size setting, which
+		// reaches no `em` on a sheet (UI.md §5). What it shows is truncation that grew, a
 		// hierarchy that reordered, and controls that collided. See
 		// `reference/legibility.md` §4. Taller frame because everything on the
 		// sheet gets taller with it: 4500 against a measured 4201, where 3000
@@ -504,7 +665,10 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the scoped reset: measured 10281
 		// against 10200. 10200 to **10600**.
-		size: '1400,10600',
+		//
+		// Raised again with SHEET_FRAME for the moved Passport row: measured
+		// 10629 against 10600. 10600 to **10900**.
+		size: '1400,10900',
 	},
 	{
 		/*
@@ -564,10 +728,11 @@ const DEFAULTS = [
 		size: '1400,1000',
 	},
 	{
-		// The same list at a phone's width. **A 520px window, not 380**: headless
-		// Chrome floors a viewport at 500 (`docs/BACKLOG.md`), and the modal sizes
-		// against the viewport rather than the harness's own container, so a
-		// `width=380` query would photograph a 520px modal and call it 380.
+		// The same list at a phone's width. **A 520px window, not a `width=380`
+		// query**: the modal sizes against the viewport rather than the harness's
+		// own container, so the query in this window would photograph a 520px
+		// modal and call it 380. Chosen while `--screenshot` floored the viewport at 500; a frame
+		// under 500 is now a true viewport (the driven path, `driven` below).
 		name: 'sheet-reset-confirm-narrow',
 		query: 'surface=sheet&theme=light&confirm=Short%20rest',
 		size: '520,1000',
@@ -629,6 +794,13 @@ const DEFAULTS = [
 		 * strengths, and it belongs in the repository instead of in a reviewer's
 		 * scratch directory.
 		 *
+		 * **And a multi-mark run's dividers in all three states**, on the
+		 * Quartered card beside Clocks: a wholly lit segment, one lit for a mark of
+		 * four, and an unlit one. The unlit one is the case the dividers were
+		 * redrawn for — as a fill this mode repainted them `Canvas`, so an unlit
+		 * segment lost its count of targets left — and before that card no run on
+		 * the sheet had one, which is what this row's fix waited on.
+		 *
 		 * `theme=light`, which forced colors overrides anyway — the flag decides the
 		 * palette, so naming a theme here only says which one the page asked for.
 		 */
@@ -636,6 +808,30 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light',
 		size: SHEET_FRAME,
 		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The first view at `prefers-contrast: more`, for any component.** The
+		 * sheet carries several of these blocks — the card's border, the
+		 * abbreviation, the unresolved glyph, a dropdown's chevron, a record
+		 * group's outline — and none had been rendered: Chrome's
+		 * `--force-prefers-contrast` flag draws a byte-identical PNG, so the
+		 * feature is emulated over the DevTools Protocol instead (`media` below,
+		 * which makes this a driven view).
+		 *
+		 * Both palettes, because what the blocks do is strengthen a muted mark, and
+		 * the page a muted mark fades against is the other half of the question.
+		 */
+		name: 'sheet-contrast-more',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-contrast-more-dark',
+		query: 'surface=sheet&theme=dark',
+		size: SHEET_FRAME,
+		media: { 'prefers-contrast': 'more' },
 	},
 	{
 		/*
@@ -911,20 +1107,17 @@ const DEFAULTS = [
 		 * **And it does not narrow the panel, which is worth saying rather than
 		 * hoping otherwise.** It was added to catch an indented hanging block
 		 * wrapping under its own indent, and it cannot: the panel hangs off
-		 * `document.body` and is capped at `min(500px, …)` of *viewport*, so it
-		 * draws at the same 390px here as at 1400 — which `docs/UI.md` §12 already
-		 * records twice, once for the panel not following the reader's text size
-		 * and once for headless Chrome refusing a viewport under 500px. What this
-		 * does photograph is the two-line part in the other palette against a narrow
-		 * sheet.
+		 * `document.body` and its width is `min(30em, 100vw - 2 * --size-4-4)` of
+		 * *viewport*, so in this 520 window it draws at the same 390px as at 1400
+		 * (`docs/UI.md` §5 records the same for the reader's text size, §9 the
+		 * true-380 width). What this does photograph is the two-line part in the
+		 * other palette against a narrow sheet.
 		 *
 		 * **Driving the wrap needs `Emulation.setDeviceMetricsOverride` over the
-		 * DevTools protocol, not `--window-size`**, which is the same instrument
-		 * three backlog rows already wait on — the sub-500px floor,
-		 * `prefers-contrast: more`, and the bad-drag border that exists only during
-		 * a drag. So it joins that queue rather than being a gap of its own, and the
-		 * expectation this view was added under was wrong about the mechanism as
-		 * well as about the outcome.
+		 * DevTools protocol, not `--window-size`**, and the expectation this view
+		 * was added under was wrong about the mechanism as well as about the
+		 * outcome. That override is now the driven path's: a frame under 500 wide
+		 * gets it, as `sheet-modifier-form-viewport-380` does.
 		 */
 		name: 'sheet-modifier-form-multi-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MULTI_FORM}`,
@@ -968,10 +1161,10 @@ const DEFAULTS = [
 		/*
 		 * **The panel at `Text → 24`, and the answer is that nothing in it moves.**
 		 * Taken expecting the height cap to bite here — a cap in px over type that
-		 * follows a vault setting is the shape of a clip — and it does not, for a
+		 * follows the sheet's size is the shape of a clip — and it does not, for a
 		 * reason worth having a shot of rather than a sentence: the panel hangs off
 		 * `document.body` and sets `font-size: var(--font-ui-small)` on itself, so
-		 * neither the stage's font size nor the reader's text setting reaches it. It
+		 * the stage's font size, which is what `text=` moves, does not reach it. It
 		 * is 390 x 479 here and 390 x 479 at the default, beside a sheet that grew
 		 * 650px.
 		 *
@@ -991,16 +1184,55 @@ const DEFAULTS = [
 	},
 	{
 		/*
-		 * **The panel on a narrow pane**, where it clamps to the viewport minus a
-		 * gutter and sits inside a table that is itself scrolling. `docs/UI.md` §12
-		 * holds the sub-500px floor; 520 is the narrowest a shot can honestly show,
-		 * and it is still narrower than the panel's own 30em.
+		 * **The panel on a narrow pane**, inside a table that is itself scrolling.
+		 * A 520 window with a 380 container, from when 520 was the narrowest a shot
+		 * could honestly show; `sheet-modifier-form-viewport-380` is the true 380.
+		 * **What this one shows is the overhang, and it is ruled** (`docs/UI.md`
+		 * §9): the panel is bounded by the window, not the pane, so it draws at its
+		 * full 390 from 105 to 495 against a sheet ending at 449, and stays
+		 * inside the window's 16px gutter, as `Menu` would.
 		 */
 		name: 'sheet-modifier-form-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
 		// Kept equal to `sheet-narrow`'s own frame, for the same reason as
 		// `sheet-modifier-form-large-text` above.
 		size: '520,11800',
+	},
+	{
+		/*
+		 * **The panel at a true 380px viewport**, which the view above cannot be:
+		 * the panel hangs off `document.body` and is capped against the viewport,
+		 * so a 380 container in a 520 window draws it at its wide size. Here the
+		 * cap bites — 348 wide, the viewport less its gutter — inside a table that
+		 * is itself scrolling, and `placeAnchored` centres it, 16px a side.
+		 * Measured at this viewport, off the panel's *body*, which is where the
+		 * scroll is: 547 of content, which is why the cap is 570 (`shared.css`).
+		 * The box's own `scrollHeight` reads 498 against a cap of 500 whatever the
+		 * body holds, which is how an earlier note here read a fit that was not
+		 * one. The sheet is 18240 tall.
+		 */
+		name: 'sheet-modifier-form-viewport-380',
+		query: `surface=sheet&theme=dark&bar=off&${OPEN_MIXED_FORM}`,
+		size: '380,18800',
+	},
+	{
+		/*
+		 * **A row with three parts and one of them open, at the same true 380** —
+		 * the one state `shared.css`'s `570px` cap says does not fit, and so the one
+		 * place the panel scrolls (625 against a body of 568): two closed lines with their reasons, then the
+		 * typed part's six fields, its **Remove** and the promote row. The
+		 * `Charm bracelet` row exists for this and nothing else, in a state of its
+		 * own (`state=three-parts`) so the populated sheet every other shot
+		 * draws is unchanged; every part waits on Worn, which is off.
+		 *
+		 * What to look at is the foot: the body scrolls inside the capped box, so
+		 * the cut falls inside the form and the box's own edge stays drawn.
+		 * Named by the row's accessible name, which begins with its own name.
+		 */
+		name: 'sheet-modifier-form-three-parts-viewport-380',
+		query:
+			"surface=sheet&theme=dark&state=three-parts&bar=off&press=.sheetsmith-table-modifier-button%5Baria-label%5E%3D'Charm%20bracelet%20Modifiers'%5D&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D",
+		size: '380,18800',
 	},
 	{
 		/*
@@ -1178,6 +1410,23 @@ const DEFAULTS = [
 		query:
 			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abilities.',
 		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **A real pointer resting on the third member**, which is the half of
+		 * `docs/BACKLOG.md`'s suggestion-popup row a driven browser can reach — and
+		 * what it shows is that nothing moves. Obsidian writes no `:hover` rule for
+		 * a suggestion item: its `mousemove` moves `is-selected` (`app.js`'s
+		 * `onSuggestionMouseover`), and `obsidian-stub.ts` binds no `mousemove`, so
+		 * the highlight stays on the first item under the pointer. Kept as the
+		 * picture that row points at, so the gap is seen rather than asserted. A
+		 * window-sized frame: the popup sits about 900px down, beside the field.
+		 */
+		name: 'editor-suggest-hover',
+		query:
+			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abilities.',
+		size: '1500,1400',
+		hover: '.suggestion-item:nth-child(3)',
 	},
 	{
 		// Inside an aggregate's second argument, where the named table's own
@@ -1392,12 +1641,12 @@ const DEFAULTS = [
 	},
 	{
 		/*
-		 * **The pane at the vault's `Text` setting, which no editor view had.**
+		 * **The pane at the harness's `Text → 24`, which no editor view had.**
 		 * Two shots existed at `text=24` and both were `surface=sheet`, so §5's
-		 * "relative units follow the vault's text size" had never been checked
-		 * on the surface where most of a sheet is actually configured — and it
-		 * is not one message. `editor.css` declares `--font-smallest`, which is
-		 * `0.8em` and follows the setting, in six places against eight tokens
+		 * "relative units follow the sheet's size" had never been checked on the
+		 * surface where most of a sheet is actually configured — and it is not
+		 * one message. `editor.css` declares `--font-smallest`, which is `0.8em`
+		 * and follows the stage's size, in six places against eight tokens
 		 * fixed in px: at Text 24 the six grow 1.5× while their neighbours hold,
 		 * so eight muted *secondary* labels render 48% larger than the 104
 		 * primary ones around them (`reference/legibility.md` §4, inverted
@@ -1835,17 +2084,138 @@ const DEFAULTS = [
 		size: '1210,900',
 	},
 	{
-		// The narrow regime, which had no view at all: `editor-stacked` at 1190 was
-		// the narrowest editor shot, and everything below it was unlooked at. This
-		// one shows a pane that does not fit — the picker's delete clipped, the
-		// schematic running off the right, the panel's `height` field off-screen
-		// entirely. It is here *because* it is wrong: `docs/UI.md` §12 has the row
-		// and this is the picture it points at, and a regime with no shot is how
-		// this shipped. 380 to match the sheet's own narrow view.
+		// The narrow regime (`docs/features/layout-editor-narrow-regime.md`), at a
+		// true 380: the canvas drawn as one column with its note, the rows
+		// stacked, **Back to the selection** in the panel's title row. Framed whole,
+		// which it had not been since the driven path made it a true viewport:
+		// measured off `document.body` through this view's own query, harness
+		// built first, **30087**.
 		name: 'editor-narrow',
 		query: 'surface=editor&theme=light&open=weapons',
-		// 7300 against a measured 7252 at 380, where every row is at its tallest.
-		size: '380,8050',
+		size: '380,30200',
+	},
+	{
+		// The same pane under the app's phone CSS: 44px fields, so every row is
+		// taller, and the position fields' 75px, which the app's text-width rule
+		// does not reach because they are `number` inputs. Measured the same way:
+		// **33971**.
+		name: 'editor-phone',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '380,34250',
+		platform: 'phone',
+	},
+	{
+		// A list field at phone width, which `editor-phone` does not stage: it
+		// opens Weapons, and no other view puts a Rows or Columns list under the
+		// app's phone CSS. Skills holds both, stacked, inside their scroll cap
+		// (`docs/features/list-scroll-cap.md`). Framed to the form, so the PNG is
+		// the panel and not the 33,000px of canvas and tree above it; the page is
+		// still laid out at the frame's full height. Measured off
+		// `document.body` through this view's own query, harness built first:
+		// **36025** under the 320px cap, **36185** under 400.
+		name: 'editor-phone-skills',
+		query: 'surface=editor&theme=light&open=skills',
+		size: '380,36400',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		// The same form at the larger text size, which is where the touch row's
+		// down arrow could leave its place: it is offset by one control width,
+		// and this is the setting that would move a width the offset counts on
+		// (`docs/features/list-field-phone-floor.md`). Measured the same way:
+		// **40047**.
+		name: 'editor-phone-skills-large-text',
+		query: 'surface=editor&theme=light&open=skills&text=24',
+		size: '380,40200',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		// The layout's own form under phone staging: its promoted fields, a touch
+		// row of two fields, and its Modifiers, one field filling the row
+		// (`docs/features/list-field-phone-floor.md`). Nothing is opened, so the
+		// panel is the layout's. Measured the same way: **42162**.
+		name: 'editor-phone-layout-lists',
+		query: 'surface=editor&theme=light',
+		size: '380,42300',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		// The pane on a tablet, stacked at 820, where `.is-tablet
+		// button:not(.clickable-icon)` took 4px 20px of padding off the tree's
+		// names and chevrons until they were doubled past it (`editor.css`).
+		// Measured: **23841**.
+		name: 'editor-tablet',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '820,23950',
+		platform: 'tablet',
+	},
+	{
+		// A list field's touch arrows at their ends (`docs/features/disabled-controls.md`):
+		// Abilities' entries, STR's up arrow and CHA's down arrow disabled and
+		// faded by the app's `.clickable-icon[aria-disabled='true']`, the rest at
+		// full strength. An entry list has no scroll cap, so both ends are in the
+		// frame. Measured off `document.body` through this query at 380 under
+		// phone staging, harness built first: **35756**.
+		name: 'editor-reorder-arrows-phone',
+		query: 'surface=editor&theme=light&open=abilities',
+		size: '380,35900',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		// The same in forced colors, where the end arrows read GrayText: the
+		// system's own disabled colour, which `editor.css` gives both reorder
+		// sites since the system cannot know the tab order's div is disabled.
+		name: 'editor-reorder-arrows-phone-forced-colors',
+		query: 'surface=editor&theme=light&open=abilities',
+		size: '380,35900',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// A tab set's tab order: Combat's up arrow and Rest's down arrow
+		// disabled, Spells' two enabled. The app draws a disabled extra button
+		// as an enabled one, so the fade is the `aria-disabled` this feature adds.
+		name: 'editor-tab-order',
+		query: 'surface=editor&theme=light&open=pages',
+		size: EDITOR_FRAME,
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		name: 'editor-tab-order-forced-colors',
+		query: 'surface=editor&theme=light&open=pages',
+		size: EDITOR_FRAME,
+		frame: '.sheetsmith-editor-panel',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// The canvas's threshold, bracketed: 530 is a 504 pane, so the canvas's
+		// view is under 480 of content and draws one column with its note; 546 is
+		// a 520 pane and a grid. Measured: **28853** and **21294**.
+		name: 'editor-canvas-column',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '530,28950',
+	},
+	{
+		name: 'editor-canvas-grid',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '546,21400',
+	},
+	{
+		// The rows' threshold, bracketed: 600 is a 574 pane, stacked; 620 a 594
+		// pane, side by side. Measured: **21066** and **20922**.
+		name: 'editor-rows-stacked',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '600,21150',
+	},
+	{
+		name: 'editor-rows-beside',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '620,21000',
 	},
 	{
 		// No layouts at all: the first thing a new vault shows, and one of the
@@ -1889,9 +2259,9 @@ const DEFAULTS = [
 	{
 		// The same state in a 380px pane, because the dropdown's selected label
 		// is now a whole vault path. **`&width=380` rather than a 380-wide
-		// window**, which is `sheet-narrow`'s own spelling and for its reason:
-		// headless Chrome floors the viewport at 500 (`docs/BACKLOG.md` § UI), so
-		// a `380,…` frame is a 500px render cropped to 380 — and it drew this
+		// window**, which is `sheet-narrow`'s own spelling, and chosen when
+		// `--screenshot` was the only path: it floors the viewport at 500, so a
+		// `380,…` frame was a 500px render cropped to 380 — and it drew this
 		// row's description as cut off mid-sentence at the frame's edge, which
 		// looks exactly like a line that fails to wrap. Measured in a true 380px
 		// pane the row is 354 wide, the controls and the description 322 each,
@@ -2022,7 +2392,7 @@ const DEFAULTS = [
 	{
 		// Below the pane's missing narrow regime (`docs/BACKLOG.md` § UI).
 		// `&width=` rather than a narrow window, `editor-outside-folder-narrow`'s
-		// spelling and for its reason: headless Chrome floors the viewport at 500.
+		// spelling, chosen when `--screenshot` floored the viewport at 500.
 		name: 'picker-narrow-480',
 		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&width=480',
 		size: '520,4600',
@@ -2103,6 +2473,42 @@ const DEFAULTS = [
 		name: 'canvas-drag-grid',
 		query: 'surface=editor&theme=dark&layout=canvas-demo&drag=front%3A180%2C120',
 		size: '1400,1400',
+	},
+	/*
+	 * **A bad drag, held by a real pointer** (`hold` below, so these are driven
+	 * views). `-clamped` exists only while a gesture runs, and `-overlap` is
+	 * repainted by it, so a still reaches either only with the press held:
+	 * `&drag=` does that with synthetic `PointerEvent`s, and these do it with the
+	 * browser's own mouse, which `setPointerCapture` and `:hover` both answer to.
+	 * `Front` is the block, found by its focus token rather than by position.
+	 */
+	{
+		// Carried past the grid's right edge: the block stops at the last column
+		// and is marked `-clamped`.
+		name: 'canvas-drag-clamped',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+		hold: { at: '[data-sheetsmith-focus="preview-front"]', by: [700, 0] },
+	},
+	{
+		// The same, in forced colors, where every border is one system colour.
+		// The launch flag rather than emulated `forced-colors: active`, as every
+		// forced-colors view here: emulation repaints the page's own colours but
+		// not native controls, so its buttons lose the ButtonFace fill this flag
+		// draws and its placeholders change colour.
+		name: 'canvas-drag-clamped-forced-colors',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+		hold: { at: '[data-sheetsmith-focus="preview-front"]', by: [700, 0] },
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// Nudged left and still over `Behind`: both blocks are marked `-overlap`.
+		name: 'canvas-drag-overlap-forced-colors',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+		hold: { at: '[data-sheetsmith-focus="preview-front"]', by: [-60, 0] },
+		flags: ['--force-high-contrast'],
 	},
 	/*
 	 * **The tree** (`docs/features/layout-editor-tree.md`): nesting drawn as a
@@ -2313,8 +2719,9 @@ const DEFAULTS = [
 	 * column is 464px. Nothing wraps awkwardly there, which is exactly why it
 	 * proves nothing: **every wrapping question on this tab lives below the cap**,
 	 * where the column is 286px and both folder descriptions run to four lines.
-	 * That is where the `BACKLOG` § UI row about a quoted app path ending a line
-	 * on its arrow is visible, and where its measurement has to be taken.
+	 * That is where a quoted app path wraps after its arrows (`UI.md` §9: each
+	 * arrow is bound to the label before it, so a line may end on an arrow and
+	 * never begins with one), and where any measurement of it has to be taken.
 	 *
 	 * `1000,620` rather than the 520 above: the card's bottom sits at 556px at
 	 * this width, and the harness bar rewraps to a second row at some widths
@@ -2381,7 +2788,7 @@ const DEFAULTS = [
 		 * answers it is the pointer resting on a field with the name beside it.
 		 *
 		 * Hovered rather than queried, because `:hover` matches on the real pointer
-		 * position and nothing in the page can move it. `shootHovered` below is the
+		 * position and nothing in the page can move it. `shootDriven` below is the
 		 * whole of what that costs.
 		 */
 		name: 'sheet-passport-hover',
@@ -2598,8 +3005,8 @@ const DEFAULTS = [
 		/*
 		 * **A container narrower than the wide Table, scrolled to each end.** The
 		 * control is outside the scroller, so its label has to be fully in view at
-		 * both. 520 is the narrowest a shot can honestly show (the 500px floor, UI.md
-		 * §12), so the table is made wide enough to scroll at it.
+		 * both. 520 was the narrowest a shot could honestly show when this was
+		 * added (the 500px floor), so the table is made wide enough to scroll at it.
 		 */
 		name: 'sheet-pinned-add-scrolled-left',
 		query: `${WIDE}left`,
@@ -2626,6 +3033,24 @@ const DEFAULTS = [
 		name: 'sheet-record-groups-dark',
 		query: 'surface=sheet&theme=dark&state=record-groups',
 		size: '1400,1900',
+	},
+	{
+		/*
+		 * The same sheet at `prefers-contrast: more`, both palettes, because the
+		 * record group's outline and its header's rule are the one contrast block
+		 * the populated sheet cannot show: no grouped list is on it. The rest of
+		 * the sheet's blocks are in `sheet-contrast-more` and its dark twin.
+		 */
+		name: 'sheet-record-groups-contrast-more',
+		query: 'surface=sheet&theme=light&state=record-groups',
+		size: '1400,1900',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-record-groups-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=record-groups',
+		size: '1400,1900',
+		media: { 'prefers-contrast': 'more' },
 	},
 	{
 		name: 'sheet-record-groups-collapsed',
@@ -2796,128 +3221,226 @@ const DEFAULTS = [
 ];
 
 const args = process.argv.slice(2);
+
+/** The arguments `shot.mjs` reads itself, which never reach the page's query. */
+const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad'];
+const own = (name) =>
+	args.filter((arg) => arg.startsWith(`${name}=`)).map((arg) => decodeURIComponent(arg.slice(name.length + 1)));
+
+/** `name:value` pairs into the object a view's `media` field holds. */
+function mediaOf(pairs) {
+	if (pairs.length === 0) return undefined;
+	return Object.fromEntries(
+		pairs.map((pair) => {
+			const at = pair.indexOf(':');
+			if (at < 1) throw new Error(`Bad media "${pair}"; want "<feature>:<value>".`);
+			return [pair.slice(0, at), pair.slice(at + 1)];
+		}),
+	);
+}
+
+/** `<selector>|<dx>,<dy>` into the object a view's `hold` field holds. */
+function holdOf(spec) {
+	if (spec === undefined) return undefined;
+	const at = spec.lastIndexOf('|');
+	const by = spec.slice(at + 1).split(',').map(Number);
+	if (at < 1 || by.length !== 2 || !by.every(Number.isFinite)) {
+		throw new Error(`Bad hold "${spec}"; want "<selector>|<dx>,<dy>".`);
+	}
+	return { at: spec.slice(0, at), by };
+}
+
 const views =
 	args.length === 0
 		? DEFAULTS
 		: [
 				{
 					name: 'custom',
-					query: args.filter((arg) => !arg.startsWith('size=')).join('&'),
+					query: args.filter((arg) => !OWN.some((name) => arg.startsWith(`${name}=`))).join('&'),
 					// `size=1500,3000` for a view that runs longer than the
 					// default frame: an open component form is most of one.
-					size: args.find((arg) => arg.startsWith('size='))?.slice(5) ?? '1500,1500',
+					size: own('size')[0] ?? '1500,1500',
+					media: mediaOf(own('media')),
+					hover: own('hover')[0],
+					hold: holdOf(own('hold')[0]),
+					platform: own('platform')[0],
+					frame: own('frame')[0],
+					pad: own('pad')[0] === undefined ? undefined : Number(own('pad')[0]),
+					flags: own('flag'),
 				},
 			];
 
 /**
- * Capture a view with the pointer resting on one element, over the DevTools
- * Protocol.
+ * Whether a view needs the driven path: anything `--screenshot` cannot reach.
  *
- * **A second capture path, and it is here because `:hover` cannot be reached any
- * other way.** Every other state a still cannot get to is a query on the harness
- * page — `&focus=`, `&press=`, `&scroll=` — because each of them is something
- * JavaScript can do. Hover is not: `:hover` matches on the real pointer position
- * and nothing in the page can move it. So a hover shot needs a browser being
- * *driven* rather than a browser being pointed at a file, and until this existed
- * no hover treatment on the sheet had ever been photographed — a table cell's
- * field revealing its border, a record's name, a delete glyph stepping from faint
- * to muted, all of them reviewed by hand or on trust.
+ * **A frame under 500px wide is driven without asking**, because on the other
+ * path it is a lie rather than a limitation: Chrome lays the page out at 500 and
+ * the PNG is cut to the frame, which looks exactly like a narrow sheet that
+ * overflows its pane. `editor-narrow` was that picture until this existed.
+ */
+function driven(view) {
+	const width = Number(view.size.split(',')[0]);
+	return (
+		view.media !== undefined ||
+		view.hover !== undefined ||
+		view.hold !== undefined ||
+		view.platform !== undefined ||
+		view.frame !== undefined ||
+		width < 500
+	);
+}
+
+/**
+ * Real time the page is given to draw before anything is driven or captured:
+ * the budget `--virtual-time-budget` gives the other path, as wall-clock time,
+ * since a driven page runs on the real clock.
+ */
+const DRAW_BUDGET = 3000;
+
+/**
+ * Where an element's centre is, for a pointer to go to. Throws on no match,
+ * because a hover shot of nothing looks exactly like a hover shot.
+ */
+async function centreOf(browser, view, selector) {
+	const at = await browser.evaluate(`(() => {
+		const el = document.querySelector(${JSON.stringify(selector)});
+		if (el === null) return null;
+		el.scrollIntoView({ block: 'nearest' });
+		const b = el.getBoundingClientRect();
+		return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+	})()`);
+	if (at === null) {
+		throw new Error(`nothing matches "${selector}" in ${view.name}: the selector is stale.`);
+	}
+	return at;
+}
+
+/**
+ * Capture a view by driving Chrome over the DevTools Protocol.
  *
- * **It adds no dependency**, which is the constraint this file opens with.
- * `harness/inspect.mjs` already speaks CDP to the *installed Obsidian* with
- * nothing but `fetch` and Node's built-in `WebSocket`, and this is that technique
- * pointed at the headless Chrome this file already launches.
+ * **The second capture path, and it exists for four states the first cannot
+ * reach** (the header lists them). It started as the hover path alone: every
+ * other state a still could not get to became a query on the harness page —
+ * `&focus=`, `&press=`, `&scroll=` — because each is something JavaScript can
+ * do, and `:hover` is not. A viewport, a media feature and a held press are the
+ * same kind of thing: properties of the browser, not of the page.
+ *
+ * The page loads *after* the viewport and the media are set, so it never draws
+ * at another width first and reflows: what is captured is a first layout at the
+ * frame's own size, as `--screenshot`'s is.
  *
  * A real `mouseMoved` rather than `CSS.forcePseudoState`, deliberately: forcing
  * the pseudo-state paints the CSS and fires none of the listeners, and half of
  * what a hover does on this sheet is a `pointerenter` handler — `ui/truncation.ts`
- * decides whether to reveal a clipped string on exactly that event. Moving the
- * pointer exercises both.
+ * decides whether to reveal a clipped string on exactly that event. And a real
+ * press for a hold, rather than the synthetic `PointerEvent`s `&drag=` sends,
+ * so the gesture is the browser's own: `setPointerCapture`, `:active` and the
+ * pointer's own position all answer to it.
  *
- * The clip is the whole window, so the file matches what `--screenshot` produces
- * for every other view and a reviewer can diff the two.
+ * The clip is the whole frame, so the file matches what `--screenshot` produces
+ * for every other view and a reviewer can diff the two — unless the view names
+ * a `frame`, which is the one view that asked for less.
  */
-async function shootHovered(view, out) {
+async function shootDriven(view, out) {
 	const [width, height] = view.size.split(',').map(Number);
-	// A high port rather than 9222, which a developer's own Chrome may hold.
-	const port = 9500 + Math.floor(Math.random() * 400);
-	const child = spawn(
-		CHROME,
-		[
-			'--headless=new',
-			'--disable-gpu',
-			'--hide-scrollbars',
-			`--remote-debugging-port=${port}`,
-			...(view.flags ?? []),
-			`--window-size=${view.size}`,
-			`${page}?${view.query}`,
-		],
-		{ stdio: ['ignore', 'ignore', 'ignore'] },
-	);
-	const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-	/** The same budget `--virtual-time-budget` gives every other view, plus slack. */
-	await wait(4000);
-	const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-	const target = targets.find((one) => one.type === 'page');
-	const socket = new WebSocket(target.webSocketDebuggerUrl);
-	await new Promise((resolve) => {
-		socket.onopen = resolve;
-	});
-	let id = 0;
-	const pending = new Map();
-	socket.onmessage = (event) => {
-		const message = JSON.parse(event.data);
-		pending.get(message.id)?.(message.result);
-	};
-	const send = (method, params) =>
-		new Promise((resolve) => {
-			id += 1;
-			pending.set(id, resolve);
-			socket.send(JSON.stringify({ id, method, params }));
+	const browser = await launch([...(view.flags ?? []), `--window-size=${view.size}`]);
+	try {
+		await browser.send('Page.enable');
+		// A headless page is unfocused until its first input event, and the
+		// window focus that event delivers is itself a state change: it closed
+		// the name suggester before a pointer resting on it could be captured.
+		// An Obsidian window being used has focus, so the page starts with it.
+		await browser.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+		// No floor: this is what the 500px `--window-size` cannot do.
+		await browser.send('Emulation.setDeviceMetricsOverride', {
+			width,
+			height,
+			deviceScaleFactor: 1,
+			mobile: false,
 		});
+		// Before the load, so the page's first layout already answers to a
+		// coarse pointer and no hover, as a tablet's does, and the body classes
+		// are on before the module script: a class added after the load would
+		// restyle a panel already placed (`cdp.mjs`, `stagePlatform`).
+		const platform =
+			view.platform === undefined ? undefined : await stagePlatform(browser.send, view.platform);
+		if (view.media !== undefined) {
+			await browser.send('Emulation.setEmulatedMedia', {
+				features: Object.entries(view.media).map(([name, value]) => ({ name, value })),
+			});
+		}
+		const loaded = browser.next('Page.loadEventFired');
+		await browser.send('Page.navigate', { url: `${page}?${view.query}` });
+		await loaded;
+		await wait(DRAW_BUDGET);
+		// Held rather than trusted: a staging that silently fails draws a
+		// plausible desktop sheet, which is the failure above.
+		if (platform !== undefined) await checkPlatform(browser.evaluate, platform);
 
-	const box = await send('Runtime.evaluate', {
-		expression: `(() => {
-			const el = document.querySelector(${JSON.stringify(view.hover)});
-			if (el === null) return null;
-			el.scrollIntoView({ block: 'nearest' });
-			const b = el.getBoundingClientRect();
-			return JSON.stringify({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-		})()`,
-		returnByValue: true,
-	});
-	if (box.result.value === null || box.result.value === undefined) {
-		throw new Error(
-			`nothing matches "${view.hover}" in ${view.name}: the selector is stale, ` +
-				'and a hover shot of nothing looks exactly like a hover shot.',
-		);
+		if (view.hover !== undefined) {
+			const at = await centreOf(browser, view, view.hover);
+			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+		}
+		if (view.hold !== undefined) {
+			const at = await centreOf(browser, view, view.hold.at);
+			const [dx, dy] = view.hold.by;
+			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+			await browser.send('Input.dispatchMouseEvent', {
+				type: 'mousePressed',
+				x: at.x,
+				y: at.y,
+				button: 'left',
+				buttons: 1,
+				clickCount: 1,
+			});
+			// In steps, as a hand moves, so a gesture that reads each move — a
+			// drag snapping cell by cell — sees a path and not a teleport.
+			const STEPS = 8;
+			for (let step = 1; step <= STEPS; step++) {
+				await browser.send('Input.dispatchMouseEvent', {
+					type: 'mouseMoved',
+					x: at.x + (dx * step) / STEPS,
+					y: at.y + (dy * step) / STEPS,
+					button: 'left',
+					buttons: 1,
+				});
+			}
+			// No `mouseReleased`: the press is what is being photographed.
+		}
+		// A `title` is the host's own tooltip and never appears in a screenshot,
+		// so nothing here waits for one; what this pause is for is the transition
+		// a hovered surface runs (160ms on a card, per `sheet.css`).
+		if (view.hover !== undefined || view.hold !== undefined) await wait(400);
+
+		// The whole frame, unless the view names one element to frame, in page
+		// coordinates so it is found wherever the sheet has scrolled it.
+		const clip =
+			view.frame === undefined
+				? { x: 0, y: 0, width, height, scale: 1 }
+				: await browser.evaluate(`(() => {
+						const target = document.querySelector(${JSON.stringify(view.frame)});
+						if (target === null) throw new Error('No element matches frame=' + ${JSON.stringify(view.frame)});
+						const box = target.getBoundingClientRect();
+						const pad = ${view.pad ?? 16};
+						const x = Math.max(0, box.left + scrollX - pad);
+						const y = Math.max(0, box.top + scrollY - pad);
+						return { x, y, width: Math.min(${width} - x, box.width + 2 * pad), height: box.height + 2 * pad, scale: 1 };
+					})()`);
+		const shot = await browser.send('Page.captureScreenshot', {
+			format: 'png',
+			captureBeyondViewport: true,
+			clip,
+		});
+		writeFileSync(out, Buffer.from(shot.data, 'base64'));
+	} finally {
+		await browser.close();
 	}
-	const at = JSON.parse(box.result.value);
-	await send('Input.dispatchMouseEvent', {
-		type: 'mouseMoved',
-		x: at.x,
-		y: at.y,
-		button: 'none',
-		buttons: 0,
-	});
-	// A `title` is the host's own tooltip and never appears in a screenshot, so
-	// nothing here waits for one; what this pause is for is the transition a
-	// hovered surface runs (160ms on a card, per `sheet.css`).
-	await wait(400);
-	const shot = await send('Page.captureScreenshot', {
-		format: 'png',
-		captureBeyondViewport: true,
-		clip: { x: 0, y: 0, width, height, scale: 1 },
-	});
-	writeFileSync(out, Buffer.from(shot.data, 'base64'));
-	socket.close();
-	child.kill();
 }
 
-for (const view of views) {
+for (const view of MAIN ? views : []) {
 	const out = `${outDir}/${view.name}.png`;
-	if (view.hover !== undefined) {
-		await shootHovered(view, out);
+	if (driven(view)) {
+		await shootDriven(view, out);
 		console.log(`${view.name.padEnd(16)} ${out}`);
 		continue;
 	}

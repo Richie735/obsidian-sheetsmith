@@ -36,8 +36,25 @@ body {
 	   The size is the whole of the agreement, and the treatments deliberately are
 	   not shared: `docs/UI.md` §9 records that each of these controls owns its own
 	   resting colour, hover surface and which state stands down for which. Grows
-	   for a coarse pointer, in sheet.css. */
-	--sheetsmith-inline-control: 1.6em;
+	   for a coarse pointer, in sheet.css.
+
+	   **Spelt as a unitless factor of `1em`**, so a length that has to be the
+	   control's at a different font size than the one it is used at can take the
+	   factor over that size instead: an open table's glyph band is one control at
+	   the cells' `--font-ui-small`, used in a name cell at the name's size, where
+	   this `em` would resolve 1.2 times too wide. The coarse-pointer block raises
+	   the factor, so both follow it.
+
+	   **So the factor is the knob, and the length is derived from it**: a
+	   snippet overrides `--sheetsmith-inline-control-factor`, on `body`.
+	   Overriding the length instead resizes the controls but not the table's
+	   glyph band, which reads the factor, and overriding the factor below
+	   `body` moves the band but not the controls, since the length is
+	   substituted here. */
+	--sheetsmith-inline-control-factor: 1.6;
+	--sheetsmith-inline-control: calc(
+		var(--sheetsmith-inline-control-factor) * 1em
+	);
 	/* **How wide a record's name may grow before its own fields stop following
 	   it.** Published as a knob because it is a judgement about reading rather
 	   than a measurement: pinned to the trailing edge instead, a design review
@@ -57,7 +74,8 @@ body {
 	/* Fixed card width where the grid does not dictate one. */
 	--sheetsmith-card-width: 110px;
 	/* The card's headline number. Relative rather than a pixel size, so it
-	   follows the vault's text size setting and the card scales with it. */
+	   follows the sheet's `em` and the card scales with whatever sets the
+	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
 	/* How tall one row of the sheet's grid is, for a component whose content has
 	   no height the grid could take one from: a block of prose, a picture. Both
@@ -68,7 +86,7 @@ body {
 	   height — the sheet's rows are content-sized, and every card happens to come
 	   out at about this — so this is the one place such a box is agreed with the
 	   cards beside it. Relative rather than a pixel size, so it follows the
-	   vault's text size the way the card's own headline does.
+	   sheet's `em` the way the card's own headline does.
 
 	   **It is a floor, and that is what bounds the risk of it being a number.** A
 	   review asked whether approximating a card's height here is a second statement

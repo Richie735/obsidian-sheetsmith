@@ -154,8 +154,16 @@
 	flex-direction: column;
 	/* Wide enough for a labelled control and a resolved definition's own words on
 	   one line, and clamped to the viewport minus a gutter below that — which is
-	   the phone regime, read rather than seen: nothing below a 500px viewport has
-	   ever been photographed (`docs/UI.md` §12). */
+	   the phone regime, photographed at a true 380 in
+	   `sheet-modifier-form-viewport-380`: 348px, centred by `placeAnchored`'s
+	   `EDGE_GUTTER`, which is this gutter and has to stay it.
+
+	   **The viewport and never the pane**, which is a ruling (`docs/UI.md` §9):
+	   this is app chrome on `document.body`, and app chrome is bounded by the
+	   window, as Obsidian's own `Menu` is. So in a 380 pane in a 520 window the
+	   panel is its full 390 and overhangs the sheet by 46px
+	   (`sheet-modifier-form-narrow`); a container query cannot reach it here
+	   anyway, since nothing on the body is inside the sheet's container. */
 	width: min(30em, calc(100vw - 2 * var(--size-4-4)));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
@@ -163,10 +171,15 @@
 	box-shadow: 0 2px 12px var(--background-modifier-box-shadow);
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+	/* The app's tooltip is off here as on the sheet (`sheet.css`'s
+	   `.sheetsmith-view`): hung off the body, the panel inherits nothing from
+	   it, and its own `aria-label` as a dialog would fire over every point of it
+	   no labelled control covers. */
+	--no-tooltip: true;
 	/* The cap is on the box and the scroll is on the body, one element in, so the
 	   panel's own edge stays put while its contents move. Deliberately **not**
-	   `.sheetsmith-list-scroll`, whose `20em` cap is a layout-editor list's and
-	   whose purpose SPEC §13 still asks about.
+	   `.sheetsmith-list-scroll`, whose cap is a layout-editor list's own
+	   distance down the pane, floored by that list's tallest entry.
 
 	   **In px, because the em was measured against a number the em did not mean.**
 	   The rule sets its own `font-size: var(--font-ui-small)`, and `em` outside
@@ -190,8 +203,20 @@
 	   an empty cell, 325 on a named part. **Re-measure rather than adjusting by eye**
 	   — open the harness at `sheet-modifier-form-light` and read the body's
 	   `scrollHeight`; a cap one pixel over the content is what the `em` left behind
-	   and it looks exactly like a fit. */
-	max-height: min(500px, calc(100vh - 2 * var(--size-4-4)));
+	   and it looks exactly like a fit.
+
+	   **And it had gone stale the same way, which is why it is 570 now.** The form
+	   grew a **Note** and an **Only when** after 479 was taken, so the mixed row's
+	   open form measured **547** against a body of 498, and the two-value part 515
+	   at 1400 and 531 at a true 380: the ordinary states were scrolling at every
+	   width, cut across the promote row, while this comment said they fitted. Found
+	   by the fifth rulings pass reading the body rather than the box — the box's own
+	   `scrollHeight` is 498 either way, because the scroll is one element in. 570 is
+	   547 with the headroom 500 gave 479; a row with three parts and one open is 625
+	   and still scrolls, which is the cost `docs/UI.md` §9 accepts. Measured again:
+	   471 and 487 with a repeated name, 352 on an empty cell, 325 and 341 on a named
+	   part, at 1400 and at 380. */
+	max-height: min(570px, calc(100vh - 2 * var(--size-4-4)));
 	overflow: hidden;
 }
 
@@ -233,7 +258,7 @@
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -441,7 +466,7 @@
 	gap: var(--size-4-2);
 	width: 100%;
 	height: auto;
-	padding: var(--size-2-2) var(--size-2-3);
+	/* Padding: the tablet block below. */
 	border: none;
 	border-radius: var(--radius-s);
 	background-color: transparent;
@@ -457,6 +482,20 @@
 .sheetsmith-panel .sheetsmith-panel-add:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
+}
+
+/* **The panel's two list buttons' padding, past Obsidian's tablet rule.** On a
+   tablet the app adds `.is-tablet button:not(.clickable-icon)` with
+   `padding: var(--size-4-1) var(--size-4-5)` at (0,2,1), over this panel's
+   (0,2,0) scope, so a line drew 20px in from its edge. The padding alone, on a
+   doubled class at (0,3,0), as the sheet's own block at the foot of `sheet.css`
+   does and for its reason: doubling the whole rule would lift it over the
+   lines' own `:hover` and `:focus-visible`. **Save**, **Cancel**, **Confirm**
+   and **Remove** are not here, because they take the app's button chrome whole
+   (`docs/UI.md` §2), so the app's tablet padding is theirs too. */
+.sheetsmith-panel .sheetsmith-panel-line.sheetsmith-panel-line,
+.sheetsmith-panel .sheetsmith-panel-add.sheetsmith-panel-add {
+	padding: var(--size-2-2) var(--size-2-3);
 }
 
 /* A rule above the promote row, because it is a different question from the five

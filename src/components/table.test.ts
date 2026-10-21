@@ -5,7 +5,7 @@ import { definitionView, outcomeView } from '../test/modifier-views';
 import { roster, RosterConfig } from './roster';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
-import { hold, pressDown, prevented, release } from '../test/pointer';
+import { hold, pressDown, pressToFocus, prevented, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import {
 	callsFrom,
@@ -960,6 +960,29 @@ describe('table.render', () => {
 		]);
 	});
 
+	it('wraps a level drawn as a dropdown, so it can wear the chevron', () => {
+		// A select carries no pseudo-element, and the app draws its own chevron
+		// on `.dropdown` alone, so without the wrapper a cell's menu reads as a
+		// text box (`docs/UI.md` §9's one chevron).
+		const el = render(note({}), {
+			...levelled,
+			columns: [
+				{
+					key: 'Training',
+					type: 'level' as const,
+					input: 'select' as const,
+					levels: ['Untrained', 'Proficient'],
+				},
+			],
+		});
+		const selects = Array.from(el.querySelectorAll('tbody select'));
+		expect(selects.length).toBeGreaterThan(0);
+		for (const select of selects) {
+			expect(select.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+			expect(select.parentElement?.parentElement?.tagName).toBe('TD');
+		}
+	});
+
 	it('leaves a colon inside a level name alone', () => {
 		// A mark is one character in a circle. A layout that named a level
 		// "Trained: the useful one" before this syntax existed is a name with
@@ -1258,6 +1281,17 @@ describe('table.render', () => {
 		input.value = '4';
 		input.dispatchEvent(new Event('blur'));
 		expect(changes).toEqual([{ rows: { 1: { cells: { Bonus: '4' } } } }]);
+	});
+
+	it('gives a number cell the full keyboard, for a -1 Bonus or a 0.5 Weight', () => {
+		// iOS's `numeric` keypad is digits alone: no minus and no decimal point
+		// (docs/UI.md §7). A bounded column is no different, since its bounds
+		// are held on commit rather than at the keyboard.
+		const el = render(note({}));
+		for (const label of ['Perception Bonus', 'Acrobatics Training']) {
+			const input = el.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+			expect(input?.inputMode).toBe('text');
+		}
 	});
 
 	it('holds a typed number to the column bounds', () => {
@@ -1965,6 +1999,26 @@ describe('table with open rows', () => {
 		expect(
 			el.querySelector('.sheetsmith-table-box > .sheetsmith-table-add-button'),
 		).not.toBeNull();
+	});
+
+	it('narrows the room to a glyph only where every column beside the name is a hidden-heading modifier glyph', () => {
+		// `docs/UI.md` §4: such a table has no cell wider than a glyph beside the
+		// name, so the band one number cell wide is room no cell needs.
+		const band = (columns: TableConfig['columns'], openRows = true) =>
+			openRender(null, { ...inventory, openRows, columns })
+				.el.querySelector('.sheetsmith-table-box')
+				?.classList.contains('sheetsmith-table-glyph-band') ?? null;
+		const glyph = { key: 'Modifiers', type: 'modifier' as const, hideHeading: true };
+		expect(band([glyph])).toBe(true);
+		// A list of names alone has only the remove glyph beside them.
+		expect(band([])).toBe(true);
+		// A heading that shows is laid-out text, wider than the glyph.
+		expect(band([{ ...glyph, hideHeading: false }])).toBe(false);
+		// A toggle may show its heading or carry a note mark beside its ring.
+		expect(band([glyph, { key: 'Worn', type: 'toggle', hideHeading: true }])).toBe(false);
+		expect(band([glyph, { key: 'Qty', type: 'number' }])).toBe(false);
+		// A closed table has no box to set the room on.
+		expect(band([glyph], false)).toBeNull();
 	});
 
 	it('gives only an open table the box that stretches', () => {
@@ -7070,5 +7124,132 @@ describe('a table something has noted (docs/features/modifier-notes.md)', () => 
 			'perception',
 		]);
 		expect(table.write(data, BODY, published)).toBe(table.write(data, BODY, unkeyed));
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: a number cell focused without an
+ * aimed caret selects its number, so a typed one replaces it.
+ */
+describe('table.render: focusing a number cell selects its number', () => {
+	afterEach(() => {
+		document.body.replaceChildren();
+	});
+
+	const mounted = (data: TableData | null, over = config) => {
+		const el = render(data, over);
+		document.body.appendChild(el);
+		return el;
+	};
+
+	/** Acrobatics' Bonus cell, holding `12`. */
+	const bonus = (onChange = vi.fn()) => {
+		const data = stored(`
+| Skill | Training | Bonus |
+|---|---|---|
+| Acrobatics | 1 | 12 |
+| Perception | 2 | 1 |
+`);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		table.render(el, config, data, { ...contextFor(data), onChange });
+		const cell = el.querySelectorAll<HTMLInputElement>('tbody .sheetsmith-table-input')[1];
+		if (!cell) throw new Error('expected the Bonus cell');
+		expect(cell.value).toBe('12');
+		return cell;
+	};
+
+	const selected = (input: HTMLInputElement) => [input.selectionStart, input.selectionEnd];
+
+	it('selects the whole number on a touch press', () => {
+		const cell = bonus();
+		cell.setSelectionRange(1, 1);
+		pressToFocus(cell, 'touch');
+		expect(selected(cell)).toEqual([0, 2]);
+	});
+
+	it('leaves the caret where a mouse press aimed it', () => {
+		const cell = bonus();
+		cell.setSelectionRange(1, 1);
+		pressToFocus(cell, 'mouse');
+		expect(selected(cell)).toEqual([1, 1]);
+	});
+
+	it('selects the whole number on keyboard or programmatic focus', () => {
+		const cell = bonus();
+		cell.setSelectionRange(1, 1);
+		cell.focus();
+		expect(selected(cell)).toEqual([0, 2]);
+	});
+
+	it('collapses the selection when a second touch press lands on it', () => {
+		// A tap on selected text opens iOS's edit menu, so the press clears it
+		// on the way down and the platform places the caret.
+		const cell = bonus();
+		if (!cell) throw new Error('expected the field');
+		pressToFocus(cell, 'touch');
+		expect(selected(cell)).toEqual([0, 2]);
+		pressDown(cell, { pointerType: 'touch' });
+		expect(cell.selectionStart).toBe(cell.selectionEnd);
+	});
+
+	for (const pointerType of ['mouse', 'pen']) {
+		it(`keeps the selection when a second ${pointerType} press lands on it`, () => {
+			const cell = bonus();
+			if (!cell) throw new Error('expected the field');
+			cell.focus();
+			expect(selected(cell)).toEqual([0, 2]);
+			pressDown(cell, { pointerType });
+			expect(selected(cell)).toEqual([0, 2]);
+		});
+	}
+
+	it('does not reselect on a second touch press into the focused cell', () => {
+		const cell = bonus();
+		pressToFocus(cell, 'touch');
+		cell.setSelectionRange(1, 1);
+		pressToFocus(cell, 'touch');
+		expect(selected(cell)).toEqual([1, 1]);
+	});
+
+	it('commits nothing when a touch focus is followed by a blur', () => {
+		const onChange = vi.fn();
+		const cell = bonus(onChange);
+		pressToFocus(cell, 'touch');
+		cell.blur();
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('does not select a text cell or a row name on a touch press', () => {
+		const inventory: TableConfig = {
+			...config,
+			rowHeader: 'Item',
+			rows: undefined,
+			openRows: true,
+			columns: [{ key: 'Notes', type: 'text' }],
+		};
+		const el = mounted(
+			stored(
+				`
+| Item | Notes |
+|---|---|
+| 50 | 20 |
+`,
+				inventory,
+			),
+			inventory,
+		);
+		const name = el.querySelector<HTMLInputElement>('.sheetsmith-table-name-input');
+		const text = el.querySelector<HTMLInputElement>(
+			'tbody .sheetsmith-table-input:not(.sheetsmith-table-name-input)',
+		);
+		if (!name || !text) throw new Error('expected a name and a text cell');
+		// Both hold digits, so only the missing `step` keeps them at the caret.
+		expect([name.value, text.value]).toEqual(['50', '20']);
+		for (const field of [name, text]) {
+			field.setSelectionRange(1, 1);
+			pressToFocus(field, 'touch');
+			expect(selected(field)).toEqual([1, 1]);
+		}
 	});
 });

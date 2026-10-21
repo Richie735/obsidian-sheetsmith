@@ -231,7 +231,10 @@ src/
   styles/          the stylesheet, split by area; styles.css is assembled
                    from these at build time and is not edited directly
   view/            sheet view, layout editor pane, auto-open, reset flow,
-                   and what a layout file's registration and file events do
+                   and what a layout file's registration and file events do.
+                   Its pure helpers, cell-focus, cell-scroll and sheet-posture,
+                   are DOM over a root and know no view, which is what lets
+                   the harness import them rather than copy them
   ui/              generic building blocks that know nothing of components
   starters/        the layouts the plugin ships and the flow that installs one.
                    The sources are real layout files, inlined into main.js at

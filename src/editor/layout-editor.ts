@@ -12,7 +12,7 @@ import {
 import { getComponent } from '../components';
 import { Canvas } from './canvas';
 import { ComponentPicker } from './component-picker';
-import { ConfigPanel } from './config-panel';
+import { ConfigPanel, PANEL_BACK_TOKEN, PANEL_TITLE_ROW_CLASS, PANEL_TITLE_TOKEN } from './config-panel';
 import {
 	LayoutFileRowHost,
 	promptForNewLayout,
@@ -21,7 +21,8 @@ import {
 import { offerLayoutCopy } from './layout-copy';
 import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
-import { focusToken } from './focus-token';
+import { focusToken, tokenTarget } from './focus-token';
+import { scrollToTop, visibleBox } from './scroll-to-top';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { offerUndo, UNDO_TIMEOUT } from '../ui/undo-notice';
 import { writeClipboard } from '../ui/clipboard';
@@ -34,7 +35,7 @@ import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { WalkEntry } from '../parse/layout-walk';
 import { parseFunctions } from '../formula/functions';
 import { layoutVocabulary, Vocabulary } from '../formula/vocabulary';
-import { clipboardRow, nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
+import { clipboardRow, nextFreeRow, renderTree, rowToken, SHEET_DESTINATION } from './tree';
 import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
 import {
@@ -320,6 +321,20 @@ export class LayoutEditorSection {
 	 * the row above the canvas turns it off in one press.
 	 */
 	private sampleValues = true;
+	/**
+	 * The last press-made selection and the focus token of the control it came
+	 * from — a tree row's name or a canvas block — which **Back to the selection**
+	 * returns to (`docs/features/layout-editor-narrow-regime.md` §4). Posture,
+	 * never written.
+	 *
+	 * **Kept with the id it selected, and read only while that is still the
+	 * selection.** A selection can change by other routes than `select` — a
+	 * paste, an insert, an undo, a removal — so clearing this on a press-less
+	 * `select` would miss most of them; asking whether the press is still the
+	 * selection's answers all of them at once. Otherwise the way back falls to the
+	 * selection's own tree row.
+	 */
+	private pressedFrom: { id: string; token: string } | null = null;
 	/** Undo and redo history, one snapshot per `persist` that changed a byte. */
 	private undoStack = new UndoStack<Snapshot>();
 	private redoStack = new UndoStack<Snapshot>();
@@ -418,7 +433,7 @@ export class LayoutEditorSection {
 			// again from out here would be this half querying for controls the
 			// other half drew.
 			syncPositionFields: (config) => this.panel.syncPositionFields(config),
-			select: (id) => this.select(id),
+			select: (id, from) => this.select(id, from),
 			get selection(): string {
 				return host.selection;
 			},
@@ -451,6 +466,7 @@ export class LayoutEditorSection {
 			listContext: () => this.listContext(),
 			suggestNames: (input, owner) => this.suggestNames(input, owner),
 			persistReorder: (label, sentence) => this.persistReorder(label, sentence),
+			returnToOutline: () => this.returnToOutline(),
 		});
 		// The row's host, and the same mapping again. `redraw` is the wrapped one
 		// above rather than the host's, for the flush and the focus it adds, and
@@ -873,7 +889,7 @@ export class LayoutEditorSection {
 		renderTree(outline, layout, {
 			persist: () => void this.persist(),
 			redraw: () => this.redraw(),
-			select: (id) => this.select(id),
+			select: (id, from) => this.select(id, from),
 			// A snapshot rather than a live getter: every reader of this host
 			// is either synchronous within this one render (the rows'
 			// selected mark) or a later command with nothing to do with
@@ -1499,7 +1515,7 @@ export class LayoutEditorSection {
 		this.layout = pasted.layout;
 		const id = pasted.root.id;
 		this.host.setSelection(id);
-		this.pendingFocus = `edit-${id}`;
+		this.pendingFocus = rowToken(id);
 		this.pendingFlash = `tree-${id}`;
 		this.persistUndoable(
 			(adoption) =>
@@ -1533,7 +1549,7 @@ export class LayoutEditorSection {
 		if ('error' in pasted) return pasted.error;
 		this.layout = pasted.layout;
 		this.host.setSelection(pasted.target.id);
-		this.pendingFocus = `edit-${pasted.target.id}`;
+		this.pendingFocus = rowToken(pasted.target.id);
 		this.pendingFlash = `tree-${pasted.target.id}`;
 		this.persistUndoable(
 			configurationSentence(
@@ -1581,8 +1597,14 @@ export class LayoutEditorSection {
 		else row.paste(event.clipboardData?.getData('text/plain') ?? '');
 	}
 
-	/** Select a component, or the layout itself, and rebuild both regions. */
-	private select(id: string): void {
+	/**
+	 * Select a component, or the layout itself, and rebuild both regions.
+	 *
+	 * `from` is the focus token of the control a press selected it with, and
+	 * only a press passes one; a press that changes the selection then brings
+	 * the panel to the reader where it is out of sight (`revealPanel`).
+	 */
+	private select(id: string, from?: string): void {
 		// Pressing what is already selected does nothing at all, rather than
 		// rebuilding what is already on screen. Deselecting to nowhere would
 		// leave the panel empty and nothing is the wrong thing to configure; and
@@ -1591,6 +1613,82 @@ export class LayoutEditorSection {
 		if (this.host.selection === id) return;
 		this.host.setSelection(id);
 		this.redraw();
+		if (from === undefined) return;
+		this.pressedFrom = { id, token: from };
+		/*
+		 * **After the press's own handlers, not inside the redraw.** A canvas
+		 * press puts the keyboard on its block as its last act (`focusBlock`), and
+		 * a block focused after the reveal would take focus back down to it. A
+		 * microtask runs once the handler that called this has returned, and
+		 * before anything paints, so the reader never sees the pane in between.
+		 */
+		const root = this.rootEl;
+		root?.win.queueMicrotask(() => this.revealPanel());
+	}
+
+	/**
+	 * Bring the panel to a reader whose press selected something while the panel
+	 * was out of sight (`docs/features/layout-editor-narrow-regime.md` §4): its
+	 * title row to the top of the leaf, below anything covering that top, and
+	 * focus on its name, so Tab continues into the form and a screen reader
+	 * says what was selected.
+	 *
+	 * **Geometric, never keyed to a width**, so in the split regime, where the
+	 * panel column is always beside the tree, it never fires. **The panel's own
+	 * box and not the title's**: split, the panel column scrolls by itself, and a
+	 * title scrolled up inside it is outside the leaf while the panel is not.
+	 *
+	 * **Why focus moves here**, against the rule that it should not move unless
+	 * the reader moves it: the press moved it. `docs/UI.md` §7 asks that where
+	 * focus is not a press's outcome, the press produce one, and selecting is
+	 * that outcome — 30,000px away on a phone. Left on a block the reader can no
+	 * longer see, the next Tab would land back in the canvas.
+	 */
+	private revealPanel(): void {
+		const root = this.rootEl;
+		if (root === null) return;
+		const panel = root.querySelector('.sheetsmith-editor-panel');
+		const title = tokenTarget(root, PANEL_TITLE_TOKEN);
+		if (!panel?.instanceOf(HTMLElement) || title === null) return;
+		const seen = visibleBox(root);
+		// A box with no height is one no layout has measured, which is no reason
+		// to move anything.
+		if (seen.bottom <= seen.top) return;
+		const top = panel.getBoundingClientRect().top;
+		if (top >= seen.top && top < seen.bottom) return;
+		// The title's whole row and not its name, and the button's reach the
+		// test of what is covered: the row is the button's height, centred on a
+		// shorter name, and the button is what a reader taps next. A row or a
+		// button missing is the panel drawn some other way, and costs only the
+		// landing's precision, never the focus.
+		const found = title.closest(`.${PANEL_TITLE_ROW_CLASS}`);
+		const row = found?.instanceOf(HTMLElement) ? found : title;
+		scrollToTop(row, tokenTarget(root, PANEL_BACK_TOKEN) ?? row);
+		title.focus({ preventScroll: true });
+	}
+
+	/**
+	 * **Back to the selection**: back to the control the last press-made selection
+	 * came from, scrolled to and focused, or to the selection's own tree row
+	 * where that control is gone — a block a layout change removed, or a tab
+	 * that is no longer showing.
+	 */
+	private returnToOutline(): void {
+		const root = this.rootEl;
+		if (root === null) return;
+		const pressed = this.pressedFrom;
+		const tokens = [
+			pressed !== null && pressed.id === this.host.selection ? pressed.token : null,
+			rowToken(this.host.selection),
+		];
+		for (const token of tokens) {
+			if (token === null) continue;
+			const target = tokenTarget(root, token);
+			if (target === null) continue;
+			target.scrollIntoView({ block: 'center' });
+			target.focus({ preventScroll: true });
+			return;
+		}
 	}
 
 	/** What the list editors in list-fields.ts need from this editor. */

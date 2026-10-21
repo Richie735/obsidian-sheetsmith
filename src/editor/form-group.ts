@@ -56,6 +56,6 @@ export function groupHeading(
  * what `.setting-item-heading` is for, and it outranks every `groupHeading`
  * below it.
  */
-export function panelTitle(form: HTMLElement, name: string): void {
-	new Setting(form).setHeading().setName(name);
+export function panelTitle(form: HTMLElement, name: string): Setting {
+	return new Setting(form).setHeading().setName(name);
 }

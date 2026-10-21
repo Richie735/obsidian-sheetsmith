@@ -129,6 +129,13 @@ export function moveItem<T>(
 	context.redraw();
 }
 
+/** A reorder arrow at its end: out of the tab order, ignoring a press, announced. */
+function disableAtEnd(arrow: HTMLButtonElement, atEnd: boolean): void {
+	if (!atEnd) return;
+	arrow.disabled = true;
+	arrow.setAttribute('aria-disabled', 'true');
+}
+
 /**
  * Reorder and remove controls, and the drop target that goes with them —
  * every list field's, named for the item they act on (`docs/UI.md` §6).
@@ -179,13 +186,36 @@ export function addControls<T>(
 	if (Platform.isMobile) {
 		// HTML5 drag-and-drop is inert on touch, and there is no keyboard —
 		// reordering needs real buttons there.
+		//
+		// **Each arrow disables at its end** (`docs/UI.md` §6): `disabled` takes
+		// it out of the tab order, and `aria-disabled` is what the app's
+		// `.clickable-icon[aria-disabled='true']` paints and the pane's sibling
+		// rule keys on, so a button and the tab order's div read alike. No role:
+		// a `<button>` has one.
+		//
+		// **The row is marked for its third button**, so a stacked row keeps
+		// its fields two to a line beside the arrows: the touch-row rule in
+		// `styles/editor.css` says why. Set here, it reaches every list that
+		// draws arrows and none that does not.
+		row.addClass('sheetsmith-entry-arrows');
+		const first = index === 0;
+		const last = index === list.length - 1;
 		const up = row.createEl('button', {
 			cls: 'clickable-icon',
 			attr: { 'aria-label': `Move ${label} up` },
 		});
 		setIcon(up, 'arrow-up');
 		up.dataset.sheetsmithFocus = `${token}-up`;
-		up.addEventListener('click', () => moveItem(list, index, index - 1, context));
+		disableAtEnd(up, first);
+		up.addEventListener('click', () => {
+			// Landing first disables this arrow, so focus goes to the other one
+			// rather than falling to the body — and only where it already stood
+			// here, since a tap that focused nothing must not be given focus.
+			if (index === 1 && up.ownerDocument.activeElement === up) {
+				context.focusAfterRedraw(`${token}-down`);
+			}
+			moveItem(list, index, index - 1, context);
+		});
 
 		const down = row.createEl('button', {
 			cls: 'clickable-icon',
@@ -193,7 +223,13 @@ export function addControls<T>(
 		});
 		setIcon(down, 'arrow-down');
 		down.dataset.sheetsmithFocus = `${token}-down`;
-		down.addEventListener('click', () => moveItem(list, index, index + 1, context));
+		disableAtEnd(down, last);
+		down.addEventListener('click', () => {
+			if (index === list.length - 2 && down.ownerDocument.activeElement === down) {
+				context.focusAfterRedraw(`${token}-up`);
+			}
+			moveItem(list, index, index + 1, context);
+		});
 	} else {
 		const handle = row.createEl('button', {
 			cls: 'clickable-icon sheetsmith-entry-handle',
@@ -408,7 +444,8 @@ export function renderRowsEditor(
 	// eight hundred pixels between this field and the next one, and the add
 	// control at the bottom of it is below all of them. The header rides
 	// inside the same scroller so the two keep identical widths — a
-	// scrollbar on the rows alone would pull them out of line.
+	// scrollbar on the rows alone would pull them out of line. The cap itself
+	// is a measured distance in `styles/editor.css`, floored by one whole entry.
 	const scroller = listEl.createDiv('sheetsmith-list-scroll');
 
 	if (rows.length === 0) {
@@ -1625,13 +1662,15 @@ export function renderColumnsEditor(
 
 		/*
 		 * **The two controls a modifier column used to need are gone**, and their
-		 * going is what answers half of SPEC §13's question about
-		 * `.sheetsmith-list-scroll`'s cap: **Modifier** and **Bonus type** put
-		 * seven controls on a column's detail line, the line wrapped, and a
-		 * four-column table overran the columns list's `20em`. An amount and a
-		 * bonus type are the definition's now, so a column's detail line is one
-		 * line again. The cap question stays open for the lists still inside the
-		 * scroller.
+		 * going keeps a rule of its own: **a column's detail line holds one
+		 * message line**. **Modifier** and **Bonus type** put seven controls on
+		 * it, the line wrapped, and a four-column table overran the columns
+		 * list's cap. An amount and a bonus type are the definition's now, so the
+		 * line is one line again. The rule is not the cap's answer and the cap
+		 * does not relax it: the cap is a measured distance floored by the
+		 * tallest entry (`styles/editor.css`, `.sheetsmith-list-scroll`), and a
+		 * second wrapping line is one the author scrolls an entry to read
+		 * whatever the cap.
 		 */
 
 		// Every column has this one — unless the component draws no heading for it

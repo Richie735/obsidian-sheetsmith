@@ -28,6 +28,7 @@ import {
 	MIN_FIT_TIER,
 	STEP_PX,
 } from './components/record-line-fit';
+import { EDGE_GUTTER } from './ui/popover';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -1816,11 +1817,64 @@ describe('every custom property the plugin declares is its own', () => {
 		expect(new Set(declared).size).toBeGreaterThan(12);
 	});
 
+	/**
+	 * **The app's switches, which are set rather than declared.** The rule above
+	 * is about a name the plugin invents. `--no-tooltip` is one Obsidian reads, and
+	 * inheriting into everything nested is the point: it turns the app's
+	 * `aria-label` tooltip off on the sheet (`docs/UI.md` §6).
+	 */
+	const APP_SWITCHES = ['--no-tooltip'];
+
 	it('prefixes every one with --sheetsmith-', () => {
 		const foreign = [...new Set(declared)].filter(
-			(name) => !name.startsWith('--sheetsmith-'),
+			(name) => !name.startsWith('--sheetsmith-') && !APP_SWITCHES.includes(name),
 		);
 		expect(foreign).toEqual([]);
+	});
+
+	it("turns the app's aria-label tooltip off on the sheet and the panel", () => {
+		const bodies = new Map(
+			[...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/^(\.[^{}]+)\{([^}]*)\}/gm)].map(
+				(match) => [(match[1] as string).trim(), match[2] as string],
+			),
+		);
+		for (const root of ['.sheetsmith-view', '.sheetsmith-panel']) {
+			expect(bodies.get(root)).toMatch(/--no-tooltip:\s*true;/);
+		}
+	});
+
+	it("gives markdown the app rendered its tooltip back", () => {
+		// An aliased or external link there carries its only drawn target in
+		// `aria-label`, so dropping this override loses it with nothing to see in
+		// a shot. Found by the selectors it names, whatever else the list holds.
+		const restoring = [
+			...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g),
+		].filter(
+			([, selector, body]) =>
+				/--no-tooltip:\s*false;/.test(body as string) &&
+				(selector as string).includes('.sheetsmith-rich-text-rendered') &&
+				(selector as string).includes('.sheetsmith-record-body-rendered'),
+		);
+		expect(restoring).toHaveLength(1);
+	});
+
+	it.each([
+		'.sheetsmith-note-mark',
+		'.sheetsmith-pool-modifier-button',
+		'.sheetsmith-track-modifier-button',
+	])("gives the glyph door %s the app's tooltip back", (door) => {
+		// Named only by `aria-label`, so the app's tooltip is its one hover name
+		// (`docs/UI.md` §6). Per selector, so losing any one door fails alone.
+		const restoring = [
+			...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g),
+		].filter(
+			([, selector, body]) =>
+				/--no-tooltip:\s*false;/.test(body as string) &&
+				(selector as string)
+					.split(',')
+					.some((one) => one.trim() === `.sheetsmith-view ${door}`),
+		);
+		expect(restoring).toHaveLength(1);
 	});
 });
 
@@ -2918,12 +2972,12 @@ describe("a Record set's strip of field names", () => {
 	const STYLE_QUERY = '@container style(--sheetsmith-record-strip: on)';
 	const inGate = (rule: Rule) => rule.context[0] === GATE;
 
-	/** The per-count entries: `[N, em]`. */
+	/** The per-count entries: `[N, px]`. */
 	function thresholds(): [number, number][] {
 		const out: [number, number][] = [];
 		for (const rule of all) {
 			const query = rule.context[1]?.match(
-				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)px\)$/,
 			);
 			const count = rule.selector.match(
 				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,
@@ -2935,17 +2989,20 @@ describe("a Record set's strip of field names", () => {
 	}
 
 	/**
-	 * The measured formula, in `em` at the container's own type size.
+	 * The measured formula, in px, because every width on the line is
+	 * (`docs/features/record-set-stacking-tiers.md`): the container's `em` is
+	 * `--font-ui-medium` in Obsidian and follows no text-size setting, so a
+	 * threshold in it drew every strip at 15/16 of the width it was measured at.
 	 *
 	 * Swept in the harness with the strip forced on and every field the widest
 	 * kind there is — a number whose ceiling the reader types — the narrowest list
-	 * that leaves the name six ems and everything inside the delete glyph is 264,
-	 * 372, 464, 556, 646, 738, 830 and 922px at 16px for one to eight fields
-	 * (`188px + 92px × N` from two). `14.5em + 6em × N` clears each by 52 to 76px,
+	 * that leaves the name 96px and everything inside the delete glyph is 264,
+	 * 372, 464, 556, 646, 738, 830 and 922px for one to eight fields
+	 * (`188px + 92px × N` from two). `232px + 96px × N` clears each by 52 to 76px,
 	 * and its base is what lifts one field over the stacking rule below.
 	 */
-	const BASE = 14.5;
-	const STEP = 6;
+	const BASE = 232;
+	const STEP = 96;
 	const FIT_PX = [264, 372, 464, 556, 646, 738, 830, 922];
 
 	it('tabulates every count from one to eight, once each', () => {
@@ -2962,17 +3019,17 @@ describe("a Record set's strip of field names", () => {
 
 	it('holds every threshold to the formula it was measured to', () => {
 		const off = thresholds()
-			.filter(([count, em]) => em !== BASE + STEP * count)
-			.map(([count, em]) => `${count} fields at ${em}em`);
+			.filter(([count, px]) => px !== BASE + STEP * count)
+			.map(([count, px]) => `${count} fields at ${px}px`);
 		expect(off).toEqual([]);
 	});
 
 	it('never puts a threshold under the narrowest width that holds its fields', () => {
-		// At 16px. A number below the measurement is a list the strip is drawn
-		// over at a width its fields do not fit.
+		// A number below the measurement is a list the strip is drawn over at a
+		// width its fields do not fit.
 		const short = thresholds()
-			.filter(([count, em]) => em * 16 < (FIT_PX[count - 1] ?? Infinity))
-			.map(([count, em]) => `${count} fields at ${em * 16}px`);
+			.filter(([count, px]) => px < (FIT_PX[count - 1] ?? Infinity))
+			.map(([count, px]) => `${count} fields at ${px}px`);
 		expect(short).toEqual([]);
 	});
 
@@ -2987,8 +3044,8 @@ describe("a Record set's strip of field names", () => {
 			),
 		).toBe(true);
 		const under = thresholds()
-			.filter(([, em]) => em * 16 <= stacking)
-			.map(([count, em]) => `${count} fields at ${em * 16}px`);
+			.filter(([, px]) => px <= stacking)
+			.map(([count, px]) => `${count} fields at ${px}px`);
 		expect(under).toEqual([]);
 	});
 
@@ -3081,6 +3138,31 @@ describe("a Record set's strip of field names", () => {
 		// The list's own padding moved off the top, or a band above the strip shows
 		// records passing through.
 		expect(list?.body).toMatch(/padding-block:\s*0/);
+	});
+
+	it("declares a record's type basis once, on the list, so the strip's cap is the plain line's", () => {
+		// The cap is `13em` and a custom property's `em` resolves where it is used:
+		// the plain line uses it on a record's summary, the strip on the list. With
+		// the basis on the record alone the strip's cap came to 208px against 169.
+		// One declaration on the list both inherit, and no second copy anywhere a
+		// record or the list could pick up instead.
+		const list = all.find(
+			(rule) => rule.selector === '.sheetsmith-record-set-list' && rule.context.length === 0,
+		);
+		expect(list?.body).toMatch(/font-size:\s*var\(--font-ui-small\)/);
+		const elsewhere = all.filter(
+			(rule) =>
+				rule !== list &&
+				/^\.sheetsmith-record(-set-list|-set-records|-summary)?$/.test(rule.selector.trim()) &&
+				/font-size:/.test(rule.body),
+		);
+		expect(elsewhere.map((rule) => rule.selector)).toEqual([]);
+		const strip = all.find(
+			(rule) =>
+				rule.context[1] === STYLE_QUERY &&
+				rule.selector === '.sheetsmith-record-set-list',
+		);
+		expect(strip?.body).toMatch(/minmax\(0, var\(--sheetsmith-record-name, 13em\)\)/);
 	});
 
 	it("moves a number field's ink under its heading inside the gate, and by paint alone", () => {
@@ -3212,7 +3294,7 @@ describe("a Record set's stacking tiers", () => {
 		const out: [number, number, number, string][] = [];
 		all.forEach((rule, at) => {
 			const query = rule.context[1]?.match(
-				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)px\)$/,
 			);
 			const count = rule.selector.match(
 				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,
@@ -3628,6 +3710,206 @@ describe("a sheet input's width outranks Obsidian's phone rule", () => {
 	});
 });
 
+describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
+	/*
+	 * On a tablet Obsidian adds `.is-tablet button:not(.clickable-icon)` with
+	 * `padding: var(--size-4-1) var(--size-4-5)`, at (0,2,1) because a `:not()`
+	 * argument counts. Every sheet button rule setting padding was (0,2,0) or
+	 * lighter — four were a bare class at (0,1,0) — so on a
+	 * tablet each lost its own padding: a border-box glyph button 1.6em wide took
+	 * 40px of it and a level ring drew as a 42 × 33 oval. Read from 1.14.4's
+	 * `app.css` and seen in `sheet-tablet`, which only a driven shot stages, so
+	 * this scan is what a build can hold.
+	 *
+	 * **Every rule giving a sheet button padding must weigh more than (0,2,1)**,
+	 * which the stylesheet buys by doubling the class on a rule declaring the
+	 * padding alone: the phone width fix's shape and its reason, since a doubled
+	 * whole rule would lift the button's border and fill over its own `:hover`.
+	 *
+	 * **The list is explicit**, for the panel scope check's reason: which classes
+	 * land on a `<button>` is a fact about `components/`, not about a name, and a
+	 * pattern would miss `-ring` and `-tab` or drag in `-glyph`. It was taken from
+	 * the harness over CDP, every button on `populated`, `records` and an open
+	 * modifier form, measured with `is-tablet` on `body` and off. The panel's
+	 * **Save**, **Cancel**, **Confirm** and **Remove** are not in it: they take the
+	 * app's button chrome whole (`docs/UI.md` §2), so its tablet padding is theirs
+	 * too. Add a class here when a component grows a button that sets padding.
+	 *
+	 * **And the list is held to the source from below**: every class a
+	 * component writes literally onto a `<button>` it creates must be in it or
+	 * in `APP_CHROME`, so a new button cannot slip past by not being listed.
+	 * The read is narrow — a `createEl('button', { cls })`, an
+	 * `element('button', cls)`, or a `createEl('button')` whose variable is given
+	 * a literal class within the next few lines — so a class passed through a
+	 * variable (`NOTE_MARK_CLASS`, hold-repeat's `className`) is held by the list
+	 * alone, which is why the list stays the floor.
+	 */
+	const TABLET_RULE: [number, number, number] = [0, 2, 1];
+	const BUTTONS = [
+		'sheetsmith-level-ring',
+		'sheetsmith-table-remove-button',
+		'sheetsmith-table-modifier-button',
+		'sheetsmith-table-add-button',
+		'sheetsmith-pool-step',
+		'sheetsmith-pool-adjust-trigger',
+		'sheetsmith-pool-adjust-direction',
+		'sheetsmith-pool-modifier-button',
+		'sheetsmith-track-action-button',
+		'sheetsmith-track-modifier-button',
+		'sheetsmith-note-mark',
+		'sheetsmith-passport-part-remove',
+		'sheetsmith-passport-add',
+		'sheetsmith-record-group-toggle',
+		'sheetsmith-record-disclosure',
+		'sheetsmith-record-modifier',
+		'sheetsmith-record-remove',
+		'sheetsmith-record-add',
+		'sheetsmith-tabset-tab',
+		'sheetsmith-trigger',
+		'sheetsmith-panel-line',
+		'sheetsmith-panel-add',
+	];
+	/**
+	 * Classes on a sheet `<button>` that set no padding of their own: the four
+	 * panel actions take the app's chrome whole, and `-track-harm` is a state on
+	 * a level ring, which the list already holds.
+	 */
+	const APP_CHROME = [
+		'sheetsmith-panel-save',
+		'sheetsmith-panel-cancel',
+		'sheetsmith-panel-confirm',
+		'sheetsmith-panel-remove',
+		'sheetsmith-track-harm',
+	];
+	/**
+	 * The layout editor pane's own buttons that set padding
+	 * (`docs/features/layout-editor-narrow-regime.md` §5), a list of the pane's
+	 * rather than more lines in the sheet's, since the two are held to one rule
+	 * from two stylesheets that must not know each other. Taken the same way, over
+	 * CDP at 820 with each tree row selected in turn: the name and the chevron
+	 * moved, and the overlay's computed padding moved under a box that did not.
+	 */
+	const EDITOR_BUTTONS = [
+		'sheetsmith-tree-name',
+		'sheetsmith-tree-disclosure',
+		'sheetsmith-canvas-overlay',
+	];
+	/**
+	 * Classes on a pane `<button>` that set no padding of the plugin's own. Every
+	 * **Add …** footer button, **Add row** among them, takes the app's chrome
+	 * whole, and so its tablet padding; `clickable-icon` is the class the app's
+	 * tablet rule excludes by name; and **Back to the selection** is a text button
+	 * in the app's own chrome.
+	 */
+	const EDITOR_APP_CHROME = ['mod-cta', 'clickable-icon', 'sheetsmith-panel-back'];
+
+	/** Every literal class the source in `dirs` writes onto a `<button>` it creates. */
+	function buttonClassesInSource(dirs: readonly string[]): string[] {
+		const found = new Set<string>();
+		for (const dir of dirs) {
+			const at = new URL(`./${dir}/`, import.meta.url);
+			for (const file of readdirSync(at)) {
+				if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue;
+				const text = readFileSync(new URL(file, at), 'utf8');
+				for (const match of text.matchAll(
+					/(?:element|createEl)\(\s*'button',\s*(?:\{[^}]*?cls:\s*)?'([\w-]+)'/g,
+				)) {
+					found.add(match[1] as string);
+				}
+				for (const match of text.matchAll(/(\w+) = [\w.]*createEl\(\s*'button'\s*\)/g)) {
+					const after = text.slice(match.index, match.index + 700);
+					const added = new RegExp(
+						`\\b${match[1] as string}\\.(?:classList\\.add|addClass)\\(\\s*'([\\w-]+)'`,
+						'g',
+					);
+					for (const one of after.matchAll(added)) found.add(one[1] as string);
+				}
+			}
+		}
+		return [...found].sort();
+	}
+
+	it('lists every class the source writes onto a sheet button, or exempts it', () => {
+		const inSource = buttonClassesInSource(['components', 'view', 'interaction']);
+		// The read finds the bulk of them, or it holds nothing.
+		expect(inSource.length).toBeGreaterThanOrEqual(20);
+		expect(inSource.filter((cls) => !BUTTONS.includes(cls) && !APP_CHROME.includes(cls))).toEqual([]);
+	});
+
+	it('lists every class the source writes onto a pane button, or exempts it', () => {
+		const inSource = buttonClassesInSource(['editor']);
+		// The three, and the app-chrome classes beside them: a read that found
+		// none of the pane's own would pass on an empty list. The editor's level
+		// sample wears `.sheetsmith-view` and the sheet's ring, so the sheet's list
+		// holds it.
+		expect(inSource.filter((cls) => EDITOR_BUTTONS.includes(cls)).sort()).toEqual(
+			[...EDITOR_BUTTONS].sort(),
+		);
+		expect(
+			inSource.filter(
+				(cls) =>
+					!EDITOR_BUTTONS.includes(cls) &&
+					!EDITOR_APP_CHROME.includes(cls) &&
+					!BUTTONS.includes(cls),
+			),
+		).toEqual([]);
+	});
+
+	/** Every selector giving a sheet button padding, and those too light to keep it. */
+	function padded(text: string): { found: string[]; light: string[] } {
+		const found: string[] = [];
+		const light: string[] = [];
+		for (const rule of rules(text)) {
+			if (!declarations(rule.body).some((one) => /^padding(-[\w-]+)?\s*:/.test(one))) continue;
+			for (const selector of selectorList(rule.selector)) {
+				const classes = (subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+				if (!classes.some((cls) => BUTTONS.includes(cls) || EDITOR_BUTTONS.includes(cls))) continue;
+				found.push(selector);
+				if (!heavier(specificity(selector), TABLET_RULE)) light.push(selector);
+			}
+		}
+		return { found, light };
+	}
+
+	it('gives every sheet button its padding at more than (0,2,1)', () => {
+		const { found, light } = padded(CSS_WITHOUT_COMMENTS);
+		// Every listed class matched by at least one rule, so a class whose
+		// padding rule went missing cannot hide behind another's count.
+		const classesIn = (selector: string) =>
+			(subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+		const unmatched = [...BUTTONS, ...EDITOR_BUTTONS].filter(
+			(cls) => !found.some((selector) => classesIn(selector).includes(cls)),
+		);
+		expect(unmatched).toEqual([]);
+		expect(light).toEqual([]);
+	});
+
+	it('would catch a padding the tablet rule outranks', () => {
+		// The scoped rule that shipped, a long-hand, and an unscoped class; and it
+		// passes the doubled answer and a button it does not list.
+		expect(padded('.sheetsmith-view .sheetsmith-level-ring { padding: 0; }').light).toEqual([
+			'.sheetsmith-view .sheetsmith-level-ring',
+		]);
+		expect(
+			padded('.sheetsmith-view .sheetsmith-tabset-tab { padding-inline: 0; }').light,
+		).toHaveLength(1);
+		expect(padded('.sheetsmith-pool-step { padding: 0; }').light).toHaveLength(1);
+		// The pane's own, at the (0,2,0) every one of them shipped at.
+		expect(padded('.sheetsmith-tree-row .sheetsmith-tree-name { padding: 0; }').light).toEqual([
+			'.sheetsmith-tree-row .sheetsmith-tree-name',
+		]);
+		expect(
+			padded(
+				'.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring { padding: 0; }\n' +
+					'.sheetsmith-panel .sheetsmith-panel-save { padding: 0; }',
+			),
+		).toEqual({
+			found: ['.sheetsmith-view .sheetsmith-level-ring.sheetsmith-level-ring'],
+			light: [],
+		});
+	});
+});
+
 describe('the add control pinned to the foot of the card', () => {
 	const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
 	const all = rules(stripped);
@@ -3651,7 +3933,7 @@ describe('the add control pinned to the foot of the card', () => {
 		const coarse = all.filter(
 			(rule) =>
 				rule.context.includes('@media (pointer: coarse)') &&
-				/--sheetsmith-inline-control:\s*2\.2em/.test(rule.body),
+				/--sheetsmith-inline-control-factor:\s*2\.2;/.test(rule.body),
 		);
 		expect(coarse.length).toBeGreaterThan(0);
 	});
@@ -3773,5 +4055,401 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 		);
 		const gap = ruleFor('.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark')?.body ?? '';
 		expect(declarations(gap)).toContain('margin-inline-start: var(--size-4-2)');
+	});
+});
+
+describe('the room beside an open table\'s sticky name', () => {
+	/*
+	 * `docs/features/table-name-column-floor.md` capped the sizer so the sticky
+	 * name always leaves one number cell beside it, and the field's own `6em`
+	 * floor outweighed the cap in a narrow card: at 520 a 155px scroller held a
+	 * 102px name and left 53px for a 68px number cell. Both floors are held under
+	 * one room, declared once on the box, so they cannot disagree. Invisible in a
+	 * unit test: happy-dom lays nothing out.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const body = (selector: string) =>
+		all.find((rule) => rule.selector.trim() === selector && rule.context.length === 0)
+			?.body ?? '';
+
+	const GLYPH_BAND = '.sheetsmith-view .sheetsmith-table-box.sheetsmith-table-glyph-band';
+
+	it('declares the room once, on the box that is the scroller\'s container', () => {
+		const box = body('.sheetsmith-view .sheetsmith-table-box');
+		expect(box).toMatch(/container-type:\s*inline-size/);
+		expect(box).toMatch(/--sheetsmith-table-name-room:\s*calc\(\s*100cqi/);
+		expect(box).toMatch(/--sheetsmith-table-name-room:[^;]*var\(--sheetsmith-table-band\)/);
+		expect(
+			all.filter((rule) => /--sheetsmith-table-name-room:/.test(rule.body)),
+		).toHaveLength(1);
+	});
+
+	it('varies only the band, on the box and on a glyph band', () => {
+		const declaring = all.filter((rule) => /--sheetsmith-table-band:/.test(rule.body));
+		expect(declaring.map((rule) => rule.selector.trim()).sort()).toEqual(
+			['.sheetsmith-view .sheetsmith-table-box', GLYPH_BAND].sort(),
+		);
+		// One glyph cell: the inline control's own factor over the cells' size, so
+		// the coarse-pointer block's factor reaches it with no copy of the number.
+		expect(body(GLYPH_BAND).replace(/\s+/g, ' ')).toContain(
+			'--sheetsmith-table-band: calc( var(--sheetsmith-inline-control-factor) * var(--font-ui-small) + 2 * var(--size-4-2) )',
+		);
+	});
+
+	it('lets a declared name wrap only on a table with no prose column', () => {
+		// `docs/UI.md` §4: a sticky declared name wider than its card covered the
+		// toggle beside it and hid its focus. With prose the name column is
+		// `auto`, where a wrap would fall to the longest word, so it stays out.
+		const wrap = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+			/white-space:\s*normal/.test(rule.body) &&
+			selectorList(rule.selector).some((one) => / tbody \.sheetsmith-table-name$/.test(one)),
+		);
+		expect(wrap.map((rule) => rule.selector.replace(/\s+/g, ' ').trim())).toEqual([
+			'.sheetsmith-view .sheetsmith-table:not(.sheetsmith-table-has-text) tbody .sheetsmith-table-name',
+		]);
+	});
+
+	it("sizes the room's one number cell as the number field is sized", () => {
+		// The band is `4 * var(--font-ui-small)` because the number field is
+		// `width: 4em` at its own `--font-ui-small`. Widen the field without the
+		// room and a number cell no longer shows whole beside the name, which no
+		// unit test can see: so the two are read from the stylesheet and compared.
+		const room = /--sheetsmith-table-band:\s*calc\(([^;]*)\);/.exec(
+			body('.sheetsmith-view .sheetsmith-table-box'),
+		)?.[1];
+		const roomCells = /([\d.]+)\s*\*\s*var\(--font-ui-small\)/.exec(room ?? '')?.[1];
+		const width = /width:\s*([\d.]+)em/.exec(
+			body('.sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input'),
+		)?.[1];
+		const basis = /font-size:\s*(var\(--font-ui-[a-z]+\))/.exec(
+			body('.sheetsmith-view .sheetsmith-table-input'),
+		)?.[1];
+		// Each read found something, so the comparison cannot pass on nothing.
+		expect(roomCells).toBeDefined();
+		expect(width).toBeDefined();
+		expect(basis).toBe('var(--font-ui-small)');
+		expect(Number(roomCells)).toBe(Number(width));
+	});
+
+	it('holds the sizer and the field under it', () => {
+		expect(body('.sheetsmith-view .sheetsmith-table-name-sizer')).toMatch(
+			/max-width:\s*var\(--sheetsmith-table-name-room\)/,
+		);
+		// The field is pulled into the cell's padding by its inset each side, so
+		// its floor is the room plus both insets, and six ems on a wide card.
+		expect(
+			body('.sheetsmith-view .sheetsmith-table-name-input').replace(/\s+/g, ' '),
+		).toContain(
+			'min-width: min( 6em, calc( var(--sheetsmith-table-name-room) + 2 * var(--sheetsmith-field-inset) ) )',
+		);
+	});
+});
+
+describe("a multi-mark segment's dividers in forced colors", () => {
+	/*
+	 * `docs/features/forced-colors-track-and-table.md`. That mode repaints an
+	 * author `background-color` as `Canvas`, so a divider drawn as one vanished on
+	 * an unlit segment and took its count of targets with it. Only a forced-colors
+	 * shot shows it, and only on a run that has an unlit multi-mark segment.
+	 */
+	const mark = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+		/\.sheetsmith-track-mark\b/.test(rule.selector),
+	);
+
+	it('draws every divider as a border, never a fill', () => {
+		expect(mark.length).toBeGreaterThanOrEqual(3);
+		expect(mark.filter((rule) => /background(-color)?:/.test(rule.body))).toEqual([]);
+		expect(mark.some((rule) => /border-left:\s*1px solid/.test(rule.body))).toBe(true);
+	});
+
+	it('two-tones a divider on a lit segment, as the slash is', () => {
+		const lit = mark.find(
+			(rule) =>
+				rule.context[0] === '@media (forced-colors: active)' &&
+				rule.selector.trim() === '.sheetsmith-track-segment-on .sheetsmith-track-mark',
+		);
+		expect(lit?.body).toMatch(/border-left-color:\s*SelectedItemText/);
+		expect(lit?.body).toMatch(/border-right:\s*1px solid CanvasText/);
+	});
+});
+
+describe('the floating surfaces\' viewport gutter', () => {
+	/*
+	 * `placeAnchored` clamps with `EDGE_GUTTER` and both caps take
+	 * `2 * var(--size-4-4)` off the viewport. If the two drift, a capped surface
+	 * stops being centred at phone width, which is the defect the constant fixed
+	 * (`docs/UI.md` §9). So both caps must still spell the token, and the token's
+	 * value — Obsidian's 16px, which the harness's fallback theme carries — must
+	 * still be the constant.
+	 */
+	it('caps the panel and the bubble by the gutter the clamp uses', () => {
+		const rule = (selector: string) =>
+			new RegExp(`(?:^|\\n)${selector.replace('.', '\\.')} \\{([^}]*)\\}`).exec(CSS)?.[1] ?? '';
+		expect(rule('.sheetsmith-panel')).toMatch(/width: min\([^;]*calc\(100vw - 2 \* var\(--size-4-4\)\)\)/);
+		expect(rule('.sheetsmith-popover')).toMatch(
+			/max-width: min\([^;]*calc\(100vw - 2 \* var\(--size-4-4\)\)\)/,
+		);
+		const theme = readFileSync(new URL('../harness/theme.css', import.meta.url), 'utf8');
+		expect(/--size-4-4:\s*(\d+)px/.exec(theme)?.[1]).toBe(String(EDGE_GUTTER));
+	});
+});
+
+describe("the layout editor's rows stack below the width its forms are known at", () => {
+	/*
+	 * `docs/features/layout-editor-narrow-regime.md` §3. The rule copies
+	 * Obsidian's phone-modal shape, and its exclusions are the whole of what
+	 * keeps a toggle beside its switch and a tree row on one line: a selector in
+	 * the block that lost one would stack every row of that kind at a phone's
+	 * width, which no unit test lays out and only a narrow shot would show.
+	 */
+	const EXCLUDED = [
+		'mod-toggle',
+		'mod-navigable',
+		'mod-action',
+		'setting-item-heading',
+		'sheetsmith-tree-row',
+	];
+	const QUERY = /^@container sheetsmith-editor-pane \(max-width: 583px\)$/;
+
+	function stacking(text: string): string[] {
+		return rules(text)
+			.filter((rule) => rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))))
+			.flatMap((rule) => selectorList(rule.selector));
+	}
+
+	/** Every selector under the query that reaches a row without excluding all five. */
+	function unexcluded(text: string): string[] {
+		return stacking(text).filter(
+			(selector) =>
+				/\.setting-item(?![\w-])/.test(selector) &&
+				!EXCLUDED.every((cls) => selector.includes(`:not(.${cls})`)),
+		);
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The row and its control: a block that went would pass on nothing.
+		expect(stacking(CSS_WITHOUT_COMMENTS).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('excludes toggles, the other two app kinds, headings and tree rows on every selector', () => {
+		expect(unexcluded(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would catch a selector that dropped one', () => {
+		const block = (selector: string) =>
+			`@container sheetsmith-editor-pane (max-width: 583px) { ${selector} { flex-direction: column; } }`;
+		expect(
+			unexcluded(
+				block(
+					'.sheetsmith-layout-editor-pane .setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading)',
+				),
+			),
+		).toHaveLength(1);
+		expect(
+			unexcluded(
+				block(
+					'.sheetsmith-layout-editor-pane .setting-item:not(.mod-toggle):not(.mod-navigable):not(.mod-action):not(.setting-item-heading):not(.sheetsmith-tree-row)',
+				),
+			),
+		).toEqual([]);
+	});
+});
+
+describe('a stacked list row draws no gap across the lines its controls skip', () => {
+	/*
+	 * Under 380px of list a row's controls go to line 99, so they follow however
+	 * many fields the row holds. Every line between the last field and 99 is then
+	 * an empty track, and a row gap is drawn between empty tracks as between full
+	 * ones: 97 gaps of 4px, 388px of empty box in every stacked row of all four
+	 * list fields, measured at 380 under phone staging. So the row's own gap has to
+	 * be zero on the block axis, and the spacing it gave comes from a margin on
+	 * the fields, which an empty track does not carry.
+	 */
+	const QUERY = /^@container \(max-width: 380px\)$/;
+	const ROW = '.sheetsmith-entry-row';
+
+	function stacked(text: string): Rule[] {
+		return rules(text).filter((rule) =>
+			rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))),
+		);
+	}
+
+	/** The far line a child of the row is sent to, when anything sends one past 2. */
+	function farLine(text: string): number | undefined {
+		const lines = stacked(text)
+			.filter((rule) => selectorList(rule.selector).some((one) => one.startsWith(`${ROW} >`)))
+			.flatMap((rule) => declarations(rule.body))
+			.map((one) => /^grid-row: (\d+)$/.exec(one)?.[1])
+			.filter((one): one is string => one !== undefined)
+			.map(Number);
+		const far = Math.max(0, ...lines);
+		return far > 2 ? far : undefined;
+	}
+
+	/** The row's block-axis gap as the query declares it, `row-gap` winning a later `gap`'s first value. */
+	function rowGap(text: string): string | undefined {
+		let found: string | undefined;
+		for (const rule of stacked(text)) {
+			if (!selectorList(rule.selector).includes(ROW)) continue;
+			for (const one of declarations(rule.body)) {
+				const gap = /^gap: (\S+)/.exec(one)?.[1];
+				const row = /^row-gap: (\S+)$/.exec(one)?.[1];
+				if (gap !== undefined) found = gap;
+				if (row !== undefined) found = row;
+			}
+		}
+		return found;
+	}
+
+	/** Whether the query puts the spacing back as a margin on what is not a control. */
+	function fieldMargin(text: string): boolean {
+		return stacked(text).some(
+			(rule) =>
+				selectorList(rule.selector).includes(`${ROW} > :not(button.clickable-icon)`) &&
+				declarations(rule.body).includes('margin-bottom: var(--size-2-2)'),
+		);
+	}
+
+	it('finds the controls it is meant to be checking, on a far line', () => {
+		// A placement that went would pass every case below on nothing.
+		expect(farLine(CSS_WITHOUT_COMMENTS)).toBe(99);
+	});
+
+	it('gives the stacked row no gap on the block axis, and its fields the margin instead', () => {
+		expect(rowGap(CSS_WITHOUT_COMMENTS)).toBe('0');
+		expect(fieldMargin(CSS_WITHOUT_COMMENTS)).toBe(true);
+	});
+
+	it('would catch the row gap coming back', () => {
+		const block = (gap: string) =>
+			`@container (max-width: 380px) { ${ROW} { gap: ${gap}; } ${ROW} > button.clickable-icon { grid-row: 99; } }`;
+		expect(farLine(block('var(--size-2-2)'))).toBe(99);
+		expect(rowGap(block('var(--size-2-2)'))).toBe('var(--size-2-2)');
+		expect(rowGap(block('0 var(--size-2-2)'))).toBe('0');
+	});
+});
+
+describe('a list field\'s scroll cap is a distance in px with a floor per regime', () => {
+	/*
+	 * The cap was an em of a desktop row, and a phone's stacked entry is about
+	 * eight of them, so at 380 under phone staging an entry was taller than its
+	 * own list could show (`docs/features/list-scroll-cap.md`). The numbers are
+	 * measurements, held by `harness/measure-lists.mjs` because happy-dom lays
+	 * nothing out; what this holds is the shape: no `em` or `rem` in the cap, and
+	 * the stacked query setting the floor, so the floor and the stacking cannot
+	 * answer to two different widths.
+	 */
+	const SCROLL = '.sheetsmith-list-scroll';
+	const QUERY = /^@container \(max-width: 380px\)$/;
+
+	/** Every `max-height` the scroller is given, in any context, with whether it is top-level. */
+	function capsOf(text: string): { value: string; topLevel: boolean }[] {
+		return rules(text)
+			.filter((rule) => selectorList(rule.selector).includes(SCROLL))
+			.flatMap((rule) =>
+				declarations(rule.body).map((one) => ({ one, topLevel: rule.context.length === 0 })),
+			)
+			.map(({ one, topLevel }) => ({ value: /^max-height: (.+)$/.exec(one)?.[1], topLevel }))
+			.filter((one): one is { value: string; topLevel: boolean } => one.value !== undefined);
+	}
+
+	function stackedFloor(text: string): boolean {
+		return rules(text).some(
+			(rule) =>
+				rule.context.some((one) => QUERY.test(one.replace(/\s+/g, ' '))) &&
+				selectorList(rule.selector).includes(SCROLL) &&
+				declarations(rule.body).some((one) => one.startsWith('--sheetsmith-list-floor:')),
+		);
+	}
+
+	it('finds the cap it is meant to be checking', () => {
+		// A renamed class would pass every case below on nothing.
+		expect(capsOf(CSS_WITHOUT_COMMENTS).filter((one) => one.topLevel)).toHaveLength(1);
+	});
+
+	it('names no em or rem in the cap, in any query or media block either', () => {
+		for (const cap of capsOf(CSS_WITHOUT_COMMENTS)) {
+			expect(cap.value).not.toMatch(/\d(r?em)\b/);
+		}
+	});
+
+	it('sets the stacked floor inside the stacking query', () => {
+		expect(stackedFloor(CSS_WITHOUT_COMMENTS)).toBe(true);
+	});
+
+	it('would catch the em coming back, and a floor set outside the query', () => {
+		const overridden = capsOf(
+			`${SCROLL} { max-height: 400px; } @container (max-width: 380px) { ${SCROLL} { max-height: 20em; } }`,
+		);
+		expect(overridden.map((one) => one.value)).toEqual(['400px', '20em']);
+		expect(overridden[1]?.value).toMatch(/\d(r?em)\b/);
+		expect(stackedFloor(`${SCROLL} { --sheetsmith-list-floor: 400px; }`)).toBe(false);
+		expect(
+			stackedFloor(`@container (max-width: 380px) { ${SCROLL} { --sheetsmith-list-floor: 400px; } }`),
+		).toBe(true);
+	});
+});
+
+describe("every rule asking about the sheet's width asks it at one number", () => {
+	/*
+	 * The sheet's grid collapses under 480px of its view (`sheet.css`), and the
+	 * layout editor's canvas, which wears that view, withdraws its gestures under
+	 * the same named query (`editor.css`,
+	 * `docs/features/layout-editor-narrow-regime.md` §1). A query cannot read a
+	 * custom property, so the number is written at each, and two that drifted
+	 * would leave a canvas offering a drag on a column, or refusing one on a grid,
+	 * with nothing in a unit test laying either out.
+	 */
+	const QUERY = /@container\s+sheetsmith-sheet\s*\(\s*max-width:\s*([\d.]+px)\s*\)/g;
+
+	function widths(text: string): string[] {
+		return [...text.matchAll(QUERY)].map((match) => match[1] as string);
+	}
+
+	it('finds the queries it is meant to be checking, in both stylesheets', () => {
+		const sheet = readFileSync(new URL('./styles/sheet.css', import.meta.url), 'utf8');
+		const editor = readFileSync(new URL('./styles/editor.css', import.meta.url), 'utf8');
+		expect(widths(sheet.replace(/\/\*[\s\S]*?\*\//g, ' ')).length).toBeGreaterThanOrEqual(1);
+		expect(widths(editor.replace(/\/\*[\s\S]*?\*\//g, ' ')).length).toBeGreaterThanOrEqual(1);
+	});
+
+	/**
+	 * The width of the query that collapses the sheet's own grid. It is unnamed
+	 * (`sheet.css`, "SPEC §8"), so `QUERY` cannot see it, yet it is the rule
+	 * whose `display: flex` `drawnAsGrid` reads: drifted alone, it would move the
+	 * collapse and leave the canvas's touch rules, corner and note where they were.
+	 */
+	function collapseWidths(text: string): string[] {
+		return rules(text)
+			.filter(
+				(rule) =>
+					selectorList(rule.selector).includes('.sheetsmith-view > .sheetsmith-grid') &&
+					/display:\s*flex/.test(rule.body),
+			)
+			.flatMap((rule) =>
+				rule.context.flatMap((one) => {
+					const found = /^@container\s*\(\s*max-width:\s*([\d.]+px)\s*\)$/.exec(one.trim());
+					return found ? [found[1] as string] : [];
+				}),
+			);
+	}
+
+	it('gives every one of them the same width', () => {
+		expect(new Set(widths(CSS_WITHOUT_COMMENTS)).size).toBe(1);
+	});
+
+	it("holds the sheet grid's own unnamed collapse to that width too", () => {
+		const collapse = collapseWidths(CSS_WITHOUT_COMMENTS);
+		expect(collapse).toHaveLength(1);
+		expect(new Set([...widths(CSS_WITHOUT_COMMENTS), ...collapse]).size).toBe(1);
+	});
+
+	it('would catch one that drifted', () => {
+		const one = '@container sheetsmith-sheet (max-width: 480px) { .a { display: flex; } }';
+		const other = '@container sheetsmith-sheet (max-width: 512px) { .b { display: none; } }';
+		expect(new Set(widths(one + other)).size).toBe(2);
+		const collapse =
+			'@container (max-width: 500px) { .sheetsmith-view > .sheetsmith-grid { display: flex; } }';
+		expect(new Set([...widths(one), ...collapseWidths(collapse)]).size).toBe(2);
 	});
 });

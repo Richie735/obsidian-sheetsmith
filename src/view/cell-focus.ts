@@ -27,6 +27,18 @@
  */
 export const FOCUSABLE = 'input, select, textarea, button, a[href]';
 
+/**
+ * The sheet's cells, in document order: what a saved cell index counts.
+ *
+ * One function because an index captured against one list and restored against
+ * another lands on the wrong cell rather than failing, and four sites across this
+ * module and `cell-scroll.ts` were each spelling the query (`docs/PATTERNS.md`
+ * §1, share the application).
+ */
+export function sheetCells(root: HTMLElement): Element[] {
+	return Array.from(root.querySelectorAll('.sheetsmith-cell'));
+}
+
 export interface CapturedFocus {
 	cell: number;
 	control: number;
@@ -48,8 +60,11 @@ export interface CapturedFocus {
  *
  * A reverse scan rather than `findLastIndex`, which is ES2023 and past what
  * `tsconfig.json` declares.
+ *
+ * Exported because `cell-scroll.ts` keys a scroller by the same cell, for the
+ * same reason, and a second copy is a second answer to which cell that is.
  */
-function innermostCell(cells: readonly Element[], active: Element): number {
+export function innermostCell(cells: readonly Element[], active: Element): number {
 	for (let i = cells.length - 1; i >= 0; i--) {
 		if (cells[i]?.contains(active)) return i;
 	}
@@ -63,7 +78,7 @@ export function captureFocus(root: HTMLElement): CapturedFocus | null {
 	if (!active || !active.instanceOf(HTMLElement) || !root.contains(active)) {
 		return null;
 	}
-	const cells = Array.from(root.querySelectorAll('.sheetsmith-cell'));
+	const cells = sheetCells(root);
 	const cellIndex = innermostCell(cells, active);
 	if (cellIndex < 0) return null;
 	const controls = Array.from(
@@ -85,7 +100,7 @@ export function restoreFocus(
 	saved: CapturedFocus | null,
 ): void {
 	if (!saved) return;
-	const cell = root.querySelectorAll('.sheetsmith-cell')[saved.cell];
+	const cell = sheetCells(root)[saved.cell];
 	if (!cell) return;
 	const controls = cell.querySelectorAll(FOCUSABLE);
 	/*

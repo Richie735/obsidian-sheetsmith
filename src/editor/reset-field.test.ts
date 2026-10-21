@@ -425,9 +425,10 @@ describe('adding and removing a binding', () => {
 		// asked for, and it is the shape parseReset has nothing to say about.
 		const config = pool([{ trigger: 'Long rest', action: 'full' }]);
 		const form = render(config);
-		const remove = form.querySelector<HTMLButtonElement>(
-			'button[aria-label="Remove this reset"]',
+		const remove = form.querySelector<HTMLElement>(
+			'.clickable-icon[aria-label="Remove this reset"]',
 		);
+		expect(remove).not.toBeNull();
 		remove?.click();
 		expect(config).not.toHaveProperty('reset');
 		expect(recorded.persists).toBe(1);

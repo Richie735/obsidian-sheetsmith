@@ -1,13 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
+import { PANEL_TITLE_ROW_CLASS } from './config-panel';
 import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { renderGrid, walkLayout } from '../view/grid-cells';
 import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/modal';
 import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
+import { CardConfig } from '../components/card';
 import { cardSet, CardSetConfig } from '../components/card-set';
-import { App, Notice } from '../test/obsidian-stub';
+import { App, Notice, Platform } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { pressDown, release } from '../test/pointer';
 import { openView, showFile } from '../test/workspace';
@@ -1417,20 +1419,97 @@ describe('a container that shows one child at a time', () => {
 	});
 
 	it('will not move the first tab earlier or the last later', async () => {
-		// The outcome, not the styling: the buttons are disabled, and `moveItem`
+		// The outcome, not the styling: the arrows are disabled, and `moveItem`
 		// refuses an out-of-range move besides, so pressing them anyway has to
-		// leave the order alone. Asserting the class would have been asserting
-		// which of two `setDisabled` implementations the stub happens to be.
+		// leave the order alone. Disabled is the app's own spelling for an extra
+		// button, which the stub now models: `is-disabled`, out of the tab order.
 		const first = control<HTMLElement>(harness, 'tab-up-combat');
 		const last = control<HTMLElement>(harness, 'tab-down-rest');
-		expect(first.hasAttribute('disabled')).toBe(true);
-		expect(last.hasAttribute('disabled')).toBe(true);
+		for (const end of [first, last]) {
+			expect(end.classList.contains('is-disabled')).toBe(true);
+			expect(end.hasAttribute('tabindex')).toBe(false);
+		}
 		first.click();
 		last.click();
 		await settle(harness.pane);
 		expect(
 			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
 		).toEqual(['combat', 'spells', 'rest']);
+	});
+
+	it('announces its arrows as buttons, and as disabled exactly at the ends', () => {
+		// The app's extra button is a div with no role and sets no
+		// `aria-disabled` (`docs/features/disabled-controls.md`).
+		const arrows = Array.from(
+			harness.container.querySelectorAll<HTMLElement>('[data-sheetsmith-focus^="tab-"]'),
+		).filter((el) => /^tab-(up|down)-/.test(el.dataset.sheetsmithFocus ?? ''));
+		expect(arrows).toHaveLength(6);
+		const ends = ['tab-up-combat', 'tab-down-rest'];
+		for (const arrow of arrows) {
+			expect(arrow.getAttribute('role')).toBe('button');
+			const atEnd = ends.includes(arrow.dataset.sheetsmithFocus ?? '');
+			expect(arrow.getAttribute('aria-disabled')).toBe(atEnd ? 'true' : null);
+		}
+	});
+
+	it('hands focus to the other arrow when a focused arrow lands a tab at an end', async () => {
+		const earlier = control<HTMLElement>(harness, 'tab-up-spells');
+		earlier.focus();
+		earlier.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-down-spells',
+		);
+
+		const later = control<HTMLElement>(harness, 'tab-down-combat');
+		later.focus();
+		later.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'rest', 'combat']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-up-combat',
+		);
+	});
+
+	it('hands no focus off for a press on an arrow that does not hold it', async () => {
+		// A touch tap need not focus what it presses (WebKit does not), and the
+		// handoff moves focus only as the outcome of where the reader stood.
+		// Both directions, so each handler's own focus check is driven.
+		const focusedToken = () =>
+			(document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus;
+		(document.activeElement as HTMLElement | null)?.blur();
+		control<HTMLElement>(harness, 'tab-up-spells').click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect(focusedToken()).toBeUndefined();
+
+		(document.activeElement as HTMLElement | null)?.blur();
+		control<HTMLElement>(harness, 'tab-down-combat').click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'rest', 'combat']);
+		expect(focusedToken()).toBeUndefined();
+	});
+
+	it('leaves focus on the arrow pressed when a tab lands mid-list', async () => {
+		const later = control<HTMLElement>(harness, 'tab-down-combat');
+		later.focus();
+		later.click();
+		await settle(harness.pane);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['spells', 'combat', 'rest']);
+		expect((document.activeElement as HTMLElement | null)?.dataset.sheetsmithFocus).toBe(
+			'tab-down-combat',
+		);
 	});
 
 	it('gives a tab it adds the container\'s own size rather than a free row', async () => {
@@ -1730,6 +1809,11 @@ describe('overlap inside a tab, and never across tabs', () => {
  * its two headings from the field spec, and what is checked here is that both
  * callers get their own words out of one editor.
  */
+/** A stored component read as the Card it was written as. */
+function isCard(config: ComponentConfig): config is CardConfig {
+	return config.type === 'card';
+}
+
 function twoLists(): Layout {
 	return {
 		name: 'Two lists',
@@ -1803,6 +1887,31 @@ describe('a list field naming its own columns', () => {
 		await openForm('edit-race');
 		expect(headings()).toEqual(['Value', 'Label']);
 		expect(names()).toEqual(['Value', 'Label', 'Value', 'Label']);
+	});
+
+	it('hands a touch arrow\'s focus to the other arrow through the pane\'s own redraw', async () => {
+		// The one list-field handoff driven through the real pane, so the
+		// precedence `list-fields.test.ts` re-spells — an explicit request over
+		// the focused control's own token — is held where it lives
+		// (`docs/features/disabled-controls.md`). The arrows draw on mobile only.
+		Platform.isMobile = true;
+		try {
+			await openForm('edit-race');
+			const up = harness.container.querySelector<HTMLButtonElement>(
+				'button[aria-label="Move Dwarf up"]',
+			);
+			if (up === null) throw new Error('no touch arrow for Dwarf');
+			up.focus();
+			up.click();
+			await settle(harness.pane);
+			const race = (await harness.stored()).components[0];
+			if (race === undefined || !isCard(race)) throw new Error('Race is not a Card');
+			expect(race.options?.map((option) => option.value)).toEqual(['Dwarf', 'Elf']);
+			const focused = harness.container.ownerDocument.activeElement;
+			expect(focused?.getAttribute('aria-label')).toBe('Move Dwarf down');
+		} finally {
+			Platform.isMobile = false;
+		}
 	});
 
 	it('leaves a card set\'s entries exactly as they were', async () => {
@@ -2223,6 +2332,200 @@ describe('the tree', () => {
 		const child = treeRow(harness, 'edit-armour');
 		expect(container.nextElementSibling).toBe(child.parentElement);
 		expect(child.parentElement?.firstElementChild).toBe(child);
+	});
+});
+
+describe('a selection made far from the panel', () => {
+	/*
+	 * `docs/features/layout-editor-narrow-regime.md` §4. A stacked pane puts the
+	 * panel under the canvas and the tree, 30,000px down at 380, so a press that
+	 * selects brings it to the reader and offers the way back.
+	 *
+	 * Geometry is staged, since happy-dom lays nothing out: the pane's own
+	 * element is made the leaf's scroller, 600px tall from the top of the
+	 * window with 12px of top padding, and the panel is put wherever the case
+	 * needs it, less however far the scroller has scrolled. The title row and
+	 * its button are the panel's first 44px, as they are at 380 under the phone's
+	 * CSS. `covered` is how much of the scroller's top something else answers a
+	 * press on, which is what the phone's floating chrome does; `scrollIntoView`
+	 * is recorded rather than run, and the reveal must never call it.
+	 */
+	let panelTop = 30000;
+	let covered = 0;
+	let scrolled: string[] = [];
+	const probedAt: number[] = [];
+	const restore: (() => void)[] = [];
+	const cover = document.createElement('div');
+
+	/** Where the title row sits in the leaf now, in the staged geometry. */
+	const rowTop = (): number => panelTop - harness.container.scrollTop;
+
+	beforeEach(async () => {
+		harness = await open(furnished());
+		panelTop = 30000;
+		covered = 0;
+		scrolled = [];
+		probedAt.length = 0;
+		harness.container.setCssStyles({ overflowY: 'auto', paddingTop: '12px' });
+		const rect = vi
+			.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+			.mockImplementation(function (this: HTMLElement) {
+				const box = (top: number, bottom: number, left = 0, right = 0) =>
+					({ top, bottom, left, right, width: right - left, height: bottom - top, x: left, y: top }) as DOMRect;
+				if (this === harness.container) return box(0, 600, 0, 380);
+				if (this.closest('.sheetsmith-editor-panel') === null) return box(0, 0);
+				if (this.classList.contains('sheetsmith-editor-panel')) return box(rowTop(), rowTop() + 2400, 0, 380);
+				if (this.closest(`.${PANEL_TITLE_ROW_CLASS}`) !== null) {
+					const back = this.classList.contains('sheetsmith-panel-back');
+					return box(rowTop(), rowTop() + 44, back ? 200 : 0, back ? 360 : 380);
+				}
+				return box(rowTop() + 44, rowTop() + 88, 0, 380);
+			});
+		const scroll = vi
+			.spyOn(HTMLElement.prototype, 'scrollIntoView')
+			.mockImplementation(function (this: HTMLElement) {
+				scrolled.push(this.dataset.sheetsmithFocus ?? '');
+			});
+		// The button answers only inside its own staged box, so a probe off its
+		// centre line, or below or beside it, is a probe that reaches the row.
+		const hit = vi
+			.spyOn(document, 'elementFromPoint')
+			.mockImplementation((x, y) => {
+				probedAt.push(x);
+				if (y < covered) return cover;
+				const inside = x >= 200 && x < 360 && y >= rowTop() && y < rowTop() + 44;
+				return inside
+					? control(harness, 'panel-back')
+					: harness.container.querySelector(`.${PANEL_TITLE_ROW_CLASS}`);
+			});
+		restore.push(() => rect.mockRestore(), () => scroll.mockRestore(), () => hit.mockRestore());
+	});
+
+	afterEach(() => {
+		for (const undo of restore.splice(0)) undo();
+	});
+
+	it('brings an off-screen panel title to the top on a tree press, and focuses it', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Armour class');
+		// The whole row at the scroller's content edge, not its name at the
+		// scroller's own edge with the button's top 12px above it.
+		expect(rowTop()).toBe(12);
+		expect(scrolled).toEqual([]);
+		expect(document.activeElement).toBe(control(harness, 'panel-title'));
+	});
+
+	it('lands the title row below whatever answers a press on the leaf\'s top', async () => {
+		// The iPhone's measurement: the button answered only its bottom 10px of
+		// 44 once the jump put it at the top. Whatever covers that band, the
+		// row goes below it, so a press anywhere on the button reaches it.
+		covered = 34;
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(rowTop()).toBe(34);
+		// Down **Back to the selection**'s centre line, 200 to 360 staged.
+		expect(new Set(probedAt)).toEqual(new Set([280]));
+		const back = control(harness, 'panel-back');
+		for (let y = rowTop(); y < rowTop() + 44; y += 2) {
+			expect(document.elementFromPoint(280, y)).toBe(back);
+		}
+	});
+
+	it('does the same for a press on a canvas block, after the block takes focus', async () => {
+		// The block's own press puts the keyboard on it as its last act, so the
+		// reveal has to come after that or the block takes focus back.
+		const block = control(harness, 'preview-armour');
+		pressDown(block, { cancelable: true });
+		release(block);
+		block.click();
+		await settle(harness.pane);
+		expect(rowTop()).toBe(12);
+		expect(document.activeElement).toBe(control(harness, 'panel-title'));
+	});
+
+	it('returns to the press\'s source on Back to the selection', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(scrolled.at(-1)).toBe('edit-armour');
+		expect(document.activeElement).toBe(control(harness, 'edit-armour'));
+
+		const block = control(harness, 'preview-defences');
+		block.click();
+		await settle(harness.pane);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(scrolled.at(-1)).toBe('preview-defences');
+		expect(document.activeElement).toBe(control(harness, 'preview-defences'));
+	});
+
+	it('returns to the selection\'s own row once something else selected it', async () => {
+		// Pressed on the canvas, then selected by folding its container, which is
+		// not a press: the block is still drawn, and going back to it would be
+		// going back to a component the panel no longer shows.
+		harness = await open(deep());
+		control(harness, 'preview-armour').click();
+		await settle(harness.pane);
+		control(harness, 'tree-disclosure-defences').click();
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Defences');
+		expect(has(harness, 'preview-armour')).toBe(true);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, 'edit-defences'));
+	});
+
+	it('falls back to the layout\'s row when the pressed component is removed', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, `edit-${SHEET_DESTINATION}`));
+	});
+
+	it('falls back to the selection\'s tree row when the source is gone', async () => {
+		// Nothing pressed yet, so there is no source to return to.
+		control(harness, 'panel-back').click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, `edit-${SHEET_DESTINATION}`));
+	});
+
+	it('scrolls nothing where the panel is already in sight, as it is beside the tree', async () => {
+		panelTop = 40;
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Armour class');
+		expect(harness.container.scrollTop).toBe(0);
+		expect(scrolled).toEqual([]);
+		expect(document.activeElement).toBe(control(harness, 'edit-armour'));
+	});
+
+	it('scrolls nothing for a selection that is not a press', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		scrolled.length = 0;
+		const after = harness.container.scrollTop;
+		// A removal selects the layout's own row, and is not a press on it.
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Layout');
+		expect(harness.container.scrollTop).toBe(after);
+		expect(scrolled).toEqual([]);
+	});
+
+	it('scrolls nothing for a press on what is already selected', async () => {
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		scrolled.length = 0;
+		const after = harness.container.scrollTop;
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(harness.container.scrollTop).toBe(after);
+		expect(scrolled).toEqual([]);
 	});
 });
 
