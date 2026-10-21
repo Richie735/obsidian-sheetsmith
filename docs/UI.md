@@ -642,6 +642,19 @@ case obeys it.
   keypad today, Pool's temporary points (floored at zero, no arithmetic) and
   the length in Track's **Add** form (a segment count, no arithmetic); the scan
   holds that population, so a third is a decision made here.
+- **A focused number is selected, because a finger cannot aim a caret**
+  [checked: the focus-kind cases in `card.test.ts`, `table.test.ts` and
+  `pool.test.ts`]. A field bound with `step` or `arithmetic` that holds a
+  finite number when focus arrives — after a pill's swap to the stored number —
+  selects the whole of it, so a tap and a typed number replace the value rather
+  than appending to it. Touch, the keyboard, a press routed from a card's
+  padding and a focus from code all select. **The one exemption is a mouse or
+  pen press on the field itself**, which aimed its caret; a pen tip being aimed
+  is an assumption until a Pencil has been tried by hand. **A second press into
+  a field that already has focus places the caret** and selects nothing, so one
+  digit can still be fixed. One rule in `editable.ts`, no option and no
+  component code; the field list is
+  `docs/features/number-field-focus-select.md`.
 
 ---
 
