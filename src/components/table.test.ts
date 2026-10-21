@@ -1283,6 +1283,17 @@ describe('table.render', () => {
 		expect(changes).toEqual([{ rows: { 1: { cells: { Bonus: '4' } } } }]);
 	});
 
+	it('gives a number cell the full keyboard, for a -1 Bonus or a 0.5 Weight', () => {
+		// iOS's `numeric` keypad is digits alone: no minus and no decimal point
+		// (docs/UI.md §7). A bounded column is no different, since its bounds
+		// are held on commit rather than at the keyboard.
+		const el = render(note({}));
+		for (const label of ['Perception Bonus', 'Acrobatics Training']) {
+			const input = el.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+			expect(input?.inputMode).toBe('text');
+		}
+	});
+
 	it('holds a typed number to the column bounds', () => {
 		const changes: unknown[] = [];
 		const el = document.createElement('div');

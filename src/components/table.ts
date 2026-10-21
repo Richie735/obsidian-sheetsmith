@@ -2641,7 +2641,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				}
 				input.value = raw;
 				input.setAttribute('aria-label', label);
-				if (type === 'number') input.inputMode = 'numeric';
+				// A number cell takes the full keyboard, not the numeric keypad:
+				// `-1` is an ordinary Bonus and `0.5` an ordinary Weight, and iOS's
+				// `numeric` keypad has neither a minus nor a decimal point
+				// (`docs/UI.md` §7). A text cell needs no say here.
+				if (type === 'number') input.inputMode = 'text';
 				renderNotesAt(
 					td,
 					context.modifiers,

@@ -906,6 +906,19 @@ describe('render', () => {
 		});
 	});
 
+	it('gives a stat and its number cells the full keyboard', () => {
+		// A stat holds a number of any sign or a word, and a cell a number of
+		// any sign or a fraction; iOS's `numeric` keypad is digits alone
+		// (docs/UI.md §7).
+		const result = roster.read(BODY, config);
+		const { el } = recording(config, result.ok ? result.data : null);
+		const stat = el.querySelector<HTMLInputElement>('.sheetsmith-card-input');
+		const cells = el.querySelectorAll<HTMLInputElement>('tbody .sheetsmith-table-input');
+		expect(stat?.inputMode).toBe('text');
+		expect(cells.length).toBeGreaterThan(0);
+		for (const cell of Array.from(cells)) expect(cell.inputMode).toBe('text');
+	});
+
 	describe('a fenced-link refusal on a stat field', () => {
 		it('declines a wikilink at the commit, on the values\' own sentence, and writes nothing', () => {
 			const result = roster.read(BODY, config);

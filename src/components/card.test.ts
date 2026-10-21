@@ -223,6 +223,14 @@ describe('card.render', () => {
 		expect(inputs(el).value?.getAttribute('aria-label')).toBe('Armour class');
 	});
 
+	it('gives the value the full keyboard, derived or not', () => {
+		// A derived implies a number, and a number may be negative or a
+		// fraction, which iOS's digits-only `numeric` keypad cannot type
+		// (docs/UI.md §7).
+		expect(inputs(render({ derived: '10 + value' })).value?.inputMode).toBe('text');
+		expect(inputs(render()).value?.inputMode).toBe('text');
+	});
+
 	it('computes the derived value, and updates it live while typing', () => {
 		const el = render({ derived: '10 + value' });
 		const derived = el.querySelector('.sheetsmith-card-derived');

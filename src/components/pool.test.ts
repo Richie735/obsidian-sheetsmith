@@ -1769,14 +1769,12 @@ describe('pool amount control', () => {
 		expect(document.activeElement).toBe(amount);
 	});
 
-	it('spends a bare amount, which is what makes it reachable on a phone', () => {
-		// No sign is typed anywhere: iOS's numeric keypad has no minus key, so a
-		// signed amount was untypeable on the device most likely to be at a
-		// table. The direction is a button instead.
+	it('spends a bare amount, so the common path never types a sign', () => {
+		// No sign is typed anywhere: the direction is a button, so a spend is
+		// press, type the digits, Enter.
 		const onChange = vi.fn();
 		const el = render({}, { current: '62' }, { onChange, resolved: { max: 62 } });
 		const amount = open(el);
-		expect(amount.inputMode).toBe('numeric');
 		put(amount, '17');
 		enter(amount);
 		expect(parts(el).current?.value).toBe('45');
@@ -1813,6 +1811,13 @@ describe('pool amount control', () => {
 		expect(direction?.getAttribute('aria-label')).toContain('Spending from HP');
 		enter(amount);
 		expect(parts(el).current?.value).toBe('28');
+	});
+
+	it('asks a phone for the full keyboard, since the amount may be arithmetic', () => {
+		// iOS's `numeric` keypad is digits alone, so `2*3` and a typed sign
+		// could not be entered there (docs/UI.md §7).
+		const el = render({}, { current: '30' }, { resolved: { max: 62 } });
+		expect(open(el).inputMode).toBe('text');
 	});
 
 	it('takes an expression as the amount', () => {
@@ -2621,5 +2626,27 @@ describe('the door onto a ceiling a modifier moved', () => {
 		// case above is about the door and not about a router that never runs.
 		pressDown(el.querySelector('.sheetsmith-pool-label'), { bubbles: true });
 		expect(document.activeElement).toBe(parts(el).current);
+	});
+});
+
+/**
+ * Which keyboard each of the card's fields asks a phone for (docs/UI.md §7).
+ * iOS's `numeric` keypad is digits alone, so a field that accepts a sign or
+ * settles arithmetic takes `text`, and only a field whose every valid value is a
+ * non-negative whole number keeps the keypad.
+ */
+describe('the keyboard a pool asks a phone for', () => {
+	it('gives the value the full keyboard, for its arithmetic and its minus', () => {
+		expect(parts(render()).current?.inputMode).toBe('text');
+	});
+
+	it('gives a character-owned max the full keyboard, for its arithmetic', () => {
+		const el = render({ maxSource: 'character', max: undefined }, { current: '22', max: '31' });
+		expect(parts(el).maxInput?.inputMode).toBe('text');
+	});
+
+	it('keeps the keypad on the buffer, whose every valid value is a non-negative whole number', () => {
+		const el = render({ hasTemp: true }, { current: '22', temp: '4' });
+		expect(parts(el).temp?.inputMode).toBe('numeric');
 	});
 });

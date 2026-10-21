@@ -1106,7 +1106,9 @@ function drawValueField(
 ): void {
 	const field = valueGroup.createEl('input', { cls: 'sheetsmith-card-input' });
 	field.type = 'text';
-	field.inputMode = 'numeric';
+	// The full keyboard: a stat holds a number of any sign or a word, and iOS's
+	// `numeric` keypad has digits alone (`docs/UI.md` §7).
+	field.inputMode = 'text';
 	const shown = effectiveReading(config.effective, stored, published, context.resolveField);
 	// Folds a reading that is only a respelling ("15.0" against "15") onto
 	// `stored` itself, exactly as a Card's own value field does
@@ -1457,7 +1459,10 @@ function drawRow(
 		input.type = 'text';
 		input.value = raw;
 		input.setAttribute('aria-label', label);
-		input.inputMode = 'numeric';
+		// The full keyboard, a Table number cell's own reason: a value of any
+		// sign or a fraction, neither of which iOS's `numeric` keypad can type
+		// (`docs/UI.md` §7).
+		input.inputMode = 'text';
 		renderNotesAt(
 			td,
 			context.modifiers,

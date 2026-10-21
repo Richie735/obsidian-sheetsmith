@@ -619,6 +619,29 @@ case obeys it.
   `min-width` scoped to Track so Pool's max field does not move
   (`docs/features/track-row-legibility-and-clipped-fields.md`). A later touch pass
   starts here.
+- **A field asks for the numeric keypad only where every valid value is a
+  non-negative whole number, and otherwise for `text`** [checked:
+  `src/numeric-keypad-sites.test.ts`]. On an iPhone `inputMode = 'numeric'` is
+  the digits 0 to 9 and nothing else: no minus, no plus, no operator, no decimal
+  point, no letter, and no Done key; `decimal` adds the point and nothing more.
+  iPadOS draws a full number-and-symbol keyboard for the same modes, so only the
+  phone shows it, and the harness and desktop show nothing either way. So the
+  question at each field is what its *valid* values are, never what it usually
+  holds: a valid negative (a `-1` Bonus, a pool run below zero), a fraction (a
+  `0.5` Weight), arithmetic the field settles (`43-7`, `2*3`), or a word or a
+  formula (a stat's word, a ceiling's `prof`) each needs a key the keypad lacks,
+  and one of them is enough for `text`. Text a field merely accepts without
+  meaning anything by it — stored as typed, or clamped — does not count, since
+  the keypad refusing it costs nothing. **On a field this rule decides**, one
+  whose value is or may be a number, `text` is set explicitly rather than left
+  as the default, so the decision is visible at the site and its test has
+  something to assert; a field that only ever holds words needs no say. **A
+  keypad that switches on what the field holds is not offered**: from an empty
+  or numeric field it could never be left, which is
+  `docs/features/record-ceiling-formula.md`'s argument. Two fields keep the
+  keypad today, Pool's temporary points (floored at zero, no arithmetic) and
+  the length in Track's **Add** form (a segment count, no arithmetic); the scan
+  holds that population, so a third is a decision made here.
 
 ---
 
