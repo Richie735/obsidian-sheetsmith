@@ -5,7 +5,7 @@ import { definitionView, outcomeView } from '../test/modifier-views';
 import { roster, RosterConfig } from './roster';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
-import { hold, pressDown, prevented, release } from '../test/pointer';
+import { hold, pressDown, pressToFocus, prevented, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import {
 	callsFrom,
@@ -7124,5 +7124,132 @@ describe('a table something has noted (docs/features/modifier-notes.md)', () => 
 			'perception',
 		]);
 		expect(table.write(data, BODY, published)).toBe(table.write(data, BODY, unkeyed));
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: a number cell focused without an
+ * aimed caret selects its number, so a typed one replaces it.
+ */
+describe('table.render: focusing a number cell selects its number', () => {
+	afterEach(() => {
+		document.body.replaceChildren();
+	});
+
+	const mounted = (data: TableData | null, over = config) => {
+		const el = render(data, over);
+		document.body.appendChild(el);
+		return el;
+	};
+
+	/** Acrobatics' Bonus cell, holding `12`. */
+	const bonus = (onChange = vi.fn()) => {
+		const data = stored(`
+| Skill | Training | Bonus |
+|---|---|---|
+| Acrobatics | 1 | 12 |
+| Perception | 2 | 1 |
+`);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		table.render(el, config, data, { ...contextFor(data), onChange });
+		const cell = el.querySelectorAll<HTMLInputElement>('tbody .sheetsmith-table-input')[1];
+		if (!cell) throw new Error('expected the Bonus cell');
+		expect(cell.value).toBe('12');
+		return cell;
+	};
+
+	const selected = (input: HTMLInputElement) => [input.selectionStart, input.selectionEnd];
+
+	it('selects the whole number on a touch press', () => {
+		const cell = bonus();
+		cell.setSelectionRange(1, 1);
+		pressToFocus(cell, 'touch');
+		expect(selected(cell)).toEqual([0, 2]);
+	});
+
+	it('leaves the caret where a mouse press aimed it', () => {
+		const cell = bonus();
+		cell.setSelectionRange(1, 1);
+		pressToFocus(cell, 'mouse');
+		expect(selected(cell)).toEqual([1, 1]);
+	});
+
+	it('selects the whole number on keyboard or programmatic focus', () => {
+		const cell = bonus();
+		cell.setSelectionRange(1, 1);
+		cell.focus();
+		expect(selected(cell)).toEqual([0, 2]);
+	});
+
+	it('collapses the selection when a second touch press lands on it', () => {
+		// A tap on selected text opens iOS's edit menu, so the press clears it
+		// on the way down and the platform places the caret.
+		const cell = bonus();
+		if (!cell) throw new Error('expected the field');
+		pressToFocus(cell, 'touch');
+		expect(selected(cell)).toEqual([0, 2]);
+		pressDown(cell, { pointerType: 'touch' });
+		expect(cell.selectionStart).toBe(cell.selectionEnd);
+	});
+
+	for (const pointerType of ['mouse', 'pen']) {
+		it(`keeps the selection when a second ${pointerType} press lands on it`, () => {
+			const cell = bonus();
+			if (!cell) throw new Error('expected the field');
+			cell.focus();
+			expect(selected(cell)).toEqual([0, 2]);
+			pressDown(cell, { pointerType });
+			expect(selected(cell)).toEqual([0, 2]);
+		});
+	}
+
+	it('does not reselect on a second touch press into the focused cell', () => {
+		const cell = bonus();
+		pressToFocus(cell, 'touch');
+		cell.setSelectionRange(1, 1);
+		pressToFocus(cell, 'touch');
+		expect(selected(cell)).toEqual([1, 1]);
+	});
+
+	it('commits nothing when a touch focus is followed by a blur', () => {
+		const onChange = vi.fn();
+		const cell = bonus(onChange);
+		pressToFocus(cell, 'touch');
+		cell.blur();
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('does not select a text cell or a row name on a touch press', () => {
+		const inventory: TableConfig = {
+			...config,
+			rowHeader: 'Item',
+			rows: undefined,
+			openRows: true,
+			columns: [{ key: 'Notes', type: 'text' }],
+		};
+		const el = mounted(
+			stored(
+				`
+| Item | Notes |
+|---|---|
+| 50 | 20 |
+`,
+				inventory,
+			),
+			inventory,
+		);
+		const name = el.querySelector<HTMLInputElement>('.sheetsmith-table-name-input');
+		const text = el.querySelector<HTMLInputElement>(
+			'tbody .sheetsmith-table-input:not(.sheetsmith-table-name-input)',
+		);
+		if (!name || !text) throw new Error('expected a name and a text cell');
+		// Both hold digits, so only the missing `step` keeps them at the caret.
+		expect([name.value, text.value]).toEqual(['50', '20']);
+		for (const field of [name, text]) {
+			field.setSelectionRange(1, 1);
+			pressToFocus(field, 'touch');
+			expect(selected(field)).toEqual([1, 1]);
+		}
 	});
 });

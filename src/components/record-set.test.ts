@@ -32,7 +32,7 @@ import { sampleOf } from '../test/sample';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { parseModifierPart } from '../parse/modifier-cell';
-import { hold } from '../test/pointer';
+import { hold, pressToFocus } from '../test/pointer';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
 import { hoverClip, setClip } from '../test/clipped';
@@ -8166,5 +8166,21 @@ describe('a text field as the group key', () => {
 			const { host } = live({}, sample);
 			expect(groupNames(host)).toEqual(['Fighter', 'Wizard']);
 		});
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: a record's name does not step,
+ * so even a name that is a number keeps the caret where the tap put it.
+ */
+describe('record set: focusing a record name', () => {
+	it('does not select a name that happens to be a number', () => {
+		const el = render({}, ['', '### 1984', '```sheet', 'Uses: 1', '```', ''].join('\n'));
+		const name = nameFields(el)[0];
+		if (!name) throw new Error('expected the name field');
+		expect(name.value).toBe('1984');
+		name.setSelectionRange(2, 2);
+		pressToFocus(name, 'touch');
+		expect([name.selectionStart, name.selectionEnd]).toEqual([2, 2]);
 	});
 });

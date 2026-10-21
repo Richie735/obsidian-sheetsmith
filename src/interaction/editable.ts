@@ -170,7 +170,7 @@ export function amountOf(source: string): number | null {
  */
 function settleEntry(raw: string, arithmetic: boolean): string {
 	if (!arithmetic || raw === '') return raw;
-	if (Number.isFinite(Number(raw))) return raw;
+	if (isPlainNumber(raw)) return raw;
 	try {
 		const value = evaluate(raw, EMPTY_SCOPE);
 		return typeof value === 'number' && Number.isFinite(value)
@@ -181,12 +181,136 @@ function settleEntry(raw: string, arithmetic: boolean): string {
 	}
 }
 
+/**
+ * Whether trimmed text is a number as typed, before any arithmetic.
+ *
+ * One predicate for the three readers that ask it — a commit settling an entry,
+ * an arrow key stepping one, and a focus deciding whether to select — because
+ * the focus selection's whole claim is that it keys on the test the arrows
+ * already use, and two spellings of that would be free to disagree. The empty
+ * string is not a number here; the arrows' own rule that an empty field steps
+ * from zero is theirs, stated in front of this.
+ */
+function isPlainNumber(raw: string): boolean {
+	return raw !== '' && Number.isFinite(Number(raw));
+}
+
 /** Clamp a stepped value, where the field declares bounds. */
 function clamp(value: number, options: EditableOptions): number {
 	let next = value;
 	if (options.min !== undefined) next = Math.max(options.min, next);
 	if (options.max !== undefined) next = Math.min(options.max, next);
 	return next;
+}
+
+/**
+ * Select a field's number whenever focus arrives at it without a caret having
+ * been aimed (`docs/features/number-field-focus-select.md`).
+ *
+ * A finger cannot aim a caret at a digit, so a tap on `27` followed by `5` gave
+ * `527`; with the number selected it gives `5`. Only a mouse or a pen press on
+ * the field itself keeps the platform's caret, because only those were aimed.
+ * A press routed from a card's padding, Tab, and any focus called from code
+ * all select. **No option**, on `docs/PATTERNS.md` §1: the rule follows from
+ * `step` and `arithmetic`, which every number field already declares, and the
+ * value test is what keeps a stepping field holding a word (a species) at its
+ * caret.
+ *
+ * Four decisions the spec left to the build, each with its reason:
+ *
+ * - **`focusin`, not `focus`.** The card face and Roster swap the stored number
+ *   into the field on `focus`, in listeners added after this binding, and the
+ *   selection must be of what the swap leaves. `focusin` is dispatched after
+ *   every `focus` listener has run, synchronously, so no timer is needed and no
+ *   keystroke can land between the swap and the selection. A microtask would
+ *   not do: a focus the browser dispatches checkpoints microtasks between
+ *   listeners, so it would run before the swap.
+ * - **The touch reselect is on `click`.** WebKit places the caret when a tap
+ *   ends, after `focus`, which undoes a selection made there; `click` is the
+ *   last event of a tap on both mobile engines, after the synthesised mouse
+ *   events that focus and place the caret, where `pointerup` comes before them.
+ *   The device check decides whether this holds.
+ * - **A press some other gesture claimed does not reselect.** A Pool's value is
+ *   also a scrub, which clears the selection once a drag passes its threshold
+ *   and takes each move after it with `preventDefault`. So the last move of the
+ *   press is kept, and a press whose last move was claimed is a drag, not a tap.
+ *   This reads what the scrub did rather than knowing that it exists.
+ * - **`setSelectionRange`, not `select()`**, because iOS Safari is known not to
+ *   honour `select()` reliably on a text input, and the range is the spelling
+ *   that works on every engine.
+ *
+ * The recorded press is used up by the focus it caused, and cleared by the
+ * press's `click` or `pointercancel`. **Not by `pointerup`**, because a phone
+ * focuses the field after `pointerup`, from the synthesised mouse events, so
+ * clearing there would lose every touch. The cost is a press that slides off:
+ * it fires no click, so its kind waits for the next focus. A stale touch makes
+ * that focus select, which a Tab does anyway, and leaves a reselect pending
+ * that the next press into the now-focused field drops; a stale pen makes the
+ * next Tab keep the caret. Every press drops a pending reselect, and every
+ * focus sets it afresh, so a blur needs no listener of its own. A press into a
+ * field that already has focus records nothing — `picture-frame.ts`'s own
+ * guard — and a touch one collapses the selection first, so a second tap
+ * places the caret rather than opening iOS's edit menu, and one digit can
+ * still be fixed.
+ */
+function selectNumberOnFocus(input: HTMLInputElement): void {
+	/** The `pointerType` of the press that is about to focus the field, if any. */
+	let pressedBy: string | null = null;
+	/** Whether this focus came from a touch, whose tap end may move the caret. */
+	let reselect = false;
+	let lastMove: PointerEvent | null = null;
+
+	const wholeValueSelected = (): boolean =>
+		input.value !== '' &&
+		input.selectionStart === 0 &&
+		input.selectionEnd === input.value.length;
+
+	const selectNumber = (): void => {
+		if (!isPlainNumber(input.value.trim())) return;
+		input.setSelectionRange(0, input.value.length);
+	};
+
+	input.addEventListener('pointerdown', (event) => {
+		lastMove = null;
+		reselect = false;
+		if (input.ownerDocument.activeElement === input) {
+			pressedBy = null;
+			// A tap on selected text is iOS's own gesture for its edit menu, so a
+			// second tap onto the number this selected opened Cut / Copy / Paste
+			// and kept the selection. Collapsed here, before the tap ends, the
+			// platform places the caret where the finger lands. Touch only: a
+			// mouse or pen press already places its caret, and only the whole
+			// value, which is what this binding selects, so a selection the
+			// reader made themselves keeps the platform's menu.
+			if (event.pointerType === 'touch' && wholeValueSelected()) {
+				const end = input.value.length;
+				input.setSelectionRange(end, end);
+			}
+			return;
+		}
+		pressedBy = event.pointerType;
+	});
+	input.addEventListener('pointermove', (event) => {
+		lastMove = event;
+	});
+	input.addEventListener('pointercancel', () => {
+		pressedBy = null;
+		reselect = false;
+	});
+	input.addEventListener('focusin', () => {
+		const by = pressedBy;
+		pressedBy = null;
+		reselect = by === 'touch';
+		if (by === 'mouse' || by === 'pen') return;
+		selectNumber();
+	});
+	input.addEventListener('click', () => {
+		const pending = reselect;
+		reselect = false;
+		pressedBy = null;
+		if (!pending || lastMove?.defaultPrevented === true) return;
+		selectNumber();
+	});
 }
 
 /** What a caller keeps hold of after binding, for the edits it drives itself. */
@@ -293,13 +417,17 @@ export function bindEditable(
 			// the obvious first gesture, and it should not be a dead key.
 			// Genuinely non-numeric text is not a number to step, so the
 			// arrows stay caret movement there.
+			if (raw !== '' && !isPlainNumber(raw)) return;
 			const current = raw === '' ? 0 : Number(raw);
-			if (!Number.isFinite(current)) return;
 			event.preventDefault();
 			input.value = String(clamp(current + delta, options));
 			redraw();
 		}
 	});
+
+	if (options.step === true || options.arithmetic === true) {
+		selectNumberOnFocus(input);
+	}
 
 	return {
 		set: (next) => {

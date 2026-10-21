@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cancel, hold, press, pressDown, release } from '../test/pointer';
+import { cancel, hold, press, pressDown, pressToFocus, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { pool, PoolConfig, PoolData } from './pool';
@@ -2648,5 +2648,134 @@ describe('the keyboard a pool asks a phone for', () => {
 	it('keeps the keypad on the buffer, whose every valid value is a non-negative whole number', () => {
 		const el = render({ hasTemp: true }, { current: '22', temp: '4' });
 		expect(parts(el).temp?.inputMode).toBe('numeric');
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: the value focused without an
+ * aimed caret selects its number, so `27`, a tap and `-5` settles `-5`.
+ */
+describe('pool: focusing the value selects its number', () => {
+	const value = (ctx: Partial<RenderContext> = {}) => {
+		const current = parts(render({}, { current: '27' }, ctx)).current;
+		if (!current) throw new Error('expected the value');
+		return current;
+	};
+
+	const selected = (input: HTMLInputElement) => [input.selectionStart, input.selectionEnd];
+
+	it('selects the whole number on a touch press', () => {
+		const current = value();
+		current.setSelectionRange(1, 1);
+		pressToFocus(current, 'touch');
+		expect(selected(current)).toEqual([0, 2]);
+	});
+
+	it('leaves the caret where a mouse press aimed it', () => {
+		const current = value();
+		current.setSelectionRange(1, 1);
+		pressToFocus(current, 'mouse');
+		expect(selected(current)).toEqual([1, 1]);
+	});
+
+	it('selects the whole number on keyboard or programmatic focus', () => {
+		const current = value();
+		current.setSelectionRange(1, 1);
+		current.focus();
+		expect(selected(current)).toEqual([0, 2]);
+	});
+
+	it('collapses the selection when a second touch press lands on it', () => {
+		// A tap on selected text opens iOS's edit menu, so the press clears it
+		// on the way down and the platform places the caret.
+		const current = value();
+		if (!current) throw new Error('expected the field');
+		pressToFocus(current, 'touch');
+		expect(selected(current)).toEqual([0, 2]);
+		pressDown(current, { pointerType: 'touch' });
+		expect(current.selectionStart).toBe(current.selectionEnd);
+	});
+
+	for (const pointerType of ['mouse', 'pen']) {
+		it(`keeps the selection when a second ${pointerType} press lands on it`, () => {
+			const current = value();
+			if (!current) throw new Error('expected the field');
+			current.focus();
+			expect(selected(current)).toEqual([0, 2]);
+			pressDown(current, { pointerType });
+			expect(selected(current)).toEqual([0, 2]);
+		});
+	}
+
+	it('does not reselect on a second touch press into the focused value', () => {
+		const current = value();
+		pressToFocus(current, 'touch');
+		current.setSelectionRange(1, 1);
+		pressToFocus(current, 'touch');
+		expect(selected(current)).toEqual([1, 1]);
+	});
+
+	it('replaces the number with what is typed after a tap', () => {
+		const onChange = vi.fn();
+		const current = value({ onChange });
+		pressToFocus(current, 'touch');
+		current.setRangeText('-5', current.selectionStart ?? 0, current.selectionEnd ?? 0, 'end');
+		current.blur();
+		expect(current.value).toBe('-5');
+		expect(JSON.stringify(onChange.mock.calls)).toContain('-5');
+	});
+
+	it('commits nothing when a touch focus is followed by a blur', () => {
+		const onChange = vi.fn();
+		const current = value({ onChange });
+		pressToFocus(current, 'touch');
+		current.blur();
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('still scrubs from a focused value whose selection the press collapsed', () => {
+		const onChange = vi.fn();
+		const current = value({ onChange, resolved: { max: 200 } });
+		pressToFocus(current, 'touch');
+		expect(selected(current)).toEqual([0, 2]);
+		pressDown(current, { pointerType: 'touch', clientX: 0 });
+		expect(current.selectionStart).toBe(current.selectionEnd);
+		for (const x of [12, 24, 36, 48, 60]) {
+			const move = new PointerEvent('pointermove', {
+				pointerId: 1,
+				pointerType: 'touch',
+				clientX: x,
+				cancelable: true,
+			});
+			Object.defineProperty(move, 'timeStamp', { value: x * 20 });
+			current.dispatchEvent(move);
+		}
+		release(current, { pointerType: 'touch', clientX: 60 });
+		current.click();
+		expect(Number(current.value)).toBeGreaterThan(27);
+		expect(current.selectionStart).toBe(current.selectionEnd);
+	});
+
+	it('leaves no selection after a scrub that began as a touch focus', () => {
+		const current = value({ resolved: { max: 200 } });
+		pressDown(current, { pointerType: 'touch', clientX: 0 });
+		current.focus();
+		expect(selected(current)).toEqual([0, 2]);
+		for (const x of [12, 24, 36]) {
+			current.dispatchEvent(
+				new PointerEvent('pointermove', {
+					pointerId: 1,
+					pointerType: 'touch',
+					clientX: x,
+					cancelable: true,
+				}),
+			);
+		}
+		release(current, { pointerType: 'touch', clientX: 36 });
+		current.click();
+		// The scrub stepped the value, and the end of the press brought no
+		// selection back.
+		expect(Number(current.value)).toBeGreaterThan(27);
+		expect(current.selectionStart).toBe(current.selectionEnd);
 	});
 });
