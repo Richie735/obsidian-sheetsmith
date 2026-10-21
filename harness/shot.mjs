@@ -2120,6 +2120,29 @@ export const DEFAULTS = [
 		frame: '.sheetsmith-editor-panel',
 	},
 	{
+		// The same form at the larger text size, which is where the touch row's
+		// down arrow could leave its place: it is offset by one control width,
+		// and this is the setting that would move a width the offset counts on
+		// (`docs/features/list-field-phone-floor.md`). Measured the same way:
+		// **40047**.
+		name: 'editor-phone-skills-large-text',
+		query: 'surface=editor&theme=light&open=skills&text=24',
+		size: '380,40200',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
+		// The layout's own form under phone staging: its promoted fields, a touch
+		// row of two fields, and its Modifiers, one field filling the row
+		// (`docs/features/list-field-phone-floor.md`). Nothing is opened, so the
+		// panel is the layout's. Measured the same way: **42162**.
+		name: 'editor-phone-layout-lists',
+		query: 'surface=editor&theme=light',
+		size: '380,42300',
+		platform: 'phone',
+		frame: '.sheetsmith-editor-panel',
+	},
+	{
 		// The pane on a tablet, stacked at 820, where `.is-tablet
 		// button:not(.clickable-icon)` took 4px 20px of padding off the tree's
 		// names and chevrons until they were doubled past it (`editor.css`).

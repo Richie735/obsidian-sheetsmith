@@ -718,6 +718,13 @@
 	   themselves one: a phone-width pane and a narrow desktop sidebar are the
 	   same problem, and neither is a viewport width. */
 	container-type: inline-size;
+	/* One icon button: the icon and the click padding around it. Declared on
+	   every list rather than on the three shapes whose header reserves a track
+	   for it, because a touch row on any list reads it to place its down arrow
+	   (the 380 query at the foot of this file), a Card set's plain entries
+	   included. The header's spacers take the same width, so a control track
+	   measures the same on both and the field tracks land on the same edges. */
+	--sheetsmith-list-control: calc(var(--icon-s, 16px) + 2 * var(--size-2-2));
 }
 
 /* Long lists are bounded so they cannot bury the fields under them: a skill
@@ -831,20 +838,13 @@
    `.sheetsmith-entry-counted` (a track's rows: a length and a sense) and
    `.sheetsmith-entry-flagged` (a Passport field's `list`, one checkbox column)
    share every declaration below except `grid-template-columns` itself — the
-   token, the header-spacer compensation, and both ends of the promise that a
-   control track measures the same in the header as in the row. Written as one
+   header-spacer compensation, and both ends of the promise that a control
+   track measures the same in the header as in the row, whose width is the
+   token on `.sheetsmith-entry-list`. Written as one
    selector list rather than two copies (`docs/PATTERNS.md` §1: a shared *set*
    duplicated by selector is the case a guard test could only prove still
    agree), so a change to the icon token or the compensation math cannot land
    on one list's buttons and miss the other's. */
-.sheetsmith-entry-counted,
-.sheetsmith-entry-flagged {
-	/* One icon button: the icon and the click padding around it. The header's
-	   spacers take the same width, so a control track measures the same on
-	   both and the field tracks land on the same edges. The same token the
-	   list editors use, and for the same reason. */
-	--sheetsmith-list-control: calc(var(--icon-s, 16px) + 2 * var(--size-2-2));
-}
 
 /* One track list, shared. The header carries spacers for the control tracks
    so both grids resolve identically — with two content columns that was not
@@ -2407,14 +2407,8 @@
 }
 
 /* The attribute list has two fixed tracks; these lists vary by what the
-   component declares, so the track count comes in as a property. */
-.sheetsmith-list {
-	/* One icon button: the icon and the click padding around it. The header's
-	   spacers take the same width, so a control track measures the same on
-	   both and the 1fr field tracks land on the same edges. */
-	--sheetsmith-list-control: calc(var(--icon-s, 16px) + 2 * var(--size-2-2));
-}
-
+   component declares, so the track count comes in as a property. Each control
+   track is `--sheetsmith-list-control`, declared on `.sheetsmith-entry-list`. */
 .sheetsmith-list .sheetsmith-entry-columns,
 .sheetsmith-list .sheetsmith-entry-row {
 	grid-template-columns:
@@ -2636,8 +2630,13 @@
 		   556px tall for 148px of fields and buttons, in a list capped at 320,
 		   and the six-row Abilities list ran to 2935px. A margin belongs to the
 		   item, so an empty track carries none, and the spacing the gap gave
-		   between filled lines is kept to the pixel. */
-		gap: 0 var(--size-2-2);
+		   between filled lines is kept to the pixel.
+
+		   The column gap is named because a touch row's down arrow is placed
+		   by it (below): one value, so the arrows cannot drift off the
+		   column edge if it changes. */
+		--sheetsmith-stacked-column-gap: var(--size-2-2);
+		gap: 0 var(--sheetsmith-stacked-column-gap);
 		padding: var(--size-4-2) var(--size-2-2);
 	}
 
@@ -2680,6 +2679,63 @@
 	   always agree. */
 .sheetsmith-list-scroll {
 		--sheetsmith-list-floor: 400px;
+	}
+
+/* **A touch row keeps its fields two to a line beside its three buttons**
+	   (`docs/features/list-field-phone-floor.md`). The `1fr` above is not what a
+	   stacked row draws: two buttons cannot share one cell on line 99, so each
+	   button past the first opens an implicit `auto` column, and the fields
+	   auto-place across those columns too. A desktop row has two buttons, a
+	   handle and a trash, so two columns, and its fields sit two to a line,
+	   154 and 164px at 380. A touch row has three, up, down and trash, so three
+	   columns: the two `auto` ones grow to their inputs' max-content and the
+	   `1fr` keeps what is left, which put Skills' **Row name** and every
+	   Columns **Key** at 26px under phone staging, unreadable, and a Track row's
+	   first field at 32.
+
+	   So a touch row, marked by `addControls` where it draws the arrows, names
+	   its two field tracks, and its buttons span the row on line 99 and open no
+	   column. Up and down start the line, down one control and one column gap
+	   along, which is where both sat before (x 36 and 66 on Skills, 26 wide),
+	   and the trash keeps the end and its optical pull. Measured at 380 under
+	   phone staging: every field on Rows, Columns, Track rows and Passport lists
+	   is 159px, Skills' first Rows entry 122 to 172, its first Columns entry 256.4
+	   to 321.4, and *Recharging features, broken* 311.4 to 376.4, the stacked
+	   floor's own figure above, so the floor's measurement stands again (it was
+	   taken before the harness drew a phone's arrows). Unchanged at
+	   `text=24`, where the buttons keep their 26px: x 36, 66 and 336. Nothing
+	   outside this query and nothing on a desktop moves, since the class is
+	   only set where the arrows are. */
+.sheetsmith-entry-row.sheetsmith-entry-arrows {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+/* The buttons take the token's width, which every list but a Card set's plain
+	   entries already gave them: there they were 28 against the 26 the offset
+	   below counts on, and the down arrow would have overlapped the up by 2px. */
+.sheetsmith-entry-arrows > button.clickable-icon {
+		grid-column: 1 / -1;
+		justify-self: start;
+		width: var(--sheetsmith-list-control);
+	}
+
+.sheetsmith-entry-arrows > button.clickable-icon:nth-last-of-type(2) {
+		margin-inline-start: calc(var(--sheetsmith-list-control) + var(--sheetsmith-stacked-column-gap));
+	}
+
+.sheetsmith-entry-arrows > button.clickable-icon:last-child {
+		justify-self: end;
+	}
+
+/* **A row holding one field gives it both tracks**, so the field fills the
+	   row rather than half of it: the Modifiers list's name today, the longest
+	   thing in that list. Keyed on what the row holds rather than on a list's
+	   name, so no list has to declare its field count a second time and a new
+	   one-field list is covered: the row's first child that is also the last
+	   of its children that is not a control, so its only field. `of S` is
+	   Chromium 111 and Safari 9, inside what Obsidian 1.9.0 ships. */
+.sheetsmith-entry-arrows > :first-child:nth-last-child(1 of :not(button.clickable-icon)) {
+		grid-column: 1 / -1;
 	}
 
 }
