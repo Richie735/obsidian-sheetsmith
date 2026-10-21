@@ -192,6 +192,12 @@ export function addControls<T>(
 		// `.clickable-icon[aria-disabled='true']` paints and the pane's sibling
 		// rule keys on, so a button and the tab order's div read alike. No role:
 		// a `<button>` has one.
+		//
+		// **The row is marked for its third button**, so a stacked row keeps
+		// its fields two to a line beside the arrows: the touch-row rule in
+		// `styles/editor.css` says why. Set here, it reaches every list that
+		// draws arrows and none that does not.
+		row.addClass('sheetsmith-entry-arrows');
 		const first = index === 0;
 		const last = index === list.length - 1;
 		const up = row.createEl('button', {

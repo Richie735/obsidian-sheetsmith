@@ -31,6 +31,15 @@
  *     entries and not passing on an empty list.
  *  5. Unchanged. Skills under `state=broken` at 1500, the `editor-row-error`
  *     view, holds both lists whole with no scroller, and prints their heights.
+ *  6. Field floor (`docs/features/list-field-phone-floor.md`). At 380 under
+ *     phone staging, over every component, no field of a Rows or Columns entry
+ *     row is under 150px. A touch row's three buttons once opened a third
+ *     column that left Skills' Row name and every Key at 26px; this is what
+ *     goes red if a stacked row loses its two field tracks. At 380 unstaged
+ *     only each row's first field is held, the Row name or the Key: a desktop
+ *     stacked row keeps its two `auto`-placed columns, accident and all, and on
+ *     a four-field Rows list (Stat roster's shape) that has always drawn the
+ *     Stat select at 95 to 116px. Those are printed, not failed.
  *
  * Each component is selected through the outline rather than by reloading, so
  * a run stays in minutes.
@@ -217,6 +226,42 @@ await load('state=broken&open=skills', { width: 1500, platform: null, stage: nul
 await evaluate(HELPERS);
 for (const one of await evaluate('__lists()')) {
 	check(one.scroll <= one.client + 1, `(5) 1500 broken Skills ${one.list}: whole, no scroller`, `${one.client}px of ${one.scroll}, cap ${one.cap}`);
+}
+
+// 6. No field of a Rows or Columns entry row is narrower than 150px at 380,
+// touch or not. It counts the fields it read, so an empty walk fails.
+const FIELD_FLOOR = 150;
+for (const where of [
+	{ width: 380, platform: 'phone', stage: null },
+	{ width: 380, platform: null, stage: null },
+]) {
+	const unstage = await load('state=populated', where, 800);
+	await evaluate(HELPERS);
+	const narrow = await evaluate(`(async()=>{
+	 await __expand();
+	 let read=0;const under=[];
+	 for(let i=0;;i++){
+	  const names=[...document.querySelectorAll('.sheetsmith-tree-name')];
+	  if(i>=names.length)break;
+	  const name=names[i].textContent.trim();
+	  names[i].click();
+	  await new Promise(r=>setTimeout(r,40));
+	  for(const field of document.querySelectorAll('.sheetsmith-editor-panel .sheetsmith-list-scroll .sheetsmith-entry-row > .sheetsmith-field')){
+	   read++;
+	   const width=field.getBoundingClientRect().width;
+	   const first=field.parentElement.querySelector(':scope > .sheetsmith-field')===field;
+	   if(width<${FIELD_FLOOR})under.push({first,what:name+' '+(field.querySelector('.sheetsmith-field-name')?.textContent??'?')+' '+Math.round(width*10)/10});
+	  }
+	 }
+	 return {read,under};
+	})()`);
+	await unstage();
+	const touch = where.platform === 'phone';
+	const held = narrow.under.filter((one) => touch || one.first);
+	const list = (some) => [...new Set(some.map((one) => one.what))].slice(0, 8).join('; ');
+	check(narrow.read > 0 && held.length === 0, `(6) ${at(where)}: no ${touch ? '' : 'first '}Rows or Columns field is under ${FIELD_FLOOR}px`, `${narrow.read} fields${held.length ? `, under: ${list(held)}` : ''}`);
+	const known = narrow.under.filter((one) => !held.includes(one));
+	if (known.length) console.log(`      ${at(where)} narrower, as a desktop stacked row has always drawn them: ${list(known)}`);
 }
 
 await browser.close();

@@ -1349,6 +1349,27 @@ describe('entries editor', () => {
 		}
 	});
 
+	it('marks a row for its touch arrows, and only where it draws them', () => {
+		// The stacked row's touch rule keys on this class
+		// (`docs/features/list-field-phone-floor.md`): a row drawn with the
+		// arrows that lost it would collapse its first field again, and a
+		// desktop row that gained it would change shape at 380.
+		const skills = () => ({ rows: [{ label: 'Acrobatics' }, { label: 'Perception' }] });
+		const marked = (el: HTMLElement) =>
+			Array.from(el.querySelectorAll('.sheetsmith-entry-row')).map((row) =>
+				row.classList.contains('sheetsmith-entry-arrows'),
+			);
+		Platform.isMobile = true;
+		try {
+			expect(marked(entriesEditor(abilities()))).toEqual([true, true]);
+			expect(marked(rowsEditor(skills()))).toEqual([true, true]);
+		} finally {
+			Platform.isMobile = false;
+		}
+		expect(marked(entriesEditor(abilities()))).toEqual([false, false]);
+		expect(marked(rowsEditor(skills()))).toEqual([false, false]);
+	});
+
 	it('falls back to the list\'s own noun for an entry with no name', () => {
 		// Only a hand-edited file arrives with the first column blank, and
 		// "Remove " would name nothing at all.
