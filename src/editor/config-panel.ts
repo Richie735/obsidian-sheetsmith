@@ -157,6 +157,12 @@ function positionToken(id: string, key: keyof GridPosition): string {
  */
 export const PANEL_TITLE_TOKEN = 'panel-title';
 
+/** **Back to the selection**'s token, read by the same reveal as the button it lands in reach. */
+export const PANEL_BACK_TOKEN = 'panel-back';
+
+/** The title row's class, which the same reveal lands at the leaf's top. */
+export const PANEL_TITLE_ROW_CLASS = 'sheetsmith-panel-title-row';
+
 /** A `text-list` value as the layout holds it, copied, with anything not a string left out. */
 function namesOf(value: unknown): string[] {
 	return Array.isArray(value)
@@ -400,7 +406,7 @@ export class ConfigPanel {
 		 */
 		title.nameEl.setAttribute('tabindex', '-1');
 		title.nameEl.addClass('sheetsmith-panel-title');
-		title.settingEl.addClass('sheetsmith-panel-title-row');
+		title.settingEl.addClass(PANEL_TITLE_ROW_CLASS);
 		title.nameEl.dataset.sheetsmithFocus = PANEL_TITLE_TOKEN;
 		/*
 		 * **Back to the selection**, the way to wherever that press came from.
@@ -416,7 +422,7 @@ export class ConfigPanel {
 			text: 'Back to the selection',
 			attr: { type: 'button' },
 		});
-		button.dataset.sheetsmithFocus = 'panel-back';
+		button.dataset.sheetsmithFocus = PANEL_BACK_TOKEN;
 		button.addEventListener('click', () => this.host.returnToOutline());
 	}
 

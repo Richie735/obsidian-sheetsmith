@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
+import { PANEL_TITLE_ROW_CLASS } from './config-panel';
 import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { renderGrid, walkLayout } from '../view/grid-cells';
@@ -2342,35 +2343,62 @@ describe('a selection made far from the panel', () => {
 	 *
 	 * Geometry is staged, since happy-dom lays nothing out: the pane's own
 	 * element is made the leaf's scroller, 600px tall from the top of the
-	 * window, and the panel is put wherever the case needs it. `scrollIntoView`
-	 * is recorded rather than run.
+	 * window with 12px of top padding, and the panel is put wherever the case
+	 * needs it, less however far the scroller has scrolled. The title row and
+	 * its button are the panel's first 44px, as they are at 380 under the phone's
+	 * CSS. `covered` is how much of the scroller's top something else answers a
+	 * press on, which is what the phone's floating chrome does; `scrollIntoView`
+	 * is recorded rather than run, and the reveal must never call it.
 	 */
 	let panelTop = 30000;
+	let covered = 0;
 	let scrolled: string[] = [];
+	const probedAt: number[] = [];
 	const restore: (() => void)[] = [];
+	const cover = document.createElement('div');
+
+	/** Where the title row sits in the leaf now, in the staged geometry. */
+	const rowTop = (): number => panelTop - harness.container.scrollTop;
 
 	beforeEach(async () => {
 		harness = await open(furnished());
 		panelTop = 30000;
+		covered = 0;
 		scrolled = [];
-		harness.container.setCssStyles({ overflowY: 'auto' });
+		probedAt.length = 0;
+		harness.container.setCssStyles({ overflowY: 'auto', paddingTop: '12px' });
 		const rect = vi
 			.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
 			.mockImplementation(function (this: HTMLElement) {
-				const top = this === harness.container
-					? 0
-					: this.classList.contains('sheetsmith-editor-panel')
-						? panelTop
-						: 0;
-				const bottom = this === harness.container ? 600 : top;
-				return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top } as DOMRect;
+				const box = (top: number, bottom: number, left = 0, right = 0) =>
+					({ top, bottom, left, right, width: right - left, height: bottom - top, x: left, y: top }) as DOMRect;
+				if (this === harness.container) return box(0, 600, 0, 380);
+				if (this.closest('.sheetsmith-editor-panel') === null) return box(0, 0);
+				if (this.classList.contains('sheetsmith-editor-panel')) return box(rowTop(), rowTop() + 2400, 0, 380);
+				if (this.closest(`.${PANEL_TITLE_ROW_CLASS}`) !== null) {
+					const back = this.classList.contains('sheetsmith-panel-back');
+					return box(rowTop(), rowTop() + 44, back ? 200 : 0, back ? 360 : 380);
+				}
+				return box(rowTop() + 44, rowTop() + 88, 0, 380);
 			});
 		const scroll = vi
 			.spyOn(HTMLElement.prototype, 'scrollIntoView')
 			.mockImplementation(function (this: HTMLElement) {
 				scrolled.push(this.dataset.sheetsmithFocus ?? '');
 			});
-		restore.push(() => rect.mockRestore(), () => scroll.mockRestore());
+		// The button answers only inside its own staged box, so a probe off its
+		// centre line, or below or beside it, is a probe that reaches the row.
+		const hit = vi
+			.spyOn(document, 'elementFromPoint')
+			.mockImplementation((x, y) => {
+				probedAt.push(x);
+				if (y < covered) return cover;
+				const inside = x >= 200 && x < 360 && y >= rowTop() && y < rowTop() + 44;
+				return inside
+					? control(harness, 'panel-back')
+					: harness.container.querySelector(`.${PANEL_TITLE_ROW_CLASS}`);
+			});
+		restore.push(() => rect.mockRestore(), () => scroll.mockRestore(), () => hit.mockRestore());
 	});
 
 	afterEach(() => {
@@ -2381,8 +2409,27 @@ describe('a selection made far from the panel', () => {
 		control(harness, 'edit-armour').click();
 		await settle(harness.pane);
 		expect(panelHeading(harness)).toBe('Armour class');
-		expect(scrolled).toEqual(['panel-title']);
+		// The whole row at the scroller's content edge, not its name at the
+		// scroller's own edge with the button's top 12px above it.
+		expect(rowTop()).toBe(12);
+		expect(scrolled).toEqual([]);
 		expect(document.activeElement).toBe(control(harness, 'panel-title'));
+	});
+
+	it('lands the title row below whatever answers a press on the leaf\'s top', async () => {
+		// The iPhone's measurement: the button answered only its bottom 10px of
+		// 44 once the jump put it at the top. Whatever covers that band, the
+		// row goes below it, so a press anywhere on the button reaches it.
+		covered = 34;
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(rowTop()).toBe(34);
+		// Down **Back to the selection**'s centre line, 200 to 360 staged.
+		expect(new Set(probedAt)).toEqual(new Set([280]));
+		const back = control(harness, 'panel-back');
+		for (let y = rowTop(); y < rowTop() + 44; y += 2) {
+			expect(document.elementFromPoint(280, y)).toBe(back);
+		}
 	});
 
 	it('does the same for a press on a canvas block, after the block takes focus', async () => {
@@ -2393,7 +2440,7 @@ describe('a selection made far from the panel', () => {
 		release(block);
 		block.click();
 		await settle(harness.pane);
-		expect(scrolled).toEqual(['panel-title']);
+		expect(rowTop()).toBe(12);
 		expect(document.activeElement).toBe(control(harness, 'panel-title'));
 	});
 
@@ -2452,6 +2499,7 @@ describe('a selection made far from the panel', () => {
 		control(harness, 'edit-armour').click();
 		await settle(harness.pane);
 		expect(panelHeading(harness)).toBe('Armour class');
+		expect(harness.container.scrollTop).toBe(0);
 		expect(scrolled).toEqual([]);
 		expect(document.activeElement).toBe(control(harness, 'edit-armour'));
 	});
@@ -2460,10 +2508,12 @@ describe('a selection made far from the panel', () => {
 		control(harness, 'edit-armour').click();
 		await settle(harness.pane);
 		scrolled.length = 0;
+		const after = harness.container.scrollTop;
 		// A removal selects the layout's own row, and is not a press on it.
 		removeRow(harness, 'armour');
 		await settle(harness.pane);
 		expect(panelHeading(harness)).toBe('Layout');
+		expect(harness.container.scrollTop).toBe(after);
 		expect(scrolled).toEqual([]);
 	});
 
@@ -2471,8 +2521,10 @@ describe('a selection made far from the panel', () => {
 		control(harness, 'edit-armour').click();
 		await settle(harness.pane);
 		scrolled.length = 0;
+		const after = harness.container.scrollTop;
 		control(harness, 'edit-armour').click();
 		await settle(harness.pane);
+		expect(harness.container.scrollTop).toBe(after);
 		expect(scrolled).toEqual([]);
 	});
 });

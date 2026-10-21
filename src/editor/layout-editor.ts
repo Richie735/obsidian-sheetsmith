@@ -12,7 +12,7 @@ import {
 import { getComponent } from '../components';
 import { Canvas } from './canvas';
 import { ComponentPicker } from './component-picker';
-import { ConfigPanel, PANEL_TITLE_TOKEN } from './config-panel';
+import { ConfigPanel, PANEL_BACK_TOKEN, PANEL_TITLE_ROW_CLASS, PANEL_TITLE_TOKEN } from './config-panel';
 import {
 	LayoutFileRowHost,
 	promptForNewLayout,
@@ -22,6 +22,7 @@ import { offerLayoutCopy } from './layout-copy';
 import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken, tokenTarget } from './focus-token';
+import { scrollToTop, visibleBox } from './scroll-to-top';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { offerUndo, UNDO_TIMEOUT } from '../ui/undo-notice';
 import { writeClipboard } from '../ui/clipboard';
@@ -95,23 +96,6 @@ interface Snapshot {
 /** What a commit carrying a rename says while the layout is not on disk. */
 const RENAME_REFUSED =
 	'Not renamed, because this layout is not saved yet and its character notes cannot be migrated until this layout saves.';
-
-/**
- * The box a reader can see the pane through: its nearest scrolling ancestor's,
- * which is the leaf's own scroller in the app, or the window's where nothing
- * between scrolls.
- */
-function visibleBox(el: HTMLElement): { top: number; bottom: number } {
-	const view = el.ownerDocument.defaultView;
-	for (let at = el.parentElement; at !== null; at = at.parentElement) {
-		const overflow = view?.getComputedStyle(at).overflowY;
-		if (overflow === 'auto' || overflow === 'scroll') {
-			const box = at.getBoundingClientRect();
-			return { top: box.top, bottom: box.bottom };
-		}
-	}
-	return { top: 0, bottom: el.win.innerHeight };
-}
 
 /** The message an unknown thrown value carries. */
 function messageOf(error: unknown): string {
@@ -1645,8 +1629,9 @@ export class LayoutEditorSection {
 	/**
 	 * Bring the panel to a reader whose press selected something while the panel
 	 * was out of sight (`docs/features/layout-editor-narrow-regime.md` §4): its
-	 * title to the top of the leaf, and focus on it, so Tab continues into the
-	 * form and a screen reader says what was selected.
+	 * title row to the top of the leaf, below anything covering that top, and
+	 * focus on its name, so Tab continues into the form and a screen reader
+	 * says what was selected.
 	 *
 	 * **Geometric, never keyed to a width**, so in the split regime, where the
 	 * panel column is always beside the tree, it never fires. **The panel's own
@@ -1671,7 +1656,14 @@ export class LayoutEditorSection {
 		if (seen.bottom <= seen.top) return;
 		const top = panel.getBoundingClientRect().top;
 		if (top >= seen.top && top < seen.bottom) return;
-		title.scrollIntoView({ block: 'start' });
+		// The title's whole row and not its name, and the button's reach the
+		// test of what is covered: the row is the button's height, centred on a
+		// shorter name, and the button is what a reader taps next. A row or a
+		// button missing is the panel drawn some other way, and costs only the
+		// landing's precision, never the focus.
+		const found = title.closest(`.${PANEL_TITLE_ROW_CLASS}`);
+		const row = found?.instanceOf(HTMLElement) ? found : title;
+		scrollToTop(row, tokenTarget(root, PANEL_BACK_TOKEN) ?? row);
 		title.focus({ preventScroll: true });
 	}
 
