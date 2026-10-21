@@ -9,7 +9,7 @@ import { Layout } from '../parse/layout';
 import { parseCharacter, serialiseCharacter } from '../parse/character';
 import { fenceLines } from '../parse/fenced';
 import { splitLines } from '../parse/lines';
-import { press } from '../test/pointer';
+import { press, pressToFocus } from '../test/pointer';
 import { RenderContext } from '../types';
 
 const config: PassportConfig = {
@@ -2175,5 +2175,33 @@ describe('what a passport publishes — a list field', () => {
 		expect(() =>
 			evaluate('passport.class == Bard', env.sheet, callsFrom(env)),
 		).toThrow(/Unknown name "Bard"/);
+	});
+});
+
+/*
+ * docs/features/number-field-focus-select.md: a scalar field steps, so a
+ * number in it is selected on focus — and a word in it is not, which is the
+ * value test separating a level from a species.
+ */
+describe('passport: focusing a scalar field', () => {
+	const scalar = (el: HTMLElement, name: string) => {
+		const field = fields(el).find((input) => input.getAttribute('aria-label') === name);
+		if (!field) throw new Error(`expected the ${name} field`);
+		return field;
+	};
+
+	it('selects a level on a touch press', () => {
+		const level = scalar(render(), 'Level');
+		expect(level.value).toBe('5');
+		pressToFocus(level, 'touch');
+		expect([level.selectionStart, level.selectionEnd]).toEqual([0, 1]);
+	});
+
+	it('leaves the caret in a species where the tap put it', () => {
+		const species = scalar(render(), 'Species');
+		expect(species.value).toBe('Half-elf');
+		species.setSelectionRange(3, 3);
+		pressToFocus(species, 'touch');
+		expect([species.selectionStart, species.selectionEnd]).toEqual([3, 3]);
 	});
 });
