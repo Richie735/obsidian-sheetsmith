@@ -313,7 +313,19 @@ and 11,500px of tree. So:
 - **After a selection made by a press**, on a tree row's name or a canvas block,
   that changes what is selected: if the panel's own box starts outside the
   visible box of the leaf's scroller once the pane has redrawn, scroll the leaf
-  so the title is at its top. Focus goes to the title, made focusable with
+  so the title's whole row is at its top: at the scroller's content edge, where
+  an unscrolled pane's first row sits, and then below whatever answers a press
+  at the top of **Back to the selection**'s centre line instead of the button,
+  found by hit-testing down that one line and corrected once. A cover beside
+  that line, or one hiding the button's whole height, is not seen and the row
+  stays at the content edge, as it does where the button is not displayed and
+  so has no line to walk. Where the button is missing from the DOM altogether,
+  the row is the probe, and the correction walks the row's centre line
+  instead. Only the leaf's scroller moves, never
+  `scrollIntoView`, which scrolls every ancestor up to the window and aligns
+  only the element it is given: it put the 20px name at the leaf's edge and the
+  44px button centred on it 12px above, and on an iPhone the button then
+  answered a tap on its bottom 10px alone. Focus goes to the title, made focusable with
   `tabindex="-1"`, so Tab continues into the form and a screen reader announces
   what was selected. The check is geometric and not tied to a width, so in the
   split regime, where the panel column is always beside the tree, it never
@@ -447,9 +459,15 @@ Harness widths are viewports. The pane is the viewport less 26.
       title to the top and focuses it", "Back to the selection returns focus to the
       press's source", and "a selection that is not a press does not scroll".
       Geometry is stubbed the way the file already stubs rects.
+- [x] `layout-editor.test.ts`: the jump lands the title row, not its name, at
+      the scroller's content edge, and "lands the title row below whatever
+      answers a press on the leaf's top", probed down the button's centre line
+      and every point down the button then reaching it. `scroll-to-top.test.ts`
+      drives the branches a stacked pane does not: the window fallback, a probe
+      nothing reaches, and a probe with no box.
 - [x] At 380, pressing the last tree row puts the panel title within the
       viewport. At 1400 (split) the same press scrolls nothing, and **Back to the
-      outline** is not displayed.
+      selection** is not displayed.
 
 **Platform rules**
 
@@ -499,6 +517,22 @@ variations.sheetsmith` for check 4.
    grid, tap to select, then drag and resize: both work as before, since nothing
    about touch changed above the threshold. **Back to the selection** returns to
    the block or row the selection came from.
+6. **The way back after the jump**, on a phone. Select a tree row's name and
+   then, separately, a canvas block, each far enough from the panel that the
+   pane jumps. Each time, tap **Back to the selection** near its top edge, at
+   its middle and near its bottom edge, selecting again before each tap: every
+   tap returns to the row or block the selection came from. Before the fix,
+   on an iPhone, only the bottom 10px of 44 answered, on the `DnD 5e Standard`
+   layout after a tap on the Passport block, which is worth repeating there.
+   **Passed**, by the owner on an iPhone 17, Obsidian 1.14.5 mobile, iOS 27,
+   built from the fix's tree. The Passport block on `DnD 5e Standard`: after the
+   jump the button sits at y 126–170 under a `.view-content` top of 114, and
+   `elementFromPoint` down its centre column hits it at every 2px; real taps
+   near its top (y 129), middle (148) and bottom (167), each after a fresh
+   selection, all returned to the block with focus on it. The **Skills** tree
+   row: the same position, the same full hit map, and all three taps returned
+   to the row's name with focus. No ancestor of `.view-content`, and not the
+   window, scrolled after the jump or after any of the six returns.
 
 ## Commit boundaries
 
@@ -585,7 +619,7 @@ The same driver, harness built from this branch. Shot heights are in
 | The note | `block` at 530 (pane 504) and 380, `none` at 546 (pane 520) |
 | Rows | At 600 (pane 574) every reached row is `column`; at 620 (pane 594) every one is `row`. Toggles, the heading and all 128 tree rows stay `row` at 320, 380, 600 and 620, desktop and phone staging. No name clips at 320 or 380 in either staging |
 | Descriptions at 380 | Every stacked row's info column is **292px of the row's 308** in both stagings, the 16 being the app's own trailing margin on `.setting-item-info`, wherever the description wraps: **Label** 3 lines (12 before), **Grid columns** 4 (14 before), **Name column position** 4 desktop and 5 phone, **Name column heading** 2, the three list fields' descriptions 4, 7 and 10 (5, 7 and 11 phone). **Position**'s `Grid units.` is one line and its column is as wide as the text, 58 desktop and 62 phone, since a stacked row does not stretch its info. The toggles keep their side-by-side description, as the app's do: **Characters may add rows** 7 desktop, 8 phone; **Hide the heading** 5 |
-| The way back at 380 | Pressing **Abilities** in the tree, desktop and phone: title at the top, focused, **Back to the selection** displayed. Pressed, focus is on **Abilities**' name and it is in view. A real press on its canvas block lands focus on the title too, after the block's own focus. At 1400 under `&bounded` neither the first nor the last row's press scrolls, and the button is `display: none` |
+| The way back at 380 | Pressing **Abilities** in the tree, desktop and phone: title row at the top of the leaf's content, focused, **Back to the selection** displayed. Under `&bounded` at 380x800, every point down the button's centre line then reaches it: the tree press at the scroller's top plus its 12px padding, 30 of 30px desktop and 44 of 44 phone, and with a staged fixed cover 22px into the leaf, below it at 30 of 30 and 44 of 44 (after the fix only). A canvas press under phone staging, the same frame: 44 of 44 where it answered 32 before, and under the same staged cover 44 of 44 where it answered 10. A staged cover hiding the whole button, 92px into the desktop leaf, is not corrected (0 of 30), which §4 states. Pressed, focus is on **Abilities**' name and it is in view. A real press on its canvas block lands focus on the title too, after the block's own focus. At 1400 under `&bounded` neither the first nor the last row's press scrolls, and the button is `display: none` |
 | Tablet at 820 | `.sheetsmith-tree-name` `0px` and 49 wide, `.sheetsmith-tree-disclosure` `0px` and 24 wide, `.sheetsmith-canvas-overlay` `0px`, with `is-tablet` on and off |
 | After the design wave, at 320 and 380, desktop and phone | No tree row puts its controls under its name, and no tree name clips. **Position** wraps `col row` over `width height` at 320 and in phone staging at 380, and is one line at 380 desktop. **Recharging features, unheaded**' title is one 238px line with the button under it at 320 and 380 phone, where it was 77px, three lines and clipped. A keyboard Enter on a tree name leaves the title `:focus-visible` with a 2px solid outline |
 | Position fields under phone staging at 380 | 75px each with the app's `.is-mobile input[type='text']` rule present, and 75px with it deleted through CSSOM: the rule does not select them |
@@ -621,6 +655,20 @@ its top, which `&bounded` reproduces.
 - **Tablet.** Every pane button outside the canvas, after clicking each tree
   row's name in turn: computed padding and box, `is-tablet` on, then removed and
   read again. The overlay separately, its box against its cell's.
+- **The way back's hit map.** Through the same driver at 380x800 with
+  `&bounded`: a real press (touch under phone staging, mouse otherwise) on
+  **Abilities**' tree name or the first canvas overlay, then
+  `elementFromPoint` every 2px down **Back to the selection**'s centre column.
+  A cover is a staged `position: fixed` element from the window's top, not
+  Obsidian's floating header, which the harness does not draw.
+- **The ancestor scroll.** The harness served over `localhost` to Mobile Safari
+  on the Xcode iOS simulator (iPhone 17e, iOS 27), phone body classes added by
+  a script ahead of the harness's own, `&bounded&bar=off`, the first canvas
+  overlay clicked and every ancestor's `scrollTop` posted back. Before the fix
+  the document's `scrollTop` was 40 and the view header sat at -40 to 0; after
+  it, 0, with the header in place. The simulator is WebKit, not Obsidian: no
+  floating header, no safe areas, so it did not reproduce the iPhone's dead
+  band either way.
 - **Obsidian's own code.** Read from `obsidian-1.14.4.asar` in Obsidian's
   application support directory: `app.css` (the phone rule, `touch-action`
   owners), `app.js` (the mobile swipe handler's exits, the iOS long-press
