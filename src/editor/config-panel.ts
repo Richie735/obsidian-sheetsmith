@@ -97,7 +97,7 @@ import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { WalkEntry } from '../parse/layout-walk';
 import { onCommit } from './field-commit';
 import { levelReorderNotice } from './level-reorder';
-import { renderPublishedNames } from './published-names';
+import { publishesAnything, renderPublishedNames } from './published-names';
 import { showFieldError } from './field-error';
 import { formulaProblem } from './field-formula';
 import { groupHeading, panelTitle } from './form-group';
@@ -145,7 +145,7 @@ import { clamp, lastColumn } from './preview-grid';
  * keys of: the parser walks the same four to validate them, and a list that can
  * fall short of `GridPosition` is a field the form never offers.
  */
-function positionToken(id: string, key: keyof GridPosition): string {
+export function positionToken(id: string, key: keyof GridPosition): string {
 	return `pos-${id}-${key}`;
 }
 
@@ -162,6 +162,30 @@ export const PANEL_BACK_TOKEN = 'panel-back';
 
 /** The title row's class, which the same reveal lands at the leaf's top. */
 export const PANEL_TITLE_ROW_CLASS = 'sheetsmith-panel-title-row';
+
+/**
+ * The focus token of a component's **ID** field. Exported so the editor can
+ * follow a rename with it: the token carries the id, and focus lands on the
+ * same field under its new token after the redraw, as `label-<id>` does across
+ * a label commit.
+ */
+export function idToken(id: string): string {
+	return `id-${id}`;
+}
+
+/** The focus token of a component's **Label** field. */
+export function labelToken(id: string): string {
+	return `label-${id}`;
+}
+
+/**
+ * The focus token of a field a component's `configFields` declares. Called with
+ * an empty `key`, it is the prefix every such token on that component shares,
+ * which is how a rename finds them (`renamed-token.ts`).
+ */
+export function configToken(id: string, key: string): string {
+	return `cfg-${id}-${key}`;
+}
 
 /** A `text-list` value as the layout holds it, copied, with anything not a string left out. */
 function namesOf(value: unknown): string[] {
@@ -282,6 +306,16 @@ export interface ConfigPanelHost {
 		label: string,
 		sentence: (notes: number) => string | null,
 	): void;
+	/**
+	 * Rename the component `from` to `to`, rewriting every place in the layout
+	 * that reads it, as one undo step (`docs/features/component-id-rename.md`),
+	 * or answer the sentence saying why not and change nothing.
+	 *
+	 * The editor's rather than this panel's, because what a commit does past the
+	 * layout — the posture keyed by id, the undo step, the notes report — is all
+	 * in the other half: the selection, the tree's collapsed set and the stack.
+	 */
+	renameId(from: string, to: string): string | null;
 	/**
 	 * **Back to the selection**: put the reader back on the control the selection
 	 * came from (`docs/features/layout-editor-narrow-regime.md` §4). The editor's
@@ -424,6 +458,69 @@ export class ConfigPanel {
 		});
 		button.dataset.sheetsmithFocus = PANEL_BACK_TOKEN;
 		button.addEventListener('click', () => this.host.returnToOutline());
+	}
+
+	/**
+	 * The **ID** row: the id as a field, with what the component publishes as
+	 * its description (`docs/features/component-id-rename.md` §1).
+	 *
+	 * **The inventory is the description, under the name and above the field**,
+	 * where Label's and Key's descriptions sit, so the form reads name,
+	 * description, field at every width. It was first built as a described row
+	 * with the inventory below the field, and the owner reversed that at the land
+	 * stop for one order across the form. The chips, classes and wording are the
+	 * inventory's as they were, plus one sentence saying what a commit does —
+	 * left off where the component publishes nothing, since a rename there
+	 * rewrites nothing and says nothing.
+	 *
+	 * **First in the form**, above **Label**: the id is what the inventory
+	 * names, and what Card's and Passport's key descriptions mean by "the
+	 * component id above". **Separate from Label**, by the owner's decision: a
+	 * label commit never offers to change the id, and this one never touches the
+	 * label.
+	 */
+	private renderIdRow(
+		form: HTMLElement,
+		config: ComponentConfig,
+		source: ReturnType<typeof vocabularySource>,
+	): void {
+		// `ID`, not the spec's `Id`: `obsidianmd/ui/sentence-case` reads the word
+		// as an acronym and fails the build on `Id`. Prose keeps the lowercase
+		// "id" the rest of the pane uses.
+		const row = new Setting(form).setName('ID');
+		row.descEl.addClass('sheetsmith-component-reference');
+		// Every name this component publishes, each one copyable, rather than the
+		// bare id this line used to offer — which was the right string for a Card
+		// and the wrong one for everything else (`published-names.ts`).
+		renderPublishedNames(row.descEl, source);
+		if (publishesAnything(source)) {
+			row.descEl.appendText(' Renaming the ID updates every formula in this layout that reads it.');
+		}
+		row.addText((text) => {
+			text.setValue(config.id);
+			text.inputEl.spellcheck = false;
+			text.inputEl.dataset.sheetsmithFocus = idToken(config.id);
+			onCommit(text, (raw) => {
+				const from = config.id;
+				const to = raw.trim();
+				if (to === from) {
+					text.inputEl.value = from;
+					this.fieldError(text.inputEl, null);
+					return;
+				}
+				// Every refusal, the unsaved layout's included, is the host's: the
+				// unsaved gate is asked only once every rule about the id itself has
+				// passed, so a reader is never sent to save a layout and then told
+				// the id was unusable anyway (§2's table, and **Label**'s order).
+				const refused = this.host.renameId(from, to);
+				if (refused !== null) {
+					// The old id back in the field, so what it shows is what the
+					// file holds, with the reason under it.
+					text.inputEl.value = from;
+					this.fieldError(text.inputEl, refused);
+				}
+			});
+		});
 	}
 
 	/** Show an inline error, and remember it across the next rebuild. */
@@ -662,16 +759,7 @@ export class ConfigPanel {
 		const definition = getComponent(config.type);
 		this.renderTitle(form, config.label);
 
-		form.createDiv(
-			{ cls: ['setting-item-description', 'sheetsmith-component-reference'] },
-			(el) => {
-				// Every name this component publishes, each one copyable, rather
-				// than the bare id this line used to offer — which was the right
-				// string for a Card and the wrong one for everything else
-				// (`published-names.ts`).
-				renderPublishedNames(el, vocabularySource(config, definition));
-			},
-		);
+		this.renderIdRow(form, config, vocabularySource(config, definition));
 
 		// A container that may hold nothing says so, rather than being offered a
 		// grid to fill. This is the complement of the schematic's own guard and
@@ -722,7 +810,7 @@ export class ConfigPanel {
 			)
 			.addText((text) => {
 				text.setValue(config.label);
-				text.inputEl.dataset.sheetsmithFocus = `label-${config.id}`;
+				text.inputEl.dataset.sheetsmithFocus = labelToken(config.id);
 				onCommit(text, (raw) => {
 					const label = raw.trim();
 					if (label === '') {
@@ -1020,7 +1108,7 @@ export class ConfigPanel {
 					const current = record[field.key];
 					text.setValue(Array.isArray(current) ? current.join(', ') : '');
 					text.inputEl.placeholder = 'Comma separated';
-					text.inputEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
+					text.inputEl.dataset.sheetsmithFocus = configToken(config.id, field.key);
 					onCommit(text, (raw) => {
 						const parsed = raw
 							.split(',')
@@ -1077,7 +1165,7 @@ export class ConfigPanel {
 							? current
 							: fallback,
 					);
-					dropdown.selectEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
+					dropdown.selectEl.dataset.sheetsmithFocus = configToken(config.id, field.key);
 					dropdown.onChange((value) => {
 						if (value === fallback) {
 							delete record[field.key];
@@ -1121,7 +1209,7 @@ export class ConfigPanel {
 					// than only where `controls` is set, because the trap is
 					// invisible — the next boolean to gain a dependent would
 					// rediscover it.
-					toggle.toggleEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
+					toggle.toggleEl.dataset.sheetsmithFocus = configToken(config.id, field.key);
 					toggle.onChange((value) => {
 						if (value === fallback) {
 							delete record[field.key];
@@ -1147,7 +1235,7 @@ export class ConfigPanel {
 						? String(current)
 						: '';
 				text.setValue(shown);
-				text.inputEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
+				text.inputEl.dataset.sheetsmithFocus = configToken(config.id, field.key);
 				// A formula field is checked as it is drawn, not only on the
 				// keystroke that committed it: a layout file is hand-edited and
 				// shared, so a stored expression that will not parse would

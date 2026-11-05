@@ -83,6 +83,16 @@ export function rowToken(id: string): string {
 	return `edit-${id}`;
 }
 
+/** The focus token of a tree row's disclosure chevron. */
+export function disclosureToken(id: string): string {
+	return `tree-disclosure-${id}`;
+}
+
+/** The focus token of a tree row's **More options** button. */
+export function menuToken(id: string): string {
+	return `tree-menu-${id}`;
+}
+
 /**
  * What the tree needs from the editor drawing it. The same shape
  * `SchematicHost` and `ConfigPanelHost` already are: a handful of commands
@@ -450,7 +460,7 @@ function renderComponentRow(
 		},
 	});
 	setIcon(menuButton, 'ellipsis-vertical');
-	menuButton.dataset.sheetsmithFocus = `tree-menu-${config.id}`;
+	menuButton.dataset.sheetsmithFocus = menuToken(config.id);
 	menuButton.addEventListener('click', (event) => {
 		openRowMenu(
 			menuButton,
@@ -517,7 +527,7 @@ function renderDisclosureSlot(
 	const empty = (config.children ?? []).length === 0;
 	if (shut || !empty) chevron.setAttribute('aria-controls', childrenId(config.id));
 	setIcon(chevron, shut ? 'chevron-right' : 'chevron-down');
-	chevron.dataset.sheetsmithFocus = `tree-disclosure-${config.id}`;
+	chevron.dataset.sheetsmithFocus = disclosureToken(config.id);
 	// One route in (`docs/PATTERNS.md` §6): Enter and Space arrive as this click.
 	// Not an edit — no `persist`, so no undo step and no sheet refresh.
 	chevron.addEventListener('click', () => {
@@ -525,7 +535,7 @@ function renderDisclosureSlot(
 		if (shut) next.delete(config.id);
 		else next.add(config.id);
 		host.setCollapsed(next);
-		host.focusAfterRedraw(`tree-disclosure-${config.id}`);
+		host.focusAfterRedraw(disclosureToken(config.id));
 		// Rule 2: shutting the container that holds the selection selects the
 		// container, in the same redraw. Rule 1 would otherwise reopen it at once.
 		const holdsSelection = descendants(config).some(

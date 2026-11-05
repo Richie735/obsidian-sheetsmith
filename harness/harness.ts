@@ -1010,6 +1010,13 @@ function applyQuery(): void {
 			field.focus();
 			field.value = text;
 			field.dispatchEvent(new Event('input', { bubbles: true }));
+			// An editor field commits on `change` (`editor/field-commit.ts`), which
+			// a value set from script does not raise on blur; a sheet field commits
+			// on the blur itself. Only the editor's controls carry a focus token,
+			// so that is what tells the two apart.
+			if (field.dataset.sheetsmithFocus !== undefined) {
+				field.dispatchEvent(new Event('change', { bubbles: true }));
+			}
 			field.blur();
 		}
 	};
