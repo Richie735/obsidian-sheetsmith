@@ -8,6 +8,7 @@ import {
 } from './settings';
 import { registerConversionOffer } from './layout-conversion';
 import { registerAutoOpen } from './view/auto-open';
+import { registerOpenAsSheetAction } from './view/open-as-sheet';
 import {
 	announceUnsavedLayouts,
 	LayoutEditorView,
@@ -60,6 +61,7 @@ export default class SheetsmithPlugin extends Plugin {
 		});
 		registerCommands(this);
 		registerAutoOpen(this);
+		registerOpenAsSheetAction(this);
 		registerLayoutFileEvents(this);
 		registerConversionOffer(this);
 		// Last, and caught inside: the app throws where another plugin already

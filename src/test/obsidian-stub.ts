@@ -321,6 +321,23 @@ function gripDots(): IconShape[] {
  * itself rather than rendering an empty square.
  */
 const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
+	// The two header actions (SPEC §8), from Obsidian 1.15.0's own icon table for
+	// the reason `clipboard-paste` below gives. `layout-grid` is also the sheet's
+	// tab icon. The app draws both; nothing here does yet, since the harness opens
+	// neither view.
+	'file-text': [
+		['path', { d: 'M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z' }],
+		['path', { d: 'M14 2v5a1 1 0 0 0 1 1h5' }],
+		['path', { d: 'M10 9H8' }],
+		['path', { d: 'M16 13H8' }],
+		['path', { d: 'M16 17H8' }],
+	],
+	'layout-grid': [
+		['rect', { width: '7', height: '7', x: '3', y: '3', rx: '1' }],
+		['rect', { width: '7', height: '7', x: '14', y: '3', rx: '1' }],
+		['rect', { width: '7', height: '7', x: '14', y: '14', rx: '1' }],
+		['rect', { width: '7', height: '7', x: '3', y: '14', rx: '1' }],
+	],
 	trash: [
 		['path', { d: 'M3 6h18' }],
 		['path', { d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6' }],
@@ -1085,7 +1102,51 @@ export class TFolder extends TAbstractFile {
 	children: TAbstractFile[] = [];
 }
 
-export class Vault {
+/**
+ * Obsidian's `Events`, which its `Vault`, `Workspace` and `MetadataCache` all
+ * extend, as they do here.
+ *
+ * `trigger` walks a snapshot, because 1.15.0's does (`r = r.slice()`): a listener
+ * added during a dispatch waits for the next one, and one removed during it still
+ * runs. **What is not modelled** is the app's `tryTrigger`, which catches what a
+ * listener throws and rethrows it from a timeout so the others still run. Here it
+ * reaches the caller, which is where a test wants it. Also here rather than among
+ * the workspace doubles below because `Vault` extends it, and a class has to be
+ * declared before it can be extended.
+ */
+export class Events {
+	private listeners = new Map<string, Set<(...args: unknown[]) => unknown>>();
+
+	on(name: string, callback: (...args: unknown[]) => unknown): EventRef {
+		const set = this.listeners.get(name) ?? new Set();
+		set.add(callback);
+		this.listeners.set(name, set);
+		return { off: () => set.delete(callback) };
+	}
+
+	trigger(name: string, ...args: unknown[]): void {
+		for (const callback of [...(this.listeners.get(name) ?? [])]) {
+			callback(...args);
+		}
+	}
+}
+
+/**
+ * File events, the app's four: create, modify, delete, rename.
+ *
+ * **Fired synchronously, from inside the write that caused it**, which is
+ * the one timing this double can promise honestly: the app fires `create`,
+ * `modify`, `delete` and `rename` once its own map has changed and before the
+ * awaited call returns to the writer, so a listener sees the vault as it is
+ * after the write — never before it. What is not modelled is everything the
+ * app fires on its own: an edit made in another program, a sync landing, or
+ * the `create` storm the app raises for every file while the vault first
+ * loads (which is why a plugin registers its `create` listener from
+ * `onLayoutReady`). A test drives those by calling `trigger` itself, which
+ * is also how it says "another program wrote this" — the case the double
+ * cannot produce from any of its own writes.
+ */
+export class Vault extends Events {
 	private files = new Map<string, { file: TFile; content: string }>();
 	/**
 	 * The vault's name, which the app takes from its folder. Settable, because
@@ -1094,20 +1155,6 @@ export class Vault {
 	 */
 	name = 'Test vault';
 	private folders = new Map<string, TFolder>();
-	/**
-	 * Who is listening for which file event.
-	 *
-	 * **Fired synchronously, from inside the write that caused it**, which is
-	 * the one timing this double can promise honestly: the app fires `create`,
-	 * `modify`, `delete` and `rename` once its own map has changed and before the
-	 * awaited call returns to the writer, so a listener sees the vault as it is
-	 * after the write — never before it. What is not modelled is everything the
-	 * app fires on its own: an edit made in another program, a sync landing, or
-	 * the `create` storm the app raises for every file while the vault first
-	 * loads (which is why a plugin registers its `create` listener from
-	 * `onLayoutReady`). A test drives those by calling `trigger` itself.
-	 */
-	private listeners = new Map<string, Set<(...args: unknown[]) => unknown>>();
 	/**
 	 * The vault root, whose path is `/`.
 	 *
@@ -1140,6 +1187,7 @@ export class Vault {
 	 * for it to be created — where the app says yes and writes at the root.
 	 */
 	constructor() {
+		super();
 		this.folders.set('/', this.root);
 	}
 
@@ -1177,24 +1225,6 @@ export class Vault {
 	 */
 	getAbstractFileByPath(path: string): TAbstractFile | null {
 		return this.getFileByPath(path) ?? this.getFolderByPath(path);
-	}
-
-	/** Listen for a file event, the app's four: create, modify, delete, rename. */
-	on(name: string, callback: (...args: unknown[]) => unknown): EventRef {
-		const set = this.listeners.get(name) ?? new Set();
-		set.add(callback);
-		this.listeners.set(name, set);
-		return { off: () => set.delete(callback) };
-	}
-
-	/**
-	 * Fire a file event, which is also how a test says "another program wrote
-	 * this" — the case the double cannot produce from any of its own writes.
-	 */
-	trigger(name: string, ...args: unknown[]): void {
-		for (const callback of [...(this.listeners.get(name) ?? [])]) {
-			callback(...args);
-		}
 	}
 
 	getFolderByPath(path: string): TFolder | null {
@@ -1776,7 +1806,52 @@ export class View extends Component {
 	setEphemeralState(_state: unknown): void {}
 }
 
-export class ItemView extends View {}
+/**
+ * The app's `ItemView`, as far as its one public member: an action in the
+ * header.
+ *
+ * **Transcribed from Obsidian 1.15.0's `app.js`, not designed.** Deminified:
+ *
+ * ```js
+ * this.actionsEl = header.createDiv('view-actions mod-raised')  // constructor
+ * addAction(icon, title, cb) {
+ *   let el = createEl('button', 'clickable-icon view-action');
+ *   this.actionsEl.prepend(el); setIcon(el, icon); setTooltip(el, title);
+ *   el.addEventListener('mousedown', e => e.preventDefault());
+ *   el.onClickEvent(e => { if (e.button === 0 || e.button === 1) return cb(e) });
+ *   return el }
+ * ```
+ *
+ * The order was also read off the running app: a keyed markdown view's
+ * `.view-actions` held Open as sheet, Bookmark, the mode button, More options,
+ * since the app adds its own first. **What is not modelled**: the mousedown
+ * `preventDefault`, the middle button, and `mod-raised`. `actionsEl` is made on
+ * the first action rather than in the constructor, so a view with none draws
+ * the header it drew before: the harness reviews the layout editor's.
+ */
+export class ItemView extends View {
+	private actionsEl: HTMLElement | null = null;
+
+	addAction(
+		icon: string,
+		title: string,
+		callback: (event: MouseEvent) => unknown,
+	): HTMLElement {
+		const doc = this.containerEl.ownerDocument;
+		if (this.actionsEl === null) {
+			this.actionsEl = doc.createElement('div');
+			this.actionsEl.classList.add('view-actions');
+			this.containerEl.querySelector('.view-header')?.appendChild(this.actionsEl);
+		}
+		const action = doc.createElement('button');
+		action.classList.add('clickable-icon', 'view-action');
+		action.setAttribute('aria-label', title);
+		setIcon(action, icon);
+		action.addEventListener('click', callback);
+		this.actionsEl.prepend(action);
+		return action;
+	}
+}
 
 /**
  * A view bound to one file, and the half of the app's own lifecycle that a
@@ -1998,7 +2073,11 @@ export class TextFileView extends FileView {
 	}
 }
 
-export class MarkdownView extends TextFileView {}
+export class MarkdownView extends TextFileView {
+	getViewType(): string {
+		return 'markdown';
+	}
+}
 
 export class WorkspaceLeaf {
 	/** The view showing here, or null until one is opened. */
@@ -2074,14 +2153,15 @@ export class WorkspaceLeaf {
 	}
 }
 
-export class Workspace {
+export class Workspace extends Events {
 	/** Every leaf handed out, in the order they were asked for. */
 	leaves: WorkspaceLeaf[] = [];
 	/** The leaf `revealLeaf` last brought forward, which is "active" here. */
 	activeLeaf: WorkspaceLeaf | null = null;
-	private listeners = new Map<string, Set<(...args: unknown[]) => unknown>>();
 
-	constructor(public app: App) {}
+	constructor(public app: App) {
+		super();
+	}
 
 	/**
 	 * A leaf to open a view in.
@@ -2159,17 +2239,6 @@ export class Workspace {
 		},
 	);
 
-	on(name: string, callback: (...args: unknown[]) => unknown): EventRef {
-		const set = this.listeners.get(name) ?? new Set();
-		set.add(callback);
-		this.listeners.set(name, set);
-		return { off: () => set.delete(callback) };
-	}
-
-	/** Fire an event, so a test can drive what the app would have fired. */
-	trigger(name: string, ...args: unknown[]): void {
-		for (const callback of this.listeners.get(name) ?? []) callback(...args);
-	}
 }
 
 /** The frontmatter block's own delimiter lines, and one `key: value` line inside it. */
@@ -2179,7 +2248,7 @@ const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
 /**
  * Enough of `MetadataCache` for `getFileCache(file)?.frontmatter` — the read
  * every caller in `src/` already uses to answer "is this a character note for
- * this layout" (`view/auto-open.ts`, `commands.ts`,
+ * this layout" (`layout-notes.ts`,
  * `component-rename-migration.ts`) without parsing a body that will not
  * match.
  *
@@ -2200,6 +2269,9 @@ const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
  * or `: null`, and this double answers all three as the strings `'12'`, `'No'`
  * and `'null'`. Nothing here is a claim that Obsidian agrees.
  *
+ * **`changed` is fired by hand, never from a write**, because the real one lands
+ * after a write by an unknown margin and the reads here do not wait for it.
+ *
  * **The plugin no longer writes any of those three unquoted**, which is what
  * closed the backlog row this paragraph used to end on: the predicate quotes
  * what a bool or a number resolver would take, so a note this plugin wrote
@@ -2209,8 +2281,10 @@ const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
  * the note's own text settle it. The wider missing probe, which would hold every
  * comment here about the app to the app, is `docs/BACKLOG.md` § Patterns.
  */
-export class MetadataCache {
-	constructor(private readonly vault: Vault) {}
+export class MetadataCache extends Events {
+	constructor(private readonly vault: Vault) {
+		super();
+	}
 
 	getFileCache(file: TFile): { frontmatter?: Record<string, string> } | null {
 		const content = this.vault.rawContent(file.path);

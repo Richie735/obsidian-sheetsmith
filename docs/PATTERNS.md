@@ -207,8 +207,8 @@ src/
   layout-conversion.ts
                    offering and running the .json → .sheetsmith conversion,
                    and the two sentences a reader is shown about it
-  layout-notes.ts  which character notes name a layout, the scan two callers
-                   share
+  layout-notes.ts  which notes name a layout: the scan two callers share, and
+                   the one-note check for the layout key
   layout-picker.ts the modal that chooses one of the vault's layouts, shared
                    by two callers in two folders
   characters.ts    creating a character note: its path, its bytes, and the
