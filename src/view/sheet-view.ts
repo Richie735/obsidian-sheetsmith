@@ -3,6 +3,7 @@ import {
 	getLinkpath,
 	HoverPopover,
 	Keymap,
+	type Menu,
 	Notice,
 	TextFileView,
 	type ViewState,
@@ -295,9 +296,10 @@ export class SheetView extends TextFileView {
 
 	/**
 	 * Show this note as plain markdown, and remember the choice for the session
-	 * so auto-open does not flip it straight back (`auto-open.ts`). What the
-	 * command and this view's action share. A method rather than a function beside
-	 * `openAsSheet` because that module imports this one, for `sheetViewState`.
+	 * so auto-open does not flip it back at its next arrival (`auto-open.ts`). What
+	 * the command, this view's action and its menu entry share. A method rather
+	 * than a function beside `openAsSheet` because that module imports this one,
+	 * for `sheetViewState`.
 	 */
 	openAsMarkdown(): void {
 		const file = this.file;
@@ -307,6 +309,23 @@ export class SheetView extends TextFileView {
 			type: 'markdown',
 			state: { file: file.path },
 		});
+	}
+
+	/**
+	 * Words for the action, because its title is a tooltip a finger cannot raise.
+	 * In `pane`, where a markdown view lists its own modes, and on either source,
+	 * since a markdown view offers the same items for both. The lint reads this
+	 * literal, and `open-as-sheet.test.ts` holds it to the command's name.
+	 */
+	onPaneMenu(menu: Menu, source: string): void {
+		super.onPaneMenu(menu, source);
+		menu.addItem((item) =>
+			item
+				.setTitle('Open as Markdown')
+				.setIcon('file-text')
+				.setSection('pane')
+				.onClick(() => this.openAsMarkdown()),
+		);
 	}
 
 	getViewType(): string {

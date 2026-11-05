@@ -5,6 +5,7 @@ import { serialiseLayout } from '../parse/layout';
 import {
 	App,
 	MarkdownView,
+	Menu,
 	TFile,
 	View,
 	WorkspaceLeaf,
@@ -317,6 +318,33 @@ describe('the way-back action', () => {
 		await rewrite(KEYED, KEY_BLOCK);
 		expect(host.querySelectorAll('[aria-label="Open as sheet"]')).toHaveLength(0);
 	});
+});
+
+describe('the pane menu', () => {
+	it.each(['more-options', 'tab-header'])(
+		'offers Open as Markdown in the pane menu for either source, under the command\'s name (%s)',
+		async (source) => {
+			const view = await sheetOn(KEYED);
+			await app.workspace.revealLeaf(view.leaf as never);
+			requested(view).length = 0;
+			const menu = new Menu();
+
+			view.onPaneMenu(menu as never, source);
+
+			const [item, ...rest] = menu.items;
+			expect(rest).toEqual([]);
+			expect(item?.dom.textContent).toBe(commandOf(plugin, 'open-as-markdown').name);
+			expect(item?.dom.querySelector('svg')).not.toBeNull();
+			expect(item?.section).toBe('pane');
+
+			item?.dom.click();
+
+			expect(plugin.markdownOverrides.has(KEYED)).toBe(true);
+			expect(requested(view)).toEqual([
+				{ type: 'markdown', state: { file: KEYED } },
+			]);
+		},
+	);
 });
 
 describe('the toggle and auto-open', () => {
