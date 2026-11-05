@@ -131,7 +131,7 @@ Agreed on the rule. Three refinements, all measured above, and four rulings, two
 - **A background arrival converts at once**, in a hidden tab. Waiting for its activation would need a second rule for no gain.
 - **Back from a flipped note stops on markdown for one step.** The flip leaves a markdown entry in the leaf's history, and there is no public way to flip without one. Today that entry traps Back, because it flips again. Under this rule it is the same file in the same leaf, so it stays markdown and the next Back leaves. One extra step, in exchange for Back working at all.
 - **Ruling: yes at startup, no mid-session.** Enabling the plugin mid-session converts no leaf already loaded, because the enable has just emptied `markdownOverrides`. They are recorded, a later arrival still converts, and **Open as sheet** stays on offer.
-- **Ruling: the icon row narrows.** No `file-menu` entry in this work.
+- **Ruling: the icon row narrows.** No `file-menu` entry in this work. The entry came after, in the follow-up below.
 - **Ruling: a deferred tab converts on first load after a mid-session enable.** It cannot hold a choice made this session, and nobody is typing in it (measured: still deferred after the enable, a sheet on the press).
 
 ### SPEC §8, proposed wording
@@ -215,7 +215,7 @@ No `Co-Authored-By` trailer on any of them.
 
 - **The override keyed by path.** No fix is needed for this work. Its row is confirmed by running it: a rename loses the entry, and today the note flips at the next tab return. After this work a tab return is safe, and it flips at the next open instead (measured). The row stays, with that as its evidence.
 - **A flip that leaves no history entry.** No public API, per the third refinement.
-- **A menu entry for Open as sheet on a markdown view.** It would need `workspace.on('file-menu')`, on a view the plugin does not own, and the owner ruled it out of this work, so the icon row narrows.
+- **A menu entry for Open as sheet on a markdown view.** It would need `workspace.on('file-menu')`, on a view the plugin does not own, and the owner ruled it out of this work, so the icon row narrows. Done since, on its own branch: see **Follow-up: Open as sheet in a markdown view's menu** below, which also closes the icon row.
 - **Waiting for an unindexed note.** Dropped by decision; see **Smallest version**.
 - Component id editing, and every other backlog row.
 
@@ -230,3 +230,38 @@ No `Co-Authored-By` trailer on any of them.
 - A stale cache at arrival, where a known note gains the key externally behind a busy queue: it would stay markdown, since it reads as a note just given the key. Run only on an idle queue, where `changed` came first.
 - `layoutReady` on a real phone or tablet, or on any app version but 1.15.0. A real lazy-loading plugin, as opposed to the scratch one. The **Restricted mode** toggle by press, which was run by `setEnable`.
 - The clean build's next-activation flip after a `null` arrival. It was seen staying markdown for 6s, and not followed further.
+
+## Follow-up: Open as sheet in a markdown view's menu
+
+Branch `feat/open-as-sheet-pane-menu`, no feature spec of its own; it closes the `BACKLOG` § UI row "**Open as sheet** has no readable name on a phone". `registerOpenAsSheetMenu` in `src/view/open-as-sheet.ts` listens to `workspace.on('file-menu')` and adds one item, **Open as sheet**, icon `layout-grid`, section `pane`, pressing `openAsSheet`, when all three hold: the source is a pane menu, the leaf holds a `MarkdownView`, and that view's file carries the key. Not behind `openInSheetView`, as the action and the command are not.
+
+### Sources, measured
+
+Obsidian 1.15.0, second process, real presses. Every `file-menu` was logged with its source, the leaf's view type and mode, and which items the built menu held.
+
+| Press | `source` | Leaf passed | Item |
+| --- | --- | --- | --- |
+| **More options** on a markdown view, source mode and Reading | `more-options` | the view's | on a keyed note, in `pane`; not on a plain one |
+| Right-click a tab header | `tab-header` | the view's | same |
+| Right-click the tab of a markdown leaf docked in the right sidebar | `sidebar-context-menu` | the view's | same |
+| **More options** and the tab header on a sheet | `more-options`, `tab-header` | the sheet's | none: `SheetView`'s own **Open as Markdown** |
+| Right-click a note in the file explorer, keyed or not, desktop and phone | `file-explorer-context-menu` | none | none |
+
+`app.js` raises `file-menu` from `FileView.onPaneMenu` with the source it was handed, and the workspace hands it `sidebar-context-menu` in place of `tab-header` for a leaf in a sidebar. So the three are one menu, and `PANE_MENU_SOURCES` holds all three: the scope named the first two, and the third was found here. The other sources `app.js` raises, read rather than pressed: `link-context-menu`, `graph-context-menu`, `canvas-menu` and `bases-context-menu`, besides the explorer's. **The explorer is left out by decision**, and so are those: they name a file, not a view, so pressing there would have to choose a leaf, which is a different command from this one.
+
+### Verified
+
+- **Phone, by emulation** (`app.emulateMobile(true)`, reload, `Emulation.setDeviceMetricsOverride` 390x800, `is-phone`): on `Characters/Aramil.md` in source mode, **More options** draws **Open as sheet** in the pane group after **Backlinks in document** and above **Reading view** and **Source mode**; in Reading, above **Reading view**. Its press, by `Input.dispatchMouseEvent` on the item, leaves the leaf a `sheetsmith-sheet` on the same file with the override cleared, in both modes. `Sunblade.md`, plain: the same menu without it. The explorer's context menu on `Aramil.md` under emulation: no item.
+- **Desktop.** macOS draws these menus natively, so they are not in the DOM. The presses were real and the items were read off the `Menu` the listener was handed, then closed with its `hide()`, since Escape over CDP does not reach a native menu and a menu left open makes the next press on **More options** close it instead. The table above is those reads.
+- `npm test`, `npm run lint`, `npm run build` pass. `open-as-sheet.test.ts` holds the title to the command's name beside the action's, and covers each pane source, a plain note, a sheet, the explorer, another source on a keyed leaf, the setting off, a key given in place, and unload.
+
+**The fixture.** The throwaway vault as it stands: `Characters/Aramil.md` carries `sheet-layout: DnD 5e Caster`, and `Sunblade.md` carries no frontmatter. The process: a profile folder whose `obsidian.json` lists the vault, the launch line in `docs/features/sheet-markdown-toggle.md` on port 9333, and `await app.plugins.setEnable(true)` once, since a fresh profile starts in Restricted mode. Each note was put into markdown by adding it to `markdownOverrides` and calling `setViewState` as setup; everything after that was a press. A `file-menu` listener registered after the plugin loaded did the logging.
+
+### Not verified
+
+- A real phone or tablet, and real touch, again. Emulation with mouse presses only.
+- **The backlog row was closed on emulation alone.** Its resolution asked for a real phone session, ideally, and none was run: the readable name was seen in the emulated More options sheet, not on a device.
+- Pressing the item in a desktop native menu: it cannot be reached over CDP. The desktop presses proved the item is built; the press itself was proved under emulation, and the handler is the same.
+- **More options** on a sidebar leaf: that header drew no **More options** button to press, so only its tab menu was run.
+- The tab menu on a phone, which reaches tabs through the tab switcher. Not run.
+- Pop-out windows, and any app version but 1.15.0.

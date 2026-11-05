@@ -153,7 +153,9 @@ describe.each([
 
 /*
  * The lint reads the sentence case of a literal `name:` and not of an `addAction`
- * title, so the action's title is held to the name the lint can see.
+ * title, so the action's title is held to the name the lint can see. A menu
+ * item's `setTitle` the lint does read, so what holds it here is the wording:
+ * one door, one name, wherever it is drawn.
  */
 describe('what the two doors are called', () => {
 	it('is the command\'s own name on the sheet\'s action, drawn as an icon', async () => {
@@ -166,6 +168,15 @@ describe('what the two doors are called', () => {
 		const action = actionOf(await markdownOn(KEYED), commandOf(plugin, 'open-as-sheet').name);
 		expect(action).not.toBeNull();
 		expect(action?.querySelector('svg')).not.toBeNull();
+	});
+
+	it('is the command\'s own name on the way-back menu entry, drawn with an icon', async () => {
+		const view = await markdownOn(KEYED);
+		const menu = new Menu();
+		app.workspace.trigger('file-menu', menu, view.file, 'more-options', view.leaf);
+		const [item] = menu.items;
+		expect(item?.dom.textContent).toBe(commandOf(plugin, 'open-as-sheet').name);
+		expect(item?.dom.querySelector('svg')).not.toBeNull();
 	});
 });
 
@@ -345,6 +356,87 @@ describe('the pane menu', () => {
 			]);
 		},
 	);
+});
+
+/*
+ * The app raises `file-menu` from a markdown view's `onPaneMenu`, which the
+ * double's `MarkdownView` does not, so each case raises it with the arguments
+ * Obsidian 1.15.0 was measured passing: the view's leaf for a pane menu, and no
+ * leaf for the explorer's.
+ */
+describe('the way-back menu entry', () => {
+	function paneMenu(view: { file: unknown; leaf: unknown }, source: string): Menu {
+		const menu = new Menu();
+		app.workspace.trigger('file-menu', menu, view.file, source, view.leaf);
+		return menu;
+	}
+
+	const wayBackItem = (menu: Menu) =>
+		menu.items.find((item) => item.dom.textContent === 'Open as sheet');
+
+	it.each(['more-options', 'tab-header', 'sidebar-context-menu'])(
+		'is offered on a keyed note for a pane menu (%s)',
+		async (source) => {
+			plugin.markdownOverrides.add(KEYED);
+			const view = await markdownOn(KEYED);
+			await app.workspace.revealLeaf(view.leaf);
+			requested(view).length = 0;
+
+			const [item, ...rest] = paneMenu(view, source).items;
+
+			expect(rest).toEqual([]);
+			expect(item?.dom.textContent).toBe('Open as sheet');
+			expect(item?.section).toBe('pane');
+
+			item?.dom.click();
+
+			expect(plugin.markdownOverrides.has(KEYED)).toBe(false);
+			expect(requested(view)).toEqual([
+				{ type: VIEW_TYPE_SHEET, state: { file: KEYED } },
+			]);
+		},
+	);
+
+	it('is not offered on a plain note', async () => {
+		expect(paneMenu(await markdownOn(PLAIN), 'more-options').items).toEqual([]);
+	});
+
+	it('is not offered on a sheet, whose own menu has the other door', async () => {
+		expect(wayBackItem(paneMenu(await sheetOn(KEYED), 'more-options'))).toBeUndefined();
+	});
+
+	it('is not offered in the file explorer, keyed note or not', () => {
+		const menu = new Menu();
+		app.workspace.trigger(
+			'file-menu',
+			menu,
+			app.vault.getFileByPath(KEYED),
+			'file-explorer-context-menu',
+		);
+		expect(menu.items).toEqual([]);
+	});
+
+	it('is not offered for another menu on a keyed note\'s leaf', async () => {
+		const view = await markdownOn(KEYED);
+		expect(paneMenu(view, 'link-context-menu').items).toEqual([]);
+	});
+
+	it('is offered with opening in sheet view turned off', async () => {
+		plugin.settings.openInSheetView = false;
+		expect(wayBackItem(paneMenu(await markdownOn(KEYED), 'more-options'))).toBeDefined();
+	});
+
+	it('reads the key at the press, so a note given it in place is offered it', async () => {
+		const view = await markdownOn(PLAIN);
+		await rewrite(PLAIN, KEY_BLOCK);
+		expect(wayBackItem(paneMenu(view, 'more-options'))).toBeDefined();
+	});
+
+	it('stops being offered on unload', async () => {
+		const view = await markdownOn(KEYED);
+		unloadPlugin(plugin);
+		expect(paneMenu(view, 'more-options').items).toEqual([]);
+	});
 });
 
 describe('the toggle and auto-open', () => {

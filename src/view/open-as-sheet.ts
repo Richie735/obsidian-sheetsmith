@@ -1,11 +1,13 @@
 /*
  * The way back from a markdown view to a sheet (SPEC §8): the behaviour the
- * **Open as sheet** command and the header action share, and the action itself.
+ * **Open as sheet** command, the header action and the pane menu entry share,
+ * and the two doors a markdown view shows.
  *
- * `SheetView` carries the other direction and simply adds its action once,
- * because every sheet offers it. This one is conditional on the note, and the
- * views it sits on are the app's, so nothing here can own a view's lifecycle:
- * the action is reconciled from outside, against what each view holds now.
+ * `SheetView` carries the other direction and simply adds its action and its
+ * menu item itself, because every sheet offers them. These are conditional on
+ * the note, and the views they sit on are the app's, so nothing here can own a
+ * view's lifecycle: the action is reconciled from outside, against what each
+ * view holds now, and the menu item is offered each time the app builds a menu.
  */
 
 import { MarkdownView } from 'obsidian';
@@ -96,4 +98,50 @@ export function registerOpenAsSheetAction(plugin: SheetsmithPlugin): void {
 			actions.delete(view);
 		}
 	});
+}
+
+/**
+ * Which `file-menu` sources are a view's own pane menu, measured in Obsidian
+ * 1.15.0, where `FileView` raises `file-menu` from its `onPaneMenu` with the
+ * source it was handed: **More options**, a tab header's context menu, and the
+ * same tab menu on a leaf docked in a sidebar, which the app names apart.
+ */
+const PANE_MENU_SOURCES: ReadonlySet<string> = new Set([
+	'more-options',
+	'tab-header',
+	'sidebar-context-menu',
+]);
+
+/**
+ * Offer **Open as sheet** in a keyed markdown view's pane menu, which is the
+ * door a phone can read: an action's title is a tooltip a finger cannot raise.
+ *
+ * **Through `file-menu`, because the view is the app's.** `SheetView` adds its
+ * entry in its own `onPaneMenu`; a markdown view's is the app's to override, not
+ * this plugin's, and the event is how the app lets a plugin into that menu.
+ *
+ * **Only for a pane menu, by decision.** The same event builds the file
+ * explorer's context menu and every other menu on a file, where there is no
+ * view to switch: pressing it there would have to choose a leaf, which is a
+ * different command from this one. So the entry asks for both the source and a
+ * `MarkdownView` in the leaf, and reads the key off that view's file.
+ *
+ * **Not behind `openInSheetView`**, for the action's reason above.
+ */
+export function registerOpenAsSheetMenu(plugin: SheetsmithPlugin): void {
+	plugin.registerEvent(
+		plugin.app.workspace.on('file-menu', (menu, _file, source, leaf) => {
+			if (!PANE_MENU_SOURCES.has(source)) return;
+			const view = leaf?.view;
+			if (!(view instanceof MarkdownView) || !view.file) return;
+			if (!carriesLayoutKey(plugin.app, view.file)) return;
+			menu.addItem((item) =>
+				item
+					.setTitle('Open as sheet')
+					.setIcon('layout-grid')
+					.setSection('pane')
+					.onClick(() => openAsSheet(plugin, view)),
+			);
+		}),
+	);
 }
