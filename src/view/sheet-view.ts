@@ -75,8 +75,9 @@ export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
  * worth a name rather than three object literals is that **the compiler cannot
  * check the half that matters**: `ViewState.state` is a
  * `Record<string, unknown>`, so `{ path }` or `{ filePath }` in place of
- * `{ file }` type-checks perfectly and opens a sheet view with no file in it.
- * One spelling, in the module that owns the view type it names.
+ * `{ file }` type-checks perfectly, and then the leaf closes without a word:
+ * on 1.15.0 `FileView.setState` sets `close` where no file loaded. One spelling,
+ * in the module that owns the view type it names.
  *
  * `SheetView.openAsMarkdown` builds the same shape with `type: 'markdown'` and
  * is deliberately not folded in: that is the app's own view type rather than

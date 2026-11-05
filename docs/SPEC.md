@@ -775,6 +775,8 @@ Layouts are independent of one another. "DnD 5e Standard" and "DnD 5e Caster" ar
 
 - Notes carrying `sheet-layout` open in sheet view by default.
 - A command and a toggle switch between sheet view and plain markdown view, in the Excalidraw manner.
+- **A note switches to a sheet when it arrives in a leaf, and never because a view already showing it gained focus.** Arriving is a file opened into a leaf from anywhere, a new leaf on the note, and a restored leaf first loading during app startup, at once where visible and at its first showing where deferred. So a switch never consumes a press meant for a control in that view. The key appearing under a view that stays on the file does not switch it, and neither does the index answering late for a note just opened: **Open as sheet** is on offer until the note is next opened. Enabling the plugin mid-session switches no view already loaded, because that also forgets each **Open as Markdown**. A session's **Open as Markdown** and the setting being off stop a switch at any arrival. If the app drops the request while a new leaf is loading, the leaf stays markdown with **Open as sheet** on offer.
+- A sheet's **More options** menu offers **Open as Markdown**, beside where a markdown view lists its modes, because an action's title is a tooltip a finger cannot raise.
 - Any stored value is editable directly in its component. Changes write back to the note body.
 - Computed values are read-only.
 - Wikilinks are clickable and navigate. Hover preview works, backlinks resolve, and renaming a linked note updates the sheet, all because links live in plain markdown rather than inside a code block.
