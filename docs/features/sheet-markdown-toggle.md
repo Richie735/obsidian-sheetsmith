@@ -1,9 +1,9 @@
 # Sheet and Markdown toggle
 
 Status: shipped
-Board card: GitHub issue #3, "Reading mode selection disappears". The two defects left open here are the `docs/BACKLOG.md` § UI row "Pressing the mode button on a note just given the key turns it into a sheet".
+Board card: GitHub issue #3, "Reading mode selection disappears". The two defects left open here are closed by `docs/features/auto-open-on-arrival.md`.
 
-Standard route, with no spec written ahead: the commands, `auto-open.ts` and `sheetViewState` carried the design. This file exists for what a review needed afterwards: the fixture, and what stayed open.
+Standard route, with no spec written ahead: the commands, `auto-open.ts` and `sheetViewState` carried the design. This file exists for what a review needed afterwards: the fixture, and the two defects it left open, both since closed.
 
 ## What it does
 
@@ -41,32 +41,36 @@ Quit that process alone, by the pid matching its `--user-data-dir`.
 
 macOS draws **More options** as a native menu, so it is in the DOM only under emulation.
 
-## OPEN: the swallowed press
+## Closed: the swallowed press
 
-Reproduces on the current build and on the build before this feature.
+Fixed by `docs/features/auto-open-on-arrival.md`, whose table holds what each flow does now. This is the reproduction, on the build this feature shipped and the one before it.
 
 1. New note, opened in source mode, active.
 2. Write `---\nsheet-layout: Card variations\n---\n` through the editor. Wait for the save and the index, about 2.5s. It is still markdown.
 3. Click the file explorer's blank area. The active leaf is now `file-explorer`.
 4. Press the note's mode button.
 
-It lands on a sheet, not in Reading. With 80ms between press and release the view has already changed before the release, so the button is gone under the pointer; with 0ms it changes just after. The events are `active-leaf-change:markdown`, then the sheet's twice. The cause is the leaf's capture `pointerdown` calling `setActiveLeaf`, whose event reaches `maybeSwitch` (`src/view/auto-open.ts`).
+It lands on a sheet, not in Reading. With 80ms between press and release the view has already changed before the release, so the button is gone under the pointer; with 0ms it changes just after. The events are `active-leaf-change:markdown`, then the sheet's twice. The cause was the leaf's capture `pointerdown` calling `setActiveLeaf`, whose event reached `maybeSwitch` (`src/view/auto-open.ts`).
 
-The toggle is the way out, not a fix. On the current build **Reading mode takes 3 presses** from step 4: the mode button, **Open as Markdown** (lands in source, override set), the mode button. Reading then held across a tab away and back, returned to by `setActiveLeaf`.
+The toggle is the way out, not a fix. On that build **Reading mode takes 3 presses** from step 4: the mode button, **Open as Markdown** (lands in source, override set), the mode button. Reading then held across a tab away and back, returned to by `setActiveLeaf`.
 
 The same flow with the leaf already active reaches Reading on the first press and stays markdown.
 
-## OPEN: the unprompted flip
+Mod-click on the mode button opens a new leaf, which is a sheet, and leaves the original in markdown, before that work and after it (measured there).
+
+Applying the key through the Properties panel met the same defect, and now reaches Reading on the first press: the **Reported flow** row there.
+
+## Closed: the unprompted flip
+
+Fixed by `docs/features/auto-open-on-arrival.md`. This is the reproduction, on the build this feature shipped.
 
 1. Steps 1 and 2 above, then press the mode button with the leaf active. Reading mode, still markdown.
 2. Open another note in a new tab.
 3. Return to the first tab.
 
-It is now a sheet, nobody having asked at that moment: `maybeSwitch` runs on `active-leaf-change` and no override exists. SPEC §8's default says the note opens as a sheet, and what is open is when that default may act on a note the reader is already in.
+It was a sheet, nobody having asked at that moment: `maybeSwitch` ran on `active-leaf-change` and no override existed. SPEC §8's default says the note opens as a sheet, and what was open is when that default may act on a note the reader is already in.
 
 ## Not verified
 
 - A real phone or tablet, and real touch. The phone runs were emulation, pressed with mouse events.
 - The swallowed press under phone emulation.
-- Applying the key through the Properties panel. Only typing it was run, and the panel should reach the same cache event.
-- Mod-click on the mode button, which a code reading says flips a new leaf too.
