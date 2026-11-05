@@ -408,14 +408,23 @@ export function migrationMessage(
 			} a record still under "${from}"`,
 		);
 	}
-	if (unreadable > 0) {
-		parts.push(
-			`${notes(unreadable)} could not be read and ${
-				unreadable === 1 ? 'was' : 'were'
-			} left alone`,
-		);
-	}
+	if (unreadable > 0) parts.push(unreadableClause(unreadable));
 	return `${parts.join('; ')}.`;
+}
+
+/**
+ * What a scan says about the notes it could not read, with no closing stop:
+ * `1 character note could not be read and was left alone`.
+ *
+ * **One clause for two notices**, this migration's and an id rename's report
+ * (`id-rename-report.ts`), which each end on it in their own punctuation. A
+ * clause both say is a policy, so it is shared rather than spelled twice
+ * (`docs/PATTERNS.md` §1).
+ */
+export function unreadableClause(count: number): string {
+	return `${count} character ${count === 1 ? 'note' : 'notes'} could not be read and ${
+		count === 1 ? 'was' : 'were'
+	} left alone`;
 }
 
 /**
