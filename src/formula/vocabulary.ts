@@ -32,7 +32,7 @@ import {
 	publishedSuffixes,
 } from './modifier-targets';
 import { Completion } from './completion';
-import { ComponentConfig, ComponentDefinition, ScopeEntry } from '../types';
+import { ComponentConfig, ComponentDefinition, entryUnit, ScopeEntry } from '../types';
 
 /** The namespace every modifier reference starts with (SPEC §5). */
 const MODIFIER_NAMESPACE = 'mod';
@@ -58,6 +58,12 @@ export interface RowName {
 	name: string;
 	/** Which list the layout typed it into, which is what the note says. */
 	kind: 'column' | 'row value';
+	/**
+	 * What the component calls one entry of that list: "column" on a Table,
+	 * "field" on a Record set (`entryUnit`), "row value" for a row's values.
+	 * The word a sentence about this name uses, where `kind` is which list.
+	 */
+	noun: string;
 	/**
 	 * Whether this entry's own value is a formula in the same list.
 	 *
@@ -142,6 +148,27 @@ export function vocabularySource(
 }
 
 /**
+ * The names a component's own scope answers before the sheet does: `value`,
+ * and the row names a formula written inside it reads per row.
+ *
+ * **Three readers skip exactly these and must agree**: a paste's rewrite and
+ * its report of what a copy reads (`editor/paste.ts`,
+ * `editor/paste-dependencies.ts`), and an id rename's rewrite, its capture
+ * checks and its notes report (`editor/id-rename.ts`, `id-rename-report.ts`).
+ * Here beside `vocabularySource`, whose row names it is, and taking the
+ * definition rather than looking it up for that function's reason: this
+ * folder stays pure (Constraint 5), so the root-level report reads it without
+ * reaching into `editor/`.
+ */
+export function localNames(
+	config: ComponentConfig,
+	definition: Parameters<typeof vocabularySource>[1],
+): ReadonlySet<string> {
+	const rows = vocabularySource(config, definition).rowNames;
+	return new Set(['value', ...rows.map((row) => row.name)]);
+}
+
+/**
  * Everything a layout offers a formula field, in layout order: each component's
  * names and the layout's own functions.
  *
@@ -181,16 +208,21 @@ function rowNamesOf(
 	if (!definition) return [];
 	const record = config as unknown as Record<string, unknown>;
 	const names: RowName[] = [];
-	const add = (name: unknown, kind: RowName['kind'], computed = false) => {
+	const add = (
+		name: unknown,
+		kind: RowName['kind'],
+		noun: string,
+		computed = false,
+	) => {
 		if (typeof name !== 'string' || name === '') return;
 		if (names.some((held) => held.name === name)) return;
-		names.push({ name, kind, computed });
+		names.push({ name, kind, noun, computed });
 	};
 	for (const field of definition.configFields) {
 		if (field.kind !== 'columns') continue;
 		for (const entry of asArray(record[field.key])) {
 			const typed = entry as { key?: unknown; type?: unknown };
-			add(typed.key, 'column', typed.type === COMPUTED_TYPE);
+			add(typed.key, 'column', entryUnit(field.columnOptions), typed.type === COMPUTED_TYPE);
 		}
 	}
 	for (const field of definition.configFields) {
@@ -201,7 +233,7 @@ function rowNamesOf(
 			// A row value is an expression evaluated against the sheet, and both
 			// components put every one of them in the row scope before the
 			// computed entries run. So none of these is ever a self-reference.
-			for (const name of Object.keys(values)) add(name, 'row value');
+			for (const name of Object.keys(values)) add(name, 'row value', 'row value');
 		}
 	}
 	return names;

@@ -39,6 +39,50 @@ export interface ComponentReference {
 	start: number;
 	/** Offset one past its last character. */
 	end: number;
+	/**
+	 * The aggregate whose per-row argument holds this reference, and the id it
+	 * walks: `{ call: 'sum', id: 'inventory' }` for the `prof` in
+	 * `sum(inventory, Qty * prof)`, the id `self` where it walks its own rows.
+	 * The innermost where they nest. Absent everywhere else, the aggregate's own
+	 * first argument included.
+	 *
+	 * **A marker, not a scope.** The row is nearer than the sheet there, and
+	 * this module still does not model that (the limit below); what it gives a
+	 * caller is where the limit bites, so the id rename can refuse a reference
+	 * the walked rows might answer rather than rewrite it blind
+	 * (`docs/features/component-id-rename.md`, point 3). A paste ignores it.
+	 */
+	rows?: { id: string; call: string };
+	/**
+	 * The aggregate this reference is the first argument of — a table to walk,
+	 * which no local name can shadow — or absent.
+	 */
+	walkedBy?: string;
+	/** True where this is the id inside a `mod.<id>` slot, which no local shadows either. */
+	slot?: true;
+}
+
+/** The text an aggregate's per-row arguments span, and what walks it. */
+interface RowRegion {
+	start: number;
+	end: number;
+	id: string;
+	call: string;
+}
+
+/**
+ * The offset of the bracket closing the one at `open`, or the end of the text
+ * where it never closes. Counted on the raw text, which is safe because the
+ * grammar has no string literal for a bracket to hide in.
+ */
+function closingBracket(source: string, open: number): number {
+	let depth = 0;
+	for (let at = open; at < source.length; at++) {
+		const char = source[at];
+		if (char === '(') depth++;
+		else if (char === ')' && --depth === 0) return at;
+	}
+	return source.length;
 }
 
 /**
@@ -65,6 +109,26 @@ export function componentReferences(
 	const found: ComponentReference[] = [];
 	/** The span an aggregate's first argument was found at, taken already. */
 	const tables = new Set<number>();
+	const regions: RowRegion[] = [];
+	/** The innermost per-row region holding `at`. */
+	const rowsAt = (at: number): ComponentReference['rows'] => {
+		let found: RowRegion | undefined;
+		for (const region of regions) {
+			if (at < region.start || at >= region.end) continue;
+			if (found === undefined || region.start > found.start) found = region;
+		}
+		return found === undefined ? undefined : { id: found.id, call: found.call };
+	};
+	const push = (id: string, start: number, slot = false): void => {
+		const rows = rowsAt(start);
+		found.push({
+			id,
+			start,
+			end: start + id.length,
+			...(rows !== undefined ? { rows } : {}),
+			...(slot ? { slot: true as const } : {}),
+		});
+	};
 	spans.forEach((span, index) => {
 		if (span.call) {
 			if (!AGGREGATE_NAMES.includes(span.text)) return;
@@ -78,8 +142,14 @@ export function componentReferences(
 			if (next.start !== span.end + opening[0].length) return;
 			tables.add(index + 1);
 			const id = next.text.split('.')[0] as string;
+			regions.push({
+				start: next.end,
+				end: closingBracket(source, span.end + opening[0].indexOf('(')),
+				id,
+				call: span.text,
+			});
 			if (id === SELF_KEYWORD) return;
-			found.push({ id, start: next.start, end: next.start + id.length });
+			found.push({ id, start: next.start, end: next.start + id.length, walkedBy: span.text });
 			return;
 		}
 		if (tables.has(index) || LITERAL_NAMES.includes(span.text)) return;
@@ -91,12 +161,11 @@ export function componentReferences(
 			// id — the parser reserves the word — so it is a function or nothing.
 			const id = segments[1];
 			if (id === undefined || id === SELF_KEYWORD) return;
-			const start = span.start + first.length + 1;
-			found.push({ id, start, end: start + id.length });
+			push(id, span.start + first.length + 1, true);
 			return;
 		}
 		if (first === SELF_KEYWORD || local.has(first)) return;
-		found.push({ id: first, start: span.start, end: span.start + first.length });
+		push(first, span.start);
 	});
 	return found;
 }

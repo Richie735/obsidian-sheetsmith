@@ -5,7 +5,7 @@ import {
 	RESERVED_NAMES,
 	Scope,
 } from './expression';
-import { parseFunctions } from './functions';
+import { definitionParts, parseFunctions } from './functions';
 
 const empty: Scope = () => undefined;
 const scope =
@@ -331,5 +331,31 @@ describe('the line each definition was written as', () => {
 			['half', 'half(x) = x / 2'],
 			['mod', 'mod(score) = floor((score - 10) / 2)'],
 		]);
+	});
+});
+
+describe('definitionParts', () => {
+	it('finds the name, the parameters and where the body starts in the line as written', () => {
+		const line = '  scale( prof , n ) =  prof * n';
+		const parts = definitionParts(line);
+		expect(parts).toEqual({ name: 'scale', params: ['prof', 'n'], bodyStart: 23 });
+		expect(line.slice(parts?.bodyStart)).toBe('prof * n');
+	});
+
+	it('reads a value, which has no parameters', () => {
+		const parts = definitionParts('prof = ceil(level / 4) + 1');
+		expect(parts?.params).toEqual([]);
+		expect('prof = ceil(level / 4) + 1'.slice(parts?.bodyStart)).toBe('ceil(level / 4) + 1');
+	});
+
+	it('answers null for a blank line, a comment and a line that is not a definition', () => {
+		expect(definitionParts('   ')).toBeNull();
+		expect(definitionParts('# prof = 2')).toBeNull();
+		expect(definitionParts('prof == 2')).toBeNull();
+	});
+
+	it('is the reading the library parses, body and all', () => {
+		const library = parseFunctions(['  half(x) =  x / 2']).library;
+		expect(library.get('half')?.params).toEqual(['x']);
 	});
 });
