@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { LayoutParseError, mayHoldChildren, parseLayout, serialiseLayout } from './layout';
+import {
+	idProblem,
+	idTaken,
+	LayoutParseError,
+	mayHoldChildren,
+	parseLayout,
+	serialiseLayout,
+	usableId,
+} from './layout';
 import { componentsInside, everyLevelPlaced, walkComponents } from './layout-walk';
 import { ComponentConfig } from '../types';
 
@@ -1438,5 +1446,59 @@ describe('parseLayout: a Record set holding a text field as its group key', () =
 		).fields;
 		expect(fields[0]).toEqual({ key: 'Class' });
 		expect(fields[1]).toEqual({ key: 'Subclass', type: 'text' });
+	});
+});
+
+describe('idProblem: the id rule the parser and the Id field share', () => {
+	const leaf = (id: string, label = id): ComponentConfig => ({
+		id,
+		type: 'card',
+		label,
+		position: { col: 1, row: 1, width: 1, height: 1 },
+	});
+	const nested = (): ComponentConfig[] => [
+		{
+			id: 'group',
+			type: 'group',
+			label: 'Group',
+			position: { col: 1, row: 1, width: 4, height: 2 },
+			children: [leaf('inner', 'Inner')],
+		},
+		leaf('outer', 'Outer'),
+	];
+
+	it('names each rule the field refuses', () => {
+		const components = nested();
+		const outer = components[1] ?? null;
+		expect(idProblem(components, '', outer)).toBe('blank');
+		expect(idProblem(components, 'armour-class', outer)).toBe('name');
+		expect(idProblem(components, '2nd', outer)).toBe('name');
+		expect(idProblem(components, 'mod', outer)).toBe('reserved');
+		expect(idProblem(components, 'self', outer)).toBe('reserved');
+		expect(idProblem(components, 'inner', outer)).toBe('taken');
+		expect(idProblem(components, 'outer', outer)).toBeNull();
+		expect(idProblem(components, 'fresh', outer)).toBeNull();
+	});
+
+	it('refuses in the parser what it refuses in the field', () => {
+		// The parser migrates an id no formula could read rather than refusing
+		// the file, which is its answer to the same rule.
+		for (const id of ['armour-class', '2nd', 'mod', 'self']) {
+			const parsed = parseLayout(
+				JSON.stringify({ name: 'L', components: [leaf(id, 'One')] }),
+			);
+			const migrated = parsed.components[0]?.id ?? '';
+			expect(migrated).not.toBe(id);
+			expect(usableId(migrated)).toBe(true);
+			expect(usableId(id)).toBe(false);
+		}
+		// And a duplicate at any depth refuses the file, as the field refuses it.
+		const components = nested();
+		const outer = components[1] as ComponentConfig;
+		outer.id = 'inner';
+		expect(idTaken(components, 'inner', outer)).toBe(true);
+		expect(() =>
+			parseLayout(JSON.stringify({ name: 'L', components })),
+		).toThrow(/Duplicate component id "inner"/);
 	});
 });
