@@ -563,6 +563,8 @@ export class MenuItem {
 	private readonly titleEl: HTMLElement;
 	private callback: ((event: MouseEvent | KeyboardEvent) => unknown) | null = null;
 	disabled = false;
+	/** Recorded for a test to read. The double groups nothing by it (`Menu`). */
+	section: string | null = null;
 
 	constructor(private readonly menu: Menu) {
 		this.dom = document.createElement('div');
@@ -596,6 +598,11 @@ export class MenuItem {
 
 	setWarning(isWarning: boolean): this {
 		this.dom.classList.toggle('is-warning', isWarning);
+		return this;
+	}
+
+	setSection(section: string): this {
+		this.section = section;
 		return this;
 	}
 
@@ -1799,6 +1806,9 @@ export class View extends Component {
 
 	async setState(_state: unknown, _result: unknown): Promise<void> {}
 
+	/** The app's base adds its own items here, and the double has none to add. */
+	onPaneMenu(_menu: Menu, _source: string): void {}
+
 	getEphemeralState(): Record<string, unknown> {
 		return {};
 	}
@@ -2196,6 +2206,10 @@ export class Workspace extends Events {
 		return this.leaves.filter((leaf) => leaf.view?.getViewType() === type);
 	}
 
+	iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => unknown): void {
+		for (const leaf of this.leaves) callback(leaf);
+	}
+
 	/**
 	 * The active leaf's view where it is of this class, the app's own one-liner:
 	 * `var t = this.activeLeaf; if (!t) return null; var n = t.view; return n
@@ -2205,6 +2219,14 @@ export class Workspace extends Events {
 		const view = this.activeLeaf?.view;
 		return view instanceof type ? view : null;
 	}
+
+	/**
+	 * The app's public flag, read before `onLayoutReady` to tell app startup from
+	 * a plugin enabled mid-session. Settable because nothing here restores a
+	 * layout, and it moves nothing else: `onLayoutReady` below runs at once
+	 * either way, so a startup case sets this `false` before `onload`.
+	 */
+	layoutReady = true;
 
 	/**
 	 * Run `callback` once the workspace is ready — at once, since this double
