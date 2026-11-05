@@ -4,7 +4,7 @@ import type SheetsmithPlugin from './main';
 import { parseLayout, serialiseLayout } from './parse/layout';
 import { App, Notice } from './test/obsidian-stub';
 import { LAYOUT_FOLDER } from './test/plugin';
-import { loadPlugin } from './test/plugin-shell';
+import { loadPlugin, pressCommand } from './test/plugin-shell';
 import { control, fixture, settle, tick, type } from './test/layout-editor-pane';
 import { openView, showFile } from './test/workspace';
 import { ComponentConfig } from './types';
@@ -35,11 +35,7 @@ let holdNext: boolean;
 
 /** Run a registered command the way the palette runs one. */
 function run(id: string): void {
-	const command = (plugin as unknown as { commands: { id: string; checkCallback?: (checking: boolean) => boolean }[] }).commands.find(
-		(candidate) => candidate.id === id,
-	);
-	if (command?.checkCallback === undefined) throw new Error(`no command "${id}"`);
-	command.checkCallback(false);
+	pressCommand(plugin, id);
 }
 
 /** Commit the Pool's maximum through its own field. */

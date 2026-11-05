@@ -3532,9 +3532,8 @@ describe('the sample values row', () => {
  *
  * Undo is driven through `LayoutEditorView.undo`/`.redo` rather than through
  * the commands in `commands.ts`: those are a `checkCallback` gating an
- * `App.workspace.getActiveViewOfType` lookup and a `Notice`, the same shape
- * `open-as-sheet` and `open-as-markdown` already have with no test of their
- * own, and the pane's own methods are what they call.
+ * `App.workspace.getActiveViewOfType` lookup and a `Notice`, which
+ * `commands.test.ts` drives, and the pane's own methods are what they call.
  */
 
 /** A button anywhere in the pane, found by its exact text. */

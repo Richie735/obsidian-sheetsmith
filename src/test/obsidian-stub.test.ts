@@ -1460,3 +1460,29 @@ describe('the menu double', () => {
 		second.hide();
 	});
 });
+
+/*
+ * One bus under `Vault`, `Workspace` and `MetadataCache`, so one rule for all of
+ * them. Walked over each because the copies this replaced had drifted on it.
+ */
+describe.each([
+	['Vault', (app: App) => app.vault],
+	['Workspace', (app: App) => app.workspace],
+	['MetadataCache', (app: App) => app.metadataCache],
+])('events on %s', (_name, busOf) => {
+	it('fires a snapshot: added during a dispatch waits, removed during it still runs', () => {
+		const bus = busOf(new App());
+		const heard: string[] = [];
+		const late = (): void => void heard.push('late');
+		let second: { off(): void } | null = null;
+		bus.on('x', () => {
+			heard.push('first');
+			second?.off();
+			bus.on('x', late);
+		});
+		second = bus.on('x', () => void heard.push('second'));
+
+		bus.trigger('x');
+		expect(heard).toEqual(['first', 'second']);
+	});
+});
