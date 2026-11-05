@@ -320,15 +320,20 @@ describe('the way-back action', () => {
 });
 
 describe('the toggle and auto-open', () => {
+	/** A markdown view on the note, whose arrival nothing has announced yet. */
+	async function arriving(path: string): Promise<MarkdownView> {
+		const view = await open(MarkdownView);
+		await showFile(view, path);
+		requested(view).length = 0;
+		return view;
+	}
+
 	it('does not flip a note the markdown action just opened', async () => {
 		const sheet = await sheetOn(KEYED);
 		actionOf(sheet, 'Open as Markdown')?.click();
-		const view = await markdownOn(KEYED);
-		await app.workspace.revealLeaf(view.leaf);
-		requested(view).length = 0;
+		const view = await arriving(KEYED);
 
-		app.workspace.trigger('active-leaf-change', view.leaf);
-		app.workspace.trigger('file-open', view.file);
+		app.workspace.trigger('layout-change');
 
 		expect(requested(view)).toEqual([]);
 		expect(wayBack(view)).not.toBeNull();
@@ -339,10 +344,8 @@ describe('the toggle and auto-open', () => {
 		const pressed = await markdownOn(KEYED);
 		wayBack(pressed)?.click();
 
-		const reopened = await markdownOn(KEYED);
-		await app.workspace.revealLeaf(reopened.leaf);
-		requested(reopened).length = 0;
-		app.workspace.trigger('active-leaf-change', reopened.leaf);
+		const reopened = await arriving(KEYED);
+		app.workspace.trigger('layout-change');
 
 		expect(requested(reopened)).toEqual([
 			{ type: VIEW_TYPE_SHEET, state: { file: KEYED } },
@@ -351,11 +354,9 @@ describe('the toggle and auto-open', () => {
 
 	it('leaves the switching to the reader with the setting off, action or no action', async () => {
 		plugin.settings.openInSheetView = false;
-		const view = await markdownOn(KEYED);
-		await app.workspace.revealLeaf(view.leaf);
-		requested(view).length = 0;
+		const view = await arriving(KEYED);
 
-		app.workspace.trigger('active-leaf-change', view.leaf);
+		app.workspace.trigger('layout-change');
 
 		expect(requested(view)).toEqual([]);
 		expect(wayBack(view)).not.toBeNull();
