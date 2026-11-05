@@ -10,6 +10,9 @@
  * for still agreeing, and what they would drift about is whether a note on a
  * layout named `12` is counted — the YAML hazard below.
  *
+ * **Beside it, the same read for one note**, which asks only whether a note names
+ * a layout at all: `carriesLayoutKey`, for auto-open and the way back to a sheet.
+ *
  * Beside `layouts.ts` rather than in it for Constraint 5's reason one layer
  * up: this reads `app.metadataCache` and note bodies, and that module is about
  * the layout folder.
@@ -26,10 +29,19 @@ export interface Candidate {
 }
 
 /**
+ * Whether a note names a layout, by the key's presence alone. A `sheet-layout:`
+ * left empty still counts, since it is `null` here rather than absent, and the
+ * sheet is where that note's problem gets reported.
+ */
+export function carriesLayoutKey(app: App, file: TFile): boolean {
+	const frontmatter = app.metadataCache.getFileCache(file)?.frontmatter;
+	return frontmatter?.[LAYOUT_KEY] !== undefined;
+}
+
+/**
  * Every character note that may name this layout, through `metadataCache`
  * rather than by reading a body that will not match — the same cheap frontmatter
- * read `commands.ts` and `view/auto-open.ts` already use to answer "is this a
- * character note for this layout".
+ * read as `carriesLayoutKey` above.
  *
  * **The whole vault, never narrowed by the character folder setting.** That
  * setting is a *creation destination* — its own description is "New
@@ -56,9 +68,9 @@ export interface Candidate {
  * of those three**, not a rejection: `isPlainLayoutValue('null')` passes, so a layout
  * named `null`, `Null` or `NULL` is written unquoted and comes back as
  * nothing at all. Only `undefined` — the key absent entirely, which is every
- * note in the vault that is not a character — is refused outright. The two
- * existing cache readers (`view/auto-open.ts`, `commands.ts`) only ever test
- * presence, which is why this hazard appears here first.
+ * note in the vault that is not a character — is refused outright. The other
+ * cache reader, `carriesLayoutKey`, only ever tests presence, which is why this
+ * hazard appears here first.
  *
  * `certain` is what the caller needs the distinction for: a note admitted on
  * an exact string match claims this layout, so failing to parse it is worth

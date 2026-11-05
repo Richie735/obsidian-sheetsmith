@@ -1,6 +1,6 @@
 import { MarkdownView, WorkspaceLeaf } from 'obsidian';
+import { carriesLayoutKey } from '../layout-notes';
 import type SheetsmithPlugin from '../main';
-import { LAYOUT_KEY } from '../types';
 import { sheetViewState } from './sheet-view';
 
 /**
@@ -15,9 +15,7 @@ export function registerAutoOpen(plugin: SheetsmithPlugin): void {
 		if (!leaf || !(leaf.view instanceof MarkdownView)) return;
 		const file = leaf.view.file;
 		if (!file || plugin.markdownOverrides.has(file.path)) return;
-		const frontmatter =
-			plugin.app.metadataCache.getFileCache(file)?.frontmatter;
-		if (!frontmatter || frontmatter[LAYOUT_KEY] === undefined) return;
+		if (!carriesLayoutKey(plugin.app, file)) return;
 		void leaf.setViewState(sheetViewState(file.path));
 	};
 
