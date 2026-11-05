@@ -386,6 +386,22 @@ export function typedNoteTarget(part: string): string | null {
 }
 
 /**
+ * The effect a typed part spells, read from its text alone, or null where the
+ * part names a definition.
+ *
+ * **Here for `typedNoteTarget`'s reason, one reader over**: this file holds the
+ * codebase's one parse of a cell part, and an id rename's report has to read the
+ * same text for which names a typed part reads — its target, its amount and its
+ * condition — without evaluating any of them (`id-rename-report.ts`,
+ * `docs/features/component-id-rename.md`). A named part reads nothing in the
+ * note: its definition is in the layout.
+ */
+export function typedEffectOf(part: string): TypedEffect | null {
+	const parsed = parseModifierPart(part);
+	return parsed.kind === 'typed' ? parsed.effect : null;
+}
+
+/**
  * What a part's condition came to, decided once however many changes it governs.
  *
  * `always` and `holds` are deliberately two: a part with no condition carries no

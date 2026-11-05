@@ -1473,6 +1473,57 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&open=stat_roster',
 		size: EDITOR_FRAME,
 	},
+	/*
+	 * The **ID** row (`docs/features/component-id-rename.md` §1): the id as a
+	 * field, first in the form, with the inventory as the row's description
+	 * between its name and its field, as Label's and Key's rows read. A Card publishes a bare name; a Record set publishes none and
+	 * reads only through its aggregates, which is the inventory's other shape.
+	 * Both themes, and the narrow regime, where the row stacks.
+	 */
+	{
+		name: 'editor-id-card',
+		query: 'surface=editor&theme=light&open=armour_class',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-id-card-dark',
+		query: 'surface=editor&theme=dark&open=armour_class',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-id-record-set',
+		query: 'surface=editor&theme=light&open=traits',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-id-record-set-dark',
+		query: 'surface=editor&theme=dark&open=traits',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Framed on the form, since the stacked pane puts it 28,000px down.
+		name: 'editor-id-narrow',
+		query: 'surface=editor&theme=light&open=armour_class',
+		size: '380,30200',
+		frame: '.sheetsmith-component-form',
+	},
+	{
+		// The Record set's row at the same width: its two aggregate chips are
+		// the widest thing the description holds, so this is where it wraps.
+		name: 'editor-id-record-set-narrow',
+		query: 'surface=editor&theme=light&open=traits',
+		size: '380,30200',
+		frame: '.sheetsmith-component-form',
+	},
+	{
+		// A refused id, which exists only after a commit: an id another
+		// component already holds, typed and left, so the field shows the old
+		// id again with the sentence under it.
+		name: 'editor-id-refused',
+		query:
+			'surface=editor&theme=light&open=armour_class&type=%5Bdata-sheetsmith-focus%3D%22id-armour_class%22%5D%7Cabilities',
+		size: EDITOR_FRAME,
+	},
 	{
 		/*
 		 * **This feature's editor surface, which no default view opened.**

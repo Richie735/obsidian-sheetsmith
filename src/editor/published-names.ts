@@ -30,6 +30,16 @@ import {
 import { VocabularySource } from '../formula/vocabulary';
 
 /**
+ * Whether a formula can read this component at all: a published name, or rows
+ * an aggregate walks. The one test of the inventory's empty state, read here
+ * and by the **ID** row's closing sentence, which says nothing about formulas
+ * where there are none (`config-panel.ts`).
+ */
+export function publishesAnything(source: VocabularySource): boolean {
+	return source.rows || publishedEntries(source).length > 0;
+}
+
+/**
  * Draw the inventory into a block of its own.
  *
  * Three states, and the third is why this is a module rather than a loop at the
@@ -45,7 +55,7 @@ export function renderPublishedNames(
 	// spellings of it (`formula/modifier-targets.ts`).
 	const names = publishedEntries(source);
 
-	if (names.length === 0 && !source.rows) {
+	if (!publishesAnything(source)) {
 		into.appendText('Formulas cannot read this component.');
 		return;
 	}

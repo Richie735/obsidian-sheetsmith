@@ -50,6 +50,7 @@ import {
 	ColumnOptionsSpec,
 	EntryAddress,
 	EntryColumnSpec,
+	entryUnit,
 	resolvesResetPerPart,
 } from '../types';
 
@@ -981,7 +982,7 @@ export function renderColumnsEditor(
 	 * component it is drawing — the field says what its entries are called, the
 	 * way it already says which types they may hold.
 	 */
-	const unit = offers?.unit ?? 'column';
+	const unit = entryUnit(offers);
 	const holder = offers?.holder ?? 'row';
 	const cell = offers?.cell ?? 'cell';
 	/** The same word leading a sentence, since an accessible name is UI copy. */

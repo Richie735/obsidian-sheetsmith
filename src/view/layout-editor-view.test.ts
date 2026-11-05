@@ -1198,3 +1198,73 @@ describe('which containers the tree draws shut', () => {
 		expect(listed(pane, 'attack')).toBe(false);
 	});
 });
+
+/*
+ * An id renamed while a sheet is open on a note it reports
+ * (`docs/features/component-id-rename.md` § Data and file model). Here for the
+ * reorder block's reason: the report is the editor's, and what this checks is
+ * the pane's reach into an open sheet before the scan. The part the reader
+ * typed is still inside the sheet's save debounce, so a scan taken without the
+ * flush reads a note with no part in it and names nothing — the silence that is
+ * otherwise this report's all-clear.
+ */
+describe('an id rename while a sheet is open', () => {
+	const TABLE_LAYOUT: Layout = {
+		name: 'Alpha',
+		columns: 12,
+		components: [
+			{
+				id: 'pool',
+				type: 'pool',
+				label: 'HP',
+				position: { col: 1, row: 1, width: 2, height: 1 },
+			},
+			{
+				id: 'inventory',
+				type: 'table',
+				label: 'Inventory',
+				position: { col: 1, row: 2, width: 6, height: 2 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [{ key: 'Effect', type: 'modifier' }],
+			} as unknown as Layout['components'][number],
+		],
+	};
+
+	it('counts the part the reader has only just typed', async () => {
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		await app.vault.create(pathOf('Alpha'), serialiseLayout(TABLE_LAYOUT));
+		const blank = '---\nsheet-layout: Alpha\n---\n\nSome prose.\n';
+		const file = await app.vault.create('Typed.md', blank);
+		const plugin = fakePlugin(app);
+		const sheet = await openView(app, document.body, SheetView, plugin);
+		await (sheet as unknown as TextFileView).onLoadFile(file);
+		await tick();
+		const pane = await openView(app, document.body, LayoutEditorView, plugin);
+		await showFile(pane, pathOf('Alpha'));
+
+		// The sheet's own door for an edit, which is what the modifier form's
+		// commit reaches: the text changes in the view and a save is owed.
+		(sheet as unknown as { commit(text: string): void }).commit(
+			`${blank}\n## Inventory\n\n| Item | Effect |\n|---|---|\n| Amulet | pool += 2 |\n`,
+		);
+		expect(await app.vault.read(file)).toBe(blank);
+
+		Notice.instances = [];
+		control(pane, 'edit-pool').click();
+		pane.flush();
+		await tick();
+		const field = control<HTMLInputElement>(pane, 'id-pool');
+		field.value = 'hp';
+		field.dispatchEvent(new Event('input'));
+		field.dispatchEvent(new Event('change'));
+		pane.flush();
+		await tick();
+		await tick();
+
+		expect(lastNotice()).toBe(
+			'Renamed "pool" to "hp". 1 character note still reads "pool" in modifier cells: Typed. Change those by hand. Undo',
+		);
+	});
+});

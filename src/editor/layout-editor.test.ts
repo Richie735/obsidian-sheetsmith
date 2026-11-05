@@ -6745,3 +6745,354 @@ describe('Set to a formula, before its expression', () => {
 		]);
 	});
 });
+
+/*
+ * Renaming a component's id from its **ID** row
+ * (`docs/features/component-id-rename.md`). What a rename rewrites, and what it
+ * refuses, is `id-rename.test.ts`'s over layouts built there; which notes it
+ * names is `id-rename-report.test.ts`'s. What is here is the half only the pane
+ * owns: the row, the one write and its one undo step, the posture that has to
+ * follow the id across the commit, an undo and a redo, the notice, and the
+ * label staying a separate thing.
+ */
+describe('renaming a component id', () => {
+	/** The spec's vault fixture, as one layout. */
+	function idRenames(): Layout {
+		return {
+			name: 'Id renames',
+			columns: 12,
+			components: [
+				{
+					id: 'id_renames',
+					type: 'group',
+					label: 'Id renames group',
+					position: { col: 1, row: 1, width: 12, height: 4 },
+					children: [
+						{
+							id: 'level',
+							type: 'card',
+							label: 'Level',
+							position: { col: 1, row: 1, width: 2, height: 1 },
+						},
+						{
+							id: 'prof',
+							type: 'card',
+							label: 'Proficiency',
+							position: { col: 3, row: 1, width: 2, height: 1 },
+							derived: 'ceil(level / 4) + 1',
+						} as ComponentConfig,
+						{
+							id: 'pool',
+							type: 'pool',
+							label: 'HP',
+							position: { col: 5, row: 1, width: 2, height: 1 },
+							max: 'level * 8 + mod.pool',
+						} as ComponentConfig,
+						{
+							id: 'inventory',
+							type: 'table',
+							label: 'Inventory',
+							position: { col: 1, row: 2, width: 6, height: 2 },
+							rowHeader: 'Item',
+							openRows: true,
+							columns: [
+								{ key: 'Weight', type: 'number' },
+								{ key: 'Qty', type: 'number' },
+								{ key: 'Effect', type: 'modifier' },
+								{ key: 'Burden', type: 'computed', formula: 'Weight * Qty + level' },
+							],
+						} as ComponentConfig,
+					],
+				},
+			],
+			functions: ['tier(x) = x + level', 'scale(prof) = prof * 2', 'bulk = sum(inventory, Qty * prof)'],
+			modifiers: [
+				{ name: 'Ring of vigour', target: 'pool', amount: 'prof', when: 'level >= 3' },
+			],
+			promotedFields: [{ name: 'pool', property: 'hp' }],
+		};
+	}
+
+	const CHARACTER =
+		'---\nsheet-layout: Id renames\n---\n\n## Inventory\n\n| Item | Weight | Qty | Effect |\n|---|---|---|---|\n| Amulet | 1 | 1 | pool += 2 when level >= 5 |\n| Charm | 1 | 1 | Ring of vigour |\n';
+
+	/** Select a component and commit a new id in its own field, with focus in it. */
+	async function renameId(from: Harness, id: string, to: string): Promise<HTMLInputElement> {
+		control(from, `edit-${id}`).click();
+		await settle(from.pane);
+		const field = control<HTMLInputElement>(from, `id-${id}`);
+		field.focus();
+		type(field, to);
+		await settle(from.pane);
+		await tick();
+		return field;
+	}
+
+	/** The focus token of whatever has focus in the pane. */
+	function focused(from: Harness): string | undefined {
+		const active = from.container.ownerDocument.activeElement;
+		return active instanceof HTMLElement ? active.dataset.sheetsmithFocus : undefined;
+	}
+
+	beforeEach(async () => {
+		harness = await open(idRenames());
+		Notice.messages = [];
+		Notice.instances = [];
+	});
+
+	it('draws the id as the first row of the form, described by what it publishes', async () => {
+		control(harness, 'edit-pool').click();
+		await settle(harness.pane);
+		const field = control<HTMLInputElement>(harness, 'id-pool');
+		expect(field.value).toBe('pool');
+		expect(field.spellcheck).toBe(false);
+		const row = field.closest('.setting-item');
+		expect(row?.querySelector('.setting-item-name')?.textContent).toBe('ID');
+		// Name, description, field, as Label's and Key's rows read: the
+		// description is in the info column, which comes before the control.
+		const info = row?.querySelector('.setting-item-info');
+		const description = info?.querySelector('.setting-item-description');
+		expect(description?.classList.contains('sheetsmith-component-reference')).toBe(true);
+		expect(row?.querySelector('.setting-item-control')?.contains(field)).toBe(true);
+		const position = info?.compareDocumentPosition(field) ?? 0;
+		expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		const text = description?.textContent ?? '';
+		expect(text).toContain('Formulas read this component as');
+		expect(text.endsWith('Renaming the ID updates every formula in this layout that reads it.')).toBe(true);
+		// Above Label: the id is what the inventory names.
+		const form = harness.container.querySelector('.sheetsmith-editor-panel');
+		const rows = Array.from(form?.querySelectorAll('.setting-item-name') ?? []).map(
+			(el) => el.textContent,
+		);
+		expect(rows.indexOf('ID')).toBeLessThan(rows.indexOf('Label'));
+		expect(rows.indexOf('ID')).toBeGreaterThanOrEqual(0);
+	});
+
+	it('says only that formulas cannot read a component that publishes nothing', async () => {
+		control(harness, 'edit-id_renames').click();
+		await settle(harness.pane);
+		const field = control<HTMLInputElement>(harness, 'id-id_renames');
+		expect(
+			field.closest('.setting-item')?.querySelector('.setting-item-description')?.textContent,
+		).toBe('Formulas cannot read this component.');
+	});
+
+	it('renames the component and every place that reads it, in one write, and says so', async () => {
+		const count = writes(harness);
+		await renameId(harness, 'pool', 'hp');
+
+		const stored = await harness.stored();
+		const group = stored.components[0]?.children ?? [];
+		expect(group.find((config) => config.label === 'HP')?.id).toBe('hp');
+		expect((group.find((config) => config.label === 'HP') as unknown as { max: string }).max).toBe(
+			'level * 8 + mod.hp',
+		);
+		expect(stored.modifiers?.[0]?.target).toBe('hp');
+		expect(stored.promotedFields?.[0]?.name).toBe('hp');
+		expect(count()).toBe(1);
+		expect(lastNotice()).toBe(
+			'Renamed "pool" to "hp" and updated the 3 places that read it. Undo',
+		);
+	});
+
+	it('keeps the component selected and focus on its id, through an undo and a redo', async () => {
+		const before = await harness.raw();
+		await renameId(harness, 'pool', 'hp');
+		expect(harness.pane.selection).toBe('hp');
+		expect(focused(harness)).toBe('id-hp');
+		expect(control<HTMLInputElement>(harness, 'id-hp').value).toBe('hp');
+
+		expect(await undo(harness)).toBe(true);
+		await tick();
+		expect(await harness.raw()).toBe(before);
+		expect(harness.pane.selection).toBe('pool');
+		expect(focused(harness)).toBe('id-pool');
+
+		expect(await redo(harness)).toBe(true);
+		await tick();
+		expect(harness.pane.selection).toBe('hp');
+		expect(focused(harness)).toBe('id-hp');
+		expect((await harness.stored()).modifiers?.[0]?.target).toBe('hp');
+	});
+
+	it('undoes from the notice, under the old id', async () => {
+		const before = await harness.raw();
+		await renameId(harness, 'pool', 'hp');
+		pressNoticeLink();
+		await tick();
+		await tick();
+		expect(await harness.raw()).toBe(before);
+		expect(harness.pane.selection).toBe('pool');
+	});
+
+	it('keeps a collapsed container collapsed and selected, and after undo', async () => {
+		control(harness, 'tree-disclosure-id_renames').click();
+		await settle(harness.pane);
+		expect(harness.pane.collapsed.has('id_renames')).toBe(true);
+
+		await renameId(harness, 'id_renames', 'ids');
+		expect(harness.pane.selection).toBe('ids');
+		expect([...harness.pane.collapsed]).toEqual(['ids']);
+
+		expect(focused(harness)).toBe('id-ids');
+
+		await undo(harness);
+		await tick();
+		expect(harness.pane.selection).toBe('id_renames');
+		expect([...harness.pane.collapsed]).toEqual(['id_renames']);
+		expect(focused(harness)).toBe('id-id_renames');
+
+		await redo(harness);
+		await tick();
+		expect(harness.pane.selection).toBe('ids');
+		expect([...harness.pane.collapsed]).toEqual(['ids']);
+		expect(focused(harness)).toBe('id-ids');
+	});
+
+	it('refuses an id the rename cannot make, puts the old one back, and writes nothing', async () => {
+		const count = writes(harness);
+		const field = await renameId(harness, 'level', 'x');
+		const shown = control<HTMLInputElement>(harness, 'id-level');
+		expect(shown.value).toBe('level');
+		expect(shown.parentElement?.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+			'"x" is a parameter of tier(), which reads "level", so that read would stop reaching this component.',
+		);
+		expect(field.value).toBe('level');
+		expect(count()).toBe(0);
+		expect(Notice.instances).toEqual([]);
+	});
+
+	for (const [to, sentence] of [
+		['', 'An id is required.'],
+		['armour-class', 'An id is letters, digits and underscores, and does not start with a digit.'],
+		['mod', '"mod" is where modifier slots live, so a component cannot use it.'],
+		['self', '"self" means a roster\'s own rows, so a component cannot use it.'],
+		['true', '"true" is a value, so formulas reading it would never reach this component.'],
+		['prof', '"prof" is already another component\'s id.'],
+		[
+			'Qty',
+			'Inventory reads "Qty" as one of its own names, so its formula reading "level" would stop reaching this component.',
+		],
+	] as const) {
+		it(`shows its own sentence for "${to}" under the field`, async () => {
+			await renameId(harness, 'level', to);
+			const shown = control<HTMLInputElement>(harness, 'id-level');
+			expect(shown.value).toBe('level');
+			expect(shown.parentElement?.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+				sentence,
+			);
+			expect((await harness.stored()).components[0]?.children?.[0]?.id).toBe('level');
+		});
+	}
+
+	it('refuses a zero-parameter function some formula reads bare, and writes nothing', async () => {
+		const layout = idRenames();
+		layout.components.push({
+			id: 'carried',
+			type: 'card',
+			label: 'Carried',
+			position: { col: 1, row: 6, width: 2, height: 1 },
+			derived: 'bulk + 1',
+		} as ComponentConfig);
+		harness = await open(layout);
+		const count = writes(harness);
+		await renameId(harness, 'level', 'bulk');
+		const shown = control<HTMLInputElement>(harness, 'id-level');
+		expect(shown.value).toBe('level');
+		expect(shown.parentElement?.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+			'"bulk" is a function this layout defines, so every formula reading it would read this component instead.',
+		);
+		expect(count()).toBe(0);
+	});
+
+	it('refuses at a per-row argument, naming the aggregate and where it is', async () => {
+		await renameId(harness, 'prof', 'Qty');
+		expect(
+			control(harness, 'id-prof').parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent,
+		).toBe(
+			'"Qty" is also a column on Inventory, and sum(inventory, …) in bulk reads it from each row, so this rename cannot tell which one it means. Rename that column first, or the component to something else.',
+		);
+	});
+
+	it('refuses while the layout is not saved, through the rename gate', async () => {
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		refuseWrites(harness, harness.path);
+		type(control<HTMLInputElement>(harness, 'layout-columns'), '10');
+		await settle(harness.pane);
+		await renameId(harness, 'pool', 'hp');
+		expect(
+			control(harness, 'id-pool').parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent,
+		).toBe(
+			'Not renamed, because this layout is not saved yet and its character notes cannot be migrated until this layout saves.',
+		);
+	});
+
+	it('names a rule the id breaks before the unsaved gate', async () => {
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		refuseWrites(harness, harness.path);
+		type(control<HTMLInputElement>(harness, 'layout-columns'), '10');
+		await settle(harness.pane);
+		await renameId(harness, 'pool', 'prof');
+		expect(
+			control(harness, 'id-pool').parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent,
+		).toBe('"prof" is already another component\'s id.');
+	});
+
+	it('names the notes whose modifier cells still read the old id, and writes none of them', async () => {
+		await harness.app.vault.create('Characters/Id renames.md', CHARACTER);
+		await harness.app.vault.create(
+			'Characters/Plain.md',
+			'---\nsheet-layout: Id renames\n---\n\n## Inventory\n\n| Item | Weight | Qty | Effect |\n|---|---|---|---|\n| Rope | 1 | 1 | Ring of vigour |\n',
+		);
+		const process = vi.spyOn(harness.app.vault, 'process');
+		const modified: string[] = [];
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			modified.push(file.path);
+			return modify(file, content);
+		};
+
+		await renameId(harness, 'pool', 'hp');
+		expect(lastNotice()).toBe(
+			'Renamed "pool" to "hp" and updated the 3 places that read it. 1 character note still reads "pool" in modifier cells: Id renames. Change those by hand. Undo',
+		);
+		expect(process).not.toHaveBeenCalled();
+		expect(modified).toEqual([harness.path]);
+		expect(
+			await harness.app.vault.read(harness.app.vault.getFileByPath('Characters/Id renames.md')!),
+		).toBe(CHARACTER);
+	});
+
+	it('says nothing for a rename nothing reads', async () => {
+		await renameId(harness, 'id_renames', 'ids');
+		expect(Notice.instances).toEqual([]);
+		expect((await harness.stored()).components[0]?.id).toBe('ids');
+	});
+
+	it('leaves the label and every note heading alone, and a label commit leaves the id alone', async () => {
+		await harness.app.vault.create('Characters/Id renames.md', CHARACTER);
+		await renameId(harness, 'inventory', 'bag');
+		const bag = (await harness.stored()).components[0]?.children?.find((c) => c.id === 'bag');
+		expect(bag?.label).toBe('Inventory');
+		expect(
+			await harness.app.vault.read(harness.app.vault.getFileByPath('Characters/Id renames.md')!),
+		).toBe(CHARACTER);
+
+		Notice.instances = [];
+		Notice.messages = [];
+		type(control<HTMLInputElement>(harness, 'label-bag'), 'Pack');
+		await settle(harness.pane);
+		await tick();
+		const pack = (await harness.stored()).components[0]?.children?.find((c) => c.label === 'Pack');
+		expect(pack?.id).toBe('bag');
+		// The label's own migration speaks, and nothing about ids does.
+		expect(Notice.messages.join(' ')).not.toContain('"bag"');
+		const labelRow = control(harness, 'label-bag').closest('.setting-item');
+		expect(labelRow?.textContent?.toLowerCase()).not.toContain(' id');
+	});
+});

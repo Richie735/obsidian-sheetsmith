@@ -215,6 +215,9 @@ src/
                    gesture that opens it
   component-rename-migration.ts
                    carrying a component rename across every note on the layout
+  id-rename-report.ts
+                   naming the notes whose modifier cells still read a renamed
+                   component id, and the sentence that names them
   section-adoption.ts
                    counting the notes that already hold a section under a label
                    a component has just taken, a scan the level reorder report

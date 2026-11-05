@@ -469,6 +469,56 @@ export function labelTaken(
 	);
 }
 
+/**
+ * Whether `id` is one a formula could reference and the sheet has not reserved
+ * (SPEC §4.1): a name the expression parser accepts, and neither `mod` nor
+ * `self`.
+ *
+ * **The parser's migrate rule, named so a field can ask it** — the layout
+ * editor's **Id** field (`docs/features/component-id-rename.md` §2) — the way
+ * `labelTaken` names the label's. `parseLayout` rewrites an id failing this and
+ * the field refuses one, so the file and the field cannot disagree about what
+ * an id may be.
+ */
+export function usableId(id: string): boolean {
+	return isName(id) && !RESERVED_IDS.has(id);
+}
+
+/**
+ * Whether a component other than `self` already carries `id`, at any depth:
+ * `labelTaken`'s rule for the other half of what the parser holds unique.
+ */
+export function idTaken(
+	components: ComponentConfig[],
+	id: string,
+	self: ComponentConfig | null = null,
+): boolean {
+	return everyComponent(components).some(
+		(other) => other !== self && other.id === id,
+	);
+}
+
+/**
+ * Which of the parser's own rules an id breaks, or null where it breaks none.
+ *
+ * Kinds rather than sentences: the parser migrates a bad id where the field
+ * refuses one, so each says it in its own words, and `reserved` is one kind
+ * because the field's sentence names the word itself. Literals and capture are
+ * not here, since they depend on the layout's expressions and not on the id
+ * alone (`editor/id-rename.ts`).
+ */
+export function idProblem(
+	components: ComponentConfig[],
+	id: string,
+	self: ComponentConfig | null = null,
+): 'blank' | 'name' | 'reserved' | 'taken' | null {
+	if (id.trim() === '') return 'blank';
+	if (!isName(id)) return 'name';
+	if (!usableId(id)) return 'reserved';
+	if (idTaken(components, id, self)) return 'taken';
+	return null;
+}
+
 export function parseLayout(source: string): Layout {
 	let raw: unknown;
 	try {
@@ -624,24 +674,24 @@ export function parseLayout(source: string): Layout {
 		// It becomes `mod_2` or `self_2` rather than the bare word, because
 		// `usable` holds every id that already reads as a name and this
 		// component's own is one of them.
-		if (isName(component.id) && !RESERVED_IDS.has(component.id)) continue;
+		if (usableId(component.id)) continue;
 		component.id = migrateId(component.id, usable);
 		usable.add(component.id);
 	}
 
-	const ids = new Set<string>();
-	const labels = new Set<string>();
+	// Through the rules the field asks too (`idTaken`, `labelTaken`), so the two
+	// cannot come to disagree. In walk order and against every *other*
+	// component, so the first of a pair is the one reported, as the set this
+	// replaced reported the second: the message names the id, not which one.
 	for (const component of flattened) {
-		if (ids.has(component.id)) {
+		if (idTaken(components, component.id, component)) {
 			throw new LayoutParseError(`Duplicate component id "${component.id}".`);
 		}
-		if (labels.has(component.label)) {
+		if (labelTaken(components, component.label, component)) {
 			throw new LayoutParseError(
 				`Duplicate component label "${component.label}". Labels key note sections, so they must be unique.`,
 			);
 		}
-		ids.add(component.id);
-		labels.add(component.label);
 	}
 
 	// Spread first so unknown top-level keys survive the round trip, the

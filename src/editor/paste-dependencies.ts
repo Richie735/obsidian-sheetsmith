@@ -24,7 +24,7 @@ import { nameSpans, RESERVED_NAMES } from '../formula/expression';
 import { parseFunctions } from '../formula/functions';
 import { componentReferences } from '../formula/rename-names';
 import { formulaTexts } from '../formula/resolve';
-import { vocabularySource } from '../formula/vocabulary';
+import { localNames } from '../formula/vocabulary';
 import { CopyContext } from '../parse/component-clipboard';
 import { Layout } from '../parse/layout';
 import { changesOf } from '../parse/modifier-definitions';
@@ -78,16 +78,6 @@ const ORDER: readonly DependencyGroup[] = [
 	'name-missing',
 ];
 
-/**
- * The names a component's own scope answers before the sheet does: `value`,
- * and the row names a formula written inside it reads per row. The rewrite and
- * this report skip the same ones, so they are one function.
- */
-export function localNames(config: ComponentConfig): ReadonlySet<string> {
-	const rows = vocabularySource(config, getComponent(config.type)).rowNames;
-	return new Set(['value', ...rows.map((row) => row.name)]);
-}
-
 /** A component and everything inside it, in walk order. */
 export function subtree(root: ComponentConfig): ComponentConfig[] {
 	return walkLayout([root]).map((entry) => entry.config);
@@ -121,7 +111,7 @@ function readsOf(copied: readonly ComponentConfig[]): Reads {
 	const names: string[] = [];
 	const calls: string[] = [];
 	for (const config of copied) {
-		const local = localNames(config);
+		const local = localNames(config, getComponent(config.type));
 		for (const source of expressionsOf(config)) {
 			for (const reference of componentReferences(source, local) ?? []) {
 				if (!ids.has(reference.id) && !names.includes(reference.id)) {
