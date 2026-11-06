@@ -1555,7 +1555,13 @@ or no after its key in the note.` on a flag, `… is not a number of marks. Writ
 whole number after its key in the note.` on a run. Those six are every refusal a
 component makes of its sheet block: Card, Card set and Pool read every value as
 text, Passport's other refusals are of its layout, and Roster's of its markdown
-table, which is not this rule's subject.
+table, which is not this rule's subject. **Pool's temporary points are marked,
+not refused, by the same token** [checked: `pool.test.ts`]: the block reads, so
+the card draws the field with the stored text in it, an error border on the pill
+and `Temporary points are a whole number of 0 or more, so the note's "2.5"
+counts as none. Type a whole number, or clear the field.` under it — the fix
+names the field rather than the note, because here the sheet *can* repair it
+(`docs/features/pool-temp-refuses.md`).
 
 **A fence key's refusal is the parser's reason and the caller's fix, and on the
 sheet the fix names the layout editor** [checked: `card.test.ts`,
