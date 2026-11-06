@@ -1,6 +1,6 @@
 # Pool adjust sign follows outcome
 
-Status: built
+Status: shipped
 Route: standard. The surface exists: this spec settles one rule and the place it is read. No new drawn state.
 Board card: A Pool's Adjust field can show one direction and apply the other. `-2+5` shows Spend and spends 3.
 
@@ -75,17 +75,17 @@ Replace the sentence "A typed sign still wins and moves the direction to match i
 
 All in `src/components/pool.test.ts`, beside "lets an explicit sign win, and moves the direction to match it", on a pool at 45 of 62. Each asserts what the note holds after Enter (the `current` written, or that `onChange` was not called), not a delta.
 
-- [ ] `-2+5` from Spend: the toggle shows `+` with the "Restoring HP" name, the preview reads `+3 → 48`, and Enter writes `current: '48'`.
-- [ ] `+2-5` from Restore: the toggle shows `−`, the preview reads `−3 → 42`, and Enter writes `current: '42'`.
-- [ ] `2-5` from Restore: the toggle shows `−`, and Enter writes `current: '42'`.
-- [ ] `2+3` from Restore: the toggle stays `+`, and Enter writes `current: '50'`. Unsigned positive defers.
-- [ ] `-2+2` and `-0`, each from Restore: the toggle stays `+`, the preview is empty, and Enter writes nothing and closes the panel.
-- [ ] Mid-typing, from Restore: `-` leaves the toggle at `+` with an empty preview. `-2` shows `−`. `-2+` keeps `−` with an empty preview, and Enter on `-2+` writes nothing.
-- [ ] With `-17` typed, a toggle press shows `+`, the preview reads `+17 → 62`, and Enter writes `current: '62'`.
-- [ ] With `-17` typed, a toggle press to `+`, then `0` typed to make `-170`: the toggle shows `−` again, the preview reads `−170 → -125`, and Enter writes `current: '-125'`. The pool runs free below zero (SPEC §4.2), so the write is observable and differs from what a restore would write (`215`).
-- [ ] The existing sign, expression, buffer-split and preview cases pass unchanged.
-- [ ] Vacuity: with the `input` handler put back to its `startsWith` reading, the `-2+5`, `+2-5` and `2-5` cases fail.
-- [ ] `src/components/pool.ts` holds no `startsWith('-')` or `startsWith('+')` on the amount's text outside the one reader, and `amountOf` in `src/interaction/editable.ts` is unchanged.
+- [x] `-2+5` from Spend: the toggle shows `+` with the "Restoring HP" name, the preview reads `+3 → 48`, and Enter writes `current: '48'`.
+- [x] `+2-5` from Restore: the toggle shows `−`, the preview reads `−3 → 42`, and Enter writes `current: '42'`.
+- [x] `2-5` from Restore: the toggle shows `−`, and Enter writes `current: '42'`.
+- [x] `2+3` from Restore: the toggle stays `+`, and Enter writes `current: '50'`. Unsigned positive defers.
+- [x] `-2+2` and `-0`, each from Restore: the toggle stays `+`, the preview is empty, and Enter writes nothing and closes the panel.
+- [x] Mid-typing, from Restore: `-` leaves the toggle at `+` with an empty preview. `-2` shows `−`. `-2+` keeps `−` with an empty preview, and Enter on `-2+` writes nothing.
+- [x] With `-17` typed, a toggle press shows `+`, the preview reads `+17 → 62`, and Enter writes `current: '62'`.
+- [x] With `-17` typed, a toggle press to `+`, then `0` typed to make `-170`: the toggle shows `−` again, the preview reads `−170 → -125`, and Enter writes `current: '-125'`. The pool runs free below zero (SPEC §4.2), so the write is observable and differs from what a restore would write (`215`).
+- [x] The existing sign, expression, buffer-split and preview cases pass unchanged.
+- [x] Vacuity: with the `input` handler put back to its `startsWith` reading, the `-2+5`, `+2-5` and `2-5` cases fail.
+- [x] `src/components/pool.ts` holds no `startsWith('-')` or `startsWith('+')` on the amount's text outside the one reader, and `amountOf` in `src/interaction/editable.ts` is unchanged.
 
 ## Commit boundaries
 
