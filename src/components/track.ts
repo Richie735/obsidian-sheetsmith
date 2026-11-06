@@ -61,7 +61,11 @@ import {
 	STOOD_DOWN,
 } from '../interaction/arm-to-confirm';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
-import { bindEditable, keptRatherThanBlank } from '../interaction/editable';
+import {
+	bindEditable,
+	keptRatherThanBlank,
+	settleEntry,
+} from '../interaction/editable';
 import { levelGlyph, levelName, parseLevel } from './level-ring';
 import { bindRingControl } from './ring-control';
 import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
@@ -761,7 +765,25 @@ function characterLength(
 ): number | null {
 	const ceiling = splitBounded(stored ?? '').ceiling;
 	if (ceiling === null) return null;
-	return segmentCount(config, ceiling.trim());
+	return segmentCount(config, lengthNumber(ceiling.trim()));
+}
+
+/**
+ * The number a stored length's text says, or null where it says none.
+ *
+ * **One predicate for the card that reads a length and the fields that write
+ * one**, on `docs/PATTERNS.md` §1's one-step tier: `characterLength` above
+ * draws from it and `refuseRowLength` refuses by it, so a length either field
+ * may store is exactly a length the card can read. Two spellings of this were
+ * the disagreement `docs/features/track-add-length-settles.md` closed, one
+ * field storing what the card then read as no length at all.
+ *
+ * What it is *not* is the run's bounds: `0`, `-1` and `2.5` are numbers here,
+ * and `segmentCount` decides what a run of them draws.
+ */
+function lengthNumber(text: string): number | null {
+	const value = Number(text);
+	return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -933,6 +955,20 @@ function cardCount(
  * length holding a slash is not a length that module can write back —
  * Record set's `refuseNumber` states the identical reason for its own
  * ceiling field.
+ *
+ * **And a word**, which is the third refusal and the one both fields needed
+ * to agree on (`docs/features/track-add-length-settles.md`). A length that is
+ * still not a number once arithmetic has settled is a row with no length and
+ * nothing saying why, so it is refused rather than stored. Handed the
+ * *settled* text by both callers, `bindEditable` and the **Add** form, which
+ * is what lets `2+1` through as the `3` it settled to. Blank is not a word:
+ * it is the no-length state both fields may write. A number the run will not
+ * draw (`0`, `-1`, `2.5`) is still a number and passes, since `characterLength`
+ * already reads it.
+ *
+ * One function for both fields rather than a word check beside it at the
+ * form alone: two checks would let the row's field store what the form
+ * refuses, which is the disagreement this rule exists to close.
  */
 function refuseRowLength(text: string): string | null {
 	const link = fencedLinkRefusal(text, {
@@ -941,8 +977,11 @@ function refuseRowLength(text: string): string | null {
 			'Type the plain number here, and put the link in a Rich text block or a table cell, which store markdown.',
 	});
 	if (link !== null) return link;
-	if (!text.includes('/')) return null;
-	return `Not saved. A slash separates the marks from the length they are read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
+	if (text.includes('/')) {
+		return `Not saved. A slash separates the marks from the length they are read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
+	}
+	if (text === '' || lengthNumber(text) !== null) return null;
+	return `Not saved. A length is a number of segments, and "${text}" is not one. Type a number or a sum such as 4+1, or leave it empty.`;
 }
 
 /**
@@ -3174,11 +3213,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const nameField = field('Name');
 			const nameProblem = problem('name');
 			const lengthField = field('Length');
-			// The keypad fits here, unlike the row's own length field: every
-			// valid length is a whole count of segments, and this field settles
-			// no arithmetic. What else it accepts is stored as typed and means
-			// nothing as a length (`docs/UI.md` §7).
-			lengthField.inputMode = 'numeric';
+			// The full keyboard, as on the row's own length field: this one
+			// settles arithmetic too, and iOS's `numeric` keypad has no operator
+			// to type `4+1` with (`docs/UI.md` §7).
+			lengthField.inputMode = 'text';
 			// **No placeholder, and the `—` it had was borrowed wrongly.** On a
 			// card that dash is a *reading*: it says this row has no ceiling,
 			// which is a state the note is actually in. In an empty form field
@@ -3221,13 +3259,19 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 
 			const add = (): void => {
 				const name = nameField.value.trim();
-				const length = lengthField.value.trim();
+				// Settled before it is checked, in `bindEditable`'s own order,
+				// so `2+1` is written as `3` exactly as the row's length field
+				// would write it a tab-stop later. Not repainted with the
+				// answer: a successful **Add** closes the panel, and a refused
+				// one keeps the draft the reader typed.
+				const length = settleEntry(lengthField.value.trim(), true);
 				const refusedName = refuseRowName(name, takenNames);
 				// The length goes into the same entry the card's own length
 				// field writes, so it answers to the same refusals: a slash
-				// would be read back as a second number, and a note reference
-				// inside a fence is a link Obsidian never indexes.
-				const refusedLength = length === '' ? null : refuseRowLength(length);
+				// would be read back as a second number, a note reference
+				// inside a fence is a link Obsidian never indexes, and a word
+				// is a row with no length and nothing saying why.
+				const refusedLength = refuseRowLength(length);
 				say(nameField, nameProblem, refusedName);
 				say(lengthField, lengthProblem, refusedLength);
 				if (refusedName !== null || refusedLength !== null) {
