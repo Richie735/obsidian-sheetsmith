@@ -3643,6 +3643,16 @@ export function brokenSamples(): Sample[] {
 		 */
 		if (config.id === 'currency') body = '```sheet\nCP: 42\nSP: 18\nGP 7\nPP: 1\n```';
 		if (config.id === 'rolled_health') body = '```sheet\ncurrent: 14\nmax: 22\nmax: 24\n```';
+		/*
+		 * **A value the block reads and the card's own rule refuses**, which is not
+		 * a read failure and so is none of the four above: a buffer of `2.5`,
+		 * hand-typed into the note. `read` takes it as text like every Pool value,
+		 * and the card marks it on first paint — the pill's error border and the
+		 * sentence under it — without rewriting it
+		 * (`docs/features/pool-temp-refuses.md`). On `hit_points`, the one pool
+		 * with a buffer; its `current` and `max` are the sample's own.
+		 */
+		if (config.id === 'hit_points') body = '```sheet\ncurrent: 6\nmax: 9\ntemp: 2.5\n```';
 		const children =
 			config.id === 'background' && sample.children !== undefined
 				? { ...sample.children, origin: '```sheet\norigin: Neverwinter\nnote: guild artisan\n' }
