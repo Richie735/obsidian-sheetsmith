@@ -23,12 +23,12 @@ const SRC = new URL('./', import.meta.url);
 
 /**
  * How many fields in each file may ask for the keypad, and nothing else may.
- * Both are counts whose every valid value is a non-negative whole number:
- * Pool's temporary points and the length in Track's **Add** form.
+ * One today, Pool's temporary points: a count floored at zero that settles no
+ * arithmetic. The length in Track's **Add** form left this list when it began
+ * settling sums (`docs/features/track-add-length-settles.md`).
  */
 const ALLOWED: Record<string, number> = {
 	'components/pool.ts': 1,
-	'components/track.ts': 1,
 };
 
 /**

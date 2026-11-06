@@ -1975,7 +1975,32 @@
 	background-color: transparent;
 	box-shadow: none;
 	cursor: grab;
-	/* A touch drag must move the block, not scroll the sheet underneath it. */
+	/* **A touch scrolls the pane from any block but the selected one**
+	   (`docs/features/canvas-touch-select-step.md`). Every overlay was `none`
+	   once, so a drag would move the block rather than the sheet, and on an iPad
+	   a scroll could start only in the gutters. Now a touch press here selects
+	   (`beginDrag` refuses anything but a mouse on a block not marked), and only
+	   the block marked below takes the pan for its drag.
+
+	   **Vertical only, `pan-y pinch-zoom`**, not `manipulation`: a block on a
+	   grid canvas never needs to pan sideways, and the canvas's view is its own
+	   `overflow-x: auto` scroller, so any overflow it holds would slide the
+	   whole canvas under a sideways finger. One did: 75px at 820 under tablet
+	   staging, from a screen-reader twin (`.sheetsmith-sr-only`, `sheet.css`),
+	   since fixed. This guards against the next overflow of that kind.
+	   Nothing sideways was reachable from a block before, when every overlay
+	   was `none`, so this gives up no pan that worked. No double-tap zoom
+	   either way, which is what `manipulation` had over `auto`. */
+	touch-action: pan-y pinch-zoom;
+}
+
+/* The selected block, the one a finger drags. Keyed to the attribute and not to
+   `.sheetsmith-preview-editing`, because the attribute is set only on a block
+   that can be dragged and is the one Obsidian's sidebar swipe reads, so a
+   single mark answers whether this touch may pan and whether it may open the
+   sidebar. The cost is that no touch scroll can start on this block; selecting
+   another, or the **Layout** row, frees it. */
+.sheetsmith-view .sheetsmith-canvas-overlay[data-ignore-swipe] {
 	touch-action: none;
 }
 
@@ -2209,6 +2234,27 @@
 	outline-offset: -1px;
 }
 
+/* **The ring again, on the canvas's overlay, and outside the block.** The
+   overlay's own rule is (0,2,0), scoped so it beats Obsidian's
+   `button:not(.clickable-icon)`, and it declares a transparent border and no
+   shadow. That outweighed the (0,1,0) rule above, so a selected block on the
+   canvas drew no ring at all, which `docs/features/grid-canvas.md` §2 says it
+   reuses unchanged. The touch select step leans on it: the ring is how a finger
+   learns which block it can drag
+   (`docs/features/canvas-touch-select-step.md` §6).
+
+   **An outline 1px out, not the border and inset shadow above**, because the
+   overlay is the size of the live component under it: a ring drawn inside it
+   lay on that component's own content, a Group's heading touching it at the
+   first letter. Outside, 3px in all, it sits in the grid's 8px gutter, and the
+   canvas view's 16px of padding holds it at the edges, so nothing clips it. It
+   is the shape the forced-colors answer below already drew, so that answer
+   now changes only the colour. */
+.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-preview-editing {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
 /* The block's own answer, since the hatch above cannot reach it.
 
    Two channels away from what every other block gets rather than one: twice the
@@ -2232,6 +2278,12 @@
 	   whole reason for going outward. */
 	.sheetsmith-tree-row.sheetsmith-preview-editing {
 		outline-offset: -2px;
+	}
+
+	/* The canvas's ring is already this shape (above), and outweighs the
+	   general rule here, so it takes the mode's colour on its own selector. */
+	.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-preview-editing {
+		outline-color: SelectedItem;
 	}
 }
 
@@ -2279,7 +2331,10 @@
 	opacity: 0;
 	cursor: nwse-resize;
 	transition: opacity 100ms ease-out;
-	touch-action: none;
+	/* No `touch-action` of its own: an element's is intersected with its
+	   ancestors', so the selected overlay's `none` already covers its corner, and
+	   an unselected corner scrolls with its block instead of leaving a trap in
+	   every cell. */
 }
 
 .sheetsmith-preview-resize::after {
@@ -2319,12 +2374,22 @@
 }
 
 /* No hover to reveal it, and a finger to hit it with. The arc grows with the
-   target so the mark keeps its proportion inside it. */
+   target so the mark keeps its proportion inside it.
+
+   **On the selected block only**, since a finger on any other block selects it
+   and resizes nothing (`docs/features/canvas-touch-select-step.md` §5): a
+   handle there would promise a resize that does not come. So the one corner
+   drawn is also the cue saying which block a finger can handle. A fine pointer
+   keeps every corner, on hover and focus, because a mouse resizes any block. */
 @media (pointer: coarse) {
 .sheetsmith-preview-resize {
 		width: 24px;
 		height: 24px;
 		opacity: 1;
+	}
+
+.sheetsmith-view .sheetsmith-canvas-overlay:not([data-ignore-swipe]) .sheetsmith-preview-resize {
+		display: none;
 	}
 
 .sheetsmith-preview-resize::after {
@@ -2363,19 +2428,24 @@
    gestures.ts` refuses the press, the corner and the arrow keys there, through
    `drawnAsGrid`, which asks the grid itself.
 
-   A touch on a block scrolls the pane, where `touch-action: none` above made
-   the overlays, 322 of the canvas's 354px for 17,228px of height at 380, a
-   scroll trap only the gutters escaped. The corner goes, since it is a handle
-   for a resize that is not offered and a coarse pointer drew it on every cell.
-   And the cursor says a press selects.
+   A touch on a block scrolls the pane, the selected block's too: the overlays
+   were 322 of the canvas's 354px for 17,228px of height at 380, a scroll trap
+   only the gutters escaped. The selected block keeps its `data-ignore-swipe`,
+   so the attribute selector is matched here at the weight of the rule above it,
+   (0,3,0), which would otherwise put the trap back on that one block; what it
+   still costs is a sidebar swipe starting there. The corner goes, since it is a
+   handle for a resize that is not offered. And the cursor says a press selects.
 
    **A nested grid that collapsed on its own width is not reached**: it sits in
-   a sheet that has not, so this query does not fire, and its overlays keep
-   `touch-action: none`. Its gestures are refused by the same guard; the cost
-   is that a touch scroll cannot start on it. Cut, in the feature doc. Below the
-   rules it overrides, since `@container` adds no specificity. */
+   a sheet that has not, so this query does not fire. Under the select step
+   (`docs/features/canvas-touch-select-step.md` §7) its unselected overlays
+   scroll by the base rule, and only its selected block keeps `none`, whose drag
+   the same guard refuses; the cost is that a touch scroll cannot start on that
+   one block. Below the rules it overrides, since `@container` adds no
+   specificity. */
 @container sheetsmith-sheet (max-width: 480px) {
-.sheetsmith-view .sheetsmith-canvas-overlay {
+.sheetsmith-view .sheetsmith-canvas-overlay,
+.sheetsmith-view .sheetsmith-canvas-overlay[data-ignore-swipe] {
 		cursor: pointer;
 		touch-action: manipulation;
 	}

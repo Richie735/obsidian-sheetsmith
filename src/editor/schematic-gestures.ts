@@ -3,6 +3,9 @@
  * the grid, dragging its corner to resize it, and the arrow keys that do both
  * from the keyboard.
  *
+ * A touch or a pen drags only the block already selected, and a press on any
+ * other selects it: the select step, `docs/features/canvas-touch-select-step.md`.
+ *
  * Split out of `layout-editor.ts`, which drew the pane *and* held some 260
  * lines of pointer and keyboard arithmetic — `docs/PATTERNS.md` §1's `pool.ts`
  * shape, named in §11 as that file's own debt. `preview-grid.ts` was the first cut of the
@@ -316,6 +319,15 @@ export class SchematicGestures {
 		// drawn as one column the press goes on to its `click` and selects, which
 		// is all a press there can mean (`grid-guides.ts`, `drawnAsGrid`).
 		if (!drawnAsGrid(schematic.el)) return;
+		// The select step (`docs/features/canvas-touch-select-step.md` §1–§2):
+		// anything but a mouse drags only a block already marked as selected, and
+		// a press on any other goes on to its `click` and selects, as above. The
+		// mark is read off `cell`, the block, never off `event.target`, so a press
+		// on the selected block's corner — a child of it — still resizes. It is
+		// the attribute the browser decided `touch-action` from at touch start,
+		// so this and the pan cannot disagree. Per press, by `pointerType`,
+		// never by platform: a touch laptop's mouse still drags in one gesture.
+		if (event.pointerType !== 'mouse' && !cell.hasAttribute('data-ignore-swipe')) return;
 		if (event.button !== 0) return;
 		const metrics = previewMetrics(schematic.el, schematic.columns);
 		if (!metrics) return;

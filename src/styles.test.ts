@@ -1262,6 +1262,64 @@ describe('an inline error wraps whatever it names', () => {
 	});
 });
 
+describe('a screen-reader twin adds nothing to any scroller\'s width', () => {
+	/*
+	 * An absolutely positioned box escapes every scroller between it and its
+	 * containing block, and its own box still counts in the scrollable overflow of
+	 * the scroller that contains that block. Left at its static position, a
+	 * table's **Remove** twin in the last header cell of a table wider than its
+	 * wrapper reached the layout editor canvas: 869 in a 794 view at 820 under
+	 * tablet staging, 839 on desktop staging, and 526 in 354 on a phone. Pinned
+	 * to the start corner, all three measure their client width. Nothing in a
+	 * still shows it at `scrollLeft` 0, which is why it is a guard here.
+	 */
+	/*
+	 * Read inside each case, not here: `CSS_WITHOUT_COMMENTS` and the rule walk
+	 * are declared further down the file, and a describe body runs at collection.
+	 * The walk sees rules inside at-rules and every member of a selector list, so
+	 * a forced-colors or print override putting the twin back where it was is
+	 * read, not skipped. A rule whose subject is the twin is matched on the class
+	 * before any parenthesis, so Card's `:not(.sheetsmith-sr-only, …)` is not one.
+	 */
+	const POSITIONING = /^(?:position|inset(?:-[a-z]+)*|top|right|bottom|left)\s*:/;
+	const isTwin = (selector: string): boolean => /^[^(]*\.sheetsmith-sr-only\b/.test(subjectOf(selector));
+	const twinRules = (text: string): Rule[] =>
+		rules(text).filter((rule) => selectorList(rule.selector).some(isTwin));
+	const isBase = (rule: Rule): boolean =>
+		rule.context.length === 0 && rule.selector.trim() === '.sheetsmith-sr-only';
+	/** Every rule but the base that moves the twin, which should be none. */
+	const movers = (text: string): string[] =>
+		twinRules(text)
+			.filter((rule) => !isBase(rule))
+			.filter((rule) => declarations(rule.body).some((one) => POSITIONING.test(one)))
+			.map((rule) => [...rule.context, rule.selector].join(' '));
+
+	it('finds the rule it is meant to be checking', () => {
+		const base = twinRules(CSS_WITHOUT_COMMENTS).filter(isBase);
+		expect(base).toHaveLength(1);
+		expect(declarations(base[0]?.body ?? '')).toContain('position: absolute');
+	});
+
+	it('pins it to the start corner rather than its static position', () => {
+		const [base] = twinRules(CSS_WITHOUT_COMMENTS).filter(isBase);
+		const declared = declarations(base?.body ?? '');
+		expect(declared).toContain('inset-block-start: 0');
+		expect(declared).toContain('inset-inline-start: 0');
+	});
+
+	it('lets no other rule move it, inside an at-rule or a selector list', () => {
+		expect(movers(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would catch an override that put it back', () => {
+		const broken =
+			'.sheetsmith-sr-only { position: absolute; inset-block-start: 0; inset-inline-start: 0; }\n' +
+			'@media print { .sheetsmith-x, .sheetsmith-view .sheetsmith-sr-only { inset: auto; } }\n' +
+			'.sheetsmith-card > :nth-last-child(1 of :not(.sheetsmith-sr-only)) { top: 0; }';
+		expect(movers(broken)).toEqual(['@media print .sheetsmith-x, .sheetsmith-view .sheetsmith-sr-only']);
+	});
+});
+
 describe('a component\'s own name is one rank, not five', () => {
 	/*
 	 * The rank that means "this is what this component is called", as against a
@@ -4451,5 +4509,245 @@ describe("every rule asking about the sheet's width asks it at one number", () =
 		const collapse =
 			'@container (max-width: 500px) { .sheetsmith-view > .sheetsmith-grid { display: flex; } }';
 		expect(new Set([...widths(one), ...collapseWidths(collapse)]).size).toBe(2);
+	});
+});
+
+describe('the pool\'s buffer field holds three digits', () => {
+	/*
+	 * The field is border-box and carries inline padding, so a bare `3ch` held
+	 * two tabular digits and a buffer of `100` read `10`. Nothing but a pixel
+	 * shows that, and happy-dom lays nothing out, so this holds the arithmetic
+	 * instead: the width is three `ch` plus twice the inline padding the field's
+	 * own rule declares. It assumes what tabular figures promise, that a digit
+	 * is `1ch`; the harness shots are where that is looked at.
+	 */
+	const BASE = '.sheetsmith-view .sheetsmith-pool-temp-input';
+	const WIDTH = `${BASE}.sheetsmith-pool-temp-input`;
+
+	const valueOf = (selector: string, property: string): string | undefined => {
+		const rule = rules(CSS_WITHOUT_COMMENTS).find(
+			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
+		);
+		const found = declarations(rule?.body ?? '').find((one) =>
+			one.startsWith(`${property}:`),
+		);
+		return found?.slice(property.length + 1).trim();
+	};
+
+	/** The field's inline padding, the second value of its `padding`. */
+	const inline = (): string => {
+		const padding = valueOf(BASE, 'padding') ?? '';
+		const parts = padding.match(/var\([^)]*\)/g) ?? [];
+		expect(parts.length, `unreadable padding: ${padding}`).toBe(2);
+		return parts[1] ?? '';
+	};
+
+	it('gives the field three digits beside its own padding', () => {
+		expect(valueOf(WIDTH, '--sheetsmith-pool-temp-width')).toBe(
+			`calc(3ch + 2 * ${inline()})`,
+		);
+		expect(valueOf(WIDTH, 'width')).toBe('var(--sheetsmith-pool-temp-width)');
+	});
+
+	it('floors the refused field on that width, not on a copy of it', () => {
+		// Without the floor a one-letter refusal is narrower than the unmarked
+		// field, and the pill shrinks as the mark goes on.
+		const refused =
+			valueOf(
+				'.sheetsmith-view .sheetsmith-pool-temp-refused .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input',
+				'width',
+			) ?? '';
+		expect(refused.startsWith('max('), `not a max(): ${refused}`).toBe(true);
+		expect(refused.slice('max('.length).split(',')[0]?.trim()).toBe(
+			'var(--sheetsmith-pool-temp-width)',
+		);
+	});
+});
+
+describe("a pool's reading fits a narrow card", () => {
+	/*
+	 * `docs/features/pool-headline-narrow-fit.md`. Three rules give way in order,
+	 * the slot, then the ceiling, and never the number, and none of them is
+	 * visible to happy-dom, which lays nothing out. `harness/measure-pool-headline.mjs`
+	 * measures the result in a browser. This file holds what a review of the
+	 * shots cannot see: that each rule is declared, that the narrow rule wins on
+	 * order, and the threshold's arithmetic.
+	 */
+	const READING = '.sheetsmith-pool-reading';
+	const FIELD = '.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	/** Every rule whose selector list names `selector`, in file order. */
+	const naming = (selector: string) =>
+		all
+			.map((rule, at) => ({ ...rule, at }))
+			.filter((rule) => selectorList(rule.selector).includes(selector));
+	const valueIn = (body: string, property: string): string | undefined =>
+		declarations(body)
+			.find((one) => one.startsWith(`${property}:`))
+			?.slice(property.length + 1)
+			.trim();
+
+	const reading = naming(READING).filter((rule) => rule.context.length === 0);
+	const base = naming(FIELD).filter((rule) => rule.context.length === 0);
+	const narrow = naming(FIELD).filter((rule) =>
+		rule.context.some((at) => at.startsWith('@container')),
+	);
+
+	it('finds the rules it is meant to be checking', () => {
+		expect(reading).toHaveLength(1);
+		expect(base).toHaveLength(1);
+		expect(narrow).toHaveLength(1);
+	});
+
+	it('lets the ceiling wrap under the number, with no row gap', () => {
+		expect(valueIn(reading[0]?.body ?? '', 'flex-wrap')).toBe('wrap');
+		expect(valueIn(reading[0]?.body ?? '', 'gap')).toBe('0 var(--size-2-1)');
+	});
+
+	it('never lets the number shrink, and caps it at the row', () => {
+		const body = base[0]?.body ?? '';
+		expect(valueIn(body, 'flex-shrink')).toBe('0');
+		expect(valueIn(body, 'max-width')).toBe('100%');
+		expect(valueIn(body, 'min-width')).toBe('4ch');
+	});
+
+	it('lowers the slot to two characters below the threshold, after the base rule', () => {
+		const rule = narrow[0];
+		expect(valueIn(rule?.body ?? '', 'min-width')).toBe('2ch');
+		// `@container` adds no specificity, so equal selectors are settled by
+		// order (docs/UI.md §4): the narrow rule has to come later.
+		expect(rule?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
+	});
+
+	it('puts the threshold at four characters, the gap and the widest ceiling', () => {
+		/*
+		 * Measured in the harness at a 16px sheet, where the card's value size
+		 * draws `4ch` at 73.4px (`docs/features/pool-headline-narrow-fit.md`):
+		 * 4.59em. The rest is fixed-px chrome the sheet's `em` does not reach, so
+		 * it is px (`docs/UI.md` §5): the reading's `--size-2-1` gap, the widest
+		 * three-digit ceiling at 38.7px (a max the character owns, with its
+		 * padding), and the 2px the reading's row sits inside the card's
+		 * content box. Each part is rounded up, never down, and by less than the
+		 * next step, so the threshold neither clips a reading that fits nor
+		 * narrows a slot that has room.
+		 */
+		const FOUR_CH_EM = 73.4 / 16;
+		// Obsidian's value for `--size-2-1`, which the app's own CSS defines and
+		// no test here can read: that the reading declares that token is held by
+		// the wrap test above, and that the token is 2px only by this constant.
+		const GAP_PX = 2;
+		const CEILING_PX = 38.7;
+		const ROW_INSET_PX = 2;
+		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		const match = /^@container \(max-width: calc\(([\d.]+)em \+ ([\d.]+)px\)\)$/.exec(prelude);
+		expect(match, `unreadable threshold: ${prelude}`).not.toBeNull();
+		const em = Number(match?.[1]);
+		const px = Number(match?.[2]);
+		expect(em).toBeGreaterThanOrEqual(FOUR_CH_EM);
+		expect(em - FOUR_CH_EM).toBeLessThan(0.1);
+		const chrome = GAP_PX + CEILING_PX + ROW_INSET_PX;
+		expect(px).toBeGreaterThanOrEqual(chrome);
+		expect(px - chrome).toBeLessThan(2);
+	});
+});
+
+describe('a touch scrolls the canvas from any block but the selected one', () => {
+	/*
+	 * `docs/features/canvas-touch-select-step.md` §2 and §4. `touch-action` is
+	 * decided by the browser at touch start from the pressed element and every
+	 * ancestor up to the scroller, so a single stray `none` traps the pane — and
+	 * nothing in a unit test presses a real touch to notice. The guard in
+	 * `beginDrag` reads the same attribute this does, so the two have to agree.
+	 */
+	const OVERLAY = '.sheetsmith-view .sheetsmith-canvas-overlay';
+	const SELECTED = `${OVERLAY}[data-ignore-swipe]`;
+	const NARROW = '@container sheetsmith-sheet (max-width: 480px)';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const touchAction = (rule: Rule) =>
+		declarations(rule.body).find((one) => one.startsWith('touch-action:'));
+	const at = (selector: string, context: string[] = []) =>
+		all.filter(
+			(rule) =>
+				selectorList(rule.selector).includes(selector) &&
+				rule.context.join() === context.join() &&
+				touchAction(rule) !== undefined,
+		);
+
+	it('lets an unselected block pan, and only the selected one take the touch', () => {
+		const base = at(OVERLAY);
+		const selected = at(SELECTED);
+		// Vertical only: the canvas is a sideways scroller of its own, and a
+		// finger across a block must not slide it.
+		expect(base.map(touchAction)).toEqual(['touch-action: pan-y pinch-zoom']);
+		expect(selected.map(touchAction)).toEqual(['touch-action: none']);
+	});
+
+	it('leaves the resize corner to the block it sits in', () => {
+		// An element's own `touch-action` intersects its ancestors', so a `none`
+		// here would trap every unselected block's corner.
+		const corner = all.filter(
+			(rule) =>
+				selectorList(rule.selector).some((one) => one.endsWith('.sheetsmith-preview-resize')) &&
+				touchAction(rule) !== undefined,
+		);
+		expect(all.some((rule) => rule.selector.includes('.sheetsmith-preview-resize'))).toBe(true);
+		expect(corner.map((rule) => rule.selector)).toEqual([]);
+	});
+
+	it('keeps the selected block scrolling where the grid is drawn as one column', () => {
+		// The narrow rule must match the attribute at its own weight: with the
+		// base selector alone it is (0,2,0) to the attribute rule's (0,3,0), and
+		// the trap the narrow regime removed would come back on one block.
+		const narrow = at(SELECTED, [NARROW]);
+		expect(narrow.map(touchAction)).toEqual(['touch-action: manipulation']);
+		expect(at(OVERLAY, [NARROW]).map(touchAction)).toEqual(['touch-action: manipulation']);
+		// Equal weight, so order decides it: the narrow rule comes later. Both
+		// found first, since a missing one indexes as -1 and passes the order.
+		const outer = at(SELECTED);
+		expect(outer).toHaveLength(1);
+		expect(narrow).toHaveLength(1);
+		expect(all.indexOf(narrow[0] as Rule)).toBeGreaterThan(all.indexOf(outer[0] as Rule));
+	});
+
+	it('draws a coarse pointer\'s corner on the selected block alone', () => {
+		const hidden = all.filter(
+			(rule) =>
+				rule.context.join() === '@media (pointer: coarse)' &&
+				selectorList(rule.selector).includes(
+					`${OVERLAY}:not([data-ignore-swipe]) .sheetsmith-preview-resize`,
+				),
+		);
+		expect(hidden.map((rule) => declarations(rule.body))).toEqual([['display: none']]);
+	});
+});
+
+describe('the selected canvas block is ringed outside its box', () => {
+	/*
+	 * `docs/features/canvas-touch-select-step.md` §6. The overlay is the live
+	 * component's own size, so a ring drawn on its border or as an inset shadow
+	 * lies on that component's content. It is an outline with a positive offset,
+	 * which the grid's gutter holds, and forced colors recolours that same
+	 * outline rather than drawing a second one.
+	 */
+	const RING = '.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-preview-editing';
+	const ringRules = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+		selectorList(rule.selector).includes(RING),
+	);
+
+	it('draws an outline offset outward, and no border or shadow of its own', () => {
+		const plain = ringRules.filter((rule) => rule.context.length === 0);
+		expect(plain.map((rule) => declarations(rule.body))).toEqual([
+			['outline: 2px solid var(--interactive-accent)', 'outline-offset: 1px'],
+		]);
+	});
+
+	it('takes only the mode\'s colour in forced colors', () => {
+		const forced = ringRules.filter(
+			(rule) => rule.context.join() === '@media (forced-colors: active)',
+		);
+		expect(forced.map((rule) => declarations(rule.body))).toEqual([
+			['outline-color: SelectedItem'],
+		]);
 	});
 });

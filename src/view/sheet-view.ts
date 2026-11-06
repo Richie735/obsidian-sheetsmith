@@ -3,6 +3,7 @@ import {
 	getLinkpath,
 	HoverPopover,
 	Keymap,
+	type Menu,
 	Notice,
 	TextFileView,
 	type ViewState,
@@ -20,6 +21,7 @@ import {
 	hasLayouts,
 	loadLayout,
 } from '../layouts';
+import { TEXT } from '../en';
 import { pickLayout } from '../layout-picker';
 import type SheetsmithPlugin from '../main';
 import {
@@ -74,13 +76,14 @@ export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
  * worth a name rather than three object literals is that **the compiler cannot
  * check the half that matters**: `ViewState.state` is a
  * `Record<string, unknown>`, so `{ path }` or `{ filePath }` in place of
- * `{ file }` type-checks perfectly and opens a sheet view with no file in it.
- * One spelling, in the module that owns the view type it names.
+ * `{ file }` type-checks perfectly, and then the leaf closes without a word:
+ * on 1.15.0 `FileView.setState` sets `close` where no file loaded. One spelling,
+ * in the module that owns the view type it names.
  *
- * The **Open as Markdown** command builds the same shape with `type:
- * 'markdown'` and is deliberately not folded in: that is the app's own view
- * type rather than this plugin's, it has one call site, and a helper taking the
- * type as an argument would no longer be able to say "sheet" in its name.
+ * `SheetView.openAsMarkdown` builds the same shape with `type: 'markdown'` and
+ * is deliberately not folded in: that is the app's own view type rather than
+ * this plugin's, it has one call site, and a helper taking the type as an
+ * argument would no longer be able to say "sheet" in its name.
  */
 export function sheetViewState(path: string): ViewState {
 	return { type: VIEW_TYPE_SHEET, state: { file: path } };
@@ -285,6 +288,42 @@ export class SheetView extends TextFileView {
 		// base class's, and a field depending on one is an initialisation order a
 		// reader has to know the class hierarchy to check.
 		this.markdown = new MarkdownPasses(this, this.app);
+		// Every sheet offers this, so it is added once and goes with the view. The
+		// way back depends on the note, which is why it lives in `open-as-sheet.ts`.
+		this.addAction('file-text', TEXT.openAsMarkdown, () => this.openAsMarkdown());
+	}
+
+	/**
+	 * Show this note as plain markdown, and remember the choice for the session
+	 * so auto-open does not flip it back at its next arrival (`auto-open.ts`). What
+	 * the command, this view's action and its menu entry share. A method rather
+	 * than a function beside `openAsSheet` because that module imports this one,
+	 * for `sheetViewState`.
+	 */
+	openAsMarkdown(): void {
+		const file = this.file;
+		if (!file) return;
+		this.plugin.markdownOverrides.add(file.path);
+		void this.leaf.setViewState({
+			type: 'markdown',
+			state: { file: file.path },
+		});
+	}
+
+	/**
+	 * Words for the action, because its title is a tooltip a finger cannot raise.
+	 * In `pane`, where a markdown view lists its own modes, and on either source,
+	 * since a markdown view offers the same items for both.
+	 */
+	onPaneMenu(menu: Menu, source: string): void {
+		super.onPaneMenu(menu, source);
+		menu.addItem((item) =>
+			item
+				.setTitle(TEXT.openAsMarkdown)
+				.setIcon('file-text')
+				.setSection('pane')
+				.onClick(() => this.openAsMarkdown()),
+		);
 	}
 
 	getViewType(): string {

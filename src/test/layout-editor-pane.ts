@@ -536,11 +536,22 @@ export function sheetGrid(harness: Harness, columns = 12): HTMLElement {
 	return measure(el as HTMLElement, columns);
 }
 
-/** The middle of grid cell (col, row), in client coordinates. */
+/**
+ * The middle of grid cell (col, row), in client coordinates, pressed with a
+ * mouse.
+ *
+ * **A mouse unless the caller spreads another `pointerType` over it**, because
+ * it is the one pointer that drags any block in one gesture: anything else on a
+ * block not yet selected only selects it
+ * (`docs/features/canvas-touch-select-step.md` §1). A synthetic event's
+ * `pointerType` is the empty string, which is not a mouse, so a press built
+ * without this would drive the select step rather than the drag it means to.
+ */
 export function at(col: number, row: number): PointerEventInit {
 	return {
 		clientX: (col - 1) * TRACK + TRACK / 2,
 		clientY: (row - 1) * ROW + ROW / 2,
+		pointerType: 'mouse',
 	};
 }
 

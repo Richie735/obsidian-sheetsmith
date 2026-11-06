@@ -396,7 +396,7 @@ read off instead: the keys no declared row maps to, in note order, filled by
 toggle read off `openAnchoredPanelKey()`), and it does not change what its panel
 already holds: one `.sheetsmith-panel-line` per not-yet-added declared row, in
 declared order. **It appends a form below them**, separated by the panel's own
-rule: a **Name** text field, a **Length** number field, and one **Add** button.
+rule: a **Name** text field, a **Length** field, and one **Add** button.
 Enter in either field submits. Where the card has no declared rows to offer, the
 form is the whole panel and the trigger is drawn whenever `openRows` is on,
 rather than only while something is left to add.
@@ -429,6 +429,17 @@ Once the entry exists, its length is the stored one and only the stored one —
 blank length has no length, exactly as a declared one does. The field is
 optional: blank writes a bare `<name>:` entry and the row draws with `—` and no
 run, which is the state `track-row-length.md` already calls "added, empty".
+
+**The Length field settles arithmetic as the row's own length field does**
+(`docs/features/track-add-length-settles.md`): `2+1` is written as `3` and `4/1`
+as `4`, through the same `settleEntry` and then the same `refuseRowLength`, so
+one input meets one sequence of rules wherever it is typed. It therefore takes
+the full keyboard rather than the phone's digits-only keypad, which has no
+operator (`docs/UI.md` §7). A length that is still not a number once settled
+(`lots`, `2+`) is refused with `Not saved. A length is a number of segments, and
+"lots" is not one. Type a number or a sum such as 4+1, or leave it empty.`, the
+draft kept, as a link or a stray slash already is. A number the card will not
+draw (`0`, `-1`, `2.5`) is still written, as the row's own field writes it.
 
 On submit: the panel closes, `context.onChange` reports one new key,
 `awaitingAdd = { id, key }` is set before the change as it already is, and focus

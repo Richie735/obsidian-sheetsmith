@@ -24,6 +24,7 @@
 import { getComponent } from '../components';
 import { renameNames } from '../formula/rename-names';
 import { visitFormulaFields } from '../formula/resolve';
+import { localNames } from '../formula/vocabulary';
 import { ComponentCopy } from '../parse/component-clipboard';
 import {
 	DEFAULT_COLUMNS,
@@ -38,7 +39,6 @@ import { childIsPlaced, innerPlacement, walkLayout } from '../view/grid-cells';
 import { componentDisplayName } from './component-name';
 import {
 	Dependency,
-	localNames,
 	outsideNames,
 	pasteDependencies,
 	subtree,
@@ -99,9 +99,9 @@ function renameAll(
 ): void {
 	if (renames.size === 0) return;
 	for (const config of configs) {
-		const local = localNames(config);
 		const definition = getComponent(config.type);
 		if (definition === undefined) continue;
+		const local = localNames(config, definition);
 		visitFormulaFields(definition, config, (source, replace) =>
 			replace(renameNames(source, renames, local)),
 		);

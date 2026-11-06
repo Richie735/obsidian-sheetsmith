@@ -638,10 +638,11 @@ case obeys it.
   something to assert; a field that only ever holds words needs no say. **A
   keypad that switches on what the field holds is not offered**: from an empty
   or numeric field it could never be left, which is
-  `docs/features/record-ceiling-formula.md`'s argument. Two fields keep the
-  keypad today, Pool's temporary points (floored at zero, no arithmetic) and
-  the length in Track's **Add** form (a segment count, no arithmetic); the scan
-  holds that population, so a third is a decision made here.
+  `docs/features/record-ceiling-formula.md`'s argument. One field keeps the
+  keypad today, Pool's temporary points (floored at zero, no arithmetic). The
+  length in Track's **Add** form had it until it began settling sums as the
+  row's own length field does (`docs/features/track-add-length-settles.md`).
+  The scan holds that population, so a second is a decision made here.
 - **A focused number is selected, because a finger cannot aim a caret**
   [checked: the focus-kind cases in `card.test.ts`, `table.test.ts` and
   `pool.test.ts`]. A field bound with `step` or `arithmetic` that holds a
@@ -655,6 +656,22 @@ case obeys it.
   digit can still be fixed. One rule in `editable.ts`, no option and no
   component code; the field list is
   `docs/features/number-field-focus-select.md`.
+- **A surface that drags under a finger takes a select step, so it does not
+  trap the scroll** [checked: `styles.test.ts`, `schematic-gestures.test.ts`].
+  `touch-action` is decided at touch start from the element pressed, so a
+  surface of blocks all `none` lets a scroll start only in its gutters: on an
+  iPad the editor canvas left two 12px strips in portrait and none in landscape.
+  So on the canvas an unselected block is `pan-y pinch-zoom` and a touch press on it
+  only selects, and the selected block alone is `none` and carries
+  `data-ignore-swipe`, so its drag opens no sidebar. Decided per press by
+  `pointerType`, never by platform: a mouse drags any block in one gesture, and
+  a pen takes the step, since `touch-action` governs it as it does a finger.
+  Vertical only, because the canvas is a sideways scroller of its own, and a
+  finger drawn across a block must not slide it.
+  **The cost is named, not hidden**: no touch scroll can start on the selected
+  block, and selecting another block or the **Layout** row frees it. No hold
+  delay, which would need a non-passive `touchmove`
+  (`docs/features/canvas-touch-select-step.md`).
 
 ---
 
@@ -815,6 +832,21 @@ modifier glyph 8px right while the reader's finger is on the arrow key. §11 ask
 that numbers hold still while they are stepped, and one summary line must not carry
 one fixed number field and one elastic one. Left-aligning a two-digit box answers
 the gap without buying the movement.
+
+**A Pool's value field is fixed at `4ch` wherever it fits, and elastic from `2ch`
+only below its container threshold** [judgement]. That is not a departure from
+the ruling above, which is about fields on a summary line and stands as it is.
+Below `calc(4.6em + 44px)` of card, a narrow cell has no room for the four-character
+slot beside a ceiling, so the slot drops to two and grows with its digits
+(`docs/features/pool-headline-narrow-fit.md`). `9 → 10` still moves nothing,
+but `99 → 100` widens the number by a digit and can wrap the ceiling onto a
+second line, which grows the card. That movement at a stepped digit-count
+boundary is the accepted cost of fitting a narrow card: the only box that
+holds still there is the `4ch` floor the narrow rule exists to lift. Also
+accepted: below the threshold the gap between the number and its ceiling
+varies with the number's digit count, about 14px for one digit and about 4px
+for three, because the field sizes to its content, and the ceiling's muted
+colour is what carries the grouping.
 
 **A disclosure opens a block in place, pushing its siblings inside a box that
 does not grow** [judgement]. Record set is the first of these and the rules are
@@ -1555,7 +1587,13 @@ or no after its key in the note.` on a flag, `… is not a number of marks. Writ
 whole number after its key in the note.` on a run. Those six are every refusal a
 component makes of its sheet block: Card, Card set and Pool read every value as
 text, Passport's other refusals are of its layout, and Roster's of its markdown
-table, which is not this rule's subject.
+table, which is not this rule's subject. **Pool's temporary points are marked,
+not refused, by the same token** [checked: `pool.test.ts`]: the block reads, so
+the card draws the field with the stored text in it, an error border on the pill
+and `Temporary points are a whole number of 0 or more, so the note's "2.5"
+counts as none. Type a whole number, or clear the field.` under it — the fix
+names the field rather than the note, because here the sheet *can* repair it
+(`docs/features/pool-temp-refuses.md`).
 
 **A fence key's refusal is the parser's reason and the caller's fix, and on the
 sheet the fix names the layout editor** [checked: `card.test.ts`,

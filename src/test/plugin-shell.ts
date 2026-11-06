@@ -14,7 +14,7 @@
  */
 
 import SheetsmithPlugin from '../main';
-import { App } from './obsidian-stub';
+import type { App, Command, Plugin } from './obsidian-stub';
 
 /** The manifest the stub plugin is constructed with: the members `onload` reads. */
 const MANIFEST = { id: 'sheetsmith', name: 'Sheetsmith', version: '0.0.0' };
@@ -46,4 +46,30 @@ export async function loadPlugin(
 export function unloadPlugin(plugin: SheetsmithPlugin): void {
 	(plugin as unknown as { loaded: boolean }).loaded = true;
 	plugin.unload();
+}
+
+/**
+ * A command the plugin registered. **Throws on an id it did not**: a lookup that
+ * answered `undefined` would make a mistyped id a silent no-op, and a case asserting
+ * that a command is not offered would pass on the typo.
+ */
+export function commandOf(plugin: SheetsmithPlugin, id: string): Command {
+	const { commands } = plugin as unknown as Plugin;
+	const command = commands.find((candidate) => candidate.id === id);
+	if (command === undefined) throw new Error(`no command "${id}"`);
+	return command;
+}
+
+/**
+ * Ask a `checkCallback` command what the palette asks it, `checking` to see
+ * whether it is offered and not `checking` to run it.
+ */
+export function pressCommand(
+	plugin: SheetsmithPlugin,
+	id: string,
+	checking = false,
+): boolean | void {
+	const { checkCallback } = commandOf(plugin, id);
+	if (checkCallback === undefined) throw new Error(`"${id}" has no checkCallback`);
+	return checkCallback(checking);
 }

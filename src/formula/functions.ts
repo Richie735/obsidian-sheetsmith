@@ -65,9 +65,46 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
  */
 const DEFINITION = /^([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(([^)]*)\))?\s*=(?!=)\s*(.+)$/;
 
-function parseParams(raw: string | undefined, name: string): string[] {
-	if (raw === undefined || raw.trim() === '') return [];
-	const params = raw.split(',').map((param) => param.trim());
+/** Where a definition line's parts are, without judging any of them. */
+export interface DefinitionParts {
+	name: string;
+	/** As written between the brackets, trimmed; empty for a value. */
+	params: string[];
+	/** Offset in the line, as handed in, where the body after `=` starts. */
+	bodyStart: number;
+}
+
+/**
+ * The name, parameters and body offset of one definition line, or null where it
+ * is blank, a comment, or not shaped like a definition.
+ *
+ * **The one reader of `DEFINITION`**, so the body's offset is never found by a
+ * second pattern (`docs/features/component-id-rename.md` §6): a rename rewrites
+ * a body in place, with its own parameters as local names, and has to splice it
+ * back at exactly the offset the parser read it from. Takes the line untrimmed
+ * and answers an offset into that, since the layout holds lines as written.
+ */
+export function definitionParts(line: string): DefinitionParts | null {
+	const lead = line.length - line.trimStart().length;
+	const trimmed = line.trim();
+	if (trimmed === '' || trimmed.startsWith('#')) return null;
+	const match = DEFINITION.exec(trimmed);
+	if (!match) return null;
+	const raw = match[2];
+	const body = match[3] as string;
+	return {
+		name: match[1] as string,
+		params:
+			raw === undefined || raw.trim() === ''
+				? []
+				: raw.split(',').map((param) => param.trim()),
+		// The body is the pattern's last group and runs to the end of the
+		// trimmed line, so its start is counted back from that end.
+		bodyStart: lead + trimmed.length - body.length,
+	};
+}
+
+function parseParams(params: readonly string[], name: string): string[] {
 	const seen = new Set<string>();
 	for (const param of params) {
 		if (!IDENTIFIER.test(param)) {
@@ -80,26 +117,26 @@ function parseParams(raw: string | undefined, name: string): string[] {
 		}
 		seen.add(param);
 	}
-	return params;
+	return [...params];
 }
 
 function parseDefinition(line: string): FunctionDefinition {
-	const match = DEFINITION.exec(line);
-	if (!match) {
+	const parts = definitionParts(line);
+	if (parts === null) {
 		throw new FormulaError(
 			'A definition looks like "name(a, b) = expression", or "name = expression" for a value.',
 		);
 	}
-	const name = match[1] as string;
+	const { name } = parts;
 	if (RESERVED_NAMES.includes(name)) {
 		throw new FormulaError(
 			`"${name}" is built in and cannot be redefined by a layout.`,
 		);
 	}
-	const params = parseParams(match[2], name);
+	const params = parseParams(parts.params, name);
 	// Parsed here, not on first call: a syntax error should surface while the
 	// user is looking at the definition, not later as a "?" on a card.
-	return { name, params, body: parseExpression(match[3] as string) };
+	return { name, params, body: parseExpression(line.slice(parts.bodyStart)) };
 }
 
 /**

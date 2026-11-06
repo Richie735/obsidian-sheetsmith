@@ -51,6 +51,9 @@ import {
 	readComponentCopy,
 } from '../parse/component-clipboard';
 import { copiedComponent, pasteComponent, pasteConfiguration } from './paste';
+import { renameComponentId } from './id-rename';
+import { renamedToken } from './renamed-token';
+import { IdReaders, idRenameMessage, notesReadingId } from '../id-rename-report';
 import { copyContext } from './paste-dependencies';
 import { configurationSentence, pasteSentence } from './paste-notice';
 import { PasteBoxModal } from './paste-box';
@@ -91,11 +94,23 @@ const FLASH_HOLD = 900;
 interface Snapshot {
 	text: string;
 	held?: boolean;
+	/**
+	 * The id rename this step is, where it is one
+	 * (`docs/features/component-id-rename.md` §4). The stack holds whole-file
+	 * text, so nothing in it is keyed by id — but the pane's posture is, and
+	 * undoing a rename restores the old id while the selection holds the new
+	 * one. So the step carries the pair, and an undo walks the posture back
+	 * through it and a redo forward again. A step without one remaps nothing.
+	 */
+	renamed?: { from: string; to: string };
 }
 
 /** What a commit carrying a rename says while the layout is not on disk. */
 const RENAME_REFUSED =
 	'Not renamed, because this layout is not saved yet and its character notes cannot be migrated until this layout saves.';
+
+/** What an **ID** commit says when the layout it was typed against is no longer held. */
+const ID_RENAME_GONE = 'Not renamed, because this layout is no longer open here.';
 
 /** The message an unknown thrown value carries. */
 function messageOf(error: unknown): string {
@@ -467,6 +482,7 @@ export class LayoutEditorSection {
 			suggestNames: (input, owner) => this.suggestNames(input, owner),
 			persistReorder: (label, sentence) => this.persistReorder(label, sentence),
 			returnToOutline: () => this.returnToOutline(),
+			renameId: (from, to) => this.renameId(from, to),
 		});
 		// The row's host, and the same mapping again. `redraw` is the wrapped one
 		// above rather than the host's, for the flush and the focus it adds, and
@@ -1277,13 +1293,16 @@ export class LayoutEditorSection {
 	 * them is taken before anything else can happen. The undo step itself is
 	 * pushed when the write lands, so it is only ever bytes the file held.
 	 */
-	private persistStep(): {
+	private persistStep(renamed?: Snapshot['renamed']): {
 		saving: Promise<boolean>;
 		file: TFile | null;
 		written: string | null;
 	} | null {
 		const before = this.expected;
-		const saving = this.persist();
+		const saving =
+			renamed === undefined
+				? this.persist()
+				: this.write({ push: true, clearRedo: true, renamed });
 		const file = this.file;
 		const written = this.expected;
 		return written === before ? null : { saving, file, written };
@@ -1783,6 +1802,7 @@ export class LayoutEditorSection {
 		push: boolean;
 		clearRedo: boolean;
 		rename?: RenameIntent;
+		renamed?: Snapshot['renamed'];
 	}): Promise<boolean> {
 		const writing = this.writeNow(options);
 		this.writes.add(writing);
@@ -1794,8 +1814,9 @@ export class LayoutEditorSection {
 		push: boolean;
 		clearRedo: boolean;
 		rename?: RenameIntent;
+		renamed?: Snapshot['renamed'];
 	}): Promise<boolean> {
-		const { push, clearRedo, rename } = options;
+		const { push, clearRedo, rename, renamed } = options;
 		// Taken once, before the write is awaited: the pane may be on another
 		// file by the time it resolves, and the migration below belongs to the
 		// file this write went to.
@@ -1869,7 +1890,7 @@ export class LayoutEditorSection {
 			const before = this.onDisk;
 			this.onDisk = serialised;
 			if (push && before !== null && before !== serialised) {
-				this.undoStack.push({ text: before });
+				this.undoStack.push({ text: before, ...(renamed !== undefined ? { renamed } : {}) });
 			}
 		}
 		if (this.file === file && this.expected === serialised && this.unsaved !== null) {
@@ -1998,7 +2019,11 @@ export class LayoutEditorSection {
 		}
 		const snapshot = this.undoStack.pop();
 		if (snapshot === undefined) return false;
-		if (this.onDisk !== null) this.redoStack.push({ text: this.onDisk });
+		const { renamed } = snapshot;
+		if (this.onDisk !== null) {
+			this.redoStack.push({ text: this.onDisk, ...(renamed !== undefined ? { renamed } : {}) });
+		}
+		if (renamed !== undefined) this.remapPosture(renamed.to, renamed.from);
 		this.restoreSnapshot(snapshot.text);
 		return true;
 	}
@@ -2023,8 +2048,88 @@ export class LayoutEditorSection {
 			void this.write({ push: true, clearRedo: false });
 			return true;
 		}
-		if (this.onDisk !== null) this.undoStack.push({ text: this.onDisk });
+		const { renamed } = snapshot;
+		if (this.onDisk !== null) {
+			this.undoStack.push({ text: this.onDisk, ...(renamed !== undefined ? { renamed } : {}) });
+		}
+		if (renamed !== undefined) this.remapPosture(renamed.from, renamed.to);
 		this.restoreSnapshot(snapshot.text);
 		return true;
+	}
+
+	/**
+	 * Carry the pane's posture from one id to another: the selection, the
+	 * containers the tree draws shut, the way back to a press, and the control
+	 * focus is on (`docs/features/component-id-rename.md` §4).
+	 *
+	 * Before the redraw, which is the whole of why it is needed: `render` moves a
+	 * selection naming nothing to the layout row and the tree drops a collapsed
+	 * id it cannot find, so the renamed container would spring open with the
+	 * panel on the layout's settings. The sheet's own posture keyed by id — open
+	 * records, a tab — is per view and is not remapped (Deliberately not doing).
+	 */
+	private remapPosture(from: string, to: string): void {
+		if (this.host.selection === from) this.host.setSelection(to);
+		if (this.host.collapsed.has(from)) {
+			this.host.setCollapsed(
+				[...this.host.collapsed].map((id) => (id === from ? to : id)),
+			);
+		}
+		const pressed = this.pressedFrom;
+		if (pressed !== null && pressed.id === from) {
+			this.pressedFrom = { id: to, token: renamedToken(pressed.token, from, to) };
+		}
+		const focused = this.pendingFocus ?? this.focusedToken();
+		if (focused !== null) this.pendingFocus = renamedToken(focused, from, to);
+	}
+
+	/**
+	 * Commit an **Id** field: rename the component, rewriting every place in
+	 * the layout that reads it, as one undo step; then name the character notes
+	 * whose modifier cells still read the old id (`docs/features/component-id-rename.md`
+	 * §2, §3). Answers the sentence a refusal shows under the field, having
+	 * changed nothing, or null.
+	 *
+	 * Decided on a clone by `id-rename.ts` and adopted only whole, the paste's
+	 * shape. **The notice waits for the scan and its Undo does not**: the bytes
+	 * are taken before anything is awaited, as `persistReorder` takes them, and
+	 * the open sheets are flushed first for its reason, so a part typed a moment
+	 * ago is counted. Nothing is written to any note, so nothing is reloaded;
+	 * the write itself refreshes the open sheets.
+	 */
+	private renameId(from: string, to: string): string | null {
+		// A refusal rather than null, which the field reads as accepted and so
+		// would leave the new id typed over a layout that never took it.
+		const gone = { error: ID_RENAME_GONE };
+		if (this.layout === null) return gone.error;
+		// The rules about the id first, then the unsaved gate, last in §2's table
+		// as it is after **Label**'s own rules: the report this commit owes runs
+		// only once the layout is on disk, and a held write would drop it.
+		const ruled = renameComponentId(this.layout, from, to);
+		if ('error' in ruled) return ruled.error;
+		const held = this.renameRefusal();
+		if (held !== null) return held;
+		const renamed = this.decided(() =>
+			this.layout === null ? gone : renameComponentId(this.layout, from, to),
+		);
+		if ('error' in renamed) return renamed.error;
+		this.layout = renamed.layout;
+		this.remapPosture(from, to);
+		const step = this.persistStep({ from, to });
+		this.redraw();
+		if (step === null) return null;
+		const { saving, file, written } = step;
+		const layout = renamed.layout;
+		void saving.then(async (saved) => {
+			if (!saved) return;
+			let readers: IdReaders = { names: [], unreadable: 0 };
+			if (this.mayAdopt(file)) {
+				await this.host.flushSheets();
+				readers = await notesReadingId(this.plugin.app, layout, file.basename, from);
+			}
+			const said = idRenameMessage(from, to, renamed.places, readers);
+			if (said !== null) this.offerGuardedUndo(said, file, written);
+		});
+		return null;
 	}
 }

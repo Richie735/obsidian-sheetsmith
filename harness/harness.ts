@@ -151,6 +151,32 @@ function loadState(name: StateName): void {
 }
 
 /**
+ * `&place=<id>:<col>,<width>` — move a top-level component to that column and
+ * span on its own row, so a shot can stage a placement no sample holds.
+ *
+ * Added for `docs/features/pool-headline-narrow-fit.md`, whose reported case is
+ * a one-unit Pool on a wide sheet: the sample's Pools are three and four units
+ * wide, and a one-unit Pool in the sample would put a one-unit card in every
+ * full-sheet shot. It changes the layout rather than the drawn cell's style, so
+ * the placement survives the rebuild a `&type=` commit makes and the grid's own
+ * code does the arithmetic. Top level only: no shot needs a child moved yet.
+ */
+function placeComponent(placing: string): void {
+	const match = /^([\w-]+):(\d+),(\d+)$/.exec(placing);
+	if (match === null) return;
+	const [, id, col, width] = match;
+	layout = {
+		...layout,
+		components: layout.components.map((config) =>
+			config.id === id
+				? { ...config, position: { ...config.position, col: Number(col), width: Number(width) } }
+				: config,
+		),
+	};
+	prepare();
+}
+
+/**
  * Read every section before rendering any, so the name table is complete —
  * including a container's children, which is the whole point of walking rather
  * than iterating: a formula may name a card inside a group that is closed, and
@@ -847,6 +873,7 @@ function applyQuery(): void {
 			: 'populated',
 	);
 	press('state', state);
+	for (const placing of params.getAll('place')) placeComponent(placing);
 
 	const pane = params.get('surface');
 	surface =
@@ -1010,6 +1037,13 @@ function applyQuery(): void {
 			field.focus();
 			field.value = text;
 			field.dispatchEvent(new Event('input', { bubbles: true }));
+			// An editor field commits on `change` (`editor/field-commit.ts`), which
+			// a value set from script does not raise on blur; a sheet field commits
+			// on the blur itself. Only the editor's controls carry a focus token,
+			// so that is what tells the two apart.
+			if (field.dataset.sheetsmithFocus !== undefined) {
+				field.dispatchEvent(new Event('change', { bubbles: true }));
+			}
 			field.blur();
 		}
 	};

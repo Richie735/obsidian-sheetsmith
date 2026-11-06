@@ -704,3 +704,59 @@ describe('a Record set keyed by a text field', () => {
 		}
 	});
 });
+
+describe('the mark on the one block a touch may drag', () => {
+	/*
+	 * `docs/features/canvas-touch-select-step.md` §2: `data-ignore-swipe` is the
+	 * one mark `editor.css` reads for `touch-action: none`, Obsidian's sidebar
+	 * swipe reads to stand aside, and `beginDrag` reads to let a touch drag. So it
+	 * goes on a block that can be dragged and is selected, and nowhere else.
+	 */
+	const marked = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('[data-ignore-swipe]')).map((one) =>
+			one.getAttribute('data-sheetsmith-focus'),
+		);
+
+	it('marks the selected placed overlay, and no other', () => {
+		const el = document.createElement('div');
+		new Canvas(fakeHost('front')).draw(
+			el,
+			layoutOf(
+				component({ id: 'behind', label: 'Behind' }),
+				component({ id: 'front', label: 'Front' }),
+				component({ id: 'other', label: 'Other' }),
+			),
+		);
+		expect(el.querySelectorAll('.sheetsmith-canvas-overlay')).toHaveLength(3);
+		expect(marked(el)).toEqual(['preview-front']);
+	});
+
+	it('marks nothing with the selection off the canvas', () => {
+		const el = document.createElement('div');
+		new Canvas(fakeHost('')).draw(el, layoutOf(component({ id: 'front', label: 'Front' })));
+		expect(el.querySelectorAll('.sheetsmith-canvas-overlay')).toHaveLength(1);
+		expect(marked(el)).toEqual([]);
+	});
+
+	it('leaves a selected tab unmarked, since a tab has nothing to drag', () => {
+		const el = document.createElement('div');
+		new Canvas(fakeHost('spells')).draw(
+			el,
+			layoutOf(
+				component({
+					id: 'pages',
+					type: 'tab-set',
+					label: 'Pages',
+					position: { col: 1, row: 1, width: 6, height: 2 },
+					children: [
+						component({ id: 'combat', label: 'Combat' }),
+						component({ id: 'spells', label: 'Spells' }),
+					],
+				}),
+			),
+		);
+		const spells = el.querySelector('[data-sheetsmith-focus="preview-spells"]');
+		expect(spells?.classList.contains('sheetsmith-preview-editing')).toBe(true);
+		expect(marked(el)).toEqual([]);
+	});
+});

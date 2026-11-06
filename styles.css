@@ -1670,9 +1670,24 @@ body {
    So the trade is a deprecated property for a flagged one, and `clip` is the
    safer end of it than it looks: it is what every visually-hidden recipe used
    before `clip-path`, no browser has removed it, and it is doing the same job
-   here. */
+   here.
+
+   **Pinned to its containing block's start corner**, not left at its static
+   position. An absolutely positioned box escapes every scroller between it and
+   its containing block, and still adds its own box to the scrollable overflow
+   of whatever ancestor scroller does contain that block. So a table's
+   **Remove** twin, sitting in the last header cell of a table wider than its
+   `overflow-x: auto` wrapper, was clipped by nothing and reached the layout
+   editor canvas's own view, which scrolled sideways by 75px at 820 under
+   tablet staging, and the page itself on the sheet (`docs/features/
+   canvas-touch-select-step.md`, "Measured once built"). At the start corner a
+   one-pixel box cannot reach past any end edge, whatever scroller sits round
+   it, and the negative margin only ever puts it on the start side, which no
+   scroller extends to. */
 .sheetsmith-sr-only {
 	position: absolute;
+	inset-block-start: 0;
+	inset-inline-start: 0;
 	width: 1px;
 	height: 1px;
 	padding: 0;
@@ -3253,12 +3268,21 @@ body {
    What centring costs is smaller than it sounds. `tabular-nums` means 54 to 55
    moves nothing; only 99 to 100 shifts the number, by half a character, once in
    a campaign. Baseline-aligned, because the two are different sizes and
-   centring them vertically would float the smaller one. */
+   centring them vertically would float the smaller one.
+
+   **On a card too narrow for both, the ceiling wraps under the number**
+   (`docs/features/pool-headline-narrow-fit.md`), centred by the same
+   `justify-content`, so the number holds the card's centre line and keeps its
+   size. The ceiling is `nowrap`, so its `/` goes with it and it still reads as
+   "of 120". No row gap: the two lines are one reading, and the ceiling's line
+   is already smaller than the number's. Baseline alignment then holds within
+   each line only, which is the amendment SPEC §4.2 records. */
 .sheetsmith-pool-reading {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
 	justify-content: center;
-	gap: var(--size-2-1);
+	gap: 0 var(--size-2-1);
 	flex: 1;
 	min-width: 0;
 }
@@ -3281,12 +3305,6 @@ body {
    number renders small inside a form field. The old bordered design hid
    this; taking the chrome off is what exposed it. */
 .sheetsmith-view .sheetsmith-pool-current {
-	/* Four characters covers the ordinary pool. Where field-sizing is
-	   supported the field grows past that instead of clipping a digit; where
-	   it is not — every non-Chromium engine, Obsidian mobile included —
-	   `width: auto` on an input falls back to its intrinsic ~20-character
-	   size, which is a blown-out card rather than a graceful degradation. */
-	min-width: 4ch;
 	padding: 0;
 	border: none;
 	background: transparent;
@@ -3309,16 +3327,64 @@ body {
 	transition: color 260ms ease-out;
 }
 
-/* The width alone at (0,3,0), past Obsidian's phone rule: see
-   `.sheetsmith-table-input`'s. */
+/* The width and its bounds at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. None of the four is something `:hover` or
+   `:focus` restyles, so lifting them together costs those rules nothing.
+
+   Four characters covers the ordinary pool. Where field-sizing is supported
+   the field grows past that instead of clipping a digit; where it is not —
+   every non-Chromium engine, Obsidian mobile included — `width: auto` on an
+   input falls back to its intrinsic ~20-character size, which is a blown-out
+   card rather than a graceful degradation, so it is pinned at `4ch`.
+
+   **The number never gives way** (`docs/features/pool-headline-narrow-fit.md`).
+   `flex-shrink: 0`, so the reading's row never squeezes the field under its own
+   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`).
+   `max-width: 100%` is for the engines with no field-sizing: there the pinned
+   `4ch` is capped at the row rather than run off the card. Where `min-width`
+   is the larger, it wins over `max-width`, which is why the narrow card's
+   rule below lowers the floor rather than relying on the cap. */
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 	width: 4ch;
+	min-width: 4ch;
+	max-width: 100%;
+	flex-shrink: 0;
 }
 
 @supports (field-sizing: content) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 		width: auto;
 		field-sizing: content;
+	}
+
+}
+
+/* **The slot gives way first.** Below the width today's reading needs to keep
+   a three-digit ceiling beside a four-character slot, the slot's floor drops
+   to two characters, and with field-sizing the field is as wide as its digits
+   from there. Two rather than one, so a single digit still gets a box the
+   hover and focus ring do not clamp onto, and `9 → 10` moves nothing.
+
+   The threshold is that reading's width: `4ch` at the value size, which is
+   4.6em on the card (the query's `em` is the Pool card's, the query
+   container), plus 44px of fixed chrome — the reading's 2px gap, the widest
+   three-digit ceiling at 38.7px (a max the character owns, with its padding),
+   and the 2px the reading's row sits inside the card's content box, rounded
+   up. `em` plus `px` rather than either alone, because the number scales with
+   the sheet and the ceiling is a UI token the sheet's `em` does not reach
+   (`docs/UI.md` §5). It measures 118px at the default size and 154px at
+   `text=24`; above it nothing changes, so every Pool that fit is untouched.
+
+   Below the threshold the box is elastic: `99 → 100` widens the number by a
+   digit and can wrap the ceiling. Accepted, and recorded at `docs/UI.md` §9's
+   fixed-box ruling, because the only box that holds still is the `4ch` floor
+   this rule exists to lift.
+
+   Below the base rule, at its own (0,3,0), since `@container` adds no
+   specificity and the later rule wins on order (`docs/UI.md` §4). */
+@container (max-width: calc(4.6em + 44px)) {
+.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
+		min-width: 2ch;
 	}
 
 }
@@ -3563,6 +3629,48 @@ body {
 	background-color: var(--background-modifier-hover);
 }
 
+/* A buffer its rule refuses, typed or already in the note
+   (`docs/features/pool-temp-refuses.md`). The pill's border turns the error
+   colour, over the focus border too, since the field is still refused while it
+   is being corrected and the focus ring is a box-shadow that does not need it.
+   **That is colour alone, and is not meant to stand alone**: the pill already
+   has a 1px border, so its shape does not change, and forced colors repaints it
+   to look like any other pill. The second channel is the sentence directly
+   under it, with its leading border, and the field's `aria-invalid`. */
+.sheetsmith-view .sheetsmith-pool-temp.sheetsmith-pool-temp-refused {
+	border-color: var(--background-modifier-error);
+}
+
+/* And the field shows the whole of what it is refusing. Three digits is a box
+   for points, and refused text is by definition not points: at that width a
+   stored `2.5` read `2.` under a sentence quoting `"2.5"`. The count arrives from
+   `pool.ts` when the mark is drawn, never per keystroke, so the pill holds still
+   while it is corrected (§11). In `ch` plus one for a letter wider than a digit,
+   plus the field's own inline padding, since the box is border-box. Not
+   `field-sizing: content`: Chromium-only, so Obsidian mobile — where the keypad
+   makes a stray character likeliest — would keep the clip. Capped at the card,
+   where the input's own scrolling takes over. Never narrower than the unmarked
+   field's `--sheetsmith-pool-temp-width`, set by the width rule below, so a
+   one-letter refusal does not shrink the pill as the mark goes on.
+   At (0,4,0), past the width rule's (0,3,0). */
+.sheetsmith-view
+	.sheetsmith-pool-temp-refused
+	.sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
+	width: max(
+		var(--sheetsmith-pool-temp-width),
+		(var(--sheetsmith-pool-temp-chars, 3) + 1) * 1ch + 2 * var(--size-2-2)
+	);
+	max-width: 70cqi;
+}
+
+/* That sentence takes Track's shape for a refusal under one field, grouped
+   onto `.sheetsmith-track-row-problem` below, so here it only spans the card:
+   the card is a centred flex column, and without this the sentence would
+   shrink to its text and centre, where Track's spans its row by grid. */
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-error {
+	align-self: stretch;
+}
+
 /* Temporary points are the card's pill: a small qualifier hanging under the
    big number, which is the shape a card already uses for its stored
    value. As a second bordered rectangle on its own row it was a third
@@ -3604,10 +3712,19 @@ body {
 	text-align: center;
 }
 
-/* The width alone at (0,3,0), past Obsidian's phone rule: see
-   `.sheetsmith-table-input`'s. */
+/* Three tabular digits and the field's own inline padding, since the box is
+   border-box: a bare `3ch` held two digits beside the padding, so a buffer of
+   `100` read `10`. Fixed rather than sized to the value, as a Roster score is
+   (`.sheetsmith-roster-band-value .sheetsmith-card-input`): a buffer of points
+   past 999 is not one a sheet meets, so a width that moves with the value would
+   buy nothing but a second place the count is set, and the pill would move
+   under every commit. Not `field-sizing: content` for the reason the refused
+   rule above gives. Named as `--sheetsmith-pool-temp-width` so the refused rule
+   floors on this width rather than on a copy of it. The width alone at (0,3,0),
+   past Obsidian's phone rule: see `.sheetsmith-table-input`'s. */
 .sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
-	width: 3ch;
+	--sheetsmith-pool-temp-width: calc(3ch + 2 * var(--size-2-2));
+	width: var(--sheetsmith-pool-temp-width);
 }
 
 /* The pill wears the ring, so the field inside it wears nothing.
@@ -4450,8 +4567,14 @@ a.sheetsmith-notice-action {
 
    `grid-column: 1 / -1` because the row is a subgrid of three columns and the
    message belongs to all of them: placed in a column it would sit under the
-   name alone and squeeze whichever track it landed in. */
-.sheetsmith-view .sheetsmith-track-row-problem {
+   name alone and squeeze whichever track it landed in.
+
+   **Pool's refused buffer is the same message** — one draft declined, or one
+   stored value marked, under one field on a small card — so it takes this body
+   by selector rather than a copy of it, at its `--font-ui-smaller`. `grid-column`
+   is inert on it: a pool card is a flex column, and its own rule stretches it. */
+.sheetsmith-view .sheetsmith-track-row-problem,
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-error {
 	grid-column: 1 / -1;
 	padding: 0 0 0 var(--size-2-2);
 	border: none;
@@ -11015,7 +11138,32 @@ a.sheetsmith-notice-action {
 	background-color: transparent;
 	box-shadow: none;
 	cursor: grab;
-	/* A touch drag must move the block, not scroll the sheet underneath it. */
+	/* **A touch scrolls the pane from any block but the selected one**
+	   (`docs/features/canvas-touch-select-step.md`). Every overlay was `none`
+	   once, so a drag would move the block rather than the sheet, and on an iPad
+	   a scroll could start only in the gutters. Now a touch press here selects
+	   (`beginDrag` refuses anything but a mouse on a block not marked), and only
+	   the block marked below takes the pan for its drag.
+
+	   **Vertical only, `pan-y pinch-zoom`**, not `manipulation`: a block on a
+	   grid canvas never needs to pan sideways, and the canvas's view is its own
+	   `overflow-x: auto` scroller, so any overflow it holds would slide the
+	   whole canvas under a sideways finger. One did: 75px at 820 under tablet
+	   staging, from a screen-reader twin (`.sheetsmith-sr-only`, `sheet.css`),
+	   since fixed. This guards against the next overflow of that kind.
+	   Nothing sideways was reachable from a block before, when every overlay
+	   was `none`, so this gives up no pan that worked. No double-tap zoom
+	   either way, which is what `manipulation` had over `auto`. */
+	touch-action: pan-y pinch-zoom;
+}
+
+/* The selected block, the one a finger drags. Keyed to the attribute and not to
+   `.sheetsmith-preview-editing`, because the attribute is set only on a block
+   that can be dragged and is the one Obsidian's sidebar swipe reads, so a
+   single mark answers whether this touch may pan and whether it may open the
+   sidebar. The cost is that no touch scroll can start on this block; selecting
+   another, or the **Layout** row, frees it. */
+.sheetsmith-view .sheetsmith-canvas-overlay[data-ignore-swipe] {
 	touch-action: none;
 }
 
@@ -11249,6 +11397,27 @@ a.sheetsmith-notice-action {
 	outline-offset: -1px;
 }
 
+/* **The ring again, on the canvas's overlay, and outside the block.** The
+   overlay's own rule is (0,2,0), scoped so it beats Obsidian's
+   `button:not(.clickable-icon)`, and it declares a transparent border and no
+   shadow. That outweighed the (0,1,0) rule above, so a selected block on the
+   canvas drew no ring at all, which `docs/features/grid-canvas.md` §2 says it
+   reuses unchanged. The touch select step leans on it: the ring is how a finger
+   learns which block it can drag
+   (`docs/features/canvas-touch-select-step.md` §6).
+
+   **An outline 1px out, not the border and inset shadow above**, because the
+   overlay is the size of the live component under it: a ring drawn inside it
+   lay on that component's own content, a Group's heading touching it at the
+   first letter. Outside, 3px in all, it sits in the grid's 8px gutter, and the
+   canvas view's 16px of padding holds it at the edges, so nothing clips it. It
+   is the shape the forced-colors answer below already drew, so that answer
+   now changes only the colour. */
+.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-preview-editing {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
 /* The block's own answer, since the hatch above cannot reach it.
 
    Two channels away from what every other block gets rather than one: twice the
@@ -11272,6 +11441,12 @@ a.sheetsmith-notice-action {
 	   whole reason for going outward. */
 	.sheetsmith-tree-row.sheetsmith-preview-editing {
 		outline-offset: -2px;
+	}
+
+	/* The canvas's ring is already this shape (above), and outweighs the
+	   general rule here, so it takes the mode's colour on its own selector. */
+	.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-preview-editing {
+		outline-color: SelectedItem;
 	}
 }
 
@@ -11319,7 +11494,10 @@ a.sheetsmith-notice-action {
 	opacity: 0;
 	cursor: nwse-resize;
 	transition: opacity 100ms ease-out;
-	touch-action: none;
+	/* No `touch-action` of its own: an element's is intersected with its
+	   ancestors', so the selected overlay's `none` already covers its corner, and
+	   an unselected corner scrolls with its block instead of leaving a trap in
+	   every cell. */
 }
 
 .sheetsmith-preview-resize::after {
@@ -11359,12 +11537,22 @@ a.sheetsmith-notice-action {
 }
 
 /* No hover to reveal it, and a finger to hit it with. The arc grows with the
-   target so the mark keeps its proportion inside it. */
+   target so the mark keeps its proportion inside it.
+
+   **On the selected block only**, since a finger on any other block selects it
+   and resizes nothing (`docs/features/canvas-touch-select-step.md` §5): a
+   handle there would promise a resize that does not come. So the one corner
+   drawn is also the cue saying which block a finger can handle. A fine pointer
+   keeps every corner, on hover and focus, because a mouse resizes any block. */
 @media (pointer: coarse) {
 .sheetsmith-preview-resize {
 		width: 24px;
 		height: 24px;
 		opacity: 1;
+	}
+
+.sheetsmith-view .sheetsmith-canvas-overlay:not([data-ignore-swipe]) .sheetsmith-preview-resize {
+		display: none;
 	}
 
 .sheetsmith-preview-resize::after {
@@ -11403,19 +11591,24 @@ a.sheetsmith-notice-action {
    gestures.ts` refuses the press, the corner and the arrow keys there, through
    `drawnAsGrid`, which asks the grid itself.
 
-   A touch on a block scrolls the pane, where `touch-action: none` above made
-   the overlays, 322 of the canvas's 354px for 17,228px of height at 380, a
-   scroll trap only the gutters escaped. The corner goes, since it is a handle
-   for a resize that is not offered and a coarse pointer drew it on every cell.
-   And the cursor says a press selects.
+   A touch on a block scrolls the pane, the selected block's too: the overlays
+   were 322 of the canvas's 354px for 17,228px of height at 380, a scroll trap
+   only the gutters escaped. The selected block keeps its `data-ignore-swipe`,
+   so the attribute selector is matched here at the weight of the rule above it,
+   (0,3,0), which would otherwise put the trap back on that one block; what it
+   still costs is a sidebar swipe starting there. The corner goes, since it is a
+   handle for a resize that is not offered. And the cursor says a press selects.
 
    **A nested grid that collapsed on its own width is not reached**: it sits in
-   a sheet that has not, so this query does not fire, and its overlays keep
-   `touch-action: none`. Its gestures are refused by the same guard; the cost
-   is that a touch scroll cannot start on it. Cut, in the feature doc. Below the
-   rules it overrides, since `@container` adds no specificity. */
+   a sheet that has not, so this query does not fire. Under the select step
+   (`docs/features/canvas-touch-select-step.md` §7) its unselected overlays
+   scroll by the base rule, and only its selected block keeps `none`, whose drag
+   the same guard refuses; the cost is that a touch scroll cannot start on that
+   one block. Below the rules it overrides, since `@container` adds no
+   specificity. */
 @container sheetsmith-sheet (max-width: 480px) {
-.sheetsmith-view .sheetsmith-canvas-overlay {
+.sheetsmith-view .sheetsmith-canvas-overlay,
+.sheetsmith-view .sheetsmith-canvas-overlay[data-ignore-swipe] {
 		cursor: pointer;
 		touch-action: manipulation;
 	}

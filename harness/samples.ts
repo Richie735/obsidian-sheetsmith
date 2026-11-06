@@ -1376,7 +1376,7 @@ export const SAMPLES: Sample[] = [
 			// (`docs/features/pool-ceiling-modifier-door.md`). `rolled_health.max`
 			// is the push that moves nothing — a typed ceiling has no formula to
 			// read its slot — and the row's own line says so.
-			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3; grit.count += 2; carried += 3; halved.count += 2 |',
+			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3; grit.count += 2; carried += 3; halved.count += 2; reservoir.max += 3 |',
 			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2; ward.max += -2; rolled_health.max += -4 |',
 		].join('\n'),
 	},
@@ -1846,6 +1846,26 @@ export const SAMPLES: Sample[] = [
 			maxSource: 'character',
 		} as ComponentConfig,
 		body: '```sheet\ncurrent: 14\nmax: 22\n```',
+	},
+	/*
+	 * **Three digits over a three-digit ceiling a modifier moved**
+	 * (`docs/features/pool-headline-narrow-fit.md`). Every other calculated
+	 * ceiling here is one or two digits and every current under a hundred, so
+	 * the widest reading a Pool can draw was on no sample: `100 / 120`, with the
+	 * talisman's `+3` putting the dotted rule under the `120`. Three columns, so
+	 * at a 520px container it is the narrow card where that reading has to wrap
+	 * its ceiling at `text=24`. Under Rolled HP, in the row the six-field
+	 * Passport beside it already spans, so no placement above or below moves.
+	 */
+	{
+		config: {
+			id: 'reservoir',
+			type: 'pool',
+			label: 'Reservoir',
+			position: { col: 10, row: 49, width: 3, height: 1 },
+			max: '117 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 100\n```',
 	},
 	/*
 	 * **Fields shown only for some values of another**
@@ -3643,6 +3663,16 @@ export function brokenSamples(): Sample[] {
 		 */
 		if (config.id === 'currency') body = '```sheet\nCP: 42\nSP: 18\nGP 7\nPP: 1\n```';
 		if (config.id === 'rolled_health') body = '```sheet\ncurrent: 14\nmax: 22\nmax: 24\n```';
+		/*
+		 * **A value the block reads and the card's own rule refuses**, which is not
+		 * a read failure and so is none of the four above: a buffer of `2.5`,
+		 * hand-typed into the note. `read` takes it as text like every Pool value,
+		 * and the card marks it on first paint — the pill's error border and the
+		 * sentence under it — without rewriting it
+		 * (`docs/features/pool-temp-refuses.md`). On `hit_points`, the one pool
+		 * with a buffer; its `current` and `max` are the sample's own.
+		 */
+		if (config.id === 'hit_points') body = '```sheet\ncurrent: 6\nmax: 9\ntemp: 2.5\n```';
 		const children =
 			config.id === 'background' && sample.children !== undefined
 				? { ...sample.children, origin: '```sheet\norigin: Neverwinter\nnote: guild artisan\n' }

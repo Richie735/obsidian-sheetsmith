@@ -1429,6 +1429,80 @@ describe('a row whose length the character owns', () => {
 		expect(changed).not.toHaveBeenCalled();
 	});
 
+	it('declines a word, with the Add form\'s own sentence, and leaves the note as it was', () => {
+		// One check for both fields that write a length
+		// (`docs/features/track-add-length-settles.md`).
+		const body = '\n```sheet\nd10: 2 / 4\n```\n';
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, dataFrom(body, diceRows), {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = 'lots';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).not.toHaveBeenCalled();
+		expect(field.value).toBe('lots');
+		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+			'Not saved. A length is a number of segments, and "lots" is not one. Type a number or a sum such as 4+1, or leave it empty.',
+		);
+		// The note is unchanged because nothing was sent: a component reaches
+		// the file only through `onChange` (PATTERNS §5), so the assertion
+		// above is the whole proof. A `track.write` of the unchanged data
+		// would be a round trip of `d10: 2 / 4` that no refusal can make fail.
+	});
+
+	it('leaves a length already stored as a word alone across a focus and blur', () => {
+		// Rendered, not corrected (SPEC §4.2): `bindEditable` returns before
+		// `refuse` when the settled draft equals the stored text, so the
+		// refusal is met only by a new commit of a word.
+		const body = '\n```sheet\nd10: 2 / lots\n```\n';
+		const data = dataFrom(body, diceRows);
+		expect(data.values.d10).toBe('2 / lots');
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, data, { ...context, onChange: changed });
+		expect(parts(el).runs).toHaveLength(0);
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		expect(field.value).toBe('lots');
+		field.focus();
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).not.toHaveBeenCalled();
+		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe('');
+		expect(track.write(data, body, diceRows)).toBe(body);
+	});
+
+	it('still clears a length, which is not a word', () => {
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		const body = '\n```sheet\nd10: 2 / 4\n```\n';
+		track.render(el, diceRows, dataFrom(body, diceRows), {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = '';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).toHaveBeenCalledWith({ values: { d10: '2' } });
+		// And what the note then holds, which is the half a delta cannot say.
+		expect(track.write({ values: { d10: '2' } }, body, diceRows)).toBe(
+			'\n```sheet\nd10: 2\n```\n',
+		);
+	});
+
 	it('a marks commit on a populated row carries the stored length through the join', () => {
 		vi.useFakeTimers();
 		const changed = vi.fn();
@@ -2050,12 +2124,95 @@ describe('a Track the character may add rows to', () => {
 			expect(form.submit.textContent).toBe('Add');
 		});
 
-		it('keeps the keypad on the length, a segment count taking bare digits', () => {
-			// The one field here a digits-only keypad fits: it settles no
-			// arithmetic, unlike the row's own length field (docs/UI.md §7).
+		it('gives the length the full keyboard, since it settles arithmetic', () => {
+			// As the row's own length field does: iOS's `numeric` keypad has
+			// no operator to type `4+1` with (docs/UI.md §7).
 			const form = openAddForm(renderEmpty(kills));
-			expect(form.length.inputMode).toBe('numeric');
+			expect(form.length.inputMode).toBe('text');
 			expect(form.name.inputMode).toBe('');
+		});
+
+		describe('settles the length as the row\'s own field does', () => {
+			/** Add `Wolves` with a length, and say what the note then holds. */
+			const added = (length: string) => {
+				closeAnchoredPanel();
+				const changed = vi.fn();
+				const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+				const form = addRow(el, 'Wolves', length);
+				const delta = changed.mock.calls[0]?.[0] as
+					| { values: Record<string, string> }
+					| undefined;
+				return {
+					el,
+					form,
+					changed,
+					note: delta === undefined ? null : track.write(delta, KILLS_BODY, kills),
+				};
+			};
+			const holding = (entry: string): string =>
+				`\n\`\`\`sheet\nGoblins: 6 / 10\nDragons: 3 / 5\nWolves: ${entry}\n\`\`\`\n`;
+
+			it('leaves a note already holding a sum as it is, a row with no run', () => {
+				// Stored before this fix. Rendered, not corrected (SPEC §4.2): the
+				// row's own field shows the sum and settles it on its next commit.
+				const body = '\n```sheet\nWolves:  / 2+1\n```\n';
+				const el = renderBody(kills, body);
+				expect(parts(el).runs).toHaveLength(0);
+				expect(
+					el.querySelector<HTMLInputElement>('.sheetsmith-track-row-length-input')
+						?.value,
+				).toBe('2+1');
+				expect(el.querySelector('.sheetsmith-error')).toBeNull();
+				expect(track.write(dataFrom(body, kills), body, kills)).toBe(body);
+			});
+
+			it('writes a sum as the number it comes to', () => {
+				expect(added('2+1').note).toBe(holding(' / 3'));
+			});
+
+			it('writes 4/1 as 4, since division settles before the slash check', () => {
+				const result = added('4/1');
+				expect(result.note).toBe(holding(' / 4'));
+				expect(result.form.lengthProblem.hidden).toBe(true);
+			});
+
+			it('writes 0, a number the card will not draw, as the row\'s field would', () => {
+				expect(added('0').note).toBe(holding(' / 0'));
+			});
+
+			it('still refuses a slash arithmetic cannot settle', () => {
+				const result = added('4/lots');
+				expect(result.changed).not.toHaveBeenCalled();
+				expect(result.form.lengthProblem.textContent).toContain(
+					'A slash separates',
+				);
+			});
+
+			it('refuses a word, keeping the draft and saying why where it is read', () => {
+				const sentence =
+					'Not saved. A length is a number of segments, and "lots" is not one. Type a number or a sum such as 4+1, or leave it empty.';
+				const { el, form, changed } = added('lots');
+				expect(changed).not.toHaveBeenCalled();
+				expect(form.length.value).toBe('lots');
+				expect(form.lengthProblem.hidden).toBe(false);
+				expect(form.lengthProblem.textContent).toBe(sentence);
+				expect(form.length.getAttribute('aria-invalid')).toBe('true');
+				expect(form.length.getAttribute('aria-describedby')).toBe(
+					form.lengthProblem.id,
+				);
+				expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+					sentence,
+				);
+				// And corrected, the same form writes and the refusal goes.
+				form.length.value = '4';
+				form.submit.click();
+				expect(changed).toHaveBeenCalledWith({ values: { Wolves: ' / 4' } });
+				expect(track.write({ values: { Wolves: ' / 4' } }, KILLS_BODY, kills)).toBe(
+					holding(' / 4'),
+				);
+				expect(form.lengthProblem.hidden).toBe(true);
+				expect(form.length.hasAttribute('aria-invalid')).toBe(false);
+			});
 		});
 
 		it('sits under the declared rows a card still has to offer', () => {
@@ -2278,7 +2435,8 @@ describe('a Track the character may add rows to', () => {
 		it('refuses a length that would be read back as two numbers', () => {
 			const changed = vi.fn();
 			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
-			const form = addRow(el, 'Wolves', '4/2');
+			// Not `4/2`, which settles to `2` before the slash is looked at.
+			const form = addRow(el, 'Wolves', '4/lots');
 			expect(changed).not.toHaveBeenCalled();
 			expect(form.lengthProblem.hidden).toBe(false);
 			expect(form.lengthProblem.textContent).toContain('A slash separates');

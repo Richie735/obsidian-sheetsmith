@@ -28,6 +28,16 @@ export function tooManyToName(names: readonly unknown[]): boolean {
 	return names.length > NAMED_AT_MOST;
 }
 
+/**
+ * The names a sentence still spells out when the list is too long to name
+ * whole, for one that counts the list and names a few *among them*
+ * (`id-rename-report.ts`). The bound's other application, beside the
+ * comparison above, so no caller writes the number.
+ */
+export function namedFew<T>(names: readonly T[]): T[] {
+	return names.slice(0, NAMED_AT_MOST);
+}
+
 /** Quote a list as an English series: `"a"`, `"a" and "b"`, `"a", "b" and "c"`; `''` for none. */
 export function spelled(names: readonly string[]): string {
 	return series(names.map((name) => `"${name}"`));

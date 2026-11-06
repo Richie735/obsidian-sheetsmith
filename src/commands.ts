@@ -1,11 +1,13 @@
 import { MarkdownView, Notice } from 'obsidian';
 import type SheetsmithPlugin from './main';
 import { chooseLayoutForNewCharacter } from './characters';
+import { TEXT } from './en';
 import { convertJsonLayouts } from './layout-conversion';
+import { carriesLayoutKey } from './layout-notes';
 import { chooseStarterLayout } from './starters/picker';
-import { LAYOUT_KEY } from './types';
 import { LayoutEditorView, openLayoutEditor } from './view/layout-editor-view';
-import { SheetView, sheetViewState } from './view/sheet-view';
+import { openAsSheet } from './view/open-as-sheet';
+import { SheetView } from './view/sheet-view';
 
 /**
  * How long the undo/redo confirmation stays on screen.
@@ -79,18 +81,11 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 
 	plugin.addCommand({
 		id: 'open-as-sheet',
-		name: 'Open as sheet',
+		name: TEXT.openAsSheet,
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
-			const file = view?.file;
-			if (!view || !file) return false;
-			const frontmatter =
-				plugin.app.metadataCache.getFileCache(file)?.frontmatter;
-			if (!frontmatter || frontmatter[LAYOUT_KEY] === undefined) return false;
-			if (!checking) {
-				plugin.markdownOverrides.delete(file.path);
-				void view.leaf.setViewState(sheetViewState(file.path));
-			}
+			if (!view?.file || !carriesLayoutKey(plugin.app, view.file)) return false;
+			if (!checking) openAsSheet(plugin, view);
 			return true;
 		},
 	});
@@ -137,20 +132,11 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 
 	plugin.addCommand({
 		id: 'open-as-markdown',
-		name: 'Open as Markdown',
+		name: TEXT.openAsMarkdown,
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(SheetView);
-			const file = view?.file;
-			if (!view || !file) return false;
-			if (!checking) {
-				// Remembered for the session so auto-open does not flip the
-				// note straight back to sheet view.
-				plugin.markdownOverrides.add(file.path);
-				void view.leaf.setViewState({
-					type: 'markdown',
-					state: { file: file.path },
-				});
-			}
+			if (!view?.file) return false;
+			if (!checking) view.openAsMarkdown();
 			return true;
 		},
 	});

@@ -74,3 +74,53 @@ describe('componentReferences', () => {
 		expect(componentReferences('#', none)).toBeNull();
 	});
 });
+
+describe('componentReferences: which aggregate a reference sits in', () => {
+	const rowsOf = (source: string) =>
+		componentReferences(source, none)?.map((one) => [one.id, one.rows?.id]);
+
+	it('marks a reference in a per-row argument with the id the aggregate walks', () => {
+		expect(rowsOf('sum(inventory, Qty * prof) + prof')).toEqual([
+			['inventory', undefined],
+			['Qty', 'inventory'],
+			['prof', 'inventory'],
+			['prof', undefined],
+		]);
+	});
+
+	it('marks the condition of count(, and self, and takes the innermost walk', () => {
+		expect(rowsOf('count(self, level > 2)')).toEqual([['level', 'self']]);
+		expect(rowsOf('sum(a, sum(b, x) + y)')).toEqual([
+			['a', undefined],
+			// A first argument is a table to walk, never a row's lookup.
+			['b', undefined],
+			['x', 'b'],
+			['y', 'a'],
+		]);
+	});
+
+	it('names the call that walks the rows, not another call over the same table', () => {
+		const found = componentReferences('count(inventory, x) + sum(inventory, prof)', none);
+		expect(found?.map((one) => [one.id, one.rows?.call, one.walkedBy])).toEqual([
+			['inventory', undefined, 'count'],
+			['x', 'count', undefined],
+			['inventory', undefined, 'sum'],
+			['prof', 'sum', undefined],
+		]);
+	});
+
+	it('marks the id inside a mod. name as a slot', () => {
+		expect(componentReferences('mod.hp + hp', none)?.map((one) => [one.id, one.slot])).toEqual([
+			['hp', true],
+			['hp', undefined],
+		]);
+	});
+
+	it('marks nothing outside an aggregate, or past its closing bracket', () => {
+		expect(rowsOf('floor(level / 2) + sum(bag, 1) + level')).toEqual([
+			['level', undefined],
+			['bag', undefined],
+			['level', undefined],
+		]);
+	});
+});

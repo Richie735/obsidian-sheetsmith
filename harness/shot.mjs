@@ -21,7 +21,8 @@
  *   media=prefers-contrast:more       # an emulated media feature; repeatable
  *   media=forced-colors:active
  *   hover=<selector>                  # a real pointer resting on the element
- *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held
+ *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held;
+ *                                     # a touch under `platform=`, else the mouse
  *   platform=tablet                   # Obsidian's tablet body classes, and touch
  *   platform=phone                    # the phone's, `is-mobile is-phone`, and touch
  *   frame=<selector>                  # the PNG clipped to that element, plus 16px
@@ -271,6 +272,15 @@ if (MAIN) mkdirSync(outDir, { recursive: true });
  * **18338** both before and after the move, against 18300: already over by a
  * stale 38px this pass did not cause. 8500 to **8800**, 9600 to **9900**, 10600
  * to **10900**, 18300 to **18600**.
+ *
+ * **Re-measured, not raised, for Reservoir** (`docs/features/pool-headline-narrow-fit.md`),
+ * a Pool in row 49, which the six-field Passport already spans, so the sheet
+ * gains no grid row but the row grows by what a Pool is taller than the
+ * Passport's share. Off `document.body`, harness built first, through each
+ * view's own query: **8562** here against 8800, **9551** at 520 against 9900,
+ * **10701** at `text=24` against 10900, **18611** at `&width=380` against
+ * `sheet-narrow`'s 18900, and **18782** at a true 380 against
+ * `sheet-viewport-380`'s 19000. All inside; the last two by under 300px.
  */
 const SHEET_FRAME = '1400,8800';
 
@@ -1473,6 +1483,57 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&open=stat_roster',
 		size: EDITOR_FRAME,
 	},
+	/*
+	 * The **ID** row (`docs/features/component-id-rename.md` §1): the id as a
+	 * field, first in the form, with the inventory as the row's description
+	 * between its name and its field, as Label's and Key's rows read. A Card publishes a bare name; a Record set publishes none and
+	 * reads only through its aggregates, which is the inventory's other shape.
+	 * Both themes, and the narrow regime, where the row stacks.
+	 */
+	{
+		name: 'editor-id-card',
+		query: 'surface=editor&theme=light&open=armour_class',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-id-card-dark',
+		query: 'surface=editor&theme=dark&open=armour_class',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-id-record-set',
+		query: 'surface=editor&theme=light&open=traits',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-id-record-set-dark',
+		query: 'surface=editor&theme=dark&open=traits',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Framed on the form, since the stacked pane puts it 28,000px down.
+		name: 'editor-id-narrow',
+		query: 'surface=editor&theme=light&open=armour_class',
+		size: '380,30200',
+		frame: '.sheetsmith-component-form',
+	},
+	{
+		// The Record set's row at the same width: its two aggregate chips are
+		// the widest thing the description holds, so this is where it wraps.
+		name: 'editor-id-record-set-narrow',
+		query: 'surface=editor&theme=light&open=traits',
+		size: '380,30200',
+		frame: '.sheetsmith-component-form',
+	},
+	{
+		// A refused id, which exists only after a commit: an id another
+		// component already holds, typed and left, so the field shows the old
+		// id again with the sentence under it.
+		name: 'editor-id-refused',
+		query:
+			'surface=editor&theme=light&open=armour_class&type=%5Bdata-sheetsmith-focus%3D%22id-armour_class%22%5D%7Cabilities',
+		size: EDITOR_FRAME,
+	},
 	{
 		/*
 		 * **This feature's editor surface, which no default view opened.**
@@ -2151,6 +2212,19 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&open=weapons',
 		size: '820,23950',
 		platform: 'tablet',
+	},
+	{
+		// The same pane with Weapons, the selected block, held by a finger and
+		// carried two of Proficiencies' columns right
+		// (`docs/features/canvas-touch-select-step.md`): the guides drawn and the
+		// block moved, which a touch can do only on the block already selected.
+		// The press is a touch because the view stages a platform (`hold` below).
+		// Measured: **23901**.
+		name: 'editor-tablet-drag',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '820,23950',
+		platform: 'tablet',
+		hold: { at: '[data-sheetsmith-focus="preview-weapons"]', by: [140, 0] },
 	},
 	{
 		// A list field's touch arrows at their ends (`docs/features/disabled-controls.md`):
@@ -3218,7 +3292,75 @@ export const DEFAULTS = [
 		size: '1400,1900',
 		hover: '.sheetsmith-record-input-text',
 	},
+	...poolHeadlineViews(),
 ];
+
+/**
+ * A Pool's reading in a narrow card (`docs/features/pool-headline-narrow-fit.md`),
+ * framed to one Pool's cell per shot, in the five conditions the spec names and
+ * the reported case.
+ *
+ * Two Pools per condition, because no free placement puts them side by side:
+ * **Stamina reserve**, a two-digit calculated ceiling with the dotted mark, and
+ * **Reservoir**, `100 / 120` with the mark on the `120`. The reported case is
+ * Hit points moved to one unit on the wide sheet by `&place=` with `100` typed
+ * into its temporary points, once at `6 / 9` and once with `100` typed into its
+ * current too.
+ *
+ * Framed views take the driven path, which captures beyond the viewport, so a
+ * window one screen tall frames a cell anywhere on the sheet. The cell is named
+ * by its value field's accessible name, which is the Pool's label. The pad sits
+ * under the grid's 8px gap, `TABLE_SELECT_PAD`'s reason: at 16 the neighbouring
+ * card's border is a stray line along the frame's edge.
+ */
+function poolHeadlineViews() {
+	const cell = (label) => `.sheetsmith-cell:has(.sheetsmith-pool-current[aria-label='${label}'])`;
+	const typed = (selector, text) => `type=${encodeURIComponent(`${selector}|${text}`)}`;
+	const REPORTED =
+		'surface=sheet&theme=light&text=24&place=hit_points:5,1&' +
+		typed(".sheetsmith-pool-temp-input[aria-label='Hit points temporary']", '100');
+	const conditions = [
+		{ id: 'default-1400', query: 'surface=sheet&theme=light', size: '1400,1900' },
+		{ id: 'default-520', query: 'surface=sheet&theme=light&width=520', size: '1400,1900' },
+		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24', size: '1400,1900' },
+		{ id: 'large-380', query: 'surface=sheet&theme=light&width=380&text=24', size: '1400,1900' },
+		{ id: 'phone-380', query: 'surface=sheet&theme=light', size: '380,1900', platform: 'phone' },
+	];
+	return [
+		...conditions.flatMap(({ id, ...view }) =>
+			['Stamina reserve', 'Reservoir'].map((label) => ({
+				...view,
+				name: `pool-headline-${id}-${label === 'Reservoir' ? 'reservoir' : 'stamina'}`,
+				frame: cell(label),
+				pad: 6,
+			})),
+		),
+		{
+			// The wrapped reading in the dark theme (`docs/UI.md` §11, both
+			// themes): the one condition where the ceiling takes a line of its
+			// own, muted, under a number at full contrast.
+			name: 'pool-headline-large-520-reservoir-dark',
+			query: 'surface=sheet&theme=dark&width=520&text=24',
+			size: '1400,1900',
+			frame: cell('Reservoir'),
+			pad: 6,
+		},
+		{
+			name: 'pool-headline-reported',
+			query: REPORTED,
+			size: '1400,1900',
+			frame: cell('Hit points'),
+			pad: 6,
+		},
+		{
+			name: 'pool-headline-reported-three-digits',
+			query: `${REPORTED}&${typed(".sheetsmith-pool-current[aria-label='Hit points']", '100')}`,
+			size: '1400,1900',
+			frame: cell('Hit points'),
+			pad: 6,
+		},
+	];
+}
 
 const args = process.argv.slice(2);
 
@@ -3296,6 +3438,13 @@ function driven(view) {
  * since a driven page runs on the real clock.
  */
 const DRAW_BUDGET = 3000;
+
+/**
+ * How many moves a `hold` takes to cover its distance, by touch or by mouse:
+ * in steps, as a hand moves, so a gesture that reads each move — a drag
+ * snapping cell by cell — sees a path and not a teleport.
+ */
+const HOLD_STEPS = 8;
 
 /**
  * Where an element's centre is, for a pointer to go to. Throws on no match,
@@ -3381,7 +3530,30 @@ async function shootDriven(view, out) {
 			const at = await centreOf(browser, view, view.hover);
 			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
 		}
-		if (view.hold !== undefined) {
+		if (view.hold !== undefined && platform !== undefined) {
+			// **A finger, where the view stages a touch platform**, because the
+			// canvas answers a touch differently from a mouse: a touch drags only
+			// the selected block, and on any other it pans or selects
+			// (`docs/features/canvas-touch-select-step.md`). A mouse here would
+			// photograph a drag no tablet reader can make. The browser decides the
+			// pan from the touched element's `touch-action` at `touchStart`, as on
+			// the device, and no view staged a platform with a `hold` before this
+			// branch, so no earlier shot changes.
+			const at = await centreOf(browser, view, view.hold.at);
+			const [dx, dy] = view.hold.by;
+			const touch = (x, y) => [{ x, y, id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+			await browser.send('Input.dispatchTouchEvent', {
+				type: 'touchStart',
+				touchPoints: touch(at.x, at.y),
+			});
+			for (let step = 1; step <= HOLD_STEPS; step++) {
+				await browser.send('Input.dispatchTouchEvent', {
+					type: 'touchMove',
+					touchPoints: touch(at.x + (dx * step) / HOLD_STEPS, at.y + (dy * step) / HOLD_STEPS),
+				});
+			}
+			// No `touchEnd`: the press is what is being photographed.
+		} else if (view.hold !== undefined) {
 			const at = await centreOf(browser, view, view.hold.at);
 			const [dx, dy] = view.hold.by;
 			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
@@ -3393,14 +3565,11 @@ async function shootDriven(view, out) {
 				buttons: 1,
 				clickCount: 1,
 			});
-			// In steps, as a hand moves, so a gesture that reads each move — a
-			// drag snapping cell by cell — sees a path and not a teleport.
-			const STEPS = 8;
-			for (let step = 1; step <= STEPS; step++) {
+			for (let step = 1; step <= HOLD_STEPS; step++) {
 				await browser.send('Input.dispatchMouseEvent', {
 					type: 'mouseMoved',
-					x: at.x + (dx * step) / STEPS,
-					y: at.y + (dy * step) / STEPS,
+					x: at.x + (dx * step) / HOLD_STEPS,
+					y: at.y + (dy * step) / HOLD_STEPS,
 					button: 'left',
 					buttons: 1,
 				});

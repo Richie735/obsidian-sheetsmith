@@ -134,9 +134,11 @@ gitignored: it is Obsidian's CSS, and this repository is public.
 ## Conventions
 
 - Tabs, single quotes, per `.editorconfig`.
-- Sentence case for all user-facing UI text. `obsidianmd/ui/sentence-case` reports it
-  as a warning, and `npm run lint` runs with `--max-warnings 0`, so a warning fails
-  the build exactly like an error.
+- Sentence case for all user-facing UI text. `obsidianmd/ui/sentence-case` reads it
+  only as a literal at the call sites `docs/PATTERNS.md` §1 lists, and `src/en.ts`
+  through the locale-module rule; elsewhere it is held by review (PATTERNS §1, §8).
+  Where the lint reads it, it reports a warning, and `npm run lint` runs with
+  `--max-warnings 0`, so a warning fails the build exactly like an error.
 - Keep `main.ts` to plugin lifecycle only.
 - Do not commit `main.js`. It is a build artifact attached to releases.
 - Do not hand-edit `styles.css`. It is assembled from `src/styles/` by

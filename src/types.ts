@@ -600,6 +600,17 @@ export interface EntryAddress {
  * invert the layering for a list of five words. `contract.test.ts` holds every
  * entry against `COLUMN_TYPES`, which is the check a type would have bought.
  */
+/**
+ * What one entry of a `columns` list is called: the field's own `unit`, or
+ * Table's "column" where it says nothing. The one spelling of that default, read
+ * by the list field that draws the entries and by the formula vocabulary that
+ * names them (`formula/vocabulary.ts`), so a Record set's entry is a "field" in
+ * both and never a "column" in one.
+ */
+export function entryUnit(options: ColumnOptionsSpec | undefined): string {
+	return options?.unit ?? 'column';
+}
+
 export interface ColumnOptionsSpec {
 	/**
 	 * The types this component can hold, in the order they are offered.
