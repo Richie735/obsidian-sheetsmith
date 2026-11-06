@@ -23,6 +23,8 @@ Every valid buffer is a non-negative whole number of points. The temp field enfo
 
 **While marked, the field is as wide as what it holds.** At `3ch`, a stored `2.5` showed `2.` under a sentence quoting `"2.5"`. The character count is set as `--sheetsmith-pool-temp-chars` when the mark is drawn, not per keystroke, so the pill holds still while the reader corrects it. `field-sizing: content` was not used because it is Chromium-only, and Obsidian mobile would keep the clip.
 
+**Unmarked, the field holds three digits.** Its width is `3ch` plus its own inline padding, since the box is border-box. A bare `3ch` held two digits beside the padding, so a valid `100` read `10`. The width is fixed rather than sized to the value, as a Roster score's is, and the marked width is never narrower than it, so a one-letter refusal does not shrink the pill. `styles.test.ts` holds the arithmetic.
+
 **The rule is one predicate** (`refusesTemp`), and every reader asks it: the binding's `refuse`, the first-paint mark, `tempValue()` (a refused buffer absorbs nothing), the gesture (which leaves a refused buffer as it reads instead of writing `0` over it), and `commitDraft` (which leaves a refused buffer out of every other field's commit). The two sentences share their opening and closing clauses, `TEMP_RULE` and `TEMP_FIX`, so neither the rule nor the fix can be stated two ways.
 
 ## A note already holding one
