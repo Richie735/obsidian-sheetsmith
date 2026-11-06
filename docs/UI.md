@@ -832,6 +832,21 @@ that numbers hold still while they are stepped, and one summary line must not ca
 one fixed number field and one elastic one. Left-aligning a two-digit box answers
 the gap without buying the movement.
 
+**A Pool's value field is fixed at `4ch` wherever it fits, and elastic from `2ch`
+only below its container threshold** [judgement]. That is not a departure from
+the ruling above, which is about fields on a summary line and stands as it is.
+Below `calc(4.6em + 44px)` of card, a narrow cell has no room for the four-character
+slot beside a ceiling, so the slot drops to two and grows with its digits
+(`docs/features/pool-headline-narrow-fit.md`). `9 → 10` still moves nothing,
+but `99 → 100` widens the number by a digit and can wrap the ceiling onto a
+second line, which grows the card. That movement at a stepped digit-count
+boundary is the accepted cost of fitting a narrow card: the only box that
+holds still there is the `4ch` floor the narrow rule exists to lift. Also
+accepted: below the threshold the gap between the number and its ceiling
+varies with the number's digit count, about 14px for one digit and about 4px
+for three, because the field sizes to its content, and the ceiling's muted
+colour is what carries the grouping.
+
 **A disclosure opens a block in place, pushing its siblings inside a box that
 does not grow** [judgement]. Record set is the first of these and the rules are
 the box's rather than the control's. The prior art picks the direction: the
