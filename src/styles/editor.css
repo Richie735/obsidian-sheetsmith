@@ -1982,10 +1982,12 @@
 	   (`beginDrag` refuses anything but a mouse on a block not marked), and only
 	   the block marked below takes the pan for its drag.
 
-	   **Vertical only, `pan-y pinch-zoom`**, not `manipulation`: the canvas's
-	   view is its own `overflow-x: auto` scroller, and at 820 under tablet
-	   staging it holds 75px it cannot show (`docs/BACKLOG.md` § UI), so a
-	   finger drawn sideways across a block slid the whole canvas with it.
+	   **Vertical only, `pan-y pinch-zoom`**, not `manipulation`: a block on a
+	   grid canvas never needs to pan sideways, and the canvas's view is its own
+	   `overflow-x: auto` scroller, so any overflow it holds would slide the
+	   whole canvas under a sideways finger. One did: 75px at 820 under tablet
+	   staging, from a screen-reader twin (`.sheetsmith-sr-only`, `sheet.css`),
+	   since fixed. This guards against the next overflow of that kind.
 	   Nothing sideways was reachable from a block before, when every overlay
 	   was `none`, so this gives up no pan that worked. No double-tap zoom
 	   either way, which is what `manipulation` had over `auto`. */
