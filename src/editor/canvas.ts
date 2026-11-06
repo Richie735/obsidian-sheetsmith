@@ -289,6 +289,14 @@ export class Canvas {
 			overlay.toggleClass('sheetsmith-preview-overlap', overlaps);
 			if (config.id === this.host.selection) {
 				overlay.addClass('sheetsmith-preview-editing');
+				// The one block a touch may drag, and the mark that says so to
+				// the browser (`editor.css` reads it for `touch-action: none`), to
+				// the app (Obsidian's sidebar swipe ignores a press under it) and to
+				// the gesture's guard alike
+				// (`docs/features/canvas-touch-select-step.md` §2). Here only, not
+				// in `wireUnplacedChildren`: a tab has nothing to drag, and the
+				// class alone would trap a scroll for no gesture.
+				overlay.setAttribute('data-ignore-swipe', 'true');
 			}
 			overlay.setAttribute('aria-label', describeCell(config, overlaps));
 			// The grid placement itself is written onto `cell` — the live

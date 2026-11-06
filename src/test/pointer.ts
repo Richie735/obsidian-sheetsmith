@@ -109,15 +109,26 @@ export function pressDown(el: Target, init: PointerEventInit = {}): void {
  * control claims a gesture the browser would otherwise spend on it. It exists
  * now to assert the *negative*: a modifier cell has one gesture, so nothing
  * takes its press away, and a case saying so is what keeps the second gesture
- * from being reintroduced quietly. Here rather than in a component's own cases
+ * from being reintroduced quietly. It asserts the positive too: the canvas's
+ * select step claims a press only on a block a touch may drag
+ * (`schematic-gestures.test.ts`). Here rather than in a component's own cases
  * because it is a gesture a test presses a control with, which is what this
  * file holds (`docs/PATTERNS.md` §2).
+ *
+ * `init` carries what a press on a grid needs besides, its coordinates; it is
+ * spread under `pointerType`, so the pointer named here is the one pressed even
+ * where `init` names another (`layout-editor-pane.ts`'s `at` names a mouse).
  */
-export function prevented(el: Target, pointerType: string): boolean {
+export function prevented(
+	el: Target,
+	pointerType: string,
+	init: PointerEventInit = {},
+): boolean {
 	const down = new PointerEvent('pointerdown', {
 		pointerId: 1,
 		button: 0,
 		cancelable: true,
+		...init,
 		pointerType,
 	});
 	el?.dispatchEvent(down);

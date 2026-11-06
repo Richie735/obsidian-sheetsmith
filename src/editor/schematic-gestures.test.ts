@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cancel, pressDown, release } from '../test/pointer';
+import { cancel, pressDown, prevented, release } from '../test/pointer';
 import {
 	Harness,
 	tick,
@@ -734,7 +734,7 @@ describe('row geometry read off the grid rather than assumed', () => {
 		measureRows(grid, '88px 44px');
 
 		const cell = control(harness, 'preview-left');
-		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		pressDown(cell, { pointerType: 'mouse', clientX: TRACK / 2, clientY: 10 });
 		cell.dispatchEvent(
 			new PointerEvent('pointermove', {
 				pointerId: 1,
@@ -752,7 +752,7 @@ describe('row geometry read off the grid rather than assumed', () => {
 		measureRows(grid, '88px 44px');
 
 		const cell = control(harness, 'preview-left');
-		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		pressDown(cell, { pointerType: 'mouse', clientX: TRACK / 2, clientY: 10 });
 		// 88 + 44 = 132 is the end of `tall`'s own two resolved rows; ten
 		// pixels past it is still short of a further 44px pitch, so it counts
 		// as the first row after the known ones — row 3, which is exactly
@@ -853,7 +853,7 @@ describe('the grid drawn behind a gesture', () => {
 		measureRows(grid, '88px 44px');
 		const cell = control(harness, 'preview-left');
 
-		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		pressDown(cell, { pointerType: 'mouse', clientX: TRACK / 2, clientY: 10 });
 		cell.dispatchEvent(
 			new PointerEvent('pointermove', {
 				pointerId: 1,
@@ -880,7 +880,7 @@ describe('the grid drawn behind a gesture', () => {
 		measureColumns(grid, '40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px');
 		const cell = control(harness, 'preview-left');
 
-		pressDown(cell, { clientX: 5, clientY: ROW / 2 });
+		pressDown(cell, { pointerType: 'mouse', clientX: 5, clientY: ROW / 2 });
 		cell.dispatchEvent(
 			new PointerEvent('pointermove', { pointerId: 1, clientX: 82, clientY: ROW / 2 }),
 		);
@@ -988,5 +988,127 @@ describe('the grid drawn behind a gesture', () => {
 		expect(guides(sheetGrid(harness)).columns).toEqual([]);
 		release(cell);
 		await settle(harness.pane);
+	});
+});
+
+describe('the select step a touch takes on the canvas', () => {
+	/*
+	 * `docs/features/canvas-touch-select-step.md`. Anything but a mouse drags
+	 * only the block marked as selected; a press on any other is left to the
+	 * browser, so it goes on to its `click` and selects. The mark is read off the
+	 * block, so a press on the selected block's own corner still resizes — the
+	 * corner span is the event's target and carries no attribute of its own.
+	 */
+	beforeEach(async () => {
+		harness = await open(schematic());
+	});
+
+	async function selectLeft(): Promise<HTMLElement> {
+		control(harness, 'preview-left').click();
+		await settle(harness.pane);
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		expect(cell.hasAttribute('data-ignore-swipe')).toBe(true);
+		return cell;
+	}
+
+	function corner(cell: HTMLElement): HTMLElement {
+		const handle = cell.querySelector('.sheetsmith-preview-resize');
+		if (!handle?.instanceOf(HTMLElement)) throw new Error('no resize corner');
+		return handle;
+	}
+
+	for (const pointerType of ['touch', 'pen']) {
+		it(`a ${pointerType} press on an unselected block selects and moves nothing`, async () => {
+			sheetGrid(harness);
+			const wrote = writes(harness);
+			const cell = control(harness, 'preview-left');
+			expect(cell.hasAttribute('data-ignore-swipe')).toBe(false);
+			expect(prevented(cell, pointerType, at(1, 1))).toBe(false);
+			expect(cell.hasPointerCapture(1)).toBe(false);
+			dragTo(cell, 4, 1);
+			expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+			expect(harness.container.querySelector('.sheetsmith-grid-guides')).toBeNull();
+			release(cell);
+			cell.click();
+			await settle(harness.pane);
+
+			expect(await position(harness, 'left')).toEqual({ col: 1, row: 1, width: 2, height: 1 });
+			expect(wrote()).toBe(0);
+			expect(
+				control(harness, 'preview-left').classList.contains('sheetsmith-preview-editing'),
+			).toBe(true);
+		});
+	}
+
+	it('after a click on an unselected overlay, with no await, the overlay now in its cell carries the attribute', () => {
+		/*
+		 * A browser decides the next touch's `touch-action` from the element
+		 * under it at touch start, so the mark has to be in the DOM by then.
+		 * `select` redraws synchronously inside the click, so no await here.
+		 */
+		const cell = control(harness, 'preview-left');
+		expect(cell.hasAttribute('data-ignore-swipe')).toBe(false);
+		cell.click();
+		const now = harness.container.querySelector(
+			'.sheetsmith-editor-canvas [data-sheetsmith-focus="preview-left"]',
+		);
+		expect(now).not.toBe(cell);
+		expect(now?.hasAttribute('data-ignore-swipe')).toBe(true);
+		expect(harness.container.querySelectorAll('[data-ignore-swipe]')).toHaveLength(1);
+	});
+
+	it('a touch press on the selected block drags it', async () => {
+		const cell = await selectLeft();
+		expect(prevented(cell, 'touch', at(1, 1))).toBe(true);
+		expect(cell.hasPointerCapture(1)).toBe(true);
+		dragTo(cell, 4, 1);
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+		expect((await position(harness, 'left')).col).toBe(4);
+	});
+
+	it('a mouse press on an unselected block drags it', async () => {
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		expect(cell.hasAttribute('data-ignore-swipe')).toBe(false);
+		expect(prevented(cell, 'mouse', at(1, 1))).toBe(true);
+		dragTo(cell, 4, 1);
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+		expect((await position(harness, 'left')).col).toBe(4);
+	});
+
+	it('a corner press by touch on an unselected block resizes nothing', async () => {
+		sheetGrid(harness);
+		const wrote = writes(harness);
+		const cell = control(harness, 'preview-left');
+		const handle = corner(cell);
+		pressDown(handle, { ...at(2, 1), pointerType: 'touch' });
+		expect(cell.hasPointerCapture(1)).toBe(false);
+		dragTo(cell, 5, 2);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+		release(cell);
+		handle.click();
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({ col: 1, row: 1, width: 2, height: 1 });
+		expect(wrote()).toBe(0);
+	});
+
+	it('a touch press on the selected block\'s resize corner resizes it', async () => {
+		// The owner's case: the press's target is the corner span, which carries
+		// no mark, so a guard reading the target would refuse this resize.
+		const cell = await selectLeft();
+		const handle = corner(cell);
+		expect(handle.hasAttribute('data-ignore-swipe')).toBe(false);
+		pressDown(handle, { ...at(2, 1), pointerType: 'touch' });
+		expect(cell.hasPointerCapture(1)).toBe(true);
+		dragTo(cell, 5, 2);
+		release(cell);
+		handle.click();
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({ col: 1, row: 1, width: 5, height: 2 });
 	});
 });
