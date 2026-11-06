@@ -3268,12 +3268,21 @@ body {
    What centring costs is smaller than it sounds. `tabular-nums` means 54 to 55
    moves nothing; only 99 to 100 shifts the number, by half a character, once in
    a campaign. Baseline-aligned, because the two are different sizes and
-   centring them vertically would float the smaller one. */
+   centring them vertically would float the smaller one.
+
+   **On a card too narrow for both, the ceiling wraps under the number**
+   (`docs/features/pool-headline-narrow-fit.md`), centred by the same
+   `justify-content`, so the number holds the card's centre line and keeps its
+   size. The ceiling is `nowrap`, so its `/` goes with it and it still reads as
+   "of 120". No row gap: the two lines are one reading, and the ceiling's line
+   is already smaller than the number's. Baseline alignment then holds within
+   each line only, which is the amendment SPEC §4.2 records. */
 .sheetsmith-pool-reading {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
 	justify-content: center;
-	gap: var(--size-2-1);
+	gap: 0 var(--size-2-1);
 	flex: 1;
 	min-width: 0;
 }
@@ -3296,12 +3305,6 @@ body {
    number renders small inside a form field. The old bordered design hid
    this; taking the chrome off is what exposed it. */
 .sheetsmith-view .sheetsmith-pool-current {
-	/* Four characters covers the ordinary pool. Where field-sizing is
-	   supported the field grows past that instead of clipping a digit; where
-	   it is not — every non-Chromium engine, Obsidian mobile included —
-	   `width: auto` on an input falls back to its intrinsic ~20-character
-	   size, which is a blown-out card rather than a graceful degradation. */
-	min-width: 4ch;
 	padding: 0;
 	border: none;
 	background: transparent;
@@ -3324,16 +3327,64 @@ body {
 	transition: color 260ms ease-out;
 }
 
-/* The width alone at (0,3,0), past Obsidian's phone rule: see
-   `.sheetsmith-table-input`'s. */
+/* The width and its bounds at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. None of the four is something `:hover` or
+   `:focus` restyles, so lifting them together costs those rules nothing.
+
+   Four characters covers the ordinary pool. Where field-sizing is supported
+   the field grows past that instead of clipping a digit; where it is not —
+   every non-Chromium engine, Obsidian mobile included — `width: auto` on an
+   input falls back to its intrinsic ~20-character size, which is a blown-out
+   card rather than a graceful degradation, so it is pinned at `4ch`.
+
+   **The number never gives way** (`docs/features/pool-headline-narrow-fit.md`).
+   `flex-shrink: 0`, so the reading's row never squeezes the field under its own
+   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`).
+   `max-width: 100%` is for the engines with no field-sizing: there the pinned
+   `4ch` is capped at the row rather than run off the card. Where `min-width`
+   is the larger, it wins over `max-width`, which is why the narrow card's
+   rule below lowers the floor rather than relying on the cap. */
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 	width: 4ch;
+	min-width: 4ch;
+	max-width: 100%;
+	flex-shrink: 0;
 }
 
 @supports (field-sizing: content) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 		width: auto;
 		field-sizing: content;
+	}
+
+}
+
+/* **The slot gives way first.** Below the width today's reading needs to keep
+   a three-digit ceiling beside a four-character slot, the slot's floor drops
+   to two characters, and with field-sizing the field is as wide as its digits
+   from there. Two rather than one, so a single digit still gets a box the
+   hover and focus ring do not clamp onto, and `9 → 10` moves nothing.
+
+   The threshold is that reading's width: `4ch` at the value size, which is
+   4.6em on the card (the query's `em` is the Pool card's, the query
+   container), plus 44px of fixed chrome — the reading's 2px gap, the widest
+   three-digit ceiling at 38.7px (a max the character owns, with its padding),
+   and the 2px the reading's row sits inside the card's content box, rounded
+   up. `em` plus `px` rather than either alone, because the number scales with
+   the sheet and the ceiling is a UI token the sheet's `em` does not reach
+   (`docs/UI.md` §5). It measures 118px at the default size and 154px at
+   `text=24`; above it nothing changes, so every Pool that fit is untouched.
+
+   Below the threshold the box is elastic: `99 → 100` widens the number by a
+   digit and can wrap the ceiling. Accepted, and recorded at `docs/UI.md` §9's
+   fixed-box ruling, because the only box that holds still is the `4ch` floor
+   this rule exists to lift.
+
+   Below the base rule, at its own (0,3,0), since `@container` adds no
+   specificity and the later rule wins on order (`docs/UI.md` §4). */
+@container (max-width: calc(4.6em + 44px)) {
+.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
+		min-width: 2ch;
 	}
 
 }

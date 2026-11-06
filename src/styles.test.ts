@@ -4564,6 +4564,94 @@ describe('the pool\'s buffer field holds three digits', () => {
 	});
 });
 
+describe("a pool's reading fits a narrow card", () => {
+	/*
+	 * `docs/features/pool-headline-narrow-fit.md`. Three rules give way in order,
+	 * the slot, then the ceiling, and never the number, and none of them is
+	 * visible to happy-dom, which lays nothing out. `harness/measure-pool-headline.mjs`
+	 * measures the result in a browser. This file holds what a review of the
+	 * shots cannot see: that each rule is declared, that the narrow rule wins on
+	 * order, and the threshold's arithmetic.
+	 */
+	const READING = '.sheetsmith-pool-reading';
+	const FIELD = '.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	/** Every rule whose selector list names `selector`, in file order. */
+	const naming = (selector: string) =>
+		all
+			.map((rule, at) => ({ ...rule, at }))
+			.filter((rule) => selectorList(rule.selector).includes(selector));
+	const valueIn = (body: string, property: string): string | undefined =>
+		declarations(body)
+			.find((one) => one.startsWith(`${property}:`))
+			?.slice(property.length + 1)
+			.trim();
+
+	const reading = naming(READING).filter((rule) => rule.context.length === 0);
+	const base = naming(FIELD).filter((rule) => rule.context.length === 0);
+	const narrow = naming(FIELD).filter((rule) =>
+		rule.context.some((at) => at.startsWith('@container')),
+	);
+
+	it('finds the rules it is meant to be checking', () => {
+		expect(reading).toHaveLength(1);
+		expect(base).toHaveLength(1);
+		expect(narrow).toHaveLength(1);
+	});
+
+	it('lets the ceiling wrap under the number, with no row gap', () => {
+		expect(valueIn(reading[0]?.body ?? '', 'flex-wrap')).toBe('wrap');
+		expect(valueIn(reading[0]?.body ?? '', 'gap')).toBe('0 var(--size-2-1)');
+	});
+
+	it('never lets the number shrink, and caps it at the row', () => {
+		const body = base[0]?.body ?? '';
+		expect(valueIn(body, 'flex-shrink')).toBe('0');
+		expect(valueIn(body, 'max-width')).toBe('100%');
+		expect(valueIn(body, 'min-width')).toBe('4ch');
+	});
+
+	it('lowers the slot to two characters below the threshold, after the base rule', () => {
+		const rule = narrow[0];
+		expect(valueIn(rule?.body ?? '', 'min-width')).toBe('2ch');
+		// `@container` adds no specificity, so equal selectors are settled by
+		// order (docs/UI.md §4): the narrow rule has to come later.
+		expect(rule?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
+	});
+
+	it('puts the threshold at four characters, the gap and the widest ceiling', () => {
+		/*
+		 * Measured in the harness at a 16px sheet, where the card's value size
+		 * draws `4ch` at 73.4px (`docs/features/pool-headline-narrow-fit.md`):
+		 * 4.59em. The rest is fixed-px chrome the sheet's `em` does not reach, so
+		 * it is px (`docs/UI.md` §5): the reading's `--size-2-1` gap, the widest
+		 * three-digit ceiling at 38.7px (a max the character owns, with its
+		 * padding), and the 2px the reading's row sits inside the card's
+		 * content box. Each part is rounded up, never down, and by less than the
+		 * next step, so the threshold neither clips a reading that fits nor
+		 * narrows a slot that has room.
+		 */
+		const FOUR_CH_EM = 73.4 / 16;
+		// Obsidian's value for `--size-2-1`, which the app's own CSS defines and
+		// no test here can read: that the reading declares that token is held by
+		// the wrap test above, and that the token is 2px only by this constant.
+		const GAP_PX = 2;
+		const CEILING_PX = 38.7;
+		const ROW_INSET_PX = 2;
+		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		const match = /^@container \(max-width: calc\(([\d.]+)em \+ ([\d.]+)px\)\)$/.exec(prelude);
+		expect(match, `unreadable threshold: ${prelude}`).not.toBeNull();
+		const em = Number(match?.[1]);
+		const px = Number(match?.[2]);
+		expect(em).toBeGreaterThanOrEqual(FOUR_CH_EM);
+		expect(em - FOUR_CH_EM).toBeLessThan(0.1);
+		const chrome = GAP_PX + CEILING_PX + ROW_INSET_PX;
+		expect(px).toBeGreaterThanOrEqual(chrome);
+		expect(px - chrome).toBeLessThan(2);
+	});
+});
+
 describe('a touch scrolls the canvas from any block but the selected one', () => {
 	/*
 	 * `docs/features/canvas-touch-select-step.md` §2 and §4. `touch-action` is
