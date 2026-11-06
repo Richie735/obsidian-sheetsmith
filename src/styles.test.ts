@@ -4505,3 +4505,103 @@ describe('the pool\'s buffer field holds three digits', () => {
 		);
 	});
 });
+
+describe('a touch scrolls the canvas from any block but the selected one', () => {
+	/*
+	 * `docs/features/canvas-touch-select-step.md` §2 and §4. `touch-action` is
+	 * decided by the browser at touch start from the pressed element and every
+	 * ancestor up to the scroller, so a single stray `none` traps the pane — and
+	 * nothing in a unit test presses a real touch to notice. The guard in
+	 * `beginDrag` reads the same attribute this does, so the two have to agree.
+	 */
+	const OVERLAY = '.sheetsmith-view .sheetsmith-canvas-overlay';
+	const SELECTED = `${OVERLAY}[data-ignore-swipe]`;
+	const NARROW = '@container sheetsmith-sheet (max-width: 480px)';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const touchAction = (rule: Rule) =>
+		declarations(rule.body).find((one) => one.startsWith('touch-action:'));
+	const at = (selector: string, context: string[] = []) =>
+		all.filter(
+			(rule) =>
+				selectorList(rule.selector).includes(selector) &&
+				rule.context.join() === context.join() &&
+				touchAction(rule) !== undefined,
+		);
+
+	it('lets an unselected block pan, and only the selected one take the touch', () => {
+		const base = at(OVERLAY);
+		const selected = at(SELECTED);
+		// Vertical only: the canvas is a sideways scroller of its own, and a
+		// finger across a block must not slide it.
+		expect(base.map(touchAction)).toEqual(['touch-action: pan-y pinch-zoom']);
+		expect(selected.map(touchAction)).toEqual(['touch-action: none']);
+	});
+
+	it('leaves the resize corner to the block it sits in', () => {
+		// An element's own `touch-action` intersects its ancestors', so a `none`
+		// here would trap every unselected block's corner.
+		const corner = all.filter(
+			(rule) =>
+				selectorList(rule.selector).some((one) => one.endsWith('.sheetsmith-preview-resize')) &&
+				touchAction(rule) !== undefined,
+		);
+		expect(all.some((rule) => rule.selector.includes('.sheetsmith-preview-resize'))).toBe(true);
+		expect(corner.map((rule) => rule.selector)).toEqual([]);
+	});
+
+	it('keeps the selected block scrolling where the grid is drawn as one column', () => {
+		// The narrow rule must match the attribute at its own weight: with the
+		// base selector alone it is (0,2,0) to the attribute rule's (0,3,0), and
+		// the trap the narrow regime removed would come back on one block.
+		const narrow = at(SELECTED, [NARROW]);
+		expect(narrow.map(touchAction)).toEqual(['touch-action: manipulation']);
+		expect(at(OVERLAY, [NARROW]).map(touchAction)).toEqual(['touch-action: manipulation']);
+		// Equal weight, so order decides it: the narrow rule comes later. Both
+		// found first, since a missing one indexes as -1 and passes the order.
+		const outer = at(SELECTED);
+		expect(outer).toHaveLength(1);
+		expect(narrow).toHaveLength(1);
+		expect(all.indexOf(narrow[0] as Rule)).toBeGreaterThan(all.indexOf(outer[0] as Rule));
+	});
+
+	it('draws a coarse pointer\'s corner on the selected block alone', () => {
+		const hidden = all.filter(
+			(rule) =>
+				rule.context.join() === '@media (pointer: coarse)' &&
+				selectorList(rule.selector).includes(
+					`${OVERLAY}:not([data-ignore-swipe]) .sheetsmith-preview-resize`,
+				),
+		);
+		expect(hidden.map((rule) => declarations(rule.body))).toEqual([['display: none']]);
+	});
+});
+
+describe('the selected canvas block is ringed outside its box', () => {
+	/*
+	 * `docs/features/canvas-touch-select-step.md` §6. The overlay is the live
+	 * component's own size, so a ring drawn on its border or as an inset shadow
+	 * lies on that component's content. It is an outline with a positive offset,
+	 * which the grid's gutter holds, and forced colors recolours that same
+	 * outline rather than drawing a second one.
+	 */
+	const RING = '.sheetsmith-view .sheetsmith-canvas-overlay.sheetsmith-preview-editing';
+	const ringRules = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+		selectorList(rule.selector).includes(RING),
+	);
+
+	it('draws an outline offset outward, and no border or shadow of its own', () => {
+		const plain = ringRules.filter((rule) => rule.context.length === 0);
+		expect(plain.map((rule) => declarations(rule.body))).toEqual([
+			['outline: 2px solid var(--interactive-accent)', 'outline-offset: 1px'],
+		]);
+	});
+
+	it('takes only the mode\'s colour in forced colors', () => {
+		const forced = ringRules.filter(
+			(rule) => rule.context.join() === '@media (forced-colors: active)',
+		);
+		expect(forced.map((rule) => declarations(rule.body))).toEqual([
+			['outline-color: SelectedItem'],
+		]);
+	});
+});
