@@ -272,6 +272,15 @@ if (MAIN) mkdirSync(outDir, { recursive: true });
  * **18338** both before and after the move, against 18300: already over by a
  * stale 38px this pass did not cause. 8500 to **8800**, 9600 to **9900**, 10600
  * to **10900**, 18300 to **18600**.
+ *
+ * **Re-measured, not raised, for Reservoir** (`docs/features/pool-headline-narrow-fit.md`),
+ * a Pool in row 49, which the six-field Passport already spans, so the sheet
+ * gains no grid row but the row grows by what a Pool is taller than the
+ * Passport's share. Off `document.body`, harness built first, through each
+ * view's own query: **8562** here against 8800, **9551** at 520 against 9900,
+ * **10701** at `text=24` against 10900, **18611** at `&width=380` against
+ * `sheet-narrow`'s 18900, and **18782** at a true 380 against
+ * `sheet-viewport-380`'s 19000. All inside; the last two by under 300px.
  */
 const SHEET_FRAME = '1400,8800';
 
@@ -3283,7 +3292,75 @@ export const DEFAULTS = [
 		size: '1400,1900',
 		hover: '.sheetsmith-record-input-text',
 	},
+	...poolHeadlineViews(),
 ];
+
+/**
+ * A Pool's reading in a narrow card (`docs/features/pool-headline-narrow-fit.md`),
+ * framed to one Pool's cell per shot, in the five conditions the spec names and
+ * the reported case.
+ *
+ * Two Pools per condition, because no free placement puts them side by side:
+ * **Stamina reserve**, a two-digit calculated ceiling with the dotted mark, and
+ * **Reservoir**, `100 / 120` with the mark on the `120`. The reported case is
+ * Hit points moved to one unit on the wide sheet by `&place=` with `100` typed
+ * into its temporary points, once at `6 / 9` and once with `100` typed into its
+ * current too.
+ *
+ * Framed views take the driven path, which captures beyond the viewport, so a
+ * window one screen tall frames a cell anywhere on the sheet. The cell is named
+ * by its value field's accessible name, which is the Pool's label. The pad sits
+ * under the grid's 8px gap, `TABLE_SELECT_PAD`'s reason: at 16 the neighbouring
+ * card's border is a stray line along the frame's edge.
+ */
+function poolHeadlineViews() {
+	const cell = (label) => `.sheetsmith-cell:has(.sheetsmith-pool-current[aria-label='${label}'])`;
+	const typed = (selector, text) => `type=${encodeURIComponent(`${selector}|${text}`)}`;
+	const REPORTED =
+		'surface=sheet&theme=light&text=24&place=hit_points:5,1&' +
+		typed(".sheetsmith-pool-temp-input[aria-label='Hit points temporary']", '100');
+	const conditions = [
+		{ id: 'default-1400', query: 'surface=sheet&theme=light', size: '1400,1900' },
+		{ id: 'default-520', query: 'surface=sheet&theme=light&width=520', size: '1400,1900' },
+		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24', size: '1400,1900' },
+		{ id: 'large-380', query: 'surface=sheet&theme=light&width=380&text=24', size: '1400,1900' },
+		{ id: 'phone-380', query: 'surface=sheet&theme=light', size: '380,1900', platform: 'phone' },
+	];
+	return [
+		...conditions.flatMap(({ id, ...view }) =>
+			['Stamina reserve', 'Reservoir'].map((label) => ({
+				...view,
+				name: `pool-headline-${id}-${label === 'Reservoir' ? 'reservoir' : 'stamina'}`,
+				frame: cell(label),
+				pad: 6,
+			})),
+		),
+		{
+			// The wrapped reading in the dark theme (`docs/UI.md` §11, both
+			// themes): the one condition where the ceiling takes a line of its
+			// own, muted, under a number at full contrast.
+			name: 'pool-headline-large-520-reservoir-dark',
+			query: 'surface=sheet&theme=dark&width=520&text=24',
+			size: '1400,1900',
+			frame: cell('Reservoir'),
+			pad: 6,
+		},
+		{
+			name: 'pool-headline-reported',
+			query: REPORTED,
+			size: '1400,1900',
+			frame: cell('Hit points'),
+			pad: 6,
+		},
+		{
+			name: 'pool-headline-reported-three-digits',
+			query: `${REPORTED}&${typed(".sheetsmith-pool-current[aria-label='Hit points']", '100')}`,
+			size: '1400,1900',
+			frame: cell('Hit points'),
+			pad: 6,
+		},
+	];
+}
 
 const args = process.argv.slice(2);
 
