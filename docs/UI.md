@@ -638,10 +638,11 @@ case obeys it.
   something to assert; a field that only ever holds words needs no say. **A
   keypad that switches on what the field holds is not offered**: from an empty
   or numeric field it could never be left, which is
-  `docs/features/record-ceiling-formula.md`'s argument. Two fields keep the
-  keypad today, Pool's temporary points (floored at zero, no arithmetic) and
-  the length in Track's **Add** form (a segment count, no arithmetic); the scan
-  holds that population, so a third is a decision made here.
+  `docs/features/record-ceiling-formula.md`'s argument. One field keeps the
+  keypad today, Pool's temporary points (floored at zero, no arithmetic). The
+  length in Track's **Add** form had it until it began settling sums as the
+  row's own length field does (`docs/features/track-add-length-settles.md`).
+  The scan holds that population, so a second is a decision made here.
 - **A focused number is selected, because a finger cannot aim a caret**
   [checked: the focus-kind cases in `card.test.ts`, `table.test.ts` and
   `pool.test.ts`]. A field bound with `step` or `arithmetic` that holds a

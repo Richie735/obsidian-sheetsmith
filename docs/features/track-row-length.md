@@ -327,6 +327,13 @@ All borrowed, none invented.
   can write back. Valid arithmetic containing a slash (`4/1`) is unaffected —
   `settleEntry` evaluates it to a plain number before this check ever runs, so
   nothing here refuses ordinary division.
+- **A word is declined as well**, with `Not saved. A length is a number of
+  segments, and "lots" is not one. Type a number or a sum such as 4+1, or leave
+  it empty.` Added by `docs/features/track-add-length-settles.md`, so this
+  field and the **Add** form's **Length** refuse through one check rather than
+  one storing what the other turns away. Blank is not a word and still clears
+  the length. A length already stored as a word is rendered, not rewritten
+  (SPEC §4.2), and the next commit from this field is where it is repaired.
 
 ### What draws, for a row that is not there at all
 

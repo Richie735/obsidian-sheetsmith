@@ -167,8 +167,14 @@ export function amountOf(source: string): number | null {
  * parser, and taken only if it produces a real number; there is no `eval`
  * anywhere near this (CLAUDE.md 1), it is the same parser the formula engine
  * runs. An entry the parser refuses is returned untouched.
+ *
+ * **Exported for the one field that commits without this binding**: a Track's
+ * **Add** form writes its **Length** on a button press rather than on blur, and
+ * that length lands in the same entry the row's own bound length field writes.
+ * Settled here and there by one function, so `2+1` cannot be `3` in one field
+ * and a stored sum in the other (`docs/features/track-add-length-settles.md`).
  */
-function settleEntry(raw: string, arithmetic: boolean): string {
+export function settleEntry(raw: string, arithmetic: boolean): string {
 	if (!arithmetic || raw === '') return raw;
 	if (isPlainNumber(raw)) return raw;
 	try {
