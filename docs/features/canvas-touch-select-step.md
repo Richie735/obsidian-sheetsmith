@@ -75,12 +75,16 @@ since nothing there can be dragged.
   nothing to drag.
 - **Vertical only, not `manipulation`.** This read `manipulation` as approved,
   and the design wave changed it: the canvas's own view is an `overflow-x: auto`
-  scroller, and at 820 under tablet staging it holds 75px it cannot show (a
-  `docs/BACKLOG.md` § UI row). Under `manipulation` a finger drawn leftward
+  scroller, and at 820 under tablet staging it held 75px it could not show
+  (since fixed, "Measured once built"). Under `manipulation` a finger drawn leftward
   across an unselected block scrolled the canvas sideways by all 75px. `pan-y
   pinch-zoom` keeps the vertical scroll and drops only the sideways one, which
   no block offered before either, when every overlay was `none`. The narrow
   rule below 480 keeps `manipulation`, since nothing there changes.
+  **Settled: `pan-y pinch-zoom` stays now the overflow is fixed.** The owner
+  ruled at that fix's land stop. A block on a grid canvas never needs to pan
+  sideways, and the rule guards against the next overflow of this kind, which
+  would otherwise come back as a canvas sliding under a finger.
 - **The guard reads the same attribute off the overlay containing the press**:
   `beginDrag`, right after the `drawnAsGrid` refusal and before `button` and
   `preventDefault`, returns where `event.pointerType !== 'mouse'` and the
@@ -310,8 +314,45 @@ document has no horizontal overflow at 820, but the canvas's own
 it barely moves. A leftward one, measured above, slid the canvas the whole
 75px. That is why the base rule is `pan-y pinch-zoom` (§2). The only element
 measured past the canvas's right edge is **Attacks**' `<table>`, 99px past,
-inside its own `overflow: auto` wrapper; why that reaches the canvas's
-scrollable overflow was not chased, and a `docs/BACKLOG.md` § UI row holds it.
+inside its own `overflow: auto` wrapper.
+
+**Chased since, and gone** (`fix/canvas-view-overflow-tablet`). The table was a
+red herring: its wrapper clips it, and the box carrying the 75px was the
+`.sheetsmith-sr-only` **Remove** twin in its last header cell. An absolutely
+positioned box escapes every scroller between it and its containing block, and
+that block was the canvas cell (`position: relative` in the editor), so the
+wrapper clipped nothing of it and the twin's static position, 75px past the
+view, counted in the view's own overflow. The same box overflowed the page on
+the sheet surface, whose view is not a scroller. The view's `scrollWidth` is
+the twin's right edge: the twin sits at the centre of the Remove header's
+content box (8px padding each side, less its own -1px margin), 868.7px into the
+view under tablet staging and 838.7 under desktop. Tablet staging widens three
+columns, 363 against 327 in all: Hit 76 against 68, Damage 136 against 120, and
+Remove 49 against 37, from the tablet button padding (`docs/UI.md`). The first
+two push the Remove header 23.9px right, and half of Remove's own 12.2px puts
+its centre another 6.1px further, so the twin lands 30.0px further right, which
+is 869 against 839.
+Grid sizing played no part: the 12 tracks are equal, the grid has `min-width:
+0`, the Attacks cell is exactly its 4 tracks, and the grid's `scrollWidth` was
+only the twin's overflow passed upward. The twin now sits at its containing
+block's start corner. Measured on the harness, the canvas view's `scrollWidth` /
+`clientWidth`, and the sheet surface's page overflow
+(`documentElement.scrollWidth - clientWidth`):
+
+| Staging | Canvas before | Canvas after | Sheet page before | Sheet page after |
+| --- | --- | --- | --- | --- |
+| 820 tablet | 869 / 794 | 794 / 794 | 66 | 0 |
+| 820 desktop | 839 / 794 | 794 / 794 | 36 | 0 |
+| 380 phone | 526 / 354 | 354 / 354 | 149 | 0 |
+| 1400 desktop | 801 / 738 | 738 / 738 | 0 | 0 |
+
+Attacks still scrolls inside its own wrapper, unchanged by the fix: 363 in 247
+at 820 tablet, `scrollLeft` reaching 116, and 327 in 247 reaching 80 on
+desktop staging.
+
+So the sideways range `pan-y pinch-zoom` was chosen against no longer exists,
+and the value stays: a grid block never needs to pan sideways, and the rule
+guards against the next overflow of this kind (§2, settled).
 
 **The selected ring** (§6, device check 2) did not draw on a canvas overlay
 before the design wave, here or on desktop. The overlay's own rule, (0,2,0),
