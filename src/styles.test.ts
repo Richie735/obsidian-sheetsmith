@@ -1262,6 +1262,64 @@ describe('an inline error wraps whatever it names', () => {
 	});
 });
 
+describe('a screen-reader twin adds nothing to any scroller\'s width', () => {
+	/*
+	 * An absolutely positioned box escapes every scroller between it and its
+	 * containing block, and its own box still counts in the scrollable overflow of
+	 * the scroller that contains that block. Left at its static position, a
+	 * table's **Remove** twin in the last header cell of a table wider than its
+	 * wrapper reached the layout editor canvas: 869 in a 794 view at 820 under
+	 * tablet staging, 839 on desktop staging, and 526 in 354 on a phone. Pinned
+	 * to the start corner, all three measure their client width. Nothing in a
+	 * still shows it at `scrollLeft` 0, which is why it is a guard here.
+	 */
+	/*
+	 * Read inside each case, not here: `CSS_WITHOUT_COMMENTS` and the rule walk
+	 * are declared further down the file, and a describe body runs at collection.
+	 * The walk sees rules inside at-rules and every member of a selector list, so
+	 * a forced-colors or print override putting the twin back where it was is
+	 * read, not skipped. A rule whose subject is the twin is matched on the class
+	 * before any parenthesis, so Card's `:not(.sheetsmith-sr-only, …)` is not one.
+	 */
+	const POSITIONING = /^(?:position|inset(?:-[a-z]+)*|top|right|bottom|left)\s*:/;
+	const isTwin = (selector: string): boolean => /^[^(]*\.sheetsmith-sr-only\b/.test(subjectOf(selector));
+	const twinRules = (text: string): Rule[] =>
+		rules(text).filter((rule) => selectorList(rule.selector).some(isTwin));
+	const isBase = (rule: Rule): boolean =>
+		rule.context.length === 0 && rule.selector.trim() === '.sheetsmith-sr-only';
+	/** Every rule but the base that moves the twin, which should be none. */
+	const movers = (text: string): string[] =>
+		twinRules(text)
+			.filter((rule) => !isBase(rule))
+			.filter((rule) => declarations(rule.body).some((one) => POSITIONING.test(one)))
+			.map((rule) => [...rule.context, rule.selector].join(' '));
+
+	it('finds the rule it is meant to be checking', () => {
+		const base = twinRules(CSS_WITHOUT_COMMENTS).filter(isBase);
+		expect(base).toHaveLength(1);
+		expect(declarations(base[0]?.body ?? '')).toContain('position: absolute');
+	});
+
+	it('pins it to the start corner rather than its static position', () => {
+		const [base] = twinRules(CSS_WITHOUT_COMMENTS).filter(isBase);
+		const declared = declarations(base?.body ?? '');
+		expect(declared).toContain('inset-block-start: 0');
+		expect(declared).toContain('inset-inline-start: 0');
+	});
+
+	it('lets no other rule move it, inside an at-rule or a selector list', () => {
+		expect(movers(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would catch an override that put it back', () => {
+		const broken =
+			'.sheetsmith-sr-only { position: absolute; inset-block-start: 0; inset-inline-start: 0; }\n' +
+			'@media print { .sheetsmith-x, .sheetsmith-view .sheetsmith-sr-only { inset: auto; } }\n' +
+			'.sheetsmith-card > :nth-last-child(1 of :not(.sheetsmith-sr-only)) { top: 0; }';
+		expect(movers(broken)).toEqual(['@media print .sheetsmith-x, .sheetsmith-view .sheetsmith-sr-only']);
+	});
+});
+
 describe('a component\'s own name is one rank, not five', () => {
 	/*
 	 * The rank that means "this is what this component is called", as against a

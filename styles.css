@@ -1670,9 +1670,24 @@ body {
    So the trade is a deprecated property for a flagged one, and `clip` is the
    safer end of it than it looks: it is what every visually-hidden recipe used
    before `clip-path`, no browser has removed it, and it is doing the same job
-   here. */
+   here.
+
+   **Pinned to its containing block's start corner**, not left at its static
+   position. An absolutely positioned box escapes every scroller between it and
+   its containing block, and still adds its own box to the scrollable overflow
+   of whatever ancestor scroller does contain that block. So a table's
+   **Remove** twin, sitting in the last header cell of a table wider than its
+   `overflow-x: auto` wrapper, was clipped by nothing and reached the layout
+   editor canvas's own view, which scrolled sideways by 75px at 820 under
+   tablet staging, and the page itself on the sheet (`docs/features/
+   canvas-touch-select-step.md`, "Measured once built"). At the start corner a
+   one-pixel box cannot reach past any end edge, whatever scroller sits round
+   it, and the negative margin only ever puts it on the start side, which no
+   scroller extends to. */
 .sheetsmith-sr-only {
 	position: absolute;
+	inset-block-start: 0;
+	inset-inline-start: 0;
 	width: 1px;
 	height: 1px;
 	padding: 0;
@@ -11079,10 +11094,12 @@ a.sheetsmith-notice-action {
 	   (`beginDrag` refuses anything but a mouse on a block not marked), and only
 	   the block marked below takes the pan for its drag.
 
-	   **Vertical only, `pan-y pinch-zoom`**, not `manipulation`: the canvas's
-	   view is its own `overflow-x: auto` scroller, and at 820 under tablet
-	   staging it holds 75px it cannot show (`docs/BACKLOG.md` § UI), so a
-	   finger drawn sideways across a block slid the whole canvas with it.
+	   **Vertical only, `pan-y pinch-zoom`**, not `manipulation`: a block on a
+	   grid canvas never needs to pan sideways, and the canvas's view is its own
+	   `overflow-x: auto` scroller, so any overflow it holds would slide the
+	   whole canvas under a sideways finger. One did: 75px at 820 under tablet
+	   staging, from a screen-reader twin (`.sheetsmith-sr-only`, `sheet.css`),
+	   since fixed. This guards against the next overflow of that kind.
 	   Nothing sideways was reachable from a block before, when every overlay
 	   was `none`, so this gives up no pan that worked. No double-tap zoom
 	   either way, which is what `manipulation` had over `auto`. */
