@@ -2918,7 +2918,7 @@ describe('a buffer its rule refuses', () => {
 		});
 
 		it('widens the field to what it holds while marked, and only then', () => {
-			// Three characters is a box for points, and the mark is by definition
+			// Three digits is a box for points, and the mark is by definition
 			// about text that is not points: at that width `2.5` showed `2.`.
 			const { temp } = withTemp('abc');
 			expect(temp.style.getPropertyValue('--sheetsmith-pool-temp-chars')).toBe('3');
