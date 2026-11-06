@@ -11,6 +11,7 @@
  */
 
 import { MarkdownView } from 'obsidian';
+import { TEXT } from '../en';
 import { carriesLayoutKey } from '../layout-notes';
 import type SheetsmithPlugin from '../main';
 import { sheetViewState } from './sheet-view';
@@ -63,9 +64,7 @@ export function registerOpenAsSheetAction(plugin: SheetsmithPlugin): void {
 		if (wanted && !held) {
 			actions.set(
 				view,
-				// `addAction` is outside the sentence-case lint's reach. The command's
-				// literal is inside it, and the test holds this title to that name.
-				view.addAction('layout-grid', 'Open as sheet', () =>
+				view.addAction('layout-grid', TEXT.openAsSheet, () =>
 					openAsSheet(plugin, view),
 				),
 			);
@@ -137,7 +136,7 @@ export function registerOpenAsSheetMenu(plugin: SheetsmithPlugin): void {
 			if (!carriesLayoutKey(plugin.app, view.file)) return;
 			menu.addItem((item) =>
 				item
-					.setTitle('Open as sheet')
+					.setTitle(TEXT.openAsSheet)
 					.setIcon('layout-grid')
 					.setSection('pane')
 					.onClick(() => openAsSheet(plugin, view)),

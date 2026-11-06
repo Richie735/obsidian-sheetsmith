@@ -1,6 +1,7 @@
 import { MarkdownView, Notice } from 'obsidian';
 import type SheetsmithPlugin from './main';
 import { chooseLayoutForNewCharacter } from './characters';
+import { TEXT } from './en';
 import { convertJsonLayouts } from './layout-conversion';
 import { carriesLayoutKey } from './layout-notes';
 import { chooseStarterLayout } from './starters/picker';
@@ -80,7 +81,7 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 
 	plugin.addCommand({
 		id: 'open-as-sheet',
-		name: 'Open as sheet',
+		name: TEXT.openAsSheet,
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view?.file || !carriesLayoutKey(plugin.app, view.file)) return false;
@@ -131,7 +132,7 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 
 	plugin.addCommand({
 		id: 'open-as-markdown',
-		name: 'Open as Markdown',
+		name: TEXT.openAsMarkdown,
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(SheetView);
 			if (!view?.file) return false;

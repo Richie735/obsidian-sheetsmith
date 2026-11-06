@@ -193,8 +193,10 @@ describe('what the tab offers', () => {
 		 * and a `name:` property in a definition object is not one, so all four
 		 * rows left the rule's reach the moment the tab became declarative — a
 		 * fifth row typed "Open Layout Editor" would have shipped green.
-		 * `PATTERNS.md` §8 lists sentence case as [warned], and its tier contract
-		 * is that departing from a warned rule means changing the check first.
+		 * `PATTERNS.md` §1 lists a settings definition's `name` and `desc` among
+		 * what the lint does not read, keeps one-site text at its site anyway, and
+		 * names this case as the accepted exception: a fixed set of short names a
+		 * cheap check is right about.
 		 *
 		 * **Names only, deliberately.** A description here carries a quoted app
 		 * label path — `Settings → Files and links → Default location for new

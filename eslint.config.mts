@@ -12,6 +12,26 @@ import { globalIgnores, defineConfig } from 'eslint/config';
 const REGISTRY_MESSAGE =
 	'A component must not import the component registry. It is how every other component becomes reachable, and it makes index.ts import a file that imports it back. Nothing outside a component needs to know that component exists.';
 
+/**
+ * The severity and options both sentence-case rules run with, set once.
+ *
+ * Read off `recommended` rather than restated, and applied below to the call-site
+ * rule as well as the module rule, so the project's effective setting for both is
+ * this one value. **An override goes here**, never as a later `rules` entry for
+ * either rule alone: that would leave the other on the old options, and the two
+ * would disagree about a CamelCase token or a brand. Throws rather than falling
+ * back, because a fallback would be a second copy nothing keeps in step.
+ */
+const SENTENCE_CASE: unknown = (() => {
+	const entry = [...obsidianmd.configs.recommended]
+		.map((config) => config.rules?.['obsidianmd/ui/sentence-case'])
+		.find((rule) => rule !== undefined);
+	if (entry === undefined) {
+		throw new Error('obsidianmd recommended no longer sets ui/sentence-case');
+	}
+	return entry;
+})();
+
 export default defineConfig(
 	globalIgnores([
 		'node_modules',
@@ -48,6 +68,20 @@ export default defineConfig(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	{
+		// Both sentence-case rules from one value (`SENTENCE_CASE` above).
+		rules: { 'obsidianmd/ui/sentence-case': SENTENCE_CASE },
+	},
+	{
+		// Text a user reads at more than one site lives in `src/en.ts`, one copy
+		// each, because the call-site sentence-case rule reads only a literal
+		// written at the call and a shared constant passes it unread
+		// (docs/PATTERNS.md §1). This is the plugin's own rule for a module of
+		// strings, which it ships in `recommendedWithLocalesEn` rather than
+		// `recommended`.
+		files: ['src/en.ts'],
+		rules: { 'obsidianmd/ui/sentence-case-locale-module': SENTENCE_CASE },
+	},
 	{
 		// Hard constraint (CLAUDE.md): the formula engine must never evaluate
 		// an expression as code. Layouts are shareable files, so evaluating one

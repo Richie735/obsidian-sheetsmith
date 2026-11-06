@@ -178,6 +178,79 @@ until a container was resized. `view/grid-cells.test.ts` now holds the rule to o
 reader by scanning for the flag's name, which is the check that class of bug
 earns: it was findable only by reading two files side by side (§10).
 
+**Text a user reads is where §1's one-copy tell meets a lint, and the answer is
+one copy at a site the lint reads: `src/en.ts`, which
+`obsidianmd/ui/sentence-case-locale-module` reads whole.** Of the three answers
+weighed, that is the third, realised as a module rather than a call. Three
+rules, each with its own tier:
+
+- **Fixed text a user reads at two or more sites lives in `src/en.ts`, one copy**
+  [judgement]. Nothing reports two-site text kept anywhere else: two literals, or
+  a constant like `NEW_LAYOUT_LABEL`, lint clean. The test of "two sites" is
+  whether renaming one must rename the other: **Cancel** on three modals is three
+  labels that happen to agree, while the command, the header action and the pane
+  menu entry for **Open as sheet** are one door named three times.
+- **Text in `src/en.ts` is sentence case** [warned: the locale-module rule].
+- **Text with one site stays a literal at that site** [judgement]. Where the
+  call-site rule reads that site, a constant buys nothing this section asks for
+  and costs the reading. **Where it does not** — an `addAction` title, a config
+  field, a settings definition — the text is held by review, and stays at its
+  site anyway: moving it into `src/en.ts` to be read would put every component's
+  field labels in one module that knows every component, which is the isolation
+  this section's last paragraph keeps. A test checking such text is an accepted
+  exception, not debt, where the text is a fixed set and a cheap check is right
+  about all of it: `settings.test.ts` holds the four row names, and leaves their
+  descriptions to review because they quote the app's own capitalised labels.
+
+Why it has to be that module. The call-site rule, `obsidianmd/ui/sentence-case`,
+reads a string literal written at a call it knows and nothing else:
+`addCommand`'s `name`; `setName`, `setDesc`, `setButtonText`, `setTooltip`,
+`setPlaceholder`, `setText`, `setTitle`; the second argument of `addRibbonIcon`
+and `addOption`; `new Notice`; `createEl`'s `text`, `title` and `attr` text
+keys; `setAttribute` for `aria-label`, `aria-description`, `title` or
+`placeholder`; an assignment to `textContent`, `innerText` or one of those; and
+what `getDisplayText` returns. It does not read a constant at any of those,
+`addAction`'s title, a `configFields` `label` or `description`, a declarative
+settings definition's `name` or `desc` (`settings.ts`), or a template with an
+expression in it. That is from `eslint-plugin-obsidianmd` 0.4.1's source; a
+literal `addAction` title, a constant at `setTitle` and at `addCommand`'s
+`name`, and a `configFields`-shaped `label` and `description` were also
+confirmed unread by experiment. So one constant satisfies this section and
+blinds the lint, and literals keep the lint and fail this section. The plugin
+ships a second rule for exactly this, which reads every string in an exported
+object literal of a module named `en`, and `eslint.config.mts` switches it on
+for `src/en.ts`.
+
+What the two rejected answers would have cost. *A constant per label, with the
+check moved to a test*: the test imports the plugin's evaluator from an
+undocumented `dist/` path and restates its options, and a label is checked only
+once someone adds it to the test's list, so the lint's blindness moves into a
+roster; `editor/new-layout.ts`'s `NEW_LAYOUT_LABEL` is that answer without even
+the test. *Literals, held equal by a test*: three copies of each label and a
+guard whose only assertion is that the header action and the menu entry still
+read the command's name, which is this section's tell verbatim. And that name is
+not what Obsidian shows: 1.15.0's `Plugin.addCommand` rewrites `name` to
+`Sheetsmith: Open as Markdown`, which the double does not model, so the guard
+held each door to a string the app never displays. And why the third answer is a
+module rather than *a call the lint reads*, a helper holding the literal that
+every consumer calls: the three consumers are three different APIs,
+`addCommand`, `setTitle` and `addAction`, so no one call holds them all, and
+reading the name back off the registered command fails on the same prefix. What
+the ruling costs in turn: the filename is the rule's, so the module reads like a
+locale in a plugin with one language; a renamed file, or a bare `export const`
+string inside it, passes unread with nothing to say so; and a call site reads a
+key rather than the words.
+
+**A label is not the case `components/embed-rule.ts` and `components/fenced-link.ts`
+are**, though both cite the one-step tier for a shared sentence. Theirs are
+composed: a template with the words that differ arriving as arguments, returned
+as a value and painted by the plugin, never handed to a call the lint reads. The
+lint never read them anywhere, so extracting them cost it nothing, and they could
+not go in `src/en.ts` either, because the module rule skips a template with an
+expression. A label is fixed text handed to Obsidian's API at a call the lint
+does read, which is what makes it the one extraction with a price, and why it goes
+to the one module that does not charge it.
+
 Extraction goes to a module named for the behaviour, never to a component. **A
 component must never import from another component** [checked], because that
 breaks the isolation the whole contract rests on: nothing outside a component
@@ -202,6 +275,8 @@ src/
   commands.ts      the command palette's entries, each delegating elsewhere
   settings.ts      the preferences and the settings tab that edits them
   types.ts         the component contract
+  en.ts            the fixed text a user reads at more than one site, one copy
+                   each, in the one shape the sentence-case lint reads (§1)
   layouts.ts       the layout folder: which files are layouts, the name each
                    one resolves to, and every write into the folder
   layout-conversion.ts
@@ -770,7 +845,11 @@ A component inventing its own is the failure mode to watch for.
 - **Descriptions state the consequence.** "Renaming it does not move a stored
   value; the old entry stays in the note under the old key" is the model. A
   description that only restates the label is not worth its line.
-- Sentence case, per `AGENTS.md` [warned: `obsidianmd/ui/sentence-case`].
+- Sentence case, per `AGENTS.md` [judgement]. **Not [warned]: the lint does not
+  read a config field.** A `label` or a `description` is a property of an object
+  literal, not an argument at a call `obsidianmd/ui/sentence-case` knows, so it
+  passes unread whatever it says. §1 lists what the lint does read, and rules on
+  text a user reads at more than one site.
 - `group: 'Appearance'` collects presentation toggles under a subheading.
 - `default` on booleans; a value matching its default is omitted from the config
   and `visibleWhen` matches the *effective* value, so a condition naming a
@@ -976,6 +1055,11 @@ decided.
   somewhere, was false of it. `SPEC` §13 ruled that `aria-pressed` says an
   unnamed flag's state, and the member went with the ruling rather than gaining
   a test.
+  `src/en.ts` is the same case: it holds fixed text and nothing else, so a file of
+  its own could assert only that a key equals its string. What holds it is the
+  consumer that draws each string, `view/open-as-sheet.test.ts`, which asserts
+  every door and both commands read `TEXT`, and the lint, which holds its case
+  (§1). A deleted key fails to compile at its sites rather than passing a walk.
   **A note-format primitive is tested through the round trip it is part of.**
   `parse/lines.ts`, `parse/layout-walk.ts` and `parse/markdown-body.ts` are the
   third, and this clause is written because the two above did not describe them —

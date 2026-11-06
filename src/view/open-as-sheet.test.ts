@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
+import { TEXT } from '../en';
 import type SheetsmithPlugin from '../main';
 import { serialiseLayout } from '../parse/layout';
 import {
@@ -70,7 +71,7 @@ function actionOf(view: { containerEl: HTMLElement }, title: string): HTMLElemen
 	);
 }
 
-const wayBack = (view: { containerEl: HTMLElement }) => actionOf(view, 'Open as sheet');
+const wayBack = (view: { containerEl: HTMLElement }) => actionOf(view, TEXT.openAsSheet);
 
 /** Write a note's text, and fire what the app fires once it has indexed it. */
 async function rewrite(path: string, content: string): Promise<void> {
@@ -102,7 +103,7 @@ beforeEach(async () => {
 });
 
 describe.each([
-	['the header action', (view: SheetView) => actionOf(view, 'Open as Markdown')?.click()],
+	['the header action', (view: SheetView) => actionOf(view, TEXT.openAsMarkdown)?.click()],
 	['the command', () => void pressCommand(plugin, 'open-as-markdown')],
 ])('opening a sheet as markdown through %s', (_route, press) => {
 	it('keeps the note in markdown for the session and asks for the markdown view', async () => {
@@ -152,38 +153,45 @@ describe.each([
 });
 
 /*
- * The lint reads the sentence case of a literal `name:` and not of an `addAction`
- * title, so the action's title is held to the name the lint can see. A menu
- * item's `setTitle` the lint does read, so what holds it here is the wording:
- * one door, one name, wherever it is drawn.
+ * One door, one name, wherever it is drawn: each site reads its words from
+ * `src/en.ts`, where the lint reads them too (docs/PATTERNS.md §1). The command
+ * case reads the name the plugin *hands* `addCommand`, which is all the double
+ * records: Obsidian 1.15.0's `addCommand` then rewrites it to
+ * `Sheetsmith: Open as sheet`, so the registered name is never a door's label
+ * and no case should hold a door to it.
  */
 describe('what the two doors are called', () => {
-	it('is the command\'s own name on the sheet\'s action, drawn as an icon', async () => {
-		const action = actionOf(await sheetOn(KEYED), commandOf(plugin, 'open-as-markdown').name);
+	it('names the sheet\'s action, drawn as an icon', async () => {
+		const action = actionOf(await sheetOn(KEYED), TEXT.openAsMarkdown);
 		expect(action).not.toBeNull();
 		expect(action?.querySelector('svg')).not.toBeNull();
 	});
 
-	it('is the command\'s own name on the way-back action, drawn as an icon', async () => {
-		const action = actionOf(await markdownOn(KEYED), commandOf(plugin, 'open-as-sheet').name);
+	it('names the way-back action, drawn as an icon', async () => {
+		const action = actionOf(await markdownOn(KEYED), TEXT.openAsSheet);
 		expect(action).not.toBeNull();
 		expect(action?.querySelector('svg')).not.toBeNull();
 	});
 
-	it('is the command\'s own name on the way-back menu entry, drawn with an icon', async () => {
+	it('names the way-back menu entry, drawn with an icon', async () => {
 		const view = await markdownOn(KEYED);
 		const menu = new Menu();
 		app.workspace.trigger('file-menu', menu, view.file, 'more-options', view.leaf);
 		const [item] = menu.items;
-		expect(item?.dom.textContent).toBe(commandOf(plugin, 'open-as-sheet').name);
+		expect(item?.dom.textContent).toBe(TEXT.openAsSheet);
 		expect(item?.dom.querySelector('svg')).not.toBeNull();
+	});
+
+	it('names both commands', () => {
+		expect(commandOf(plugin, 'open-as-sheet').name).toBe(TEXT.openAsSheet);
+		expect(commandOf(plugin, 'open-as-markdown').name).toBe(TEXT.openAsMarkdown);
 	});
 });
 
 describe('the sheet header action', () => {
 	it('is on a sheet with opening in sheet view turned off', async () => {
 		plugin.settings.openInSheetView = false;
-		expect(actionOf(await sheetOn(KEYED), 'Open as Markdown')).not.toBeNull();
+		expect(actionOf(await sheetOn(KEYED), TEXT.openAsMarkdown)).not.toBeNull();
 	});
 });
 
@@ -264,7 +272,7 @@ describe('the way-back action', () => {
 		await rewrite(KEYED, KEY_BLOCK);
 
 		expect(
-			view.containerEl.querySelectorAll('[aria-label="Open as sheet"]'),
+			view.containerEl.querySelectorAll(`[aria-label="${TEXT.openAsSheet}"]`),
 		).toHaveLength(1);
 	});
 
@@ -324,16 +332,16 @@ describe('the way-back action', () => {
 
 		unloadPlugin(plugin);
 
-		expect(host.querySelectorAll('[aria-label="Open as sheet"]')).toHaveLength(0);
+		expect(host.querySelectorAll(`[aria-label="${TEXT.openAsSheet}"]`)).toHaveLength(0);
 		app.workspace.trigger('layout-change');
 		await rewrite(KEYED, KEY_BLOCK);
-		expect(host.querySelectorAll('[aria-label="Open as sheet"]')).toHaveLength(0);
+		expect(host.querySelectorAll(`[aria-label="${TEXT.openAsSheet}"]`)).toHaveLength(0);
 	});
 });
 
 describe('the pane menu', () => {
 	it.each(['more-options', 'tab-header'])(
-		'offers Open as Markdown in the pane menu for either source, under the command\'s name (%s)',
+		'offers Open as Markdown in the pane menu for either source (%s)',
 		async (source) => {
 			const view = await sheetOn(KEYED);
 			await app.workspace.revealLeaf(view.leaf as never);
@@ -344,7 +352,7 @@ describe('the pane menu', () => {
 
 			const [item, ...rest] = menu.items;
 			expect(rest).toEqual([]);
-			expect(item?.dom.textContent).toBe(commandOf(plugin, 'open-as-markdown').name);
+			expect(item?.dom.textContent).toBe(TEXT.openAsMarkdown);
 			expect(item?.dom.querySelector('svg')).not.toBeNull();
 			expect(item?.section).toBe('pane');
 
@@ -372,7 +380,7 @@ describe('the way-back menu entry', () => {
 	}
 
 	const wayBackItem = (menu: Menu) =>
-		menu.items.find((item) => item.dom.textContent === 'Open as sheet');
+		menu.items.find((item) => item.dom.textContent === TEXT.openAsSheet);
 
 	it.each(['more-options', 'tab-header', 'sidebar-context-menu'])(
 		'is offered on a keyed note for a pane menu (%s)',
@@ -385,7 +393,7 @@ describe('the way-back menu entry', () => {
 			const [item, ...rest] = paneMenu(view, source).items;
 
 			expect(rest).toEqual([]);
-			expect(item?.dom.textContent).toBe('Open as sheet');
+			expect(item?.dom.textContent).toBe(TEXT.openAsSheet);
 			expect(item?.section).toBe('pane');
 
 			item?.dom.click();
@@ -450,7 +458,7 @@ describe('the toggle and auto-open', () => {
 
 	it('does not flip a note the markdown action just opened', async () => {
 		const sheet = await sheetOn(KEYED);
-		actionOf(sheet, 'Open as Markdown')?.click();
+		actionOf(sheet, TEXT.openAsMarkdown)?.click();
 		const view = await arriving(KEYED);
 
 		app.workspace.trigger('layout-change');

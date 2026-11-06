@@ -21,6 +21,7 @@ import {
 	hasLayouts,
 	loadLayout,
 } from '../layouts';
+import { TEXT } from '../en';
 import { pickLayout } from '../layout-picker';
 import type SheetsmithPlugin from '../main';
 import {
@@ -289,10 +290,7 @@ export class SheetView extends TextFileView {
 		this.markdown = new MarkdownPasses(this, this.app);
 		// Every sheet offers this, so it is added once and goes with the view. The
 		// way back depends on the note, which is why it lives in `open-as-sheet.ts`.
-		// `addAction` is outside the sentence-case lint's reach. The command's
-		// literal is inside it, and `open-as-sheet.test.ts` holds this title to that
-		// name.
-		this.addAction('file-text', 'Open as Markdown', () => this.openAsMarkdown());
+		this.addAction('file-text', TEXT.openAsMarkdown, () => this.openAsMarkdown());
 	}
 
 	/**
@@ -315,14 +313,13 @@ export class SheetView extends TextFileView {
 	/**
 	 * Words for the action, because its title is a tooltip a finger cannot raise.
 	 * In `pane`, where a markdown view lists its own modes, and on either source,
-	 * since a markdown view offers the same items for both. The lint reads this
-	 * literal, and `open-as-sheet.test.ts` holds it to the command's name.
+	 * since a markdown view offers the same items for both.
 	 */
 	onPaneMenu(menu: Menu, source: string): void {
 		super.onPaneMenu(menu, source);
 		menu.addItem((item) =>
 			item
-				.setTitle('Open as Markdown')
+				.setTitle(TEXT.openAsMarkdown)
 				.setIcon('file-text')
 				.setSection('pane')
 				.onClick(() => this.openAsMarkdown()),
