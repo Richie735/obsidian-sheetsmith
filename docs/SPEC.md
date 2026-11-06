@@ -380,6 +380,8 @@ The run is written when it goes quiet, or sooner: leaving either field, releasin
 
 **The buffer is floored at nothing, and the pool is not.** The argument for leaving the pool unclamped, that whether it may run past either end is the game's rule, does not reach the buffer, because the buffer is this component's own invention. No system has negative temporary points.
 
+**And it holds whole points, refused rather than settled.** A buffer is a non-negative whole number, so a typed fraction or a word is refused: the draft stays in the field with a sentence under the pill, and nothing is written. Rounding would store a number nobody typed, and the field settles no arithmetic. A negative is still clamped to `0`, which is the floor above. A note already holding one is marked on first paint and never rewritten, and the card spends nothing from it (`docs/features/pool-temp-refuses.md`).
+
 A spend that crosses from the buffer into the pool changes two values, and they are written as one change. Two writes for one press would be two saves and two rebuilds, with the second racing the first.
 
 The pool publishes its current value under its bare id, its ceiling as `<id>.max`, and its temporary points as `<id>.temp` where the layout asks for them, so `hp.max / 2` needs no second copy of the expression.

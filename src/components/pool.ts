@@ -121,6 +121,56 @@ const POOL_HINT =
 const POOL_TITLE = 'Type a value, or drag sideways to adjust.';
 
 /**
+ * The buffer's rule and its fix, as the clauses both of its sentences open and
+ * close with, so the refusal of a draft and the mark on a stored value cannot
+ * state either two ways. Only the middle differs, which is what the two are
+ * about: a draft that was not stored, and a stored value the card spends as none.
+ */
+const TEMP_RULE = 'Temporary points are a whole number of 0 or more';
+const TEMP_FIX = 'Type a whole number, or clear the field.';
+
+/**
+ * Whether text in the temporary-points field is something the buffer's rule
+ * refuses (`docs/features/pool-temp-refuses.md`).
+ *
+ * Every valid buffer is a non-negative whole number of points (SPEC §4.2, and
+ * `docs/UI.md` §7, which is why the field asks for the numeric keypad). Empty is
+ * a buffer holding nothing. **A negative is not refused**, because it is settled
+ * rather than refused: the commit clamps it to `0`, SPEC §4.2's floor, and a
+ * refusal ahead of that clamp would take it away. What is left — a fraction, or
+ * text that is not a number at all — has no reading as points, and storing it
+ * as typed is what let the note hold one thing while the card spent another.
+ */
+function refusesTemp(text: string): boolean {
+	if (text === '') return false;
+	const points = Number(text);
+	if (!Number.isFinite(points)) return true;
+	return points >= 0 && !Number.isInteger(points);
+}
+
+/**
+ * Why a typed buffer cannot be stored, or null where it can. `editable.ts`'s
+ * `refuse`, so the draft stays in the field and the note is not written.
+ */
+function refuseTempDraft(next: string): string | null {
+	if (!refusesTemp(next)) return null;
+	return `Not saved. ${TEMP_RULE}, so "${next}" cannot be stored. ${TEMP_FIX}`;
+}
+
+/**
+ * The mark on a buffer the note already holds and the rule refuses, or null.
+ *
+ * Its own sentence rather than the draft's, because nothing was refused: the
+ * value *is* stored, and "Not saved" would say otherwise. It says what the card
+ * does with it instead, which is spend nothing from it (`tempValue`), and the
+ * note is never rewritten to fix it — typing over it is the fix.
+ */
+function storedTempMark(stored: string): string | null {
+	if (!refusesTemp(stored)) return null;
+	return `${TEMP_RULE}, so the note's "${stored}" counts as none. ${TEMP_FIX}`;
+}
+
+/**
  * What a net movement of the gesture lands on, buffer and all.
  *
  * Pure, and shared by the press that applies it and the amount control that
@@ -1114,7 +1164,11 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			origin ??= { current: draftValue() ?? 0, temp: tempValue() };
 			net = nextNet;
 			const next = landing(origin, net);
-			if (tempInput !== null) {
+			// A buffer the rule refuses is left exactly as it reads: it absorbed
+			// nothing (`tempValue`), and writing a `0` over it would put a number in
+			// the note the character never typed, which a stored value is never
+			// corrected by.
+			if (tempInput !== null && !refusesTemp(tempInput.value.trim())) {
 				const before = tempInput.value;
 				tempInput.value = String(next.temp);
 				if (tempInput.value !== before && next.absorbed > 0) flashTemp();
@@ -1167,12 +1221,15 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			);
 		};
 
-		/** The buffer as a number; anything unreadable counts as none. */
+		/**
+		 * The buffer as a number. Anything its rule refuses counts as none, so a
+		 * stored `2.5` absorbs nothing rather than two and a half points the
+		 * field's mark says it does not hold.
+		 */
 		const tempValue = (): number => {
 			const raw = tempInput?.value.trim() ?? '';
-			if (raw === '') return 0;
-			const parsed = Number(raw);
-			return Number.isFinite(parsed) ? parsed : 0;
+			if (raw === '' || refusesTemp(raw)) return 0;
+			return Math.max(0, Number(raw));
 		};
 
 		/**
@@ -1227,6 +1284,13 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 					tempInput.value = temp;
 				}
 			}
+			// A buffer the rule refuses is not written from here either. Its own
+			// binding refuses it and keeps the draft; this path is every *other*
+			// commit on the card — the value, the ceiling, a step, the field's own
+			// blur — and each would otherwise carry the refused text into the note
+			// beside the change it was making. Left out, a stored one stays as the
+			// note has it and a typed one stays a draft.
+			if (temp !== null && refusesTemp(temp)) temp = null;
 			// The ceiling rides in the same change as the value it bounds. A
 			// max typed on the card is one edit however many fields moved with
 			// it, and it must not be a second save racing the first — the rule
@@ -1249,7 +1313,9 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// Settle every field before reporting, so a later blur does not
 			// report a change that has already gone to the note.
 			handle?.sync(current);
-			tempHandle?.sync(temp ?? '');
+			// Not a refused draft, which `sync` would make the stored value that
+			// Escape restores.
+			if (temp !== null) tempHandle?.sync(temp);
 			maxHandle?.sync(max ?? '');
 			endGesture();
 			// A spend the buffer absorbed whole leaves the pool where it was, so
@@ -1432,7 +1498,8 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// The keypad stays, the one field on the card it fits: every valid
 			// buffer is a non-negative whole number of points — floored at
 			// zero (SPEC §4.2), settling no arithmetic. Anything else typed
-			// here is stored or clamped, not meant (`docs/UI.md` §7).
+			// here is refused or clamped, not meant (`docs/UI.md` §7, and
+			// `refusesTemp` above).
 			tempInput.inputMode = 'numeric';
 			tempInput.value = data?.temp ?? '';
 			tempInput.placeholder = '—';
@@ -1447,11 +1514,78 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// meaning something different from the first, two more tab stops,
 			// and two 16px targets four pixels from the field they sit beside.
 
+			/**
+			 * Show or clear the buffer's mark: a sentence under the pill, the
+			 * pill's border, and the field described by the sentence.
+			 *
+			 * Passport's `attachRefusalNotice` is the shape this follows — a
+			 * notice hung *after* the control, replaced on the next attempt —
+			 * and Record set's `refusalNotice` is the same shape hung inside a
+			 * host. This is the third component copy, kept rather than
+			 * extracted on purpose: `docs/BACKLOG.md` § Patterns holds the row.
+			 * It departs from both in one way, which is that drift's subject:
+			 * the field is pointed at the notice as Track's **Add** form does,
+			 * because this mark can stand from first paint with no
+			 * announcement, and focusing the field is then the only way a
+			 * reader without sight meets it.
+			 */
+			let tempNotice: HTMLElement | null = null;
+			const markTemp = (message: string | null): void => {
+				tempNotice?.remove();
+				tempNotice = null;
+				temp.classList.toggle('sheetsmith-pool-temp-refused', message !== null);
+				if (message === null) {
+					field.style.removeProperty('--sheetsmith-pool-temp-chars');
+					field.removeAttribute('aria-invalid');
+					field.removeAttribute('aria-describedby');
+					return;
+				}
+				// The field is three characters wide, which a buffer of points
+				// fills, and the text it is refusing is by definition not one: the
+				// sentence quotes `"2.5"` and the pill showed `2.`. So while marked
+				// it is as wide as what it holds, counted when the mark is drawn
+				// rather than as the reader types, so the pill holds still under
+				// the correction (`docs/UI.md` §11). In code points, so a word in
+				// another script is not counted per code unit.
+				field.style.setProperty(
+					'--sheetsmith-pool-temp-chars',
+					String([...field.value.trim()].length),
+				);
+				// The *global* `createDiv`: it goes after a sibling rather than into
+				// a parent, so `after` is the attachment (`PATTERNS.md` §5).
+				tempNotice = createDiv({ cls: 'sheetsmith-error', text: message });
+				tempNotice.id = `sheetsmith-pool-temp-problem-${config.id}`;
+				temp.after(tempNotice);
+				field.setAttribute('aria-invalid', 'true');
+				field.setAttribute('aria-describedby', tempNotice.id);
+			};
+			// Marked as it renders, against whatever the note already holds — the
+			// same rule the commit refuses by, not a second copy of it. The list
+			// fields' render-time check is the precedent, and so is what follows
+			// from it: the note is not rewritten, the mark says so instead.
+			markTemp(storedTempMark(field.value.trim()));
+
 			field.addEventListener('blur', commitDraft);
 
 			tempHandle = bindEditable(field, {
 				initial: data?.temp ?? '',
 				step: true,
+				// The floor holds on the arrows as well as on the commit, so a
+				// step down from nothing never shows a `-1` the commit would only
+				// clamp away.
+				min: 0,
+				refuse: refuseTempDraft,
+				onRefusal: (message) => {
+					if (message !== null) {
+						markTemp(message);
+						status.textContent = message;
+						return;
+					}
+					// Nothing refused this attempt, which is also the path a blur
+					// with nothing changed takes — so a stored value the rule
+					// refuses keeps its mark rather than losing it to a blur.
+					markTemp(storedTempMark(field.value.trim()));
+				},
 				announceCommit: (next) => {
 					status.textContent =
 						next === ''

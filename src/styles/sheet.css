@@ -2847,6 +2847,45 @@ body {
 	background-color: var(--background-modifier-hover);
 }
 
+/* A buffer its rule refuses, typed or already in the note
+   (`docs/features/pool-temp-refuses.md`). The pill's border turns the error
+   colour, over the focus border too, since the field is still refused while it
+   is being corrected and the focus ring is a box-shadow that does not need it.
+   **That is colour alone, and is not meant to stand alone**: the pill already
+   has a 1px border, so its shape does not change, and forced colors repaints it
+   to look like any other pill. The second channel is the sentence directly
+   under it, with its leading border, and the field's `aria-invalid`. */
+.sheetsmith-view .sheetsmith-pool-temp.sheetsmith-pool-temp-refused {
+	border-color: var(--background-modifier-error);
+}
+
+/* And the field shows the whole of what it is refusing. `3ch` is a box for
+   points, and refused text is by definition not points: at that width a stored
+   `2.5` read `2.` under a sentence quoting `"2.5"`. The count arrives from
+   `pool.ts` when the mark is drawn, never per keystroke, so the pill holds still
+   while it is corrected (§11). In `ch` plus one for a letter wider than a digit,
+   plus the field's own inline padding, since the box is border-box. Not
+   `field-sizing: content`: Chromium-only, so Obsidian mobile — where the keypad
+   makes a stray character likeliest — would keep the clip. Capped at the card,
+   where the input's own scrolling takes over. At (0,4,0), past the width rule's
+   (0,3,0). */
+.sheetsmith-view
+	.sheetsmith-pool-temp-refused
+	.sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
+	width: calc(
+		(var(--sheetsmith-pool-temp-chars, 3) + 1) * 1ch + 2 * var(--size-2-2)
+	);
+	max-width: 70cqi;
+}
+
+/* That sentence takes Track's shape for a refusal under one field, grouped
+   onto `.sheetsmith-track-row-problem` below, so here it only spans the card:
+   the card is a centred flex column, and without this the sentence would
+   shrink to its text and centre, where Track's spans its row by grid. */
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-error {
+	align-self: stretch;
+}
+
 /* Temporary points are the card's pill: a small qualifier hanging under the
    big number, which is the shape a card already uses for its stored
    value. As a second bordered rectangle on its own row it was a third
@@ -3734,8 +3773,14 @@ a.sheetsmith-notice-action {
 
    `grid-column: 1 / -1` because the row is a subgrid of three columns and the
    message belongs to all of them: placed in a column it would sit under the
-   name alone and squeeze whichever track it landed in. */
-.sheetsmith-view .sheetsmith-track-row-problem {
+   name alone and squeeze whichever track it landed in.
+
+   **Pool's refused buffer is the same message** — one draft declined, or one
+   stored value marked, under one field on a small card — so it takes this body
+   by selector rather than a copy of it, at its `--font-ui-smaller`. `grid-column`
+   is inert on it: a pool card is a flex column, and its own rule stretches it. */
+.sheetsmith-view .sheetsmith-track-row-problem,
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-error {
 	grid-column: 1 / -1;
 	padding: 0 0 0 var(--size-2-2);
 	border: none;

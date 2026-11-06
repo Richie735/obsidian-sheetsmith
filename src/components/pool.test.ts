@@ -2779,3 +2779,168 @@ describe('pool: focusing the value selects its number', () => {
 		expect(current.selectionStart).toBe(current.selectionEnd);
 	});
 });
+
+/*
+ * docs/features/pool-temp-refuses.md: every valid buffer is a non-negative whole
+ * number of points (SPEC §4.2, docs/UI.md §7). A fraction or a word is refused
+ * — the draft stays, the note is not written — and a negative is still settled
+ * to the floor rather than refused.
+ */
+describe('a buffer its rule refuses', () => {
+	const withTemp = (temp: string, onChange = vi.fn()) => {
+		const el = render({ hasTemp: true }, { current: '20', temp }, {
+			onChange,
+			resolved: { max: 54 },
+		});
+		const found = parts(el);
+		if (!found.temp || !found.current) throw new Error('expected both fields');
+		return { el, onChange, ...found, temp: found.temp, current: found.current };
+	};
+	const notice = (el: HTMLElement) =>
+		el.querySelector<HTMLElement>('.sheetsmith-pool > .sheetsmith-error');
+	const pill = (el: HTMLElement) => el.querySelector('.sheetsmith-pool-temp');
+	const commit = (field: HTMLInputElement, text: string) => {
+		field.focus();
+		field.value = text;
+		field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+	};
+
+	it.each(['2.5', 'abc'])('refuses a typed %s, keeps the draft and writes nothing', (text) => {
+		const { el, onChange, temp, status } = withTemp('4');
+		commit(temp, text);
+		temp.dispatchEvent(new Event('blur'));
+		expect(onChange).not.toHaveBeenCalled();
+		expect(temp.value).toBe(text);
+		const said = `Not saved. Temporary points are a whole number of 0 or more, so "${text}" cannot be stored. Type a whole number, or clear the field.`;
+		expect(notice(el)?.textContent).toBe(said);
+		expect(status?.textContent).toBe(said);
+		expect(pill(el)?.classList.contains('sheetsmith-pool-temp-refused')).toBe(true);
+		expect(temp.getAttribute('aria-invalid')).toBe('true');
+		expect(temp.getAttribute('aria-describedby')).toBe(notice(el)?.id);
+	});
+
+	it('puts the stored buffer back on Escape after a refusal', () => {
+		const { el, temp } = withTemp('4');
+		commit(temp, '2.5');
+		temp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		temp.dispatchEvent(new Event('blur'));
+		expect(temp.value).toBe('4');
+		expect(notice(el)).toBeNull();
+		expect(temp.hasAttribute('aria-invalid')).toBe(false);
+	});
+
+	it('clears the refusal once a whole number commits', () => {
+		const { el, onChange, temp } = withTemp('4');
+		commit(temp, 'abc');
+		commit(temp, '6');
+		expect(onChange).toHaveBeenCalledWith({ temp: '6' });
+		expect(notice(el)).toBeNull();
+		expect(pill(el)?.classList.contains('sheetsmith-pool-temp-refused')).toBe(false);
+		expect(temp.hasAttribute('aria-describedby')).toBe(false);
+	});
+
+	it('still settles a negative to the floor rather than refusing it', () => {
+		const { el, onChange, temp } = withTemp('4');
+		commit(temp, '-3');
+		expect(onChange).toHaveBeenCalledWith({ temp: '0' });
+		expect(temp.value).toBe('0');
+		expect(notice(el)).toBeNull();
+	});
+
+	it('does not carry a refused draft into another field\'s commit', () => {
+		// The value's commit reads every field on the card, so a refused buffer
+		// beside it would otherwise ride into the note with the value's change.
+		const { onChange, temp, current } = withTemp('4');
+		commit(temp, 'abc');
+		current.value = '18';
+		current.dispatchEvent(new Event('blur'));
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onChange).toHaveBeenCalledWith({ current: '18' });
+		expect(temp.value).toBe('abc');
+	});
+
+	it('stops a step down on an empty buffer at zero', () => {
+		const { temp } = withTemp('');
+		temp.focus();
+		temp.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+		expect(temp.value).toBe('0');
+		temp.value = '0';
+		temp.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true }));
+		expect(temp.value).toBe('0');
+	});
+
+	describe('already in the note', () => {
+		it.each(['2.5', 'abc'])('marks a stored %s on first paint, unannounced', (stored) => {
+			const { el, temp, status } = withTemp(stored);
+			expect(temp.value).toBe(stored);
+			expect(notice(el)?.textContent).toBe(
+				`Temporary points are a whole number of 0 or more, so the note's "${stored}" counts as none. Type a whole number, or clear the field.`,
+			);
+			expect(pill(el)?.classList.contains('sheetsmith-pool-temp-refused')).toBe(true);
+			expect(temp.getAttribute('aria-invalid')).toBe('true');
+			expect(status?.textContent).toBe('');
+		});
+
+		it('marks nothing for a whole number, an empty buffer or a negative', () => {
+			for (const stored of ['4', '', '0', '-2']) {
+				const { el, temp } = withTemp(stored);
+				expect(notice(el)).toBeNull();
+				expect(temp.hasAttribute('aria-invalid')).toBe(false);
+				document.body.replaceChildren();
+			}
+		});
+
+		it('keeps the mark through a blur that changed nothing', () => {
+			const { el, onChange, temp } = withTemp('2.5');
+			temp.focus();
+			temp.dispatchEvent(new Event('blur'));
+			expect(onChange).not.toHaveBeenCalled();
+			expect(notice(el)?.textContent).toContain('the note\'s "2.5" counts as none');
+		});
+
+		it('spends nothing from it, and never rewrites it', () => {
+			// The card acts on what the mark says, and the note keeps what it has:
+			// a step down comes off the pool, and the buffer is not written as 0.
+			const { el, onChange, steps, current, temp } = withTemp('2.5');
+			press(steps[0]);
+			expect(current.value).toBe('19');
+			expect(temp.value).toBe('2.5');
+			settle(el);
+			expect(onChange).toHaveBeenCalledWith({ current: '19' });
+			expect(JSON.stringify(onChange.mock.calls)).not.toContain('temp');
+		});
+
+		it('takes a whole number typed over it, which clears the mark', () => {
+			const { el, onChange, temp } = withTemp('abc');
+			commit(temp, '3');
+			expect(onChange).toHaveBeenCalledWith({ temp: '3' });
+			expect(notice(el)).toBeNull();
+		});
+
+		it('widens the field to what it holds while marked, and only then', () => {
+			// Three characters is a box for points, and the mark is by definition
+			// about text that is not points: at that width `2.5` showed `2.`.
+			const { temp } = withTemp('abc');
+			expect(temp.style.getPropertyValue('--sheetsmith-pool-temp-chars')).toBe('3');
+			// Typing does not move it: the count is taken when the mark is drawn.
+			temp.value = 'abcdef';
+			temp.dispatchEvent(new Event('input'));
+			expect(temp.style.getPropertyValue('--sheetsmith-pool-temp-chars')).toBe('3');
+			commit(temp, '1.25');
+			expect(temp.style.getPropertyValue('--sheetsmith-pool-temp-chars')).toBe('4');
+			commit(temp, '6');
+			expect(temp.style.getPropertyValue('--sheetsmith-pool-temp-chars')).toBe('');
+		});
+
+		it('keeps the mark under the pill and the fill bar last', () => {
+			const { el } = withTemp('abc');
+			const card = el.querySelector('.sheetsmith-pool');
+			const visible = Array.from(card?.children ?? []).filter(
+				(child) => !child.classList.contains('sheetsmith-sr-only'),
+			);
+			const at = visible.findIndex((child) => child.classList.contains('sheetsmith-error'));
+			expect(visible[at - 1]?.classList.contains('sheetsmith-pool-temp')).toBe(true);
+			expect(visible.at(-1)?.classList.contains('sheetsmith-pool-track')).toBe(true);
+		});
+	});
+});
