@@ -1813,6 +1813,132 @@ describe('pool amount control', () => {
 		expect(parts(el).current?.value).toBe('28');
 	});
 
+	describe('reads the direction from the amount’s value, not its first character', () => {
+		// One reading gives the size and the direction, so the toggle, the
+		// preview and the write cannot disagree. The first character used to
+		// set the toggle while the value set the size, so `-2+5` showed a spend
+		// and spent three. Each case asserts what the note holds after Enter.
+		const at45 = () => {
+			const onChange = vi.fn();
+			const el = render({}, { current: '45' }, { onChange, resolved: { max: 62 } });
+			const amount = open(el);
+			const direction = parts(el).direction;
+			if (!direction) throw new Error('expected the direction toggle');
+			return { el, amount, direction, onChange };
+		};
+		// What the note holds after the apply: the reported delta carried
+		// through the component's own `write`, since a delta says only what was
+		// sent (docs/BACKLOG.md § Patterns).
+		const NOTE_AT_45 = '\n```sheet\ncurrent: 45\n```\n';
+		const noteAfter = (onChange: ReturnType<typeof vi.fn>) => {
+			expect(onChange).toHaveBeenCalledTimes(1);
+			const [delta] = onChange.mock.calls[0] as [PoolData];
+			return pool.write(delta, NOTE_AT_45, config);
+		};
+		const holding = (current: string) => NOTE_AT_45.replace('45', current);
+		const flip = (direction: HTMLElement) => {
+			direction.dispatchEvent(new MouseEvent('click'));
+		};
+		const fromRestore = () => {
+			const opened = at45();
+			flip(opened.direction);
+			expect(opened.direction.textContent).toBe('+');
+			return opened;
+		};
+
+		it('restores when a leading minus comes to more than zero', () => {
+			const { el, amount, direction, onChange } = at45();
+			expect(direction.textContent).toBe('−');
+			put(amount, '-2+5');
+			expect(direction.textContent).toBe('+');
+			expect(direction.getAttribute('aria-label')).toContain('Restoring HP');
+			expect(parts(el).preview?.textContent).toBe('+3 → 48');
+			enter(amount);
+			expect(noteAfter(onChange)).toBe(holding('48'));
+			expect(parts(el).current?.value).toBe('48');
+		});
+
+		it('spends when a leading plus comes to less than zero', () => {
+			const { el, amount, direction, onChange } = fromRestore();
+			put(amount, '+2-5');
+			expect(direction.textContent).toBe('−');
+			expect(parts(el).preview?.textContent).toBe('−3 → 42');
+			enter(amount);
+			expect(noteAfter(onChange)).toBe(holding('42'));
+		});
+
+		it('spends an unsigned amount that comes out negative, whichever way it was set', () => {
+			// `2-5` and `-3` are one number typed two ways, so they go one way.
+			const { amount, direction, onChange } = fromRestore();
+			put(amount, '2-5');
+			expect(direction.textContent).toBe('−');
+			enter(amount);
+			expect(noteAfter(onChange)).toBe(holding('42'));
+		});
+
+		it('leaves the direction alone for an unsigned positive amount', () => {
+			const { amount, direction, onChange } = fromRestore();
+			put(amount, '2+3');
+			expect(direction.textContent).toBe('+');
+			enter(amount);
+			expect(noteAfter(onChange)).toBe(holding('50'));
+		});
+
+		it.each(['-2+2', '-0'])(
+			'holds the direction and applies nothing for %s, which is zero',
+			(text) => {
+				const { el, amount, direction, onChange } = fromRestore();
+				put(amount, text);
+				expect(direction.textContent).toBe('+');
+				expect(parts(el).preview?.textContent).toBe('');
+				enter(amount);
+				expect(onChange).not.toHaveBeenCalled();
+				expect(parts(el).current?.value).toBe('45');
+				expect(parts(el).adjust?.classList.contains('sheetsmith-pool-adjust-open')).toBe(false);
+			},
+		);
+
+		it('holds still while the amount is being typed, and empties the preview', () => {
+			const { el, amount, direction, onChange } = fromRestore();
+			put(amount, '-');
+			expect(direction.textContent).toBe('+');
+			expect(parts(el).preview?.textContent).toBe('');
+			put(amount, '-2');
+			expect(direction.textContent).toBe('−');
+			put(amount, '-2+');
+			expect(direction.textContent).toBe('−');
+			// An outcome, so it must not hold a stale one: Enter applies nothing.
+			expect(parts(el).preview?.textContent).toBe('');
+			enter(amount);
+			expect(onChange).not.toHaveBeenCalled();
+			expect(parts(el).current?.value).toBe('45');
+		});
+
+		it('lets a press on the toggle overrule the typed sign until the text changes', () => {
+			const { el, amount, direction, onChange } = at45();
+			put(amount, '-17');
+			flip(direction);
+			expect(direction.textContent).toBe('+');
+			expect(parts(el).preview?.textContent).toBe('+17 → 62');
+			enter(amount);
+			expect(noteAfter(onChange)).toBe(holding('62'));
+		});
+
+		it('lets the latest edit to the text overrule an earlier press', () => {
+			// The pool runs free below zero, so the spend is observable and differs
+			// from what a restore would write (215).
+			const { el, amount, direction, onChange } = at45();
+			put(amount, '-17');
+			flip(direction);
+			expect(direction.textContent).toBe('+');
+			put(amount, '-170');
+			expect(direction.textContent).toBe('−');
+			expect(parts(el).preview?.textContent).toBe('−170 → -125');
+			enter(amount);
+			expect(noteAfter(onChange)).toBe(holding('-125'));
+		});
+	});
+
 	it('asks a phone for the full keyboard, since the amount may be arithmetic', () => {
 		// iOS's `numeric` keypad is digits alone, so `2*3` and a typed sign
 		// could not be entered there (docs/UI.md §7).

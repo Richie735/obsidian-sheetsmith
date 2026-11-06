@@ -197,6 +197,40 @@ function landing(
 }
 
 /**
+ * What a typed amount says: its size, and the direction it states if it
+ * states one. Null when there is nothing to apply — empty, not evaluable yet
+ * (`-2+` on the way to `-2+5`), or zero. Zero is refused here and nowhere
+ * else, so the preview and the apply each ask one question, null or not.
+ *
+ * One reading for both, because two was the defect: the direction came from
+ * the text's first character and the size from its value, so `-2+5` showed a
+ * spend and spent three when the arithmetic comes to plus three. The leading
+ * character is a term in the arithmetic, not a direction prefix.
+ *
+ * An amount states a direction when it comes to something other than zero and
+ * either has a sign in front or comes out negative; the direction is then the
+ * value's own sign. So `+2-5` spends three, and so does `2-5` under Restore —
+ * it is minus three however it was typed, and reading unsigned text as a bare
+ * magnitude would apply `2-5` and `-3` in opposite directions under one
+ * toggle. Only a positive amount with no sign, `17` or `2*3`, states nothing
+ * and takes the toggle as it stands, so the common spend never types a sign.
+ * Zero states nothing because it changes nothing, and `-0` is zero here.
+ */
+function readAmount(
+	text: string,
+): { by: number; says: 1 | -1 | null } | null {
+	const raw = text.trim();
+	if (raw === '') return null;
+	const value = amountOf(raw);
+	if (value === null || value === 0) return null;
+	const signed = raw.startsWith('-') || raw.startsWith('+');
+	return {
+		by: Math.abs(value),
+		says: value < 0 ? -1 : signed ? 1 : null,
+	};
+}
+
+/**
  * Spend or restore an amount, without doing the arithmetic.
  *
  * A table deals damage in sevens, and the amount is what a player has in hand:
@@ -422,13 +456,12 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 		);
 	};
 
-	/** The amount as a magnitude; the sign is the toggle's business, not its. */
-	const size = (): number | null => {
-		const raw = amount.value.trim();
-		if (raw === '') return null;
-		const parsed = amountOf(raw);
-		return parsed === null ? null : Math.abs(parsed);
-	};
+	/**
+	 * The amount's size, from the same reading that moved the toggle, so the
+	 * preview and the apply can never take a different number from the text
+	 * than the direction did.
+	 */
+	const size = (): number | null => readAmount(amount.value)?.by ?? null;
 
 	/**
 	 * What applying it would land on. This is the sentence the old design had
@@ -439,7 +472,7 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	const showPreview = (): void => {
 		const from = standing();
 		const by = size();
-		if (from === null || by === null || by === 0) {
+		if (from === null || by === null) {
 			onPending(null);
 			return;
 		}
@@ -508,7 +541,7 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 		amount.value = '';
 		onPending(null);
 		setOpen(false);
-		if (by === null || by === 0) return;
+		if (by === null) return;
 		apply(direction * by);
 	};
 
@@ -551,12 +584,14 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	});
 
 	amount.addEventListener('input', () => {
-		const raw = amount.value.trim();
-		// An explicit sign wins and moves the toggle to match, so the control
-		// can never show a direction its outcome contradicts. A bare amount
-		// defers to the toggle, so the common spend never needs a sign typed.
-		if (raw.startsWith('-')) direction = -1;
-		else if (raw.startsWith('+')) direction = 1;
+		// A direction the amount states wins and moves the toggle to match, so
+		// the control can never show a direction its outcome contradicts — and
+		// this keystroke is newer than any earlier press on the toggle. An amount
+		// that states none (a bare positive, zero, or one that does not evaluate
+		// yet) leaves the toggle where it was, so it holds still through the
+		// keystrokes between two readable states: `-2+5` from Spend goes − − − +.
+		const says = readAmount(amount.value)?.says;
+		if (says) direction = says;
 		showDirection();
 		showPreview();
 	});
