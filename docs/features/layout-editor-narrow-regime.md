@@ -11,7 +11,8 @@ phone rule*.
 **Agreed as the smallest version plus §4**: §1, §3 at 584, §4, §5 and the
 position-field pin are in. The select-step touch drag that was §2 is out, and
 waits on a pass on a real device (Deliberately not doing, and a
-`docs/BACKLOG.md` § UI row).
+`docs/BACKLOG.md` § UI row). That pass came, and the drag shipped in
+`canvas-touch-select-step.md`.
 
 ## The decision: what the twelve-column canvas does at phone width
 
@@ -103,7 +104,8 @@ not stop the app's swipe, which is a JS listener of its own. A select-step drag
 would therefore put `data-ignore-swipe` on the one overlay that can start a
 touch drag. **That drag is out of this feature** (Deliberately not doing), so
 nothing here carries the attribute, and the finding is kept for the pass that
-takes it up. **So is the reason that drag would take no hold delay**: a
+takes it up. It was taken up: `canvas-touch-select-step.md` puts the attribute on the selected
+overlay. **So is the reason that drag would take no hold delay**: a
 hold-to-drag needs the page's scroll cancelled once the delay is up, which only
 a non-passive `touchmove` listener can do, and that is the WebKit 185656 trap
 in a source that has no touch listeners today. Pointer events decide at touch
@@ -232,7 +234,8 @@ it, selected or not: **the whole of a nested collapsed grid traps touch scroll**
 and a touch scroll there has to start in a gutter or outside the container. A
 query cannot see a nested grid's column count, so closing that would mean
 tabulating `.sheetsmith-cols-N` twelve times again, the way `sheet.css` does.
-**Cut**, and named in Deliberately not doing.
+**Cut**, and named in Deliberately not doing. Since `canvas-touch-select-step.md` §7 only the
+selected block on such a grid traps; its unselected overlays scroll.
 
 **One line says why**, because a mouse in a narrow split presses and drags and
 gets nothing back. It is a `setting-item-description` drawn as the first child
@@ -251,8 +254,8 @@ own view.
 
 ### §2. Withdrawn: a touch drag that starts only on the selected component
 
-Not built. It was a select step for touch on a canvas still drawn as a grid,
-and it is recorded under Deliberately not doing with the reason it waits.
+Not built here. It shipped later as its own feature, `canvas-touch-select-step.md`, which is
+where its design now lives.
 
 ### §3. The setting rows stack below 584px of pane
 
@@ -516,7 +519,8 @@ variations.sheetsmith` for check 4.
 5. **Tablet** (an iPad, or a phone in landscape). On a canvas still drawn as a
    grid, tap to select, then drag and resize: both work as before, since nothing
    about touch changed above the threshold. **Back to the selection** returns to
-   the block or row the selection came from.
+   the block or row the selection came from. Superseded above the threshold by
+   `canvas-touch-select-step.md`'s device checks, where a touch drags only the selected block.
 6. **The way back after the jump**, on a phone. Select a tree row's name and
    then, separately, a canvas block, each far enough from the panel that the
    pane jumps. Each time, tap **Back to the selection** near its top edge, at
@@ -584,7 +588,8 @@ variations.sheetsmith` for check 4.
   rules** (§1). Its gestures are refused, and every overlay on it is still
   `touch-action: none`, so the whole of it traps touch scroll: a scroll has to
   start in a gutter or outside the container. Tabulating `.sheetsmith-cols-N`
-  again in `editor.css` would close it. Cut by the owner.
+  again in `editor.css` would close it. Cut by the owner. Since
+  `canvas-touch-select-step.md` §7 the trap is the selected block alone.
 - **The select-step touch drag that was §2.** On a canvas still drawn as a grid,
   an unselected overlay would scroll under touch and only the selected one would
   drag, carrying `data-ignore-swipe` so the drag does not open the sidebar. Out,
@@ -592,7 +597,8 @@ variations.sheetsmith` for check 4.
   the narrow widths, and its cost, that no touch scroll can start on the selected
   cell, shows only on touch. A `docs/BACKLOG.md` § UI row holds it, and the
   research it needs is kept under the sidebar question above: the swipe
-  handler's exits, and why no hold delay.
+  handler's exits, and why no hold delay. Built since, in `canvas-touch-select-step.md`, and
+  the BACKLOG row is gone.
 - **Moving the canvas below the panel at phone width.** See the order question.
 - **Every other pane row in `docs/BACKLOG.md` § UI and § Patterns**, untouched
   on purpose and not to be fixed in passing: the drag image on grip handles, the

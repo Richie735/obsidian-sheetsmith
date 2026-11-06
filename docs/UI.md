@@ -655,6 +655,22 @@ case obeys it.
   digit can still be fixed. One rule in `editable.ts`, no option and no
   component code; the field list is
   `docs/features/number-field-focus-select.md`.
+- **A surface that drags under a finger takes a select step, so it does not
+  trap the scroll** [checked: `styles.test.ts`, `schematic-gestures.test.ts`].
+  `touch-action` is decided at touch start from the element pressed, so a
+  surface of blocks all `none` lets a scroll start only in its gutters: on an
+  iPad the editor canvas left two 12px strips in portrait and none in landscape.
+  So on the canvas an unselected block is `pan-y pinch-zoom` and a touch press on it
+  only selects, and the selected block alone is `none` and carries
+  `data-ignore-swipe`, so its drag opens no sidebar. Decided per press by
+  `pointerType`, never by platform: a mouse drags any block in one gesture, and
+  a pen takes the step, since `touch-action` governs it as it does a finger.
+  Vertical only, because the canvas is a sideways scroller of its own, and a
+  finger drawn across a block must not slide it.
+  **The cost is named, not hidden**: no touch scroll can start on the selected
+  block, and selecting another block or the **Layout** row frees it. No hold
+  delay, which would need a non-passive `touchmove`
+  (`docs/features/canvas-touch-select-step.md`).
 
 ---
 
