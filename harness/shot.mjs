@@ -21,7 +21,8 @@
  *   media=prefers-contrast:more       # an emulated media feature; repeatable
  *   media=forced-colors:active
  *   hover=<selector>                  # a real pointer resting on the element
- *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held
+ *   hold=<selector>|<dx>,<dy>         # pressed there, moved by (dx, dy), held;
+ *                                     # a touch under `platform=`, else the mouse
  *   platform=tablet                   # Obsidian's tablet body classes, and touch
  *   platform=phone                    # the phone's, `is-mobile is-phone`, and touch
  *   frame=<selector>                  # the PNG clipped to that element, plus 16px
@@ -2204,6 +2205,19 @@ export const DEFAULTS = [
 		platform: 'tablet',
 	},
 	{
+		// The same pane with Weapons, the selected block, held by a finger and
+		// carried two of Proficiencies' columns right
+		// (`docs/features/canvas-touch-select-step.md`): the guides drawn and the
+		// block moved, which a touch can do only on the block already selected.
+		// The press is a touch because the view stages a platform (`hold` below).
+		// Measured: **23901**.
+		name: 'editor-tablet-drag',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '820,23950',
+		platform: 'tablet',
+		hold: { at: '[data-sheetsmith-focus="preview-weapons"]', by: [140, 0] },
+	},
+	{
 		// A list field's touch arrows at their ends (`docs/features/disabled-controls.md`):
 		// Abilities' entries, STR's up arrow and CHA's down arrow disabled and
 		// faded by the app's `.clickable-icon[aria-disabled='true']`, the rest at
@@ -3349,6 +3363,13 @@ function driven(view) {
 const DRAW_BUDGET = 3000;
 
 /**
+ * How many moves a `hold` takes to cover its distance, by touch or by mouse:
+ * in steps, as a hand moves, so a gesture that reads each move — a drag
+ * snapping cell by cell — sees a path and not a teleport.
+ */
+const HOLD_STEPS = 8;
+
+/**
  * Where an element's centre is, for a pointer to go to. Throws on no match,
  * because a hover shot of nothing looks exactly like a hover shot.
  */
@@ -3432,7 +3453,30 @@ async function shootDriven(view, out) {
 			const at = await centreOf(browser, view, view.hover);
 			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
 		}
-		if (view.hold !== undefined) {
+		if (view.hold !== undefined && platform !== undefined) {
+			// **A finger, where the view stages a touch platform**, because the
+			// canvas answers a touch differently from a mouse: a touch drags only
+			// the selected block, and on any other it pans or selects
+			// (`docs/features/canvas-touch-select-step.md`). A mouse here would
+			// photograph a drag no tablet reader can make. The browser decides the
+			// pan from the touched element's `touch-action` at `touchStart`, as on
+			// the device, and no view staged a platform with a `hold` before this
+			// branch, so no earlier shot changes.
+			const at = await centreOf(browser, view, view.hold.at);
+			const [dx, dy] = view.hold.by;
+			const touch = (x, y) => [{ x, y, id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+			await browser.send('Input.dispatchTouchEvent', {
+				type: 'touchStart',
+				touchPoints: touch(at.x, at.y),
+			});
+			for (let step = 1; step <= HOLD_STEPS; step++) {
+				await browser.send('Input.dispatchTouchEvent', {
+					type: 'touchMove',
+					touchPoints: touch(at.x + (dx * step) / HOLD_STEPS, at.y + (dy * step) / HOLD_STEPS),
+				});
+			}
+			// No `touchEnd`: the press is what is being photographed.
+		} else if (view.hold !== undefined) {
 			const at = await centreOf(browser, view, view.hold.at);
 			const [dx, dy] = view.hold.by;
 			await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
@@ -3444,14 +3488,11 @@ async function shootDriven(view, out) {
 				buttons: 1,
 				clickCount: 1,
 			});
-			// In steps, as a hand moves, so a gesture that reads each move — a
-			// drag snapping cell by cell — sees a path and not a teleport.
-			const STEPS = 8;
-			for (let step = 1; step <= STEPS; step++) {
+			for (let step = 1; step <= HOLD_STEPS; step++) {
 				await browser.send('Input.dispatchMouseEvent', {
 					type: 'mouseMoved',
-					x: at.x + (dx * step) / STEPS,
-					y: at.y + (dy * step) / STEPS,
+					x: at.x + (dx * step) / HOLD_STEPS,
+					y: at.y + (dy * step) / HOLD_STEPS,
 					button: 'left',
 					buttons: 1,
 				});
