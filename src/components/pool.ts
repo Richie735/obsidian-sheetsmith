@@ -1540,7 +1540,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 					field.removeAttribute('aria-describedby');
 					return;
 				}
-				// The field is three characters wide, which a buffer of points
+				// The field is three digits wide, which a buffer of points
 				// fills, and the text it is refusing is by definition not one: the
 				// sentence quotes `"2.5"` and the pill showed `2.`. So while marked
 				// it is as wide as what it holds, counted when the mark is drawn

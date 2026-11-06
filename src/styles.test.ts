@@ -4453,3 +4453,55 @@ describe("every rule asking about the sheet's width asks it at one number", () =
 		expect(new Set([...widths(one), ...collapseWidths(collapse)]).size).toBe(2);
 	});
 });
+
+describe('the pool\'s buffer field holds three digits', () => {
+	/*
+	 * The field is border-box and carries inline padding, so a bare `3ch` held
+	 * two tabular digits and a buffer of `100` read `10`. Nothing but a pixel
+	 * shows that, and happy-dom lays nothing out, so this holds the arithmetic
+	 * instead: the width is three `ch` plus twice the inline padding the field's
+	 * own rule declares. It assumes what tabular figures promise, that a digit
+	 * is `1ch`; the harness shots are where that is looked at.
+	 */
+	const BASE = '.sheetsmith-view .sheetsmith-pool-temp-input';
+	const WIDTH = `${BASE}.sheetsmith-pool-temp-input`;
+
+	const valueOf = (selector: string, property: string): string | undefined => {
+		const rule = rules(CSS_WITHOUT_COMMENTS).find(
+			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
+		);
+		const found = declarations(rule?.body ?? '').find((one) =>
+			one.startsWith(`${property}:`),
+		);
+		return found?.slice(property.length + 1).trim();
+	};
+
+	/** The field's inline padding, the second value of its `padding`. */
+	const inline = (): string => {
+		const padding = valueOf(BASE, 'padding') ?? '';
+		const parts = padding.match(/var\([^)]*\)/g) ?? [];
+		expect(parts.length, `unreadable padding: ${padding}`).toBe(2);
+		return parts[1] ?? '';
+	};
+
+	it('gives the field three digits beside its own padding', () => {
+		expect(valueOf(WIDTH, '--sheetsmith-pool-temp-width')).toBe(
+			`calc(3ch + 2 * ${inline()})`,
+		);
+		expect(valueOf(WIDTH, 'width')).toBe('var(--sheetsmith-pool-temp-width)');
+	});
+
+	it('floors the refused field on that width, not on a copy of it', () => {
+		// Without the floor a one-letter refusal is narrower than the unmarked
+		// field, and the pill shrinks as the mark goes on.
+		const refused =
+			valueOf(
+				'.sheetsmith-view .sheetsmith-pool-temp-refused .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input',
+				'width',
+			) ?? '';
+		expect(refused.startsWith('max('), `not a max(): ${refused}`).toBe(true);
+		expect(refused.slice('max('.length).split(',')[0]?.trim()).toBe(
+			'var(--sheetsmith-pool-temp-width)',
+		);
+	});
+});

@@ -2859,20 +2859,23 @@ body {
 	border-color: var(--background-modifier-error);
 }
 
-/* And the field shows the whole of what it is refusing. `3ch` is a box for
-   points, and refused text is by definition not points: at that width a stored
-   `2.5` read `2.` under a sentence quoting `"2.5"`. The count arrives from
+/* And the field shows the whole of what it is refusing. Three digits is a box
+   for points, and refused text is by definition not points: at that width a
+   stored `2.5` read `2.` under a sentence quoting `"2.5"`. The count arrives from
    `pool.ts` when the mark is drawn, never per keystroke, so the pill holds still
    while it is corrected (§11). In `ch` plus one for a letter wider than a digit,
    plus the field's own inline padding, since the box is border-box. Not
    `field-sizing: content`: Chromium-only, so Obsidian mobile — where the keypad
    makes a stray character likeliest — would keep the clip. Capped at the card,
-   where the input's own scrolling takes over. At (0,4,0), past the width rule's
-   (0,3,0). */
+   where the input's own scrolling takes over. Never narrower than the unmarked
+   field's `--sheetsmith-pool-temp-width`, set by the width rule below, so a
+   one-letter refusal does not shrink the pill as the mark goes on.
+   At (0,4,0), past the width rule's (0,3,0). */
 .sheetsmith-view
 	.sheetsmith-pool-temp-refused
 	.sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
-	width: calc(
+	width: max(
+		var(--sheetsmith-pool-temp-width),
 		(var(--sheetsmith-pool-temp-chars, 3) + 1) * 1ch + 2 * var(--size-2-2)
 	);
 	max-width: 70cqi;
@@ -2927,10 +2930,19 @@ body {
 	text-align: center;
 }
 
-/* The width alone at (0,3,0), past Obsidian's phone rule: see
-   `.sheetsmith-table-input`'s. */
+/* Three tabular digits and the field's own inline padding, since the box is
+   border-box: a bare `3ch` held two digits beside the padding, so a buffer of
+   `100` read `10`. Fixed rather than sized to the value, as a Roster score is
+   (`.sheetsmith-roster-band-value .sheetsmith-card-input`): a buffer of points
+   past 999 is not one a sheet meets, so a width that moves with the value would
+   buy nothing but a second place the count is set, and the pill would move
+   under every commit. Not `field-sizing: content` for the reason the refused
+   rule above gives. Named as `--sheetsmith-pool-temp-width` so the refused rule
+   floors on this width rather than on a copy of it. The width alone at (0,3,0),
+   past Obsidian's phone rule: see `.sheetsmith-table-input`'s. */
 .sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
-	width: 3ch;
+	--sheetsmith-pool-temp-width: calc(3ch + 2 * var(--size-2-2));
+	width: var(--sheetsmith-pool-temp-width);
 }
 
 /* The pill wears the ring, so the field inside it wears nothing.
