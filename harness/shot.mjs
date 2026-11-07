@@ -3171,6 +3171,7 @@ export const DEFAULTS = [
 		name: 'sheet-forms-library-narrow',
 		query: 'surface=sheet&theme=light&state=forms&width=380&press=.sheetsmith-stat-block-switch',
 		size: '380,3000',
+		frame: '.sheetsmith-stat-block',
 	},
 	{
 		// Every form with every form closed, so each line's vitals summary shows.
@@ -3187,20 +3188,129 @@ export const DEFAULTS = [
 		size: '1400,1700',
 	},
 	{
-		// And open under Every form, the same section in the edit form.
-		name: 'sheet-forms-library-traits',
-		query:
-			'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch&press=.sheetsmith-stat-block-detail%20.sheetsmith-stat-block-disclosure',
-		size: '1400,1900',
+		/*
+		 * **Stat block zones** (`docs/features/stat-block-zones.md`): Brown Bear in
+		 * play with its picture, its Attacks table and the aliased Claws link, its
+		 * Actions features with a usage and a list, its collapsed Traits, and the
+		 * Reactions block no zone owns, drawn after the zones as not in this layout.
+		 */
+		name: 'sheet-forms-zones',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1700',
+		frame: '.sheetsmith-stat-block',
 	},
 	{
-		// A layout's `sections`: traits before the attacks under the heading
-		// **Features**, and the changes, left out of the list, drawn last. The
-		// traits opened so the renamed heading's content shows.
-		name: 'sheet-forms-sections',
-		query:
-			'surface=sheet&theme=light&state=forms-sections&press=.sheetsmith-stat-block-disclosure',
+		name: 'sheet-forms-zones-dark',
+		query: 'surface=sheet&theme=dark&state=forms',
 		size: '1400,1700',
+	},
+	{
+		// At a phone's width: the thumbnail wraps with the title, the features
+		// read in their own markdown, the table wraps its cells.
+		name: 'sheet-forms-zones-narrow',
+		query: 'surface=sheet&theme=light&state=forms&width=380',
+		size: '380,3000',
+	},
+	{
+		// The Fate-style mook in play, every zone empty: its head and vitals and
+		// nothing else, no heading, no box, no None yet.
+		name: 'sheet-forms-zones-empty',
+		query: 'surface=sheet&theme=light&state=forms-mook',
+		size: '1400,2000',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// Every form, Brown Bear open: the Picture section, the editing table, each
+		// entry a line of name, usage and delete over its text, Traits drawn open,
+		// and the drift read-only.
+		name: 'sheet-forms-zones-library',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,2600',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// A second Traits heading and a line above the first heading: each drift
+		// block under its own heading and its own sentence.
+		name: 'sheet-forms-zones-drift',
+		query: 'surface=sheet&theme=light&state=forms-drift',
+		size: '1400,1900',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// Attacks holding prose: the zone's error and the prose under it, and every
+		// other zone still drawn.
+		name: 'sheet-forms-zones-error',
+		query: 'surface=sheet&theme=light&state=forms-error',
+		size: '1400,1700',
+	},
+	{
+		// Two forms on, so each form's own name row carries its own picture.
+		name: 'sheet-forms-picture',
+		query: 'surface=sheet&theme=light&state=forms-two',
+		size: '1400,2400',
+	},
+	{
+		// A picture naming no file: no thumbnail, and the painter's sentence under
+		// the head.
+		name: 'sheet-forms-picture-missing',
+		query: 'surface=sheet&theme=light&state=forms-missing',
+		size: '1400,1700',
+	},
+	{
+		/*
+		 * **One shot per zone option, its editor label beside the sheet it
+		 * produces.** `collapsed` on: Traits closed in play, and **Collapsed in
+		 * play** ticked on its card in the pane beside.
+		 */
+		name: 'sheet-forms-zone-collapsed',
+		query: 'surface=both&theme=light&state=forms&open=wild_shape',
+		size: '1500,5200',
+	},
+	{
+		// `collapsed` off: Traits open in play with a plain heading, and the box
+		// unticked beside it.
+		name: 'sheet-forms-zone-expanded',
+		query: 'surface=both&theme=light&state=forms-expanded&open=wild_shape',
+		size: '1500,5200',
+	},
+	{
+		// The Zones field: each zone a stacked card, the built-ins marked Built in.
+		name: 'editor-stat-block-zones',
+		query: 'surface=editor&theme=light&state=forms&open=wild_shape',
+		size: '1400,4200',
+		frame: '.sheetsmith-list-zones',
+	},
+	{
+		name: 'editor-stat-block-zones-narrow',
+		query: 'surface=editor&theme=light&state=forms&open=wild_shape&width=380',
+		size: '380,8000',
+		frame: '.sheetsmith-list-zones',
+	},
+	{
+		// The form tag at the app's own 15px body (the first small fix): the pill
+		// on each tinted card's bottom inline-end corner, inside by its padding
+		// alone, checked by `measure-form-tag.mjs`.
+		name: 'sheet-forms-tag-text-15',
+		query: 'surface=sheet&theme=light&state=forms&text=15',
+		size: '1400,1700',
+		frame: '.sheetsmith-grid',
+	},
+	{
+		// HP below 0 names the stored number (the fourth small fix).
+		name: 'sheet-forms-below-zero',
+		query: 'surface=sheet&theme=light&state=forms-below',
+		size: '1400,1700',
+	},
+	{
+		// A record body's edit box grown to its text (the second small fix):
+		// under Every form, a paragraph and a half typed into Traits and committed,
+		// then the box focused, so the field is on screen holding four lines past
+		// its two-line floor. Framed to the open form's Traits zone.
+		name: 'sheet-forms-body-grows',
+		query:
+			'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch&type=.sheetsmith-stat-block-detail%20.sheetsmith-stat-block-zone-text%20textarea|The%20bear%20has%20advantage%20on%20Wisdom%20(Perception)%20checks%20that%20rely%20on%20smell%2C%20and%20it%20tracks%20a%20wounded%20creature%20for%20miles%20through%20rain%2C%20snow%20and%20running%20water.%0A%0AIt%20forages%20at%20dusk%20and%20sleeps%20through%20the%20worst%20of%20winter.&focus=.sheetsmith-stat-block-detail%20.sheetsmith-stat-block-zone-text%20textarea',
+		size: '1400,2600',
+		frame: '.sheetsmith-stat-block-detail .sheetsmith-stat-block-zone-text',
 	},
 	{
 		/*

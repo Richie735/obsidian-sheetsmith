@@ -75,6 +75,7 @@ const KINDS = [
 	'track-rows',
 	'rows',
 	'columns',
+	'zones',
 ];
 
 /**

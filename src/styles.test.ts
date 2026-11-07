@@ -4905,11 +4905,14 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 			(rule) => rule.context.length === 0 && rule.selector === ".sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true']",
 		);
 		expect(pill?.body).toMatch(/position:\s*absolute/);
-		// On the top edge at the inline-start corner.
-		expect(pill?.body).toMatch(/inset-block-start:\s*0/);
-		expect(pill?.body).toMatch(/inset-inline-start:/);
-		// Overhanging the edge by under half its height, so 4px of the gap stays.
-		expect(pill?.body).toMatch(/transform:\s*translateY\(-30%\)/);
+		// On the bottom edge at the inline-end corner, clear of the label, the
+		// centred value and the note mark (the form tag fix).
+		expect(pill?.body).toMatch(/inset-block-end:\s*0/);
+		expect(pill?.body).toMatch(/inset-inline-end:/);
+		expect(pill?.body).not.toMatch(/inset-block-start|inset-inline-start/);
+		// Inside by exactly the bottom padding, by geometry and not by a font's
+		// ink: down by its own height less `--size-4-2`.
+		expect(pill?.body).toMatch(/transform:\s*translateY\(calc\(100% - var\(--size-4-2\)\)\)/);
 		expect(pill?.body).not.toMatch(/display:\s*block/);
 		// In a fixed-pixel size, so its overhang fits the fixed padding at any
 		// text size, and hit-testable, so a clipped name's reveal answers it.
@@ -4917,5 +4920,46 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(pill?.body).not.toMatch(/pointer-events/);
 		const host = tint.find((rule) => rule.selector === '.sheetsmith-view .sheetsmith-in-play-marked:not(tr)');
 		expect(host?.body).toMatch(/position:\s*relative/);
+	});
+});
+
+describe('stat block zones\' small fixes (docs/features/stat-block-zones.md)', () => {
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	it('grows a record body\'s edit box with its text, from a two-line floor', () => {
+		// One rule for both components: a Record set's body and a Stat block's
+		// zone text are both `drawRecordBody`'s field.
+		const field = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-view .sheetsmith-record-body-input');
+		expect(field?.body).toMatch(/field-sizing:\s*content/);
+		expect(field?.body).toMatch(/min-height:\s*calc\(2lh/);
+	});
+
+	it('starts an open form at the box\'s padding under the 360px query, and nowhere else', () => {
+		const narrow = all.filter((rule) => rule.context.join() === '@container sheetsmith-stat-block (max-width: 360px)');
+		const detail = narrow.find((rule) => rule.selector === '.sheetsmith-stat-block-detail');
+		expect(detail?.body).toMatch(/padding-inline-start:\s*0/);
+		const base = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-detail');
+		expect(base?.body).toMatch(/--sheetsmith-record-indent/);
+	});
+});
+
+describe('the drift tag (docs/features/stat-block-zones.md, Drift)', () => {
+	it('is a muted sentence-case pill of its own, in theme variables', () => {
+		const tag = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-drift-tag',
+		);
+		expect(tag?.body).toMatch(/text-transform:\s*none/);
+		expect(tag?.body).toMatch(/color:\s*var\(--text-muted\)/);
+		expect(tag?.body).toMatch(/border:\s*1px solid var\(--background-modifier-border\)/);
+		expect(tag?.body).toMatch(/border-radius:\s*var\(--radius-s\)/);
+		expect(tag?.body).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
+	});
+});
+
+describe('a stat block table cell\'s wrap (docs/features/stat-block-zones.md)', () => {
+	it('breaks a long link at its spaces, never mid-word where a space will do', () => {
+		const cells = rules(CSS_WITHOUT_COMMENTS).filter((rule) => /sheetsmith-stat-block-(table|cell)/.test(rule.selector) && /overflow-wrap/.test(rule.body));
+		expect(cells.length).toBeGreaterThanOrEqual(3);
+		for (const rule of cells) expect(rule.body, rule.selector).toMatch(/overflow-wrap:\s*break-word/);
 	});
 });

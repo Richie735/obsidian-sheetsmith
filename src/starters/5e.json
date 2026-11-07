@@ -1068,18 +1068,37 @@
 						}
 					],
 					"exclusive": "Active",
-					"actions": [
+					"zones": [
 						{
-							"key": "Bonus",
-							"type": "number"
+							"key": "vitals"
 						},
 						{
-							"key": "Damage",
-							"type": "text"
+							"key": "changes"
+						},
+						{
+							"key": "attacks",
+							"type": "table",
+							"heading": "Attacks",
+							"columns": [
+								{
+									"key": "Attack"
+								},
+								{
+									"key": "Bonus",
+									"type": "number"
+								},
+								{
+									"key": "Damage"
+								}
+							]
+						},
+						{
+							"key": "traits",
+							"type": "text",
+							"heading": "Traits",
+							"collapsed": true
 						}
 					],
-					"actionName": "Attack",
-					"bodyName": "Traits",
 					"position": {
 						"col": 1,
 						"row": 1,

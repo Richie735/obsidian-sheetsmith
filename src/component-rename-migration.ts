@@ -41,6 +41,7 @@ import {
 } from './parse/character';
 import { renameFencedEntry } from './parse/fenced';
 import { joinRecords, splitRecords } from './parse/records';
+import { renameZoneHeading } from './parse/zones';
 
 /**
  * What one field's commit in the layout editor hands this module: a label
@@ -65,7 +66,32 @@ export type RenameIntent =
 			from: string;
 			to: string;
 			perRecord: boolean;
-	  };
+	  }
+	/*
+	 * A Stat block zone's heading: one `#### ` line inside every `### ` record
+	 * of the section `label` names (`docs/features/stat-block-zones.md`). Its
+	 * own kind rather than a third `perRecord` shape, because what moves is a
+	 * heading line rather than a fenced entry, and `parse/zones.ts` is the one
+	 * reader that knows which lines are zone headings.
+	 */
+	| { kind: 'heading'; label: string; from: string; to: string };
+
+/**
+ * The intent a zone heading's commit carries, or `undefined` where there is
+ * nothing to migrate: a field that addresses no heading, or an end with no
+ * heading at all. `keyRename`'s sibling, so the editor never decides on its own
+ * what a heading address means.
+ */
+export function headingRename(
+	address: 'record' | undefined,
+	label: string,
+	from: string,
+	to: string,
+): RenameIntent | undefined {
+	if (address === undefined) return undefined;
+	if (from.trim() === '' || to.trim() === '' || from === to) return undefined;
+	return { kind: 'heading', label, from: from.trim(), to: to.trim() };
+}
 
 /**
  * The intent a key field's commit carries, or `undefined` where there is
@@ -186,6 +212,35 @@ function applyIntent(
 
 	const section = getSection(note, intent.label);
 	if (section === undefined) return { outcome: 'unaffected' };
+
+	if (intent.kind === 'heading') {
+		/*
+		 * Every record's zone headings renamed on their own, on the per-record
+		 * key rename's rule below: a record already holding the new heading —
+		 * a drift block included — keeps the old one rather than merging, and
+		 * the note still counts as renamed where another record moved.
+		 */
+		const split = splitRecords(section.body);
+		let moved = false;
+		let refused = false;
+		const records = split.records.map((record) => {
+			const result = renameZoneHeading(record.rest, intent.from, intent.to);
+			if (result.kind === 'absent') return record;
+			if (result.kind === 'collision') {
+				refused = true;
+				return record;
+			}
+			moved = true;
+			return { ...record, rest: result.rest };
+		});
+		if (!moved) return refused ? { outcome: 'collision' } : { outcome: 'unaffected' };
+		const body = joinRecords({ preamble: split.preamble, records });
+		return {
+			outcome: 'renamed',
+			text: serialiseCharacter(setSectionBody(note, intent.label, body)),
+			kept: refused,
+		};
+	}
 
 	if (!intent.perRecord) {
 		const result = renameFencedEntry(section.body, intent.from, intent.to);
@@ -361,7 +416,8 @@ export function migrationMessage(
 	if (renamed === 0 && collided === 0 && unreadable === 0) return null;
 
 	const { from, to } = intent;
-	const target = intent.kind === 'label' ? 'a section' : 'an entry';
+	const target =
+		intent.kind === 'label' ? 'a section' : intent.kind === 'heading' ? 'a heading' : 'an entry';
 	const notes = (count: number): string =>
 		`${count} character ${count === 1 ? 'note' : 'notes'}`;
 

@@ -84,7 +84,12 @@ type StateName =
 	| 'forms-none'
 	| 'forms-two'
 	| 'forms-zero'
-	| 'forms-sections';
+	| 'forms-below'
+	| 'forms-mook'
+	| 'forms-expanded'
+	| 'forms-drift'
+	| 'forms-error'
+	| 'forms-missing';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -129,7 +134,12 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-none') return formsSamples('none');
 	if (name === 'forms-two') return formsSamples('two');
 	if (name === 'forms-zero') return formsSamples('zero');
-	if (name === 'forms-sections') return formsSamples('sections');
+	if (name === 'forms-below') return formsSamples('below');
+	if (name === 'forms-mook') return formsSamples('mook');
+	if (name === 'forms-expanded') return formsSamples('expanded');
+	if (name === 'forms-drift') return formsSamples('drift');
+	if (name === 'forms-error') return formsSamples('error');
+	if (name === 'forms-missing') return formsSamples('missing');
 	return SAMPLES;
 }
 
@@ -292,9 +302,9 @@ function applyEdit(entry: Live, edited: unknown): void {
 }
 
 /**
- * A stand-in for Obsidian's markdown renderer, for a Stat block's traits only:
- * a paragraph per blank-line block, and `***…***`, `**…**` and `*…*` as their
- * emphasis. Nothing else of markdown, and the plugin owns none of this — in the
+ * A stand-in for Obsidian's markdown renderer, for a Stat block's zones only:
+ * a paragraph per blank-line block, a block of `- ` lines as a list, and
+ * `***…***`, `**…**` and `*…*` as their emphasis. Nothing else of markdown, and the plugin owns none of this — in the
  * app the body goes through `MarkdownRenderer` (`view/markdown-pass.ts`).
  *
  * **Scoped to the one component whose look turns on it**, a trait's bold-italic
@@ -304,21 +314,31 @@ function applyEdit(entry: Live, edited: unknown): void {
  */
 function standInMarkdown(markdown: string, into: HTMLElement): void {
 	into.replaceChildren();
-	for (const block of markdown.split(/\n\s*\n/)) {
-		if (block.trim() === '') continue;
-		const p = into.createEl('p');
+	const inline = (text: string, into: HTMLElement): void => {
 		const pattern = /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
 		let last = 0;
-		for (const match of block.matchAll(pattern)) {
+		for (const match of text.matchAll(pattern)) {
 			const at = match.index ?? 0;
-			if (at > last) p.appendText(block.slice(last, at));
+			if (at > last) into.appendText(text.slice(last, at));
 			const token = match[0];
-			if (token.startsWith('***')) p.createEl('strong').createEl('em', { text: token.slice(3, -3) });
-			else if (token.startsWith('**')) p.createEl('strong', { text: token.slice(2, -2) });
-			else p.createEl('em', { text: token.slice(1, -1) });
+			if (token.startsWith('***')) into.createEl('strong').createEl('em', { text: token.slice(3, -3) });
+			else if (token.startsWith('**')) into.createEl('strong', { text: token.slice(2, -2) });
+			else into.createEl('em', { text: token.slice(1, -1) });
 			last = at + token.length;
 		}
-		if (last < block.length) p.appendText(block.slice(last));
+		if (last < text.length) into.appendText(text.slice(last));
+	};
+	for (const block of markdown.split(/\n\s*\n/)) {
+		if (block.trim() === '') continue;
+		// A block of `- ` lines is a list, which a features entry's continuation
+		// holds (`docs/features/stat-block-zones.md`).
+		const lines = block.split('\n');
+		if (lines.every((line) => /^\s*[-*+] /.test(line))) {
+			const list = into.createEl('ul');
+			for (const line of lines) inline(line.replace(/^\s*[-*+] /, ''), list.createEl('li'));
+			continue;
+		}
+		inline(block, into.createEl('p'));
 	}
 }
 
@@ -435,6 +455,10 @@ const PICTURES: Record<string, string> = {
 	// asset, but binary content inline — which is a call about what this harness is
 	// willing to hold rather than a fix.
 	'Tiny sigil.png': portrait(48, 48, ''),
+	// A Stat block form's picture, drawn as a thumbnail beside its name in play
+	// (`docs/features/stat-block-zones.md`). Wider than tall, so the square's
+	// `contain` shows.
+	'Brown bear.png': portrait(320, 240, 'Bear'),
 	// Well-formed text that is not an image, which is what a note is.
 	'Notes.md': 'data:text/plain;charset=utf-8,not%20a%20picture',
 };
@@ -932,7 +956,12 @@ function applyQuery(): void {
 			wanted === 'forms-none' ||
 			wanted === 'forms-two' ||
 			wanted === 'forms-zero' ||
-			wanted === 'forms-sections'
+			wanted === 'forms-below' ||
+			wanted === 'forms-mook' ||
+			wanted === 'forms-expanded' ||
+			wanted === 'forms-drift' ||
+			wanted === 'forms-error' ||
+			wanted === 'forms-missing'
 			? wanted
 			: 'populated',
 	);
@@ -947,9 +976,11 @@ function applyQuery(): void {
 
 	const focus = params.get('focus');
 	/** After the surface exists, or there is nothing matching to focus yet. */
-	const focusWanted = () => {
-		if (focus === null) return;
-		document.querySelector<HTMLElement>(focus)?.focus();
+	const focusWanted = (): boolean => {
+		if (focus === null) return true;
+		const target = document.querySelector<HTMLElement>(focus);
+		target?.focus();
+		return target !== null;
 	};
 
 	/*
@@ -1154,11 +1185,18 @@ function applyQuery(): void {
 		// sticky strip" is only photographable if the list is scrolled *first*:
 		// focused first, the scroll then moved the list out from under a control
 		// that had already been brought into view.
-		if (scrolled.length === 0) focusWanted();
+		const focusedEarly = scrolled.length === 0 && focusWanted();
 		pressWanted();
 		// After the presses, and before the scroll: a commit can draw a message,
 		// and a message is a thing worth scrolling to.
 		typeWanted();
+		// **A focus target only a press draws is focused after it**, and after
+		// the typing, so a field a view filled is focused holding that text: a
+		// Stat block zone's edit box exists only under Every form, and the shot
+		// of it growing types a paragraph in first. Tried before the presses
+		// first, so every view that focuses something already on screen keeps
+		// its order.
+		if (scrolled.length === 0 && !focusedEarly) focusWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
 		scrollSidewaysWanted();

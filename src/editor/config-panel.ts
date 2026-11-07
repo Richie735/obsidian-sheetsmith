@@ -83,6 +83,7 @@
 import { Setting } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
 import { keyRename, RenameIntent } from '../component-rename-migration';
+import { renderZonesField } from './zones-field';
 import { refusedRename } from './rename-refusal';
 import { getComponent } from '../components';
 import { placedComponentName } from './component-name';
@@ -1001,7 +1002,8 @@ export class ConfigPanel {
 				field.kind === 'entries' ||
 				field.kind === 'track-rows' ||
 				field.kind === 'rows' ||
-				field.kind === 'columns'
+				field.kind === 'columns' ||
+				field.kind === 'zones'
 			) {
 				// List fields are a table of their own, not a Setting row.
 				// Falling through to the text input below would bind a string
@@ -1049,6 +1051,17 @@ export class ConfigPanel {
 							field.addressesEntry,
 						);
 					}
+				} else if (field.kind === 'zones') {
+					renderZonesField(
+						listEl,
+						record,
+						field.key,
+						config.id,
+						this.host.listContext(),
+						// Where a heading lives in a note, declared by the component
+						// rather than known here (`types.ts`, `addressesHeading`).
+						field.addressesHeading,
+					);
 				} else if (field.kind === 'rows') {
 					renderRowsEditor(
 						listEl,

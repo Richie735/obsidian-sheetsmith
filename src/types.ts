@@ -428,7 +428,8 @@ export interface ConfigFieldSpec<
 		| 'entries'
 		| 'track-rows'
 		| 'rows'
-		| 'columns';
+		| 'columns'
+		| 'zones';
 	/**
 	 * Help text shown under the field. Required: a field the layout editor
 	 * renders with no explanation is a field the author has to guess at, and
@@ -552,6 +553,16 @@ export interface ConfigFieldSpec<
 	 * value into the vault-wide migration.
 	 */
 	addressesEntry?: EntryAddress;
+	/**
+	 * That each entry's `heading` in this `'zones'` field addresses a `####`
+	 * heading inside every `###` record of the section — a Stat block's zones
+	 * (`docs/features/stat-block-zones.md`). `addressesEntry`'s pattern one level
+	 * down: the component declares where its name lives, so the editor carries a
+	 * heading rename into the vault-wide migration without learning what a Stat
+	 * block is. A key rename carries nothing: the key is layout identity and
+	 * appears in no note.
+	 */
+	addressesHeading?: 'record';
 }
 
 /**

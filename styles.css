@@ -7820,6 +7820,13 @@ a.sheetsmith-notice-action {
 	/* The grid cell is the sizing control, so the browser's own corner handle
 	   would be a second one disagreeing with it. */
 	resize: none;
+	/* **It grows with its text, from a two-line floor**
+	   (`docs/features/stat-block-zones.md`, the second small fix): a fixed box
+	   scrolled a paragraph through two lines while it was typed. Up to the
+	   component's box, which scrolls past that. A Record set's body and every
+	   Stat block zone's text box share it. */
+	field-sizing: content;
+	min-height: calc(2lh + 2 * var(--size-2-1) + 2px);
 }
 
 /* Unfocused, the field is the thing underneath the rendered prose: its text
@@ -9515,10 +9522,15 @@ a.sheetsmith-notice-action {
 	line-height: var(--line-height-tight, 1.4);
 }
 
+/* **`break-word`, not `anywhere`**: a cell breaks a word only where nothing
+   else fits, so `[[Claws (Brown Bear)|Claws]]` breaks at its spaces rather
+   than mid-word. `anywhere` was the min-content answer, and a fixed table
+   layout sets these widths from the `<colgroup>`, never from the content, so
+   it buys nothing here and costs every long name its word breaks. */
 .sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-name,
 .sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-text {
 	text-align: start;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-number {
@@ -9553,8 +9565,12 @@ a.sheetsmith-notice-action {
 }
 
 /* At (0,4,0), past the record field's own doubled width rule, which a cell
-   has to fill rather than keep, and with the hairline at rest. */
-.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-cell.sheetsmith-record-input {
+   has to fill rather than keep, and with the hairline at rest. **A features
+   entry's name and usage take the same rule by selector list**, so the edit
+   face has one field treatment from the attack table down through the
+   entries (`docs/features/stat-block-zones.md`). */
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-cell.sheetsmith-record-input,
+.sheetsmith-view .sheetsmith-stat-block-entry-line .sheetsmith-stat-block-cell.sheetsmith-record-input {
 	width: 100%;
 	min-width: 3ch;
 	border-color: var(--background-modifier-border);
@@ -9587,7 +9603,7 @@ a.sheetsmith-notice-action {
 	font-weight: var(--font-normal);
 	line-height: var(--line-height-tight, 1.4);
 	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .sheetsmith-stat-block-col-name {
@@ -9693,6 +9709,15 @@ a.sheetsmith-notice-action {
 }
 
 @container sheetsmith-stat-block (max-width: 360px) {
+	/* **An open form takes the whole width on a phone**
+	   (`docs/features/stat-block-zones.md`, the third small fix): the record
+	   indent that lines the detail up under the name squeezes the tiles and the
+	   tables here, so the detail starts at the box's own padding. The chevron
+	   stays on the summary line. */
+	.sheetsmith-stat-block-detail {
+		padding-inline-start: 0;
+	}
+
 	/* The picker takes a line of its own under the title; **Revert** follows on
 	   it where both fit. */
 	/* Past the head's own rule, (0,2,0) and later in the file, or its
@@ -9716,7 +9741,7 @@ a.sheetsmith-notice-action {
 
 	.sheetsmith-stat-block-table td,
 	.sheetsmith-stat-block-table th {
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 }
 
@@ -10022,6 +10047,171 @@ a.sheetsmith-notice-action {
 	padding: var(--size-2-1) 0;
 }
 
+/* ---------------------------------------------------------------------------
+   A form's body zones (`docs/features/stat-block-zones.md`), drawn by
+   `components/stat-block-zones.ts`. Every zone is the label-over-content pair
+   the sections already are; what is new is a features zone's entries, the
+   drift, and the picture.
+   --------------------------------------------------------------------------- */
+
+/* **One entry per block, a short step apart**, each its own markdown as the
+   note writes it, so the name runs in as a printed stat block reads. */
+.sheetsmith-stat-block-zone-features > .sheetsmith-stat-block-section-body,
+.sheetsmith-stat-block-entries {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-stat-block-entry,
+.sheetsmith-stat-block-zone-markdown {
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight, 1.4);
+}
+
+.sheetsmith-stat-block-entry p,
+.sheetsmith-stat-block-zone-markdown p {
+	margin: 0 0 var(--size-2-1);
+}
+
+.sheetsmith-stat-block-entry p:last-child,
+.sheetsmith-stat-block-zone-markdown p:last-child {
+	margin-bottom: 0;
+}
+
+.sheetsmith-stat-block-entry ul,
+.sheetsmith-stat-block-zone-markdown ul {
+	margin: 0 0 var(--size-2-1);
+	padding-inline-start: 1.4em;
+}
+
+/* Under Every form, an entry is a line of name, usage and delete, its text in
+   the card's clothes under it. */
+.sheetsmith-stat-block-entry-editing {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-stat-block-entry-line {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name,
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+	text-align: start;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-weight: var(--font-semibold);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+	flex: 0 1 7em;
+	min-width: 4em;
+}
+
+/* **Add entry** in the Table's add-row clothes, its own foot rather than a
+   table's, so it takes the rule above it and nothing else. */
+.sheetsmith-view .sheetsmith-table-add-button.sheetsmith-stat-block-add-entry {
+	margin-top: 0;
+}
+
+/* **Not in this layout**, beside a drift block's heading, as a muted pill of
+   its own rather than in the heading's rank: in that rank's capitals and
+   tracking it read as more of the heading (*REACTIONS NOT IN THIS LAYOUT*).
+   Sentence case, the UI's own size, a border so forced colors keeps its edge,
+   and theme variables only (`docs/UI.md` §1). The one sentence under the block
+   follows. */
+.sheetsmith-stat-block-drift-tag {
+	flex: 0 0 auto;
+	padding: 0 var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+	letter-spacing: normal;
+	line-height: 1.5;
+	text-transform: none;
+}
+
+.sheetsmith-stat-block-drift-note {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* **A form's picture in play**: a square three times the title's size at the
+   title row's inline start, on the tile surface, the picture contained so it is
+   never cropped and never distorted. Read-only here; it is set under Every form. */
+.sheetsmith-stat-block-thumb {
+	position: relative;
+	flex: 0 0 auto;
+	width: calc(3 * var(--font-ui-large));
+	aspect-ratio: 1;
+	overflow: hidden;
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-stat-block-thumb > .sheetsmith-image-frame {
+	padding: 0;
+	cursor: default;
+}
+
+.sheetsmith-stat-block-form-name {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+/* A reference that does not draw: no thumbnail, and the painter's own sentence
+   under the head, muted. */
+.sheetsmith-stat-block-picture-problem {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-stat-block-picture-problems:empty {
+	display: none;
+}
+
+/* Under Every form, the whole frame and its field, at a size a picture reads at. */
+.sheetsmith-stat-block-picture-box {
+	position: relative;
+	width: min(100%, 12em);
+	aspect-ratio: 1;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* Below the rules it overrides, since `@container` adds no specificity: under
+   the block's 360px query an entry's name and usage stack, the delete staying
+   on the name's line. */
+@container sheetsmith-stat-block (max-width: 360px) {
+	.sheetsmith-stat-block-entry-line {
+		flex-wrap: wrap;
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {
+		flex-basis: calc(100% - var(--sheetsmith-inline-control) - var(--size-2-2));
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+		order: 1;
+		flex: 1 1 100%;
+	}
+
+}
+
 /* **The mini sheet's edges under more contrast**, as the sheet's own cards
    take them: every tile, every text section's box, the head's rule and an open
    form's rule at `--text-muted`. Here, after every base rule it overrides and
@@ -10132,35 +10322,37 @@ a.sheetsmith-notice-action {
 	}
 }
 
-/* **The pill sits on the first tinted box's top edge at its inline-start
-   corner, over the outline, taking no room**: no line is reserved, so a box is
-   the same size with the form on as off and a Card set's row does not grow.
-   It overhangs the edge by under a third of its height, about 3px, and sits the
-   rest in the box's top padding, so it leaves at least 4px of the sheet's 8px
-   gap to the box above — centred on the edge it left 1px — and clears
-   everything a box draws at any width: the label starts
-   below the padding, the value and a card's score pill are lower still, and a
-   card's note mark and a Pool's door hold the other top corner. A corner tab
-   flush inside the box was tried first: on a card narrower than about two
-   hundred pixels the centred label reaches the corner and the tab covered its
-   first letters, as the earlier bottom corner covered the score.
+/* **The pill sits on the first tinted box's bottom edge at its inline-end
+   corner, taking no room**: no line is reserved, so a box is the same size
+   with the form on as off and a Card set's row does not grow.
+
+   **Its inside part is exactly the box's bottom padding, whatever the font**
+   (`docs/features/stat-block-zones.md`, the first small fix): moved down by its
+   own height less `--size-4-2`, it puts `--size-4-2` inside the box, the
+   padding every host keeps, and the rest — about 5px — into the 8px gap below,
+   so it can touch no content box and leaves about 3px of the gap. It used to sit
+   on the top edge at the inline-start corner, a third of its height out, and
+   there its clearance was a few pixels of slack against the label's *ink*: 2.1px
+   in the harness, and touching *Armour class* in the app, whose interface font
+   sets capitals higher in the line. A clearance that depends on where a font
+   draws its capitals is not one, so the pill moved to where nothing is drawn: the
+   bottom inline-end corner, clear of the centred value, a card's score pill and
+   the note mark or a Pool's door in the top corner.
 
    **Sized in the card label's own fixed-pixel token, `--font-ui-smaller`**, not
-   `--font-smallest`: that one is em-based and grows with the sheet's text
-   size, while the padding and gap its overhang has to fit are fixed pixels, so
-   at a larger text the part inside spread onto the label. One tight line
-   (`line-height: 1.1`) with its edge an outline rather than a border, so the
-   part inside fits the padding above the label. It takes the pointer, so a clipped name's reveal
-   (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over
-   a control. */
+   `--font-smallest`, which grows with the sheet's text size while the padding it
+   sits in does not. One tight line (`line-height: 1.1`) with its edge an outline
+   rather than a border. It takes the pointer, so a clipped name's reveal
+   (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over a
+   control. */
 .sheetsmith-view .sheetsmith-in-play-marked:not(tr) {
 	position: relative;
 }
 
 .sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'] {
 	position: absolute;
-	inset-block-start: 0;
-	inset-inline-start: var(--size-4-2);
+	inset-block-end: 0;
+	inset-inline-end: var(--size-4-2);
 	z-index: 1;
 	max-width: min(12ch, calc(100% - 2 * var(--size-4-2)));
 	margin: 0;
@@ -10178,7 +10370,9 @@ a.sheetsmith-notice-action {
 	line-height: 1.1;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	transform: translateY(-30%);
+	/* Down by its own height less the padding: `--size-4-2` inside, the rest
+	   out. Geometry only, so no font moves it onto content. */
+	transform: translateY(calc(100% - var(--size-4-2)));
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where
@@ -10189,8 +10383,9 @@ a.sheetsmith-notice-action {
    containing block already. */
 .sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
 	inset-block-start: 50%;
-	inset-inline-start: auto;
+	inset-block-end: auto;
 	inset-inline-end: var(--size-2-2);
+	transform: translateY(-50%);
 }
 
 @media (prefers-contrast: more) {
@@ -13143,5 +13338,84 @@ a.sheetsmith-notice-action {
 	.sheetsmith-field-problem {
 		border-inline-start: 2px solid currentColor;
 		padding-inline-start: var(--size-2-3);
+	}
+}
+
+/* ---------------------------------------------------------------------------
+   A Stat block's Zones field (`editor/zones-field.ts`,
+   `docs/features/stat-block-zones.md`): **each zone a stacked card, never a
+   wide row**, so phone width costs nothing. Line one is the key, the type and
+   the card's own controls; line two the heading; line three what the type
+   adds. Every control carries its label over it, since the card has no header
+   row to name its columns.
+   --------------------------------------------------------------------------- */
+.sheetsmith-zone-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-2-2) 0;
+}
+
+/* **The controls never leave line one.** The key and the type wrap inside
+   their own group, and the reorder and remove controls sit beside the group,
+   level with its last field, so a narrow panel stacks the fields and leaves no
+   grip on a line of its own between them and the heading. */
+.sheetsmith-zone-line {
+	display: flex;
+	align-items: end;
+	gap: var(--size-4-2);
+	padding: 0 var(--size-2-2);
+}
+
+.sheetsmith-zone-fields {
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--size-2-2) var(--size-4-2);
+	min-width: 0;
+}
+
+.sheetsmith-zone-fields > .sheetsmith-detail-field,
+.sheetsmith-zone-detail > .sheetsmith-detail-field {
+	flex: 1 1 10em;
+	max-width: none;
+}
+
+.sheetsmith-zone-line > button {
+	flex: 0 0 auto;
+}
+
+/* *Built in*, where a body zone has its type select: muted words at the
+   select's own height, so the line keeps its rhythm. */
+.sheetsmith-zone-built-in {
+	display: flex;
+	align-items: center;
+	min-height: var(--input-height);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/* A table zone's column line: key, type and display name, wrapping. */
+.sheetsmith-zone-column {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--size-2-2) var(--size-4-2);
+}
+
+.sheetsmith-zone-column > .sheetsmith-detail-field {
+	flex: 1 1 8em;
+	max-width: none;
+}
+
+/* **Below 400px of panel every control takes the full width**, and a column
+   line wraps its type under its key, so nothing scrolls sideways. Below the
+   rules it overrides, since `@container` adds no specificity. */
+@container (max-width: 400px) {
+	.sheetsmith-zone-fields > .sheetsmith-detail-field,
+	.sheetsmith-zone-detail > .sheetsmith-detail-field,
+	.sheetsmith-zone-column > .sheetsmith-detail-field {
+		flex-basis: 100%;
 	}
 }
