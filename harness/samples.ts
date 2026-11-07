@@ -4625,34 +4625,54 @@ export function notesSamples(): Sample[] {
 }
 
 /**
- * Which variant of the forms sheet a state draws (`docs/features/character-forms.md`).
+ * Which variant of the forms sheet a state draws (`docs/features/character-forms.md`,
+ * `docs/features/stat-block-zones.md`).
  *
- * - `active`: Brown Bear in play, Wolf in the library;
+ * - `active`: Brown Bear in play, its body in zones: a picture, an Attacks table
+ *   with an aliased link, Actions features with a usage and a list, collapsed
+ *   Traits, and a Reactions block no zone owns; Wolf a 0.9.0 body; the mook empty;
  * - `none`: no form active, so the empty state and *Choosing one spends a use*;
- * - `two`: both on by hand, so the report and both stat blocks;
+ * - `two`: both on by hand, so the report and both stat blocks, each its picture;
  * - `zero`: Brown Bear at 0 HP and still active;
- * - `sections`: Brown Bear in play under a layout that reorders the parts —
- *   traits before the attacks, the changes last — and heads the traits
- *   **Features**.
+ * - `below`: Brown Bear at −3 HP, so the sentence names the stored number;
+ * - `mook`: the Fate-style mook in play, every zone empty, so nothing but its head;
+ * - `expanded`: the same as `active` with Traits' `collapsed` off;
+ * - `drift`: Brown Bear with a second Traits heading and a stray lead;
+ * - `error`: Brown Bear's Attacks holding prose rather than a table;
+ * - `missing`: Brown Bear's picture naming a file the vault does not hold.
  */
-export type FormsVariant = 'active' | 'none' | 'two' | 'zero' | 'sections';
+export type FormsVariant =
+	| 'active'
+	| 'none'
+	| 'two'
+	| 'zero'
+	| 'below'
+	| 'mook'
+	| 'expanded'
+	| 'drift'
+	| 'error'
+	| 'missing';
 
-/**
- * A Moon druid's sheet with a **Wild Shape** stat block. With Brown Bear in play
- * the tint is drawn on a Card set (Strength, Dexterity, Constitution), a Table
- * (Stealth, which the bear floors at 3 over the druid's 0 under the bear's own
- * Dexterity), a second Table (the Constitution save, which the bear sets to +5,
- * among saves whose totals read `+ mod.self` as the starter's do) and a Card
- * (armour class) at once — and beside them the things
- * that must *not* tint: Perception, whose floor of 3 loses to the druid's own 6;
- * Athletics, moved by the new Strength through its formula and pushed at by
- * nothing; a speed card with no `derived`; and an initiative an item raises,
- * which keeps the shape-only mark alone.
- */
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
-	const bear = variant === 'none' ? 'no' : 'yes';
+	const bear = variant === 'none' || variant === 'mook' ? 'no' : 'yes';
 	const wolf = variant === 'two' ? 'yes' : 'no';
-	const bearHp = variant === 'zero' ? '0 / 34' : '22 / 34';
+	const mook = variant === 'mook' ? 'yes' : 'no';
+	const bearHp = variant === 'zero' ? '0 / 34' : variant === 'below' ? '-3 / 34' : '22 / 34';
+	const picture = variant === 'missing' ? 'Brown bear (lost).png' : 'Brown bear.png';
+	const attacks =
+		variant === 'error'
+			? ['The bear bites, then claws.']
+			: [
+					'| Attack | Bonus | Damage |',
+					'|---|---|---|',
+					'| Bite | 6 | 1d8+4 piercing |',
+					'| [[Claws (Brown Bear)\\|Claws]] | 6 | 2d6+4 slashing |',
+				];
+	const drift =
+		variant === 'drift'
+			? ['#### traits:', '', 'A second heading for Traits, which only the first is read under.', '']
+			: [];
+	const lead = variant === 'drift' ? ['A line above the first heading.', ''] : [];
 	return [
 		{
 			config: {
@@ -4807,10 +4827,11 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				id: 'wild_shape',
 				type: 'stat-block',
 				label: 'Wild Shape',
-				// Ten rows, so an open record's whole block and the next record's line
-				// are both inside the box: the library and two-on shots show what their
-				// criteria name rather than a scroller cut under its first block.
-				position: { col: 7, row: 3, width: 6, height: 10 },
+				// Sixteen rows, so an open record's whole block — its picture, its
+				// zones and the drift after them — is inside the box: the library and
+				// two-on shots show what their criteria name rather than a scroller cut
+				// under its first zones.
+				position: { col: 7, row: 3, width: 6, height: 16 },
 				recordName: 'Form',
 				fields: [
 					{ key: 'Active', type: 'toggle' },
@@ -4821,21 +4842,24 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				exclusive: 'Active',
 				uses: '2',
 				spendOnPick: true,
-				actions: [
-					{ key: 'Bonus', type: 'number' },
-					{ key: 'Damage', type: 'text' },
+				image: true,
+				zones: [
+					{ key: 'vitals' },
+					{ key: 'changes' },
+					{
+						key: 'attacks',
+						type: 'table',
+						heading: 'Attacks',
+						columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
+					},
+					{ key: 'actions', type: 'features', heading: 'Actions' },
+					{
+						key: 'traits',
+						type: 'text',
+						heading: 'Traits',
+						...(variant === 'expanded' ? {} : { collapsed: true }),
+					},
 				],
-				actionName: 'Attack',
-				bodyName: 'Traits',
-				...(variant === 'sections'
-					? {
-							sections: [
-								{ key: 'vitals' },
-								{ key: 'traits', name: 'Features' },
-								{ key: 'actions' },
-							],
-						}
-					: {}),
 			} as ComponentConfig,
 			body: [
 				'',
@@ -4851,15 +4875,32 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				'Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5',
 				'```',
 				'',
-				'| Attack | Bonus | Damage |',
-				'|---|---|---|',
-				'| Bite | 6 | 1d8+4 piercing |',
-				'| Claws | 6 | 2d6+4 slashing |',
+				`![[${picture}]]`,
+				'',
+				...lead,
+				'#### Attacks',
+				'',
+				...attacks,
+				'',
+				'#### Actions',
+				'',
+				'**Multiattack.** The bear makes two attacks: one with its bite and one with its claws.',
+				'',
+				'**Roar (1/Day).** Each creature within 30 feet must succeed on a DC 12 Wisdom saving throw.',
+				'',
+				'- On a failure it is frightened until the end of its next turn.',
+				'',
+				// Not a zone in this layout, and after a features zone rather than
+				// the text zone, where it would read as that zone's own text.
+				'#### Reactions',
+				'',
+				'**Defensive Swat.** The bear swats at an attacker within 5 feet.',
+				'',
+				'#### Traits',
 				'',
 				'***Keen Smell.*** The bear has advantage on Wisdom (Perception) checks that rely on smell.',
 				'',
-				'***Multiattack.*** The bear makes two attacks: one with its bite and one with its claws.',
-				'',
+				...drift,
 				'### Wolf',
 				'```sheet',
 				`Active: ${wolf}`,
@@ -4873,6 +4914,15 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				'| Bite | 4 | 2d4+2 piercing |',
 				'',
 				'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
+				'',
+				// A Fate mook's shape: a whole stat block with nothing in its zones,
+				// which In play draws as its head and vitals alone.
+				'### Thug',
+				'```sheet',
+				`Active: ${mook}`,
+				'HP: 3 / 3',
+				'Speed: 30 ft.',
+				'```',
 				'',
 			].join('\n'),
 		},
