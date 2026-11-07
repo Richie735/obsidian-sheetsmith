@@ -1011,14 +1011,14 @@ decided.
   habit. The predicate is narrow on purpose — a drag carries coordinates and a
   card's own surface press carries neither `pointerId` nor `button`, and both are
   hand-written by design — so the check only ever reports what it can prove.
-- **Three kinds of module are tested through their consumers instead.** All are
+- **Four kinds of module are tested through their consumers instead.** All are
   stated exceptions to one test file per module. What they share is that the
   consumer is the only place what the module owns becomes observable; the reason
   differs, and collapsing them into one reason is what let the condition below
   read as attaching to just the first of them. A gesture has nothing to act on
   without a control. A vocabulary has nothing to assert that is not a tautology.
   A note-format primitive has nothing to be *wrong* about except a caller's
-  round trip.
+  round trip. A painter's drawing is observable only in a component's box.
 
   **A gesture module is tested through a control that drives it.**
   `src/interaction/` is the first: `scrub.ts`, `hold-repeat.ts`, `editable.ts` and
@@ -1075,8 +1075,24 @@ decided.
   separates this from a coverage gap is the same one the other two exceptions use:
   a test of its own here could only restate the implementation, while a consumer's
   round trip fails on a real drift.
+  **A painter may be tested through the component that draws it.** A painter is
+  a module beside the components that draws for one or more of them —
+  `card-face.ts`, `level-ring.ts`, `picture-frame.ts`, `stat-block-zones.ts` —
+  and what it draws becomes observable in the box a component draws it into, so
+  a file beside it would mostly build that box again, which is the component's
+  suite. This is a permission, not a rule against a file of its own: a painter
+  whose rules are clearer driven directly takes one, as `modifier-form.ts`,
+  `record-controls.ts`, `record-line-fit.ts`, `linked-text.ts` and
+  `modifier-breakdown.ts` do, and that is not a departure. What the permission
+  never lifts is the condition below. A painter's guard, refusal sentence or
+  branch that no component's fixture reaches is a rule nothing drives:
+  `stat-block-zones.ts` shipped five entry and cell guards with no case behind
+  them until a review counted them, and `stat-block.test.ts` now drives one
+  refused spelling per guard and one near miss each lets through. Nothing checks
+  it; review does, by counting a painter's rules against its component's cases
+  [judgement].
 
-- **All three exceptions carry the same condition, and the condition is what makes
+- **All four exceptions carry the same condition, and the condition is what makes
   any of them safe: what the module owns has to actually be driven
   somewhere.** Read as a licence
   instead, it is how `hold-repeat.ts` came to have its repeat untested — every
@@ -1093,8 +1109,8 @@ decided.
   column type does not compile until it has a word, which is a check nobody has
   to remember to run.
 - **A module in `editor/` with its own entry point *and* its own reportable
-  output earns a test file** [judgement]. That is the boundary of the exception
-  above: the five modules reached only by pressing something the editor drew —
+  output earns a test file** [judgement]. That is the boundary, in
+  `editor/`, of the four consumer-tested exceptions above: the five modules reached only by pressing something the editor drew —
   `accepts-children.ts`, `component-name.ts`, `copyable-name.ts`,
   `field-commit.ts`, `form-group.ts` — stay under it.
 
