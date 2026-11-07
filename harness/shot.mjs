@@ -3093,6 +3093,117 @@ export const DEFAULTS = [
 	},
 	{
 		/*
+		 * **Character forms** (`docs/features/character-forms.md`): a Moon druid's
+		 * sheet with Brown Bear in play, so the tint is on a Card set, a Table and
+		 * a Card at once, and beside it the three that must not tint — Perception,
+		 * where the druid's own number is higher; Speed, with no derived; and an
+		 * initiative an item raises, which keeps the shape-only mark alone.
+		 */
+		name: 'sheet-forms-light',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-dark',
+		query: 'surface=sheet&theme=dark&state=forms',
+		size: '1400,1500',
+	},
+	{
+		// The block's own reflow at a phone's width: the picker on a line of its
+		// own, each stat on its own line, the action table wrapping its cells.
+		name: 'sheet-forms-narrow',
+		query: 'surface=sheet&theme=light&state=forms&width=380',
+		size: '380,2600',
+	},
+	{
+		// No form active: the empty state, Choosing one spends a use, no Revert.
+		name: 'sheet-forms-none',
+		query: 'surface=sheet&theme=light&state=forms-none',
+		size: '1400,1500',
+	},
+	{
+		// Both on by hand: the picker's extra line, the report and both blocks.
+		name: 'sheet-forms-two-on',
+		query: 'surface=sheet&theme=light&state=forms-two',
+		size: '1400,1700',
+	},
+	{
+		// Every form, Brown Bear open under its line.
+		name: 'sheet-forms-library',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+	},
+	{
+		// A form at 0, still active: the number in the error colour and its sentence.
+		name: 'sheet-forms-zero-hp',
+		query: 'surface=sheet&theme=light&state=forms-zero',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'sheet-forms-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		// Every form under more contrast: the attack table's frame, the tiles'
+		// and the open form's rule at the darkened edge, on the edit face.
+		name: 'sheet-forms-library-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		// **Every form** in both palettes and at a phone's width, the edit form
+		// drawn through the same anatomy as In play: Brown Bear open, Wolf closed
+		// with its vitals on its line.
+		name: 'sheet-forms-library-dark',
+		query: 'surface=sheet&theme=dark&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+	},
+	{
+		name: 'sheet-forms-library-narrow',
+		query: 'surface=sheet&theme=light&state=forms&width=380&press=.sheetsmith-stat-block-switch',
+		size: '380,3000',
+	},
+	{
+		// Every form with every form closed, so each line's vitals summary shows.
+		name: 'sheet-forms-library-closed',
+		query:
+			'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch&press=.sheetsmith-record-disclosure',
+		size: '1400,1700',
+	},
+	{
+		// Traits open In play: the prose rendered, a trait's bold-italic name as its
+		// lead-in, and the indent under the disclosure.
+		name: 'sheet-forms-traits',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-disclosure',
+		size: '1400,1700',
+	},
+	{
+		// And open under Every form, the same section in the edit form.
+		name: 'sheet-forms-library-traits',
+		query:
+			'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch&press=.sheetsmith-stat-block-detail%20.sheetsmith-stat-block-disclosure',
+		size: '1400,1900',
+	},
+	{
+		// A layout's `sections`: traits before the attacks under the heading
+		// **Features**, and the changes, left out of the list, drawn last. The
+		// traits opened so the renamed heading's content shows.
+		name: 'sheet-forms-sections',
+		query:
+			'surface=sheet&theme=light&state=forms-sections&press=.sheetsmith-stat-block-disclosure',
+		size: '1400,1700',
+	},
+	{
+		/*
 		 * **Grouped Record sets** (`docs/features/record-set-groups.md`), on the
 		 * `record-groups` state's own sheet: lists with neighbours above, below and
 		 * beside them, so a collapse that moved anything would show. Every group

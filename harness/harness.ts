@@ -38,6 +38,8 @@ import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
+import { applyDecorations, inPlayDecorations } from '../src/view/placement-decorations';
+import { revealWhenTruncated } from '../src/ui/truncation';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
 import { App, Platform } from '../src/test/obsidian-stub';
@@ -59,6 +61,7 @@ import {
 	unmodifiedSamples,
 	pinnedAddSamples,
 	recordGroupSamples,
+	formsSamples,
 	textGroupSamples,
 	notesSamples,
 	NOTE_DEFINITIONS,
@@ -76,7 +79,12 @@ type StateName =
 	| 'record-groups'
 	| 'text-groups'
 	| 'notes'
-	| 'three-parts';
+	| 'three-parts'
+	| 'forms'
+	| 'forms-none'
+	| 'forms-two'
+	| 'forms-zero'
+	| 'forms-sections';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -117,6 +125,11 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'text-groups') return textGroupSamples();
 	if (name === 'notes') return notesSamples();
 	if (name === 'three-parts') return threePartSamples();
+	if (name === 'forms') return formsSamples('active');
+	if (name === 'forms-none') return formsSamples('none');
+	if (name === 'forms-two') return formsSamples('two');
+	if (name === 'forms-zero') return formsSamples('zero');
+	if (name === 'forms-sections') return formsSamples('sections');
 	return SAMPLES;
 }
 
@@ -223,6 +236,7 @@ function prepare(): void {
 function sheetEnv(entries: Live[]): {
 	env: FormulaEnv;
 	modifiers: ModifierContext;
+	marked: ReadonlySet<string>;
 } {
 	// **Through the view's own `buildSheet`, not a copy of its steps.** That is
 	// this function's whole reason, one layer up from `publishedComponent`: an
@@ -275,6 +289,37 @@ function applyEdit(entry: Live, edited: unknown): void {
 	entry.data = result.ok ? result.data : null;
 	entry.error = result.ok ? null : result.error;
 	draw();
+}
+
+/**
+ * A stand-in for Obsidian's markdown renderer, for a Stat block's traits only:
+ * a paragraph per blank-line block, and `***…***`, `**…**` and `*…*` as their
+ * emphasis. Nothing else of markdown, and the plugin owns none of this — in the
+ * app the body goes through `MarkdownRenderer` (`view/markdown-pass.ts`).
+ *
+ * **Scoped to the one component whose look turns on it**, a trait's bold-italic
+ * name read as its heading (`docs/features/character-forms.md`). Rich text keeps
+ * the fallback the harness has always drawn for it, deliberately (`samples.ts`),
+ * so none of its shots move; widening this is a decision for those shots.
+ */
+function standInMarkdown(markdown: string, into: HTMLElement): void {
+	into.replaceChildren();
+	for (const block of markdown.split(/\n\s*\n/)) {
+		if (block.trim() === '') continue;
+		const p = into.createEl('p');
+		const pattern = /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+		let last = 0;
+		for (const match of block.matchAll(pattern)) {
+			const at = match.index ?? 0;
+			if (at > last) p.appendText(block.slice(last, at));
+			const token = match[0];
+			if (token.startsWith('***')) p.createEl('strong').createEl('em', { text: token.slice(3, -3) });
+			else if (token.startsWith('**')) p.createEl('strong', { text: token.slice(2, -2) });
+			else p.createEl('em', { text: token.slice(1, -1) });
+			last = at + token.length;
+		}
+		if (last < block.length) p.appendText(block.slice(last));
+	}
 }
 
 /** A note the sample links to that deliberately does not exist. */
@@ -437,6 +482,9 @@ const openRecords = new Map<string, Set<number>>([
 	// Second Wind open, so its `Save DC` — which the list's bindings name `Uses`
 	// to leave alone — is on screen beside the counter the reset is for.
 	['rest_features', new Set([0])],
+	// Brown Bear open in **Every form**, so the library shot shows a record's
+	// whole stat block under its line (`docs/features/character-forms.md`).
+	['wild_shape', new Set([0])],
 ]);
 
 /**
@@ -452,7 +500,7 @@ function renderSheet(into: HTMLElement): void {
 	const grid = view.createDiv('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
 
-	const { env, modifiers } = sheetEnv(live);
+	const { env, modifiers, marked } = sheetEnv(live);
 
 	// The view's own walk and the view's own descent through it, so the harness
 	// cannot order or nest the sheet differently from the thing it is measuring.
@@ -478,6 +526,10 @@ function renderSheet(into: HTMLElement): void {
 				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
 				// fallback for prose and a real picture for an image.
 				resource,
+				// A stand-in for the app's renderer for a Stat block's traits alone,
+				// so a shot shows a trait's bold-italic name as the app draws it;
+				// every other prose block keeps the fallback (see `standInMarkdown`).
+				...(config.type === 'stat-block' ? { renderMarkdown: standInMarkdown } : {}),
 				// The note's own name, which the app takes from the file and this
 				// has none of — so it is supplied for one sample and left absent for
 				// the other, because both readings are worth a shot (see above).
@@ -506,6 +558,13 @@ function renderSheet(into: HTMLElement): void {
 		},
 	);
 
+
+	// The view's own pass after the grid, the form tint, from the same breakdowns.
+	applyDecorations(
+		grid,
+		inPlayDecorations(marked, (name) => modifiers.breakdown(name)),
+		revealWhenTruncated,
+	);
 
 	/*
 	 * The view's own last step: a modifier form the render before this one left
@@ -868,7 +927,12 @@ function applyQuery(): void {
 			wanted === 'record-groups' ||
 			wanted === 'text-groups' ||
 			wanted === 'notes' ||
-			wanted === 'three-parts'
+			wanted === 'three-parts' ||
+			wanted === 'forms' ||
+			wanted === 'forms-none' ||
+			wanted === 'forms-two' ||
+			wanted === 'forms-zero' ||
+			wanted === 'forms-sections'
 			? wanted
 			: 'populated',
 	);

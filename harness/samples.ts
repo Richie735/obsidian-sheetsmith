@@ -4623,3 +4623,258 @@ export function notesSamples(): Sample[] {
 		},
 	];
 }
+
+/**
+ * Which variant of the forms sheet a state draws (`docs/features/character-forms.md`).
+ *
+ * - `active`: Brown Bear in play, Wolf in the library;
+ * - `none`: no form active, so the empty state and *Choosing one spends a use*;
+ * - `two`: both on by hand, so the report and both stat blocks;
+ * - `zero`: Brown Bear at 0 HP and still active;
+ * - `sections`: Brown Bear in play under a layout that reorders the parts —
+ *   traits before the attacks, the changes last — and heads the traits
+ *   **Features**.
+ */
+export type FormsVariant = 'active' | 'none' | 'two' | 'zero' | 'sections';
+
+/**
+ * A Moon druid's sheet with a **Wild Shape** stat block. With Brown Bear in play
+ * the tint is drawn on a Card set (Strength, Dexterity, Constitution), a Table
+ * (Stealth, which the bear floors at 3 over the druid's 0 under the bear's own
+ * Dexterity), a second Table (the Constitution save, which the bear sets to +5,
+ * among saves whose totals read `+ mod.self` as the starter's do) and a Card
+ * (armour class) at once — and beside them the things
+ * that must *not* tint: Perception, whose floor of 3 loses to the druid's own 6;
+ * Athletics, moved by the new Strength through its formula and pushed at by
+ * nothing; a speed card with no `derived`; and an initiative an item raises,
+ * which keeps the shape-only mark alone.
+ */
+export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
+	const bear = variant === 'none' ? 'no' : 'yes';
+	const wolf = variant === 'two' ? 'yes' : 'no';
+	const bearHp = variant === 'zero' ? '0 / 34' : '22 / 34';
+	return [
+		{
+			config: {
+				id: 'abilities',
+				type: 'card-set',
+				label: 'Abilities',
+				position: { col: 1, row: 1, width: 12, height: 1 },
+				entries: [
+					{ key: 'STR', name: 'Strength' },
+					{ key: 'DEX', name: 'Dexterity' },
+					{ key: 'CON', name: 'Constitution' },
+					{ key: 'INT', name: 'Intelligence' },
+					{ key: 'WIS', name: 'Wisdom' },
+					{ key: 'CHA', name: 'Charisma' },
+				],
+				derived: 'mod(value + mod.self)',
+			} as ComponentConfig,
+			body: '```sheet\nSTR: 10\nDEX: 14\nCON: 13\nINT: 12\nWIS: 16\nCHA: 8\n```',
+		},
+		{
+			config: {
+				id: 'armour_class',
+				type: 'card',
+				label: 'Armour class',
+				position: { col: 1, row: 2, width: 2, height: 1 },
+				key: 'AC',
+				derived: '10 + abilities.DEX + mod.self',
+				signed: false,
+				hideNote: true,
+			} as ComponentConfig,
+			body: '```sheet\nAC: 12\n```',
+		},
+		{
+			// No `derived`, so no slot a form can push at: the druid's own 30 stays,
+			// and the form's speed is read off its stat block (the known limit).
+			config: {
+				id: 'speed',
+				type: 'card',
+				label: 'Speed',
+				position: { col: 3, row: 2, width: 2, height: 1 },
+				key: 'speed',
+				hideNote: true,
+			} as ComponentConfig,
+			body: '```sheet\nspeed: 30\n```',
+		},
+		{
+			config: {
+				id: 'initiative',
+				type: 'card',
+				label: 'Initiative',
+				position: { col: 5, row: 2, width: 2, height: 1 },
+				derived: 'abilities.DEX + mod.self',
+				hideValue: true,
+				hideNote: true,
+			} as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 7, row: 2, width: 6, height: 1 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				'| Sentinel amulet | initiative += 1 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 3, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [
+					{
+						key: 'Training',
+						hideHeading: true,
+						type: 'level',
+						levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+					},
+					{
+						key: 'Bonus',
+						type: 'computed',
+						formula: 'ability + Training * 3 + mod.self',
+						publish: true,
+					},
+				],
+				rows: [
+					{ label: 'Athletics', key: 'athletics', values: { ability: 'abilities.STR' } },
+					{ label: 'Perception', key: 'perception', values: { ability: 'abilities.WIS' } },
+					{ label: 'Stealth', key: 'stealth', values: { ability: 'abilities.DEX' } },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Skill | Training | Bonus |',
+				'| --- | --- | --- |',
+				'| Athletics | 0 | |',
+				'| Perception | 1 | |',
+				'| Stealth | 0 | |',
+			].join('\n'),
+		},
+		{
+			// The starter's saves in small: each total reads `+ mod.self`, so a
+			// form's push lands on its row, and the bear's Constitution save is
+			// tinted where the two it leaves alone are not.
+			config: {
+				id: 'saves',
+				type: 'table',
+				label: 'Saving throws',
+				position: { col: 1, row: 5, width: 6, height: 2 },
+				rowHeader: 'Save',
+				namePosition: 1,
+				columns: [
+					{
+						key: 'Prof',
+						hideHeading: true,
+						type: 'level',
+						levels: ['Untrained', 'Proficient:'],
+					},
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'ability + Prof * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: [
+					{ label: 'Strength', key: 'STR', values: { ability: 'abilities.STR' } },
+					{ label: 'Dexterity', key: 'DEX', values: { ability: 'abilities.DEX' } },
+					{ label: 'Constitution', key: 'CON', values: { ability: 'abilities.CON' } },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Save | Prof | Total |',
+				'| --- | --- | --- |',
+				'| Strength | 0 | |',
+				'| Dexterity | 0 | |',
+				'| Constitution | 1 | |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				// Ten rows, so an open record's whole block and the next record's line
+				// are both inside the box: the library and two-on shots show what their
+				// criteria name rather than a scroller cut under its first block.
+				position: { col: 7, row: 3, width: 6, height: 10 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'HP', type: 'number', maxSource: 'record' },
+					{ key: 'Speed', type: 'text' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				uses: '2',
+				spendOnPick: true,
+				actions: [
+					{ key: 'Bonus', type: 'number' },
+					{ key: 'Damage', type: 'text' },
+				],
+				actionName: 'Attack',
+				bodyName: 'Traits',
+				...(variant === 'sections'
+					? {
+							sections: [
+								{ key: 'vitals' },
+								{ key: 'traits', name: 'Features' },
+								{ key: 'actions' },
+							],
+						}
+					: {}),
+			} as ComponentConfig,
+			body: [
+				'',
+				'```sheet',
+				'uses: 1',
+				'```',
+				'',
+				'### Brown Bear',
+				'```sheet',
+				`Active: ${bear}`,
+				`HP: ${bearHp}`,
+				'Speed: 40 ft., climb 30 ft.',
+				'Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5',
+				'```',
+				'',
+				'| Attack | Bonus | Damage |',
+				'|---|---|---|',
+				'| Bite | 6 | 1d8+4 piercing |',
+				'| Claws | 6 | 2d6+4 slashing |',
+				'',
+				'***Keen Smell.*** The bear has advantage on Wisdom (Perception) checks that rely on smell.',
+				'',
+				'***Multiattack.*** The bear makes two attacks: one with its bite and one with its claws.',
+				'',
+				'### Wolf',
+				'```sheet',
+				`Active: ${wolf}`,
+				'HP: 11 / 11',
+				'Speed: 40 ft.',
+				'Modifiers: abilities.DEX = 2; skills.stealth >= 4',
+				'```',
+				'',
+				'| Attack | Bonus | Damage |',
+				'|---|---|---|',
+				'| Bite | 4 | 2d4+2 piercing |',
+				'',
+				'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
+				'',
+			].join('\n'),
+		},
+	];
+}
