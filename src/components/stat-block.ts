@@ -389,8 +389,9 @@ function tintWord(colour: TintColour): string {
 
 /**
  * What one of the theme's colours is called wherever a word is not one: the
- * lines under the In play head, and the Every form dropdown. One phrase, so
- * every surface names one fault one way.
+ * editor's **Tint** dropdown (through `optionNoun`), the lines under the In
+ * play head, and the Every form dropdown. One phrase, so the editor and the
+ * sheet name one fault one way.
  */
 const TINT_NOUN = 'tint colour';
 
@@ -837,6 +838,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			description:
 				"The colour a record in play tints the values it changes, and the tag that names it: the theme's accent, or one of its named colours, which the theme sets for light and dark. Only a record in play tints, so this needs One at a time by. Changes nothing in the note.",
 			options: TINT_COLOURS,
+			optionNoun: TINT_NOUN,
 		},
 		{
 			key: 'tintPerRecord',

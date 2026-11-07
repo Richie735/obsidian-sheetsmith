@@ -464,6 +464,15 @@ export interface ConfigFieldSpec<
 	/** Choices for 'select' fields. The first is the default and is omitted. */
 	options?: readonly string[];
 	/**
+	 * What one of a 'select' field's `options` is called, where the field says
+	 * so in the sheet's own words: a stored value outside them is then reported
+	 * as `"brown" is not a tint colour` rather than the generic `is not one of
+	 * the choices`, so the editor and the sheet name one fault one way
+	 * (`docs/features/form-tint-colour.md`). Read by the editor's select branch
+	 * alone, which learns a noun and nothing about the component.
+	 */
+	optionNoun?: string;
+	/**
 	 * What a 'columns' list offers, where the component holds fewer than every
 	 * column type or refuses a flag the field would otherwise show.
 	 *
