@@ -4905,11 +4905,14 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 			(rule) => rule.context.length === 0 && rule.selector === ".sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true']",
 		);
 		expect(pill?.body).toMatch(/position:\s*absolute/);
-		// On the top edge at the inline-start corner.
-		expect(pill?.body).toMatch(/inset-block-start:\s*0/);
-		expect(pill?.body).toMatch(/inset-inline-start:/);
-		// Overhanging the edge by under half its height, so 4px of the gap stays.
-		expect(pill?.body).toMatch(/transform:\s*translateY\(-30%\)/);
+		// On the bottom edge at the inline-end corner, clear of the label, the
+		// centred value and the note mark (the form tag fix).
+		expect(pill?.body).toMatch(/inset-block-end:\s*0/);
+		expect(pill?.body).toMatch(/inset-inline-end:/);
+		expect(pill?.body).not.toMatch(/inset-block-start|inset-inline-start/);
+		// Inside by exactly the bottom padding, by geometry and not by a font's
+		// ink: down by its own height less `--size-4-2`.
+		expect(pill?.body).toMatch(/transform:\s*translateY\(calc\(100% - var\(--size-4-2\)\)\)/);
 		expect(pill?.body).not.toMatch(/display:\s*block/);
 		// In a fixed-pixel size, so its overhang fits the fixed padding at any
 		// text size, and hit-testable, so a clipped name's reveal answers it.

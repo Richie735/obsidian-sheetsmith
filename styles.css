@@ -10132,35 +10132,37 @@ a.sheetsmith-notice-action {
 	}
 }
 
-/* **The pill sits on the first tinted box's top edge at its inline-start
-   corner, over the outline, taking no room**: no line is reserved, so a box is
-   the same size with the form on as off and a Card set's row does not grow.
-   It overhangs the edge by under a third of its height, about 3px, and sits the
-   rest in the box's top padding, so it leaves at least 4px of the sheet's 8px
-   gap to the box above — centred on the edge it left 1px — and clears
-   everything a box draws at any width: the label starts
-   below the padding, the value and a card's score pill are lower still, and a
-   card's note mark and a Pool's door hold the other top corner. A corner tab
-   flush inside the box was tried first: on a card narrower than about two
-   hundred pixels the centred label reaches the corner and the tab covered its
-   first letters, as the earlier bottom corner covered the score.
+/* **The pill sits on the first tinted box's bottom edge at its inline-end
+   corner, taking no room**: no line is reserved, so a box is the same size
+   with the form on as off and a Card set's row does not grow.
+
+   **Its inside part is exactly the box's bottom padding, whatever the font**
+   (`docs/features/stat-block-zones.md`, the first small fix): moved down by its
+   own height less `--size-4-2`, it puts `--size-4-2` inside the box, the
+   padding every host keeps, and the rest — about 5px — into the 8px gap below,
+   so it can touch no content box and leaves about 3px of the gap. It used to sit
+   on the top edge at the inline-start corner, a third of its height out, and
+   there its clearance was a few pixels of slack against the label's *ink*: 2.1px
+   in the harness, and touching *Armour class* in the app, whose interface font
+   sets capitals higher in the line. A clearance that depends on where a font
+   draws its capitals is not one, so the pill moved to where nothing is drawn: the
+   bottom inline-end corner, clear of the centred value, a card's score pill and
+   the note mark or a Pool's door in the top corner.
 
    **Sized in the card label's own fixed-pixel token, `--font-ui-smaller`**, not
-   `--font-smallest`: that one is em-based and grows with the sheet's text
-   size, while the padding and gap its overhang has to fit are fixed pixels, so
-   at a larger text the part inside spread onto the label. One tight line
-   (`line-height: 1.1`) with its edge an outline rather than a border, so the
-   part inside fits the padding above the label. It takes the pointer, so a clipped name's reveal
-   (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over
-   a control. */
+   `--font-smallest`, which grows with the sheet's text size while the padding it
+   sits in does not. One tight line (`line-height: 1.1`) with its edge an outline
+   rather than a border. It takes the pointer, so a clipped name's reveal
+   (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over a
+   control. */
 .sheetsmith-view .sheetsmith-in-play-marked:not(tr) {
 	position: relative;
 }
 
 .sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'] {
 	position: absolute;
-	inset-block-start: 0;
-	inset-inline-start: var(--size-4-2);
+	inset-block-end: 0;
+	inset-inline-end: var(--size-4-2);
 	z-index: 1;
 	max-width: min(12ch, calc(100% - 2 * var(--size-4-2)));
 	margin: 0;
@@ -10178,7 +10180,9 @@ a.sheetsmith-notice-action {
 	line-height: 1.1;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	transform: translateY(-30%);
+	/* Down by its own height less the padding: `--size-4-2` inside, the rest
+	   out. Geometry only, so no font moves it onto content. */
+	transform: translateY(calc(100% - var(--size-4-2)));
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where
@@ -10189,8 +10193,9 @@ a.sheetsmith-notice-action {
    containing block already. */
 .sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
 	inset-block-start: 50%;
-	inset-inline-start: auto;
+	inset-block-end: auto;
 	inset-inline-end: var(--size-2-2);
+	transform: translateY(-50%);
 }
 
 @media (prefers-contrast: more) {

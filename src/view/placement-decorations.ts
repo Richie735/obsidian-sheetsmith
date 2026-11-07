@@ -119,8 +119,9 @@ function boxOf(host: HTMLElement): HTMLElement {
  *
  * **The pill is once per placement, on the first box tinted**, so it never sits
  * over a card the form left alone. It is laid over the box and takes no room:
- * on a card-like box in its top inline-start corner, which no note mark, door,
- * score or value holds; on a table row over the name cell's inline end, since
+ * on a card-like box in its bottom inline-end corner, inside by exactly the
+ * box's bottom padding so it can reach no content in any font, where no note
+ * mark, door, score or value sits; on a table row over the name cell's inline end, since
  * a row's two ends hold its name and its value. The CSS places it; this only
  * says which box and which cell carry it.
  */
