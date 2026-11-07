@@ -60,6 +60,7 @@
  */
 
 import {
+	contestsByValue,
 	ModifierBreakdown,
 	ModifierNote,
 	ModifierOperator,
@@ -100,6 +101,29 @@ export const ACCOUNT_GLYPH = 'info';
  */
 export function modifiersOnName(label: string): string {
 	return `Modifiers on ${label}`;
+}
+
+/**
+ * Whether the total line states the drawn value rather than a delta: an override
+ * applied, or a floor raised the number (`docs/features/character-forms.md`).
+ * Either way base-plus-total is not the arithmetic any more, so a signed number
+ * would invite the reader to add it to something.
+ */
+function statesValue(breakdown: ModifierBreakdown): boolean {
+	if (breakdown.override !== null) return true;
+	return breakdown.lines.some(
+		(line) => line.operator === 'upgrade' && line.suppressed === null,
+	);
+}
+
+/**
+ * Whether anything listed at a name moved its number: an applied line, as
+ * against lines every one of which was suppressed — an at least the number
+ * was already past, alone (`docs/features/character-forms.md`). The modified
+ * mark follows this; the breakdown still lists what did not apply.
+ */
+export function movesNumber(breakdown: ModifierBreakdown | undefined): boolean {
+	return (breakdown?.lines ?? []).some((line) => line.suppressed === null);
 }
 
 /** A number as a modifier reads: "+2", "-1". Zero never reaches here. */
@@ -305,7 +329,7 @@ function arithmeticLines(
 	 * number the delta form stands, which asserts nothing.
 	 */
 	const total =
-		breakdown.override === null || typeof shown !== 'number'
+		!statesValue(breakdown) || typeof shown !== 'number'
 			? `Total ${signed(breakdown.total)}${effectClause(breakdown, effect)}`
 			: `Total ${shown}`;
 	// A blank line before the total, so it reads as the sum rather than as one
@@ -342,7 +366,7 @@ function effectClause(
 	effect: MeasuredEffect | null | undefined,
 ): string {
 	if (effect === undefined || effect === null) return '';
-	if (breakdown.override !== null || effect.amount === 0) return '';
+	if (statesValue(breakdown) || effect.amount === 0) return '';
 	// Rounded as the phases' own totals are (`roundSum`), so a fractional effect
 	// that equals its push does not grow a clause off a float residue.
 	const slot = roundSum(breakdown.total + (breakdown.resultTotal ?? 0));
@@ -412,20 +436,22 @@ export function modifierAccount(
 ): ModifierAccount {
 	const lines = breakdown?.lines ?? [];
 	const notes = breakdown?.notes ?? [];
-	const arithmetic = lines.length > 0;
-	if (breakdown === undefined || (!arithmetic && notes.length === 0)) {
+	const listed = lines.length > 0;
+	if (breakdown === undefined || (!listed && notes.length === 0)) {
 		return { text: null, arithmetic: false, notes: 0 };
 	}
 	const qualify = qualified([...lines, ...notes], inRows);
 	const noted = notes.map((note) => noteLine(note, qualify));
-	const said = arithmetic ? arithmeticLines(breakdown, shown, qualify) : [];
+	const said = listed ? arithmeticLines(breakdown, shown, qualify) : [];
 	const text =
 		noted.length === 0
 			? said
-			: arithmetic
+			: listed
 				? [...said, '', 'Notes', ...noted]
 				: noted;
-	return { text: text.join('\n'), arithmetic, notes: notes.length };
+	// The underline says the number moved, so it follows an applied line and not
+	// a listed one: an at least the number was already past lists, and moves nothing.
+	return { text: text.join('\n'), arithmetic: movesNumber(breakdown), notes: notes.length };
 }
 
 /**
@@ -455,8 +481,62 @@ function change(line: {
 	amount: number;
 }): string {
 	if (line.operator === 'override') return `sets to ${line.amount}`;
+	if (line.operator === 'upgrade') return `at least ${signed(line.amount)}`;
 	const said = `${line.type === null ? '' : `${line.type} `}${signed(line.amount)}`;
 	return line.applies === 'result' ? `${said} to the derived number` : said;
+}
+
+/**
+ * What one part's outcome does, in words: `sets to 4`, `item +2`, `at least +3`,
+ * or its note — the outcome half every surface spells one way.
+ *
+ * **Exported for a Stat block's changes list**, which draws each part as
+ * `<target's label> <outcome>` on a line of its own
+ * (`docs/features/character-forms.md`), so its words cannot drift from the
+ * form's and the row's.
+ */
+export function outcomeWords(outcome: ModifierOutcome): string {
+	const { change: moved, typed } = outcome;
+	/*
+	 * **The five slots, from whichever tier holds them.** On the named tier they are
+	 * the *change's* rather than the definition's, because a definition naming two
+	 * values has two of each and the outcome is about one of them. Nothing below this line
+	 * differs by tier, which is the property to keep: a row reading `item +2`
+	 * because a definition said so and one reading `item +2` because the reader
+	 * typed it are the same sentence about the same arithmetic.
+	 */
+	const operator: ModifierOperator =
+		moved !== null ? (moved.operator ?? 'add') : (typed?.operator ?? 'add');
+	const bonusType = moved !== null ? moved.bonusType : typed?.bonusType;
+	// An amount of null is an expression that would not resolve, or one the reader
+	// has not typed yet, and the reason is in `suppressed`; the line then says what
+	// kind of change it is without claiming a number nobody could work out.
+	/*
+	 * **A note is said after the amount, joined by "and"**, because the row's
+	 * surfaces describe the *change* and one change may do both — where a
+	 * breakdown describes the value, and lists them as two lines in two groups. A
+	 * note-only change is its note alone: there is no amount to say anything
+	 * about, so "bonus" would claim one.
+	 */
+	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
+	const noteOnly = isNoteOnly(moved ?? typed ?? {});
+	const arithmetic =
+		outcome.amount === null
+			? operator === 'override'
+				? 'sets a value'
+				: operator === 'upgrade'
+					? 'sets a floor'
+				: `${bonusType === undefined ? '' : `${bonusType} `}bonus`
+			: change({
+					operator,
+					type: contestsByValue(operator) ? null : (bonusType ?? null),
+					amount: outcome.amount,
+				});
+	return noteOnly
+		? quoted(note)
+		: note === ''
+			? arithmetic
+			: `${arithmetic} and ${quoted(note)}`;
 }
 
 /**
@@ -492,7 +572,7 @@ export function modifierOutcomeText(
 	stored: string,
 	outcome: ModifierOutcome,
 ): string {
-	const { change: moved, definition, typed } = outcome;
+	const { definition, typed } = outcome;
 	if (definition === null && typed === null) {
 		// The one shape that names the cell's own text rather than a target: there
 		// is no modifier to name a target with, and the spelling is the thing
@@ -502,47 +582,10 @@ export function modifierOutcomeText(
 			'Choose one it does, or add it in the layout editor.',
 		].join('\n');
 	}
-	/*
-	 * **The five slots, from whichever tier holds them.** On the named tier they are
-	 * the *change's* rather than the definition's, because a definition naming two
-	 * values has two of each and the outcome is about one of them. Nothing below this line
-	 * differs by tier, which is the property to keep: a row reading `item +2`
-	 * because a definition said so and one reading `item +2` because the reader
-	 * typed it are the same sentence about the same arithmetic.
-	 */
-	const operator: ModifierOperator =
-		moved !== null ? (moved.operator ?? 'add') : (typed?.operator ?? 'add');
-	const bonusType = moved !== null ? moved.bonusType : typed?.bonusType;
 	// The condition is the definition's and the other two are the change's, which
 	// is the whole of "one `when` governs every change a definition names".
 	const when = (definition !== null ? definition.when : typed?.when) ?? '';
-	// An amount of null is an expression that would not resolve, or one the reader
-	// has not typed yet, and the reason is in `suppressed`; the line then says what
-	// kind of change it is without claiming a number nobody could work out.
-	/*
-	 * **A note is said after the amount, joined by "and"**, because the row's
-	 * surfaces describe the *change* and one change may do both — where a
-	 * breakdown describes the value, and lists them as two lines in two groups. A
-	 * note-only change is its note alone: there is no amount to say anything
-	 * about, so "bonus" would claim one.
-	 */
-	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
-	const noteOnly = isNoteOnly(moved ?? typed ?? {});
-	const arithmetic =
-		outcome.amount === null
-			? operator === 'override'
-				? 'sets a value'
-				: `${bonusType === undefined ? '' : `${bonusType} `}bonus`
-			: change({
-					operator,
-					type: operator === 'override' ? null : (bonusType ?? null),
-					amount: outcome.amount,
-				});
-	const did = noteOnly
-		? quoted(note)
-		: note === ''
-			? arithmetic
-			: `${arithmetic} and ${quoted(note)}`;
+	const did = outcomeWords(outcome);
 	const lines = [`${outcome.targetLabel} — ${did}`];
 	if (outcome.suppressed !== null) {
 		lines.push(`Not applied: ${outcome.suppressed}`);

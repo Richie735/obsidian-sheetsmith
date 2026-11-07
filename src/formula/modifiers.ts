@@ -50,6 +50,7 @@ import {
 	ModifierOutcome,
 	ModifierPhase,
 	ModifierPush,
+	contestsByValue,
 	phaseOf,
 } from '../types';
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
@@ -129,6 +130,14 @@ export type ModifierResult =
 			 * than one an author should have to write.
 			 */
 			override: number | null;
+			/**
+			 * The winning at least (`upgrade`), or null where none was pushed. Read
+			 * by the published evaluation, which floors what the formula or the
+			 * override came to at it and records whether that raised the number
+			 * (`FormulaEnv.floors`). Optional, and absent means none, so a result a
+			 * test or a host builds by hand stays the object it was.
+			 */
+			atLeast?: number | null;
 			/** The value-phase total, which is what `mod.<name>` resolves to. */
 			total: number;
 			/**
@@ -566,9 +575,21 @@ export function stackModifiers(
 	 * it would leave a reader with a zero nobody claims.
 	 */
 	let override: number | null = null;
+	/*
+	 * **And the at least beside it, reduced the same way**: the highest floor is
+	 * the only one that can matter, so the step reduces to one number and passes
+	 * the test above (`docs/features/character-forms.md`). Whether it raised the
+	 * number is not known here — that needs what the formula came to — so its
+	 * winning line is listed as applying and the published evaluation's verdict
+	 * replaces that where it did not (`withFloorVerdict`).
+	 */
+	let atLeast: number | null = null;
 	for (const entry of contributions) {
-		if (entry.operator !== 'override') continue;
-		override = override === null ? entry.amount : Math.max(override, entry.amount);
+		if (entry.operator === 'override') {
+			override = override === null ? entry.amount : Math.max(override, entry.amount);
+		} else if (entry.operator === 'upgrade') {
+			atLeast = atLeast === null ? entry.amount : Math.max(atLeast, entry.amount);
+		}
 	}
 
 	/*
@@ -587,7 +608,7 @@ export function stackModifiers(
 	const best = new Map<string, number>();
 	const worst = new Map<string, number>();
 	for (const entry of contributions) {
-		if (entry.operator === 'override') continue;
+		if (contestsByValue(entry.operator)) continue;
 		const { amount, type } = entry;
 		// Zero neither pushes nor suppresses anything: a breakdown is about what
 		// changed the number.
@@ -621,7 +642,7 @@ export function stackModifiers(
 				// the formula came to, which is where that phase lands. The line does
 				// not *say* so — `change()` returns "sets to N" before reading this —
 				// but the field is what the phase is, not what the wording shows.
-				applies: operator === 'override' ? 'result' : applies,
+				applies: contestsByValue(operator) ? 'result' : applies,
 				amount,
 				suppressed,
 			});
@@ -633,6 +654,17 @@ export function stackModifiers(
 				continue;
 			}
 			line(suppressionWording('override', amount === override, 'value'));
+			continue;
+		}
+		if (operator === 'upgrade') {
+			// A floor of 0 is a value, as an override to 0 is: it is listed and it
+			// contests, since it raises a number that came to less.
+			if (amount === atLeast && !taken.has('upgrade')) {
+				taken.add('upgrade');
+				line(null);
+				continue;
+			}
+			line(suppressionWording('at least', amount === atLeast, 'value'));
 			continue;
 		}
 		if (amount === 0) continue;
@@ -654,11 +686,47 @@ export function stackModifiers(
 	}
 	return {
 		override,
+		// Only where one was pushed, so every result with no floor is the object
+		// it always was.
+		...(atLeast === null ? {} : { atLeast }),
 		total: roundSum(total),
 		resultTotal: roundSum(resultTotal),
 		lines,
 	};
 }
+
+/**
+ * The stacked result with the published evaluation's verdict on its winning at
+ * least written onto the line (`docs/features/character-forms.md`).
+ *
+ * **Whether a floor raised the number is one fact**, and it can only be known
+ * where the number is: `formula/resolve.ts` compares the floor against what the
+ * formula or the override came to and records why it did not raise it in
+ * `FormulaEnv.floors`. Every reader that lists or marks lines — the breakdown,
+ * the tint, a row's own outcome — reads the result through here, so none of
+ * them can call a floor applying that the number never felt.
+ *
+ * `why` is that record: absent where the name has not been evaluated or holds
+ * no floor, null where the floor raised the number, a reason where it did not.
+ */
+export function withFloorVerdict(
+	result: ModifierResult,
+	why: string | null | undefined,
+): ModifierResult {
+	if ('error' in result || (result.atLeast ?? null) === null || typeof why !== 'string') {
+		return result;
+	}
+	let marked = false;
+	const lines = result.lines.map((line) => {
+		if (marked || line.operator !== 'upgrade' || line.suppressed !== null) return line;
+		marked = true;
+		return { ...line, suppressed: why };
+	});
+	return { ...result, lines };
+}
+
+/** Why the winning floor did not raise a number its formula already passed. */
+export const ALREADY_HIGHER = 'already higher';
 
 /**
  * Why one enrolment is not applying at its target, or null where it is.
@@ -688,6 +756,17 @@ export function suppressionOf(
 		return result.override === amount
 			? null
 			: suppressionWording('override', false, 'value');
+	}
+	if (operator === 'upgrade') {
+		if ((result.atLeast ?? null) !== amount) {
+			return suppressionWording('at least', false, 'value');
+		}
+		// The winning floor's own verdict, which `withFloorVerdict` wrote onto its
+		// line where the published evaluation found the number already higher.
+		const winner = result.lines.find(
+			(line) => line.operator === 'upgrade' && line.amount === amount,
+		);
+		return winner?.suppressed ?? null;
 	}
 	if (amount === 0) return 'it adds nothing';
 	if (type === null) return null;

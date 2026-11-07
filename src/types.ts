@@ -1002,19 +1002,25 @@ export interface RowValues {
 export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
 
 /**
- * The two things a modifier definition can do to a number (SPEC §5).
+ * The three things a modifier definition can do to a number (SPEC §5).
  *
- * Two named steps and no priority integer: **an override applies first and the
- * additions land on top of it.** That is the property the whole design rests on
- * — overrides reduce to one number (the highest) and additions reduce to one
- * number (typed stacking), so there is nothing to sequence *within* either step
- * and the result cannot depend on the order the enrolments are walked in.
+ * Named steps and no priority integer: **an override applies first, an at least
+ * (`upgrade`) floors what that came to, and the result-phase additions land on
+ * top.** An at least passes the test below the way an override does: several
+ * reduce to one number, the highest, so nothing has to be sequenced within the
+ * step (`docs/features/character-forms.md`).
+ *
+ * Each step reducing to one number is the property the whole design rests
+ * on — overrides reduce to one number (the highest), at leasts to one number
+ * (the highest floor) and additions to one number (typed stacking), so there is
+ * nothing to sequence *within* any step and the result cannot depend on the
+ * order the enrolments are walked in.
  *
  * **"Step" and not "phase", deliberately, because this file now holds both
  * senses.** `ModifierPhase` above is SPEC §5's word for *where a modifier lands*
  * — inside the formula or on what it came to — and that is the spec's own
  * vocabulary, so it keeps the word. This one is *when the engine resolves it*,
- * overrides then additions, and it is comment text with no type behind it. The
+ * overrides, then the floor, then additions, and it is comment text with no type behind it. The
  * two sat fifteen lines apart saying "phase" at each other until a review read
  * them together. "Step" is already this repository's word for it — the override
  * step is what `docs/features/modifier-definitions.md` calls this.
@@ -1028,7 +1034,14 @@ export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
  * what it implies, so naming the phase as well would be a second field saying
  * one thing — which is the priority integer arriving under a new name.
  */
-export type ModifierOperator = 'add' | 'override';
+export type ModifierOperator = 'add' | 'override' | 'upgrade';
+
+/**
+ * Every operator, in the order an author is offered them: the sheet's modifier
+ * form and the layout editor's definitions list both iterate this, and take the
+ * words from `src/en.ts`'s `OPERATOR_LABELS`.
+ */
+export const OPERATORS: readonly ModifierOperator[] = ['add', 'override', 'upgrade'];
 
 /**
  * Which part of a target's arithmetic an addition lands on (SPEC §5).
@@ -1110,7 +1123,25 @@ export function phaseOf(raw: { applies?: unknown }): ModifierPhase {
  * definition straight out of a layout file where every member is still free.
  */
 export function operatorOf(raw: { operator?: unknown }): ModifierOperator {
-	return raw.operator === 'override' ? 'override' : 'add';
+	return raw.operator === 'override' || raw.operator === 'upgrade'
+		? raw.operator
+		: 'add';
+}
+
+/**
+ * Whether an operator contests by value in the result phase, rather than adding
+ * in a phase of its own choosing and stacking by type.
+ *
+ * **Sets** and **At least** (`upgrade`, `docs/features/character-forms.md`) both
+ * name a number the published value becomes or is floored at, so neither carries
+ * a phase (it is the result phase by construction) nor a bonus type (the highest
+ * wins whatever either is called). One predicate rather than `=== 'override'` at
+ * every site that asks it, on `operatorOf`'s own argument: a third operator
+ * arriving found nine such comparisons, each of which would have read an at least
+ * as an addition.
+ */
+export function contestsByValue(operator: ModifierOperator): boolean {
+	return operator !== 'add';
 }
 
 /**
@@ -1589,6 +1620,16 @@ export interface ModifierBreakdown {
 	 * signed number there would invite the reader to add it to something.
 	 */
 	override: number | null;
+	/**
+	 * The winning at least, or absent or null where none was pushed.
+	 *
+	 * Whether it raised the number is not a second field: the winning line's
+	 * `suppressed` says so (`already higher` where it did not), and that line is
+	 * decided where the published evaluation compares the two
+	 * (`formula/resolve.ts`), so the total line, the tint and the breakdown read
+	 * one fact. Optional on `resultTotal`'s rule.
+	 */
+	atLeast?: number | null;
 	/** The value-phase total, which is what `mod.<name>` itself resolves to. */
 	total: number;
 	/**

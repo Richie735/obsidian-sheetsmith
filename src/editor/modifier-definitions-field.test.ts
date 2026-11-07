@@ -493,7 +493,7 @@ describe('the controls a definition offers', () => {
 		expect(el.textContent).toContain('reads no modifier');
 	});
 
-	it('offers Adds to and Sets, in that order', () => {
+	it('offers Adds to, Sets and At least, in that order', () => {
 		const el = render(layout([{ ...RING }]));
 		const operator = control<HTMLSelectElement>(
 			el,
@@ -501,7 +501,7 @@ describe('the controls a definition offers', () => {
 		);
 		expect(
 			Array.from(operator.options).map((one) => one.textContent),
-		).toEqual(['Adds to', 'Sets']);
+		).toEqual(['Adds to', 'Sets', 'At least']);
 	});
 
 	/**

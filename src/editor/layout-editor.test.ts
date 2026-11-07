@@ -2818,6 +2818,7 @@ describe('a layout with modifier definitions', () => {
 		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual([
 			'Adds to',
 			'Sets',
+			'At least',
 		]);
 		expect(has(harness, 'modifier-Ring of Protection-0-bonus-type')).toBe(true);
 		choose(operator, 'override');
@@ -2825,6 +2826,19 @@ describe('a layout with modifier definitions', () => {
 		expect(has(harness, 'modifier-Ring of Protection-0-bonus-type')).toBe(false);
 		// And the layout says so, with the default left out of the file.
 		expect((await harness.stored()).modifiers?.[0]?.operator).toBe('override');
+	});
+
+	it('takes the phase and the bonus type away on At least, as on Sets', async () => {
+		// An at least floors the published number, which is the result phase by
+		// construction, and the highest wins whatever either is called.
+		await openLayoutPanel(modifying('10 + mod.self'));
+		choose(
+			control<HTMLSelectElement>(harness, 'modifier-Ring of Protection-0-operator'),
+			'upgrade',
+		);
+		await settle(harness.pane);
+		expect(has(harness, 'modifier-Ring of Protection-0-bonus-type')).toBe(false);
+		expect((await harness.stored()).modifiers?.[0]?.operator).toBe('upgrade');
 	});
 
 

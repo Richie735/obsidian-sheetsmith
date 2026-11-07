@@ -100,9 +100,45 @@ describe('splitting a cell into its parts', () => {
 			['A', 'B'],
 			["Bull's Strength", 'Plate armour'],
 			['Ring of Protection', 'armour_class += 2 as item when Worn'],
+			['skills.stealth >= 4 when abilities.DEX >= 14'],
 		]) {
 			expect(cellParts(spellParts(parts))).toEqual(parts);
 		}
+	});
+});
+
+/*
+ * **At least** (`docs/features/character-forms.md`): `>=` at the head of a part,
+ * matched before a bare `=`, so a condition's own comparison stays a comparison.
+ */
+describe('an at least typed on a row', () => {
+	it('round-trips the corpus line byte for byte, its condition intact', () => {
+		const cell = 'skills.stealth >= 4 when abilities.DEX >= 14';
+		expect(typed(cell)).toEqual({
+			target: 'skills.stealth',
+			operator: 'upgrade',
+			amount: '4',
+			when: 'abilities.DEX >= 14',
+		});
+		expect(spellTypedEffect(typed(cell))).toBe(cell);
+		expect(spellParts(storedParts(cell))).toBe(cell);
+	});
+
+	it('reads however it is spaced, and is an assignment for the name rule', () => {
+		expect(typed('skills.stealth>=4').operator).toBe('upgrade');
+		expect(readsAsAssignment('skills.stealth >= 4')).toBe(true);
+		expect(unspellableName('x >= 3')).not.toBeNull();
+	});
+
+	it('drops a phase clause on write, as an override does', () => {
+		const read = typed('skills.stealth >= 4 to result');
+		expect(read.operator).toBe('upgrade');
+		expect(spellTypedEffect(read)).toBe('skills.stealth >= 4');
+	});
+
+	it('keeps a bonus type and a note it was typed with', () => {
+		const cell = 'skills.stealth >= 4 as item when Worn note: Keen hearing';
+		expect(spellTypedEffect(typed(cell))).toBe(cell);
 	});
 });
 
