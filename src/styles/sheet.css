@@ -8806,10 +8806,15 @@ a.sheetsmith-notice-action {
 	line-height: var(--line-height-tight, 1.4);
 }
 
+/* **`break-word`, not `anywhere`**: a cell breaks a word only where nothing
+   else fits, so `[[Claws (Brown Bear)|Claws]]` breaks at its spaces rather
+   than mid-word. `anywhere` was the min-content answer, and a fixed table
+   layout sets these widths from the `<colgroup>`, never from the content, so
+   it buys nothing here and costs every long name its word breaks. */
 .sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-name,
 .sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-text {
 	text-align: start;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-number {
@@ -8844,8 +8849,12 @@ a.sheetsmith-notice-action {
 }
 
 /* At (0,4,0), past the record field's own doubled width rule, which a cell
-   has to fill rather than keep, and with the hairline at rest. */
-.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-cell.sheetsmith-record-input {
+   has to fill rather than keep, and with the hairline at rest. **A features
+   entry's name and usage take the same rule by selector list**, so the edit
+   face has one field treatment from the attack table down through the
+   entries (`docs/features/stat-block-zones.md`). */
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-cell.sheetsmith-record-input,
+.sheetsmith-view .sheetsmith-stat-block-entry-line .sheetsmith-stat-block-cell.sheetsmith-record-input {
 	width: 100%;
 	min-width: 3ch;
 	border-color: var(--background-modifier-border);
@@ -8878,7 +8887,7 @@ a.sheetsmith-notice-action {
 	font-weight: var(--font-normal);
 	line-height: var(--line-height-tight, 1.4);
 	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .sheetsmith-stat-block-col-name {
@@ -9016,7 +9025,7 @@ a.sheetsmith-notice-action {
 
 	.sheetsmith-stat-block-table td,
 	.sheetsmith-stat-block-table th {
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 }
 
@@ -9320,6 +9329,171 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-stat-block-disclosure.sheetsmith-stat-block-disclosure {
 	padding: var(--size-2-1) 0;
+}
+
+/* ---------------------------------------------------------------------------
+   A form's body zones (`docs/features/stat-block-zones.md`), drawn by
+   `components/stat-block-zones.ts`. Every zone is the label-over-content pair
+   the sections already are; what is new is a features zone's entries, the
+   drift, and the picture.
+   --------------------------------------------------------------------------- */
+
+/* **One entry per block, a short step apart**, each its own markdown as the
+   note writes it, so the name runs in as a printed stat block reads. */
+.sheetsmith-stat-block-zone-features > .sheetsmith-stat-block-section-body,
+.sheetsmith-stat-block-entries {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-stat-block-entry,
+.sheetsmith-stat-block-zone-markdown {
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight, 1.4);
+}
+
+.sheetsmith-stat-block-entry p,
+.sheetsmith-stat-block-zone-markdown p {
+	margin: 0 0 var(--size-2-1);
+}
+
+.sheetsmith-stat-block-entry p:last-child,
+.sheetsmith-stat-block-zone-markdown p:last-child {
+	margin-bottom: 0;
+}
+
+.sheetsmith-stat-block-entry ul,
+.sheetsmith-stat-block-zone-markdown ul {
+	margin: 0 0 var(--size-2-1);
+	padding-inline-start: 1.4em;
+}
+
+/* Under Every form, an entry is a line of name, usage and delete, its text in
+   the card's clothes under it. */
+.sheetsmith-stat-block-entry-editing {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-stat-block-entry-line {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name,
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+	text-align: start;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-weight: var(--font-semibold);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+	flex: 0 1 7em;
+	min-width: 4em;
+}
+
+/* **Add entry** in the Table's add-row clothes, its own foot rather than a
+   table's, so it takes the rule above it and nothing else. */
+.sheetsmith-view .sheetsmith-table-add-button.sheetsmith-stat-block-add-entry {
+	margin-top: 0;
+}
+
+/* **Not in this layout**, beside a drift block's heading, as a muted pill of
+   its own rather than in the heading's rank: in that rank's capitals and
+   tracking it read as more of the heading (*REACTIONS NOT IN THIS LAYOUT*).
+   Sentence case, the UI's own size, a border so forced colors keeps its edge,
+   and theme variables only (`docs/UI.md` §1). The one sentence under the block
+   follows. */
+.sheetsmith-stat-block-drift-tag {
+	flex: 0 0 auto;
+	padding: 0 var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+	letter-spacing: normal;
+	line-height: 1.5;
+	text-transform: none;
+}
+
+.sheetsmith-stat-block-drift-note {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* **A form's picture in play**: a square three times the title's size at the
+   title row's inline start, on the tile surface, the picture contained so it is
+   never cropped and never distorted. Read-only here; it is set under Every form. */
+.sheetsmith-stat-block-thumb {
+	position: relative;
+	flex: 0 0 auto;
+	width: calc(3 * var(--font-ui-large));
+	aspect-ratio: 1;
+	overflow: hidden;
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-stat-block-thumb > .sheetsmith-image-frame {
+	padding: 0;
+	cursor: default;
+}
+
+.sheetsmith-stat-block-form-name {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+/* A reference that does not draw: no thumbnail, and the painter's own sentence
+   under the head, muted. */
+.sheetsmith-stat-block-picture-problem {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-stat-block-picture-problems:empty {
+	display: none;
+}
+
+/* Under Every form, the whole frame and its field, at a size a picture reads at. */
+.sheetsmith-stat-block-picture-box {
+	position: relative;
+	width: min(100%, 12em);
+	aspect-ratio: 1;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* Below the rules it overrides, since `@container` adds no specificity: under
+   the block's 360px query an entry's name and usage stack, the delete staying
+   on the name's line. */
+@container sheetsmith-stat-block (max-width: 360px) {
+	.sheetsmith-stat-block-entry-line {
+		flex-wrap: wrap;
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {
+		flex-basis: calc(100% - var(--sheetsmith-inline-control) - var(--size-2-2));
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+		order: 1;
+		flex: 1 1 100%;
+	}
+
 }
 
 /* **The mini sheet's edges under more contrast**, as the sheet's own cards

@@ -4942,3 +4942,24 @@ describe('stat block zones\' small fixes (docs/features/stat-block-zones.md)', (
 		expect(base?.body).toMatch(/--sheetsmith-record-indent/);
 	});
 });
+
+describe('the drift tag (docs/features/stat-block-zones.md, Drift)', () => {
+	it('is a muted sentence-case pill of its own, in theme variables', () => {
+		const tag = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-drift-tag',
+		);
+		expect(tag?.body).toMatch(/text-transform:\s*none/);
+		expect(tag?.body).toMatch(/color:\s*var\(--text-muted\)/);
+		expect(tag?.body).toMatch(/border:\s*1px solid var\(--background-modifier-border\)/);
+		expect(tag?.body).toMatch(/border-radius:\s*var\(--radius-s\)/);
+		expect(tag?.body).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
+	});
+});
+
+describe('a stat block table cell\'s wrap (docs/features/stat-block-zones.md)', () => {
+	it('breaks a long link at its spaces, never mid-word where a space will do', () => {
+		const cells = rules(CSS_WITHOUT_COMMENTS).filter((rule) => /sheetsmith-stat-block-(table|cell)/.test(rule.selector) && /overflow-wrap/.test(rule.body));
+		expect(cells.length).toBeGreaterThanOrEqual(3);
+		for (const rule of cells) expect(rule.body, rule.selector).toMatch(/overflow-wrap:\s*break-word/);
+	});
+});

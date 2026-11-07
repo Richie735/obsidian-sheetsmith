@@ -1134,6 +1134,15 @@ export function drawRecordBody(
 		error: string | null;
 		/** The record as a reader names it. */
 		named: string;
+		/** The field's accessible name, where it is not the record's whole body. */
+		label?: string;
+		/** What the empty field says, where it is not the record's whole body. */
+		placeholder?: string;
+		/**
+		 * A refusal of the caller's own, asked after the two reserved line
+		 * starts: a Stat block zone's heading guards (`stat-block-zones.ts`).
+		 */
+		refuse?: (next: string) => string | null;
 	},
 	onCommit: (next: string) => void,
 ): void {
@@ -1168,8 +1177,8 @@ export function drawRecordBody(
 	// moves the cursor to the end of the control and focusing scrolls it into
 	// view, which is the one position in the text nobody asked for.
 	input.setSelectionRange(0, 0);
-	input.placeholder = `Write anything about this ${noun.toLowerCase()}.`;
-	input.setAttribute('aria-label', `${named} body`);
+	input.placeholder = options.placeholder ?? `Write anything about this ${noun.toLowerCase()}.`;
+	input.setAttribute('aria-label', options.label ?? `${named} body`);
 	// Its text is transparent unfocused and the prose is drawn over it, so
 	// its squiggles would be too.
 	spellcheckWhileFocused(input);
@@ -1240,7 +1249,7 @@ export function drawRecordBody(
 			if (record !== null) {
 				return `Not saved. "${record.trim()}" would start a new ${noun.toLowerCase()} in this list — use "#### " instead.`;
 			}
-			return null;
+			return options.refuse?.(next) ?? null;
 		},
 		/*
 		 * **The draft is shown, not hidden, for as long as it is refused.**

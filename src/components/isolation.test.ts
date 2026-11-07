@@ -146,6 +146,14 @@ const ALLOWED = [
 	"import { recordEntries } from '../components/record-fields';",
 	"import { drawRecordBody } from './record-controls';",
 	"import { drawRecordBody } from '../components/record-controls';",
+	// A stat block form's body zones, drawn: Stat block's private half, on
+	// `modifier-form.ts`'s atomicity terms at one consumer (PATTERNS §2).
+	"import { drawZone } from './stat-block-zones';",
+	"import { drawZone } from '../components/stat-block-zones';",
+	// What a Stat block zone's key, heading and columns may be: one predicate
+	// each, phrased by the configuration check and the zone editor alike.
+	"import { zoneKeyFault } from './zone-rules';",
+	"import { zoneKeyFault } from '../components/zone-rules';",
 	// A painted level ring, made into a control: its ARIA, its tooltip, its touch
 	// route and its presses. Added deliberately, and at four consumers rather
 	// than two — Table, Track, Record set and Roster — which is one past where

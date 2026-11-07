@@ -28,12 +28,17 @@ const config: StatBlockConfig = {
 	exclusive: 'Active',
 	uses: '2',
 	spendOnPick: true,
-	actions: [
-		{ key: 'Bonus', type: 'number' },
-		{ key: 'Damage', type: 'text' },
+	zones: [
+		{ key: 'vitals' },
+		{ key: 'changes' },
+		{
+			key: 'attacks',
+			type: 'table',
+			heading: 'Attacks',
+			columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
+		},
+		{ key: 'traits', type: 'text', heading: 'Traits', collapsed: true },
 	],
-	actionName: 'Attack',
-	bodyName: 'Traits',
 };
 
 const BODY = [
@@ -131,13 +136,20 @@ describe('reading and writing', () => {
 
 	it('reads the action list off the head of the prose, and the prose after it', () => {
 		const data = read(BODY);
-		expect(data.records[0]?.actions).toEqual([
-			['Bite', '6', '1d8+4 piercing'],
-			['Claws', '6', '2d6+4 slashing'],
-		]);
-		expect(data.records[0]?.body).toBe(
-			'Keen Smell. The bear has advantage on Wisdom (Perception) checks that rely on smell.',
-		);
+		expect(data.records[0]?.zones?.attacks).toEqual({
+			type: 'table',
+			rows: [
+				['Bite', '6', '1d8+4 piercing'],
+				['Claws', '6', '2d6+4 slashing'],
+			],
+			after: '',
+			notTable: null,
+		});
+		expect(data.records[0]?.zones?.traits).toEqual({
+			type: 'text',
+			text: 'Keen Smell. The bear has advantage on Wisdom (Perception) checks that rely on smell.',
+			fromLead: true,
+		});
 	});
 
 	it('reads a table further down the prose as prose', () => {
@@ -146,8 +158,9 @@ describe('reading and writing', () => {
 			'\nA line before.\n\n| Attack | Bonus | Damage |',
 		);
 		const data = read(body);
-		expect(data.records[0]?.actions).toBeUndefined();
-		expect(data.records[0]?.body).toContain('| Bite | 6 |');
+		expect(data.records[0]?.zones?.attacks).toBeUndefined();
+		const traits = data.records[0]?.zones?.traits;
+		expect(traits?.type === 'text' ? traits.text : '').toContain('| Bite | 6 |');
 	});
 
 	it('inserts the first uses count at the head of the preamble', () => {
@@ -299,19 +312,28 @@ describe('the action list', () => {
 	it('commits a cell through the table, leaving the prose byte-identical', () => {
 		const written = applied({
 			records: {},
-			actionEdits: { 0: { rows: { 1: { Bonus: '7' } } } },
+			zoneEdits: { 0: { zone: 'attacks', table: { rows: { 1: { Bonus: '7' } } } } },
 		});
 		expect(written).toBe(BODY.replace('| Claws | 6 |', '| Claws | 7 |'));
 	});
 
-	it('inserts the header row and a first row at the head of a body with none', () => {
+	it('gives a body with no table a headed block on its first row', () => {
 		const written = applied({
 			records: {},
-			actionEdits: { 1: { added: [{ Attack: 'Bite', Bonus: '4', Damage: '2d4+2 piercing' }] } },
+			zoneEdits: { 1: { zone: 'attacks', table: { added: [{ Attack: 'Bite', Bonus: '4', Damage: '2d4+2 piercing' }] } } },
 		});
 		expect(written).toContain(
-			'Modifiers: abilities.DEX = 2; skills.stealth >= 4\n```\n\n| Attack | Bonus | Damage |\n|---|---|---|\n| Bite | 4 | 2d4+2 piercing |\n',
+			'Modifiers: abilities.DEX = 2; skills.stealth >= 4\n```\n\n#### Attacks\n\n| Attack | Bonus | Damage |\n|---|---|---|\n| Bite | 4 | 2d4+2 piercing |\n',
 		);
+	});
+
+	it('writes a 0.9.0 lead\'s table in place and adds no heading', () => {
+		const written = applied({
+			records: {},
+			zoneEdits: { 0: { zone: 'attacks', table: { added: [{ Attack: 'Swipe' }] } } },
+		});
+		expect(written).toContain('| Claws | 6 | 2d6+4 slashing |\n| Swipe |  |  |\n');
+		expect(written).not.toContain('####');
 	});
 
 	it('commits a wrapping cell once on Enter, never as a line break', () => {
@@ -341,27 +363,31 @@ describe('the action list', () => {
 		expect(rows[0]?.querySelectorAll('textarea')[1]?.value).toBe('+6');
 	});
 
-	it('hides a column heading that repeats its section heading, for sight only', () => {
+	it('hides a column heading that repeats its zone heading, for sight only', () => {
 		const heads = (root: HTMLElement): HTMLElement[] =>
 			Array.from(root.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-table thead th'));
-		const { el } = render();
+		const zoned = (heading: string): Partial<StatBlockConfig> => ({
+			zones: [
+				{
+					key: 'attacks',
+					type: 'table',
+					heading,
+					columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
+				},
+			],
+		});
+		// *Attack* under **Attack:**, by the tolerant match: spoken only.
+		const { el } = render(BODY, zoned('Attack:'));
 		toLibrary(el);
-		// *Attack* under **Attack**: kept for a screen reader, hidden from sight.
-		const [name, bonus, damage] = heads(el);
+		const [name, bonus] = heads(el);
 		expect(name?.querySelector('.sheetsmith-sr-only')?.textContent).toBe('Attack');
-		expect(bonus?.textContent).toBe('Bonus');
 		expect(bonus?.querySelector('.sheetsmith-sr-only')).toBeNull();
-		expect(damage?.querySelector('.sheetsmith-sr-only')).toBeNull();
-
-		// By what it says, not by being the name column: a section a layout heads
-		// differently shows it, and a column that says the section's word hides.
+		// **Attacks** over *Attack* do not match, and the column shows.
 		document.body.replaceChildren();
-		const renamed = render(BODY, { sections: [{ key: 'actions', name: 'Bonus' }] });
-		toLibrary(renamed.el);
-		const [again, repeated] = heads(renamed.el);
-		expect(again?.querySelector('.sheetsmith-sr-only')).toBeNull();
-		expect(again?.textContent).toBe('Attack');
-		expect(repeated?.querySelector('.sheetsmith-sr-only')?.textContent).toBe('Bonus');
+		const shown = render();
+		toLibrary(shown.el);
+		expect(heads(shown.el)[0]?.querySelector('.sheetsmith-sr-only')).toBeNull();
+		expect(heads(shown.el)[0]?.textContent).toBe('Attack');
 	});
 
 	it('reads in play as the same table with text cells: the name bold, the bonus signed', () => {
@@ -376,8 +402,6 @@ describe('the action list', () => {
 			'Damage',
 			'',
 		]);
-		// The name column's heading repeats the section's, so it is spoken only.
-		expect(table?.querySelector('thead th .sheetsmith-sr-only')?.textContent).toBe('Attack');
 		const rows = Array.from(el.querySelectorAll('.sheetsmith-stat-block-table tbody tr'));
 		expect(rows).toHaveLength(2);
 		expect(rows.every((row) => row.querySelector('input, textarea') === null)).toBe(true);
@@ -418,11 +442,12 @@ describe('the action list', () => {
 		expect(detail.querySelectorAll('.sheetsmith-stat-block-table tbody tr')).toHaveLength(4);
 	});
 
-	it('says None yet in play when every row is a placeholder', () => {
+	it('draws nothing in play when every row is a placeholder: no heading, no box', () => {
 		const body = BODY.replace(/\| Bite[^\n]*\n\| Claws[^\n]*/, '| Attack | | |');
 		const { el } = render(body);
 		expect(el.querySelector('.sheetsmith-stat-block-table')).toBeNull();
-		expect(el.textContent).toContain('None yet. Add them under Every form.');
+		expect(el.querySelector('.sheetsmith-stat-block-zone-table')).toBeNull();
+		expect(el.textContent).not.toContain('None yet');
 	});
 
 });
@@ -484,9 +509,6 @@ describe('the configuration it refuses', () => {
 		).toContain('uses counter');
 	});
 
-	it('refuses an action column keyed like the action name', () => {
-		expect(refused({ actions: [{ key: 'attack' }] })).toContain('same heading');
-	});
 });
 
 describe('the library', () => {
@@ -664,17 +686,21 @@ describe('a delete in a companion block', () => {
 		]);
 	});
 
-	it('moves a prose disclosure up with its record', () => {
-		const first = render(BODY, companion);
+	it('moves a zone disclosure up with its record', () => {
+		const body = BODY.replace('Active: yes', 'Active: no')
+			.replace('Active: no\nHP: 11', 'Active: yes\nHP: 11')
+			.concat('\nPack Tactics.\n');
 		const disclosures = () =>
 			Array.from(document.querySelectorAll<HTMLButtonElement>('.sheetsmith-stat-block-disclosure'));
-		disclosures()[1]?.click();
+		const first = render(body);
+		disclosures()[0]?.click();
+		toLibrary(first.el);
 		const remove = first.el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-remove')[0] as HTMLButtonElement;
 		remove.click();
 		remove.click();
 		document.body.replaceChildren();
-		const after = applied(first.edits[0] as StatBlockData, BODY, { ...config, ...companion });
-		render(after, companion);
+		const after = applied(first.edits[first.edits.length - 1] as StatBlockData, body);
+		render(after);
 		expect(disclosures()[0]?.getAttribute('aria-expanded')).toBe('true');
 	});
 });
@@ -789,41 +815,49 @@ describe('the changes list', () => {
 	});
 });
 
-describe('the sections a layout orders', () => {
-	it('draws the parts in the order the layout lists, under its headings', () => {
+describe('the zones a layout orders', () => {
+	const headings = (el: HTMLElement): (string | null)[] => {
+		const form = el.querySelector('.sheetsmith-stat-block-form') as HTMLElement;
+		return Array.from(form.querySelectorAll('.sheetsmith-stat-block-section-heading')).map((one) => one.textContent);
+	};
+
+	it('draws the zones in the layout\'s order, an unlisted vitals and changes first', () => {
 		const { el } = render(BODY, {
-			sections: [
-				{ key: 'traits', name: 'Lore' },
-				{ key: 'actions', name: 'Attacks' },
+			zones: [
+				{ key: 'lore', type: 'text', heading: 'Lore' },
+				{ key: 'attacks', type: 'table', heading: 'Attacks', columns: [{ key: 'Attack' }, { key: 'Bonus' }] },
 			],
 		});
+		expect(headings(el)).toEqual(['Modifiers', 'Lore', 'Attacks']);
 		const form = el.querySelector('.sheetsmith-stat-block-form') as HTMLElement;
-		const headings = Array.from(form.querySelectorAll('.sheetsmith-stat-block-section-heading')).map(
-			(one) => one.textContent,
-		);
-		// The two listed first, then the unlisted ones in the default order: the
-		// vitals take no heading by default, so the modifiers' name comes next.
-		expect(headings).toEqual(['Lore', 'Attacks', 'Modifiers']);
-	});
-
-	it('draws today\'s order with no list', () => {
-		const { el } = render();
-		const form = el.querySelector('.sheetsmith-stat-block-form') as HTMLElement;
-		const headings = Array.from(form.querySelectorAll('.sheetsmith-stat-block-section-heading')).map(
-			(one) => one.textContent,
-		);
-		expect(headings).toEqual(['Modifiers', 'Attack', 'Traits']);
 		expect(form.firstElementChild?.classList.contains('sheetsmith-stat-block-vitals')).toBe(true);
 	});
 
-	it('refuses a section it does not draw', () => {
-		expect(statBlock.read(BODY, { ...config, sections: [{ key: 'spells' }] }).ok).toBe(false);
+	it('draws a built-in where the list puts it, under its own heading', () => {
+		const { el } = render(BODY, {
+			zones: [
+				{ key: 'traits', type: 'text', heading: 'Traits' },
+				{ key: 'vitals', heading: 'Stats' },
+				{ key: 'changes', heading: 'Shape' },
+			],
+		});
+		expect(headings(el)).toEqual(['Traits', 'Stats', 'Shape']);
 	});
 
-	it('refuses a section listed twice', () => {
-		expect(
-			statBlock.read(BODY, { ...config, sections: [{ key: 'traits' }, { key: 'Traits' }] }).ok,
-		).toBe(false);
+	it('draws the vitals, the changes and a closed Details with no list', () => {
+		const { el } = render(BODY, { zones: [] });
+		expect(headings(el)).toEqual(['Modifiers', 'Details']);
+		const details = el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-disclosure');
+		expect(details?.textContent).toBe('Details');
+		expect(details?.getAttribute('aria-expanded')).toBe('false');
+	});
+
+	it('draws a text zone open, with no disclosure, where collapsed is off', () => {
+		const { el } = render(BODY, {
+			zones: [{ key: 'traits', type: 'text', heading: 'Traits' }],
+		});
+		expect(el.querySelector('.sheetsmith-stat-block-disclosure')).toBeNull();
+		expect(el.querySelector('.sheetsmith-stat-block-zone-text .sheetsmith-record-body')?.hasAttribute('hidden')).toBe(false);
 	});
 });
 
@@ -883,9 +917,570 @@ describe('a signed number cell', () => {
 	});
 });
 
+/*
+ * Zones (`docs/features/stat-block-zones.md`): a body of `####` blocks the
+ * layout declares, drawn in its order, with drift kept and drawn.
+ */
+const ZONED: StatBlockConfig = {
+	...config,
+	image: true,
+	zones: [
+		{ key: 'vitals' },
+		{ key: 'changes' },
+		{
+			key: 'attacks',
+			type: 'table',
+			heading: 'Attacks',
+			columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
+		},
+		{ key: 'actions', type: 'features', heading: 'Actions' },
+		{ key: 'traits', type: 'text', heading: 'Traits', collapsed: true },
+	],
+};
+
+const BEAR = [
+	'',
+	'### Brown Bear',
+	'```sheet',
+	'Active: yes',
+	'HP: 22 / 34',
+	'```',
+	'',
+	'![[Brown bear.png]]',
+	'',
+	'#### Attacks',
+	'',
+	'| Attack | Bonus | Damage |',
+	'|---|---|---|',
+	'| Bite | 6 | 1d8+4 piercing |',
+	'| [[Claws (Brown Bear)\\|Claws]] | 6 | 2d6+4 slashing |',
+	'',
+	'#### Actions',
+	'',
+	'**Multiattack.** Two attacks.',
+	'',
+	'**Roar (1/Day).** Each creature.',
+	'',
+	'- On a failure it is frightened.',
+	'',
+	'#### Reactions',
+	'',
+	'Not a zone in this layout.',
+	'',
+	'#### Traits',
+	'',
+	'***Keen Smell.*** Smell.',
+	'',
+	'### Mook',
+	'```sheet',
+	'Active: no',
+	'HP: 1 / 1',
+	'```',
+	'',
+].join('\n');
+
+function zoned(body: string = BEAR, over: Partial<StatBlockConfig> = {}, ctx: Partial<RenderContext<StatBlockData>> = {}) {
+	return render(body, { ...ZONED, ...over }, ctx);
+}
+
+function typeInto(input: HTMLInputElement | HTMLTextAreaElement, text: string): void {
+	input.focus();
+	input.value = text;
+	input.dispatchEvent(new Event('input'));
+	input.blur();
+}
+
+describe('a body of zones', () => {
+	it('round-trips byte for byte when nothing changed', () => {
+		expect(statBlock.write({ records: {} }, BEAR, ZONED)).toBe(BEAR);
+	});
+
+	it('reads each zone, its features with their usage, and the drift', () => {
+		const data = read(BEAR, ZONED);
+		const bear = data.records[0];
+		const actions = bear?.zones?.actions;
+		expect(actions?.type === 'features' ? actions.entries.map((one) => [one.name, one.usage]) : []).toEqual([
+			['Multiattack', ''],
+			['Roar', '1/Day'],
+		]);
+		expect(bear?.drift).toEqual([{ kind: 'unmatched', heading: 'Reactions', content: '\nNot a zone in this layout.\n\n' }]);
+		expect(bear?.picture).toBe('![[Brown bear.png]]');
+	});
+
+	it('draws the zones in play in order, the features as their own markdown, then the drift', () => {
+		const { el } = zoned();
+		const headings = Array.from(el.querySelectorAll('.sheetsmith-stat-block-form .sheetsmith-stat-block-section-heading')).map(
+			(one) => one.textContent,
+		);
+		expect(headings).toEqual(['Modifiers', 'Attacks', 'Actions', 'Traits', 'Reactions']);
+		const entries = el.querySelectorAll('.sheetsmith-stat-block-entry');
+		expect(entries).toHaveLength(2);
+		expect(entries[1]?.textContent).toContain('Roar (1/Day).');
+		expect(el.querySelector('.sheetsmith-stat-block-drift-tag')?.textContent).toBe('Not in this layout');
+		expect(el.textContent).toContain('Edit it in markdown view, or add a zone headed "Reactions" to the layout.');
+	});
+
+	it('draws an empty zone of each type as nothing in play, and every one under Every form', () => {
+		const body = BEAR.replace('Active: yes', 'Active: no').replace('Active: no\nHP: 1', 'Active: yes\nHP: 1');
+		const { el } = zoned(body);
+		const form = el.querySelector('.sheetsmith-stat-block-form') as HTMLElement;
+		expect(form.querySelector('.sheetsmith-stat-block-zone')).toBeNull();
+		expect(form.textContent).not.toContain('None yet');
+		toLibrary(el);
+		el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-disclosure')[1]?.click();
+		const mook = el.querySelectorAll('.sheetsmith-stat-block-detail')[1] as HTMLElement;
+		expect(mook.querySelectorAll('.sheetsmith-stat-block-zone')).toHaveLength(3);
+		expect(mook.querySelector('.sheetsmith-stat-block-add-action')?.textContent).toBe('Add attack');
+		expect(mook.querySelector('.sheetsmith-stat-block-add-entry')?.textContent).toBe('Add entry');
+		expect(mook.querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea')?.placeholder).toBe('Add text');
+		// Nothing faint that could pass for a value: the usage field says its name.
+		const { detail } = { detail: el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement };
+		expect(detail.querySelector<HTMLInputElement>('.sheetsmith-stat-block-entry-usage')?.placeholder).toBe('Usage');
+	});
+
+	it('draws a collapsed zone open under Every form', () => {
+		const { el } = zoned();
+		toLibrary(el);
+		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+		expect(detail.querySelector('.sheetsmith-stat-block-disclosure')).toBeNull();
+	});
+
+	it('draws drift read-only on both faces, and a second heading and a lead their own sentences', () => {
+		const body = BEAR.replace('#### Reactions', '#### Actions:').replace('\n![[Brown bear.png]]\n', '\nStray lead.\n\n#### Attacks\n\nprose');
+		const { el } = zoned(body, { image: false });
+		expect(el.textContent).toContain('A second "Actions:" heading in this record. Only the first is read.');
+		expect(el.querySelector('.sheetsmith-stat-block-form .sheetsmith-stat-block-drift .sheetsmith-stat-block-panel')).not.toBeNull();
+		expect(el.textContent).toContain(
+			"No zone reads the text above the first heading. Edit it in markdown view, or move it under a zone's heading.",
+		);
+		toLibrary(el);
+		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+		const drift = Array.from(detail.querySelectorAll('.sheetsmith-stat-block-drift'));
+		expect(drift.length).toBeGreaterThan(0);
+		expect(drift.every((one) => one.querySelector('textarea, input') === null)).toBe(true);
+		// Plain text under Every form, with no box: only an editable zone wears
+		// a field's clothes there. In play it keeps the text zones' box.
+		expect(drift.every((one) => one.querySelector('.sheetsmith-stat-block-panel') === null)).toBe(true);
+	});
+
+	it('draws a table zone holding prose as its error, with no field, the other zones still editing', () => {
+		const body = BEAR.replace(/\| Attack \| Bonus[\s\S]*?slashing \|\n/, 'Just some prose.\n');
+		const { el, edits } = zoned(body);
+		expect(el.textContent).toContain("Not a table. Edit it in markdown view, or change this zone's type.");
+		toLibrary(el);
+		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+		const table = detail.querySelector('.sheetsmith-stat-block-zone-table') as HTMLElement;
+		expect(table.querySelector('textarea, .sheetsmith-stat-block-add-action')).toBeNull();
+		const name = detail.querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-entry-name') as HTMLTextAreaElement;
+		typeInto(name, 'Multi');
+		expect(edits).toHaveLength(1);
+	});
+
+	it('gives a zone with no content one block on its first edit, placed by layout order', () => {
+		const written = statBlock.write(
+			{ records: {}, zoneEdits: { 1: { zone: 'actions', features: { added: true } } } },
+			BEAR,
+			ZONED,
+		);
+		expect(written).toBe(BEAR.replace('HP: 1 / 1\n```\n', 'HP: 1 / 1\n```\n\n#### Actions\n\n**Entry.** \n'));
+	});
+
+	it('writes a name and usage through the bold run, in the note\'s own spelling', () => {
+		const { el, edits } = zoned();
+		toLibrary(el);
+		const usage = el.querySelector<HTMLInputElement>('.sheetsmith-stat-block-entry-usage') as HTMLInputElement;
+		typeInto(usage, '2/Day');
+		expect(applied(edits[0] as StatBlockData, BEAR, ZONED)).toBe(BEAR.replace('**Multiattack.**', '**Multiattack (2/Day).**'));
+		// The usage alone: the edit names no name, so none is written back stale.
+		expect(edits[0]?.zoneEdits?.[0]?.features).toEqual({ entry: 0, usage: '2/Day' });
+	});
+
+	it('keeps an entry\'s usage when only its name is committed', () => {
+		const written = statBlock.write(
+			{ records: {}, zoneEdits: { 0: { zone: 'actions', features: { entry: 1, name: 'Bellow' } } } },
+			BEAR,
+			ZONED,
+		);
+		expect(written).toBe(BEAR.replace('**Roar (1/Day).**', '**Bellow (1/Day).**'));
+	});
+
+	it('adds an entry, and a text edit keeps every other byte', () => {
+		const added = statBlock.write({ records: {}, zoneEdits: { 0: { zone: 'actions', features: { added: true } } } }, BEAR, ZONED);
+		expect(added).toContain('- On a failure it is frightened.\n\n**Entry.** \n\n#### Reactions');
+		const texted = statBlock.write(
+			{ records: {}, zoneEdits: { 0: { zone: 'actions', features: { entry: 0, text: 'Three attacks.' } } } },
+			BEAR,
+			ZONED,
+		);
+		expect(texted).toBe(BEAR.replace('Two attacks.', 'Three attacks.'));
+	});
+});
+
+describe('the table zone\'s escaping', () => {
+	it('writes a typed pipe escaped, and reads it back plain', () => {
+		const written = statBlock.write(
+			{ records: {}, zoneEdits: { 0: { zone: 'attacks', table: { rows: { 0: { Damage: 'A | B' } } } } } },
+			BEAR,
+			ZONED,
+		);
+		expect(written).toContain('| Bite | 6 | A \\| B |');
+		const back = read(written, ZONED).records[0]?.zones?.attacks;
+		expect(back?.type === 'table' ? back.rows[0]?.[2] : '').toBe('A | B');
+	});
+
+	it('round-trips an aliased wikilink through a table zone', () => {
+		const attacks = read(BEAR, ZONED).records[0]?.zones?.attacks;
+		expect(attacks?.type === 'table' ? attacks.rows[1]?.[0] : '').toBe('[[Claws (Brown Bear)|Claws]]');
+		const { el, edits } = zoned();
+		const link = el.querySelectorAll('.sheetsmith-stat-block-table tbody tr')[1]?.querySelector('a');
+		expect(link?.textContent).toBe('Claws');
+		toLibrary(el);
+		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+		const cells = detail.querySelectorAll<HTMLTextAreaElement>('.sheetsmith-stat-block-table textarea');
+		// The aliased name, committed unchanged, writes nothing.
+		const name = cells[3] as HTMLTextAreaElement;
+		name.focus();
+		name.blur();
+		expect(edits).toHaveLength(0);
+		// A neighbouring cell's commit leaves the link's bytes alone.
+		typeInto(cells[4] as HTMLTextAreaElement, '7');
+		expect(applied(edits[0] as StatBlockData, BEAR, ZONED)).toBe(
+			BEAR.replace('| [[Claws (Brown Bear)\\|Claws]] | 6 |', '| [[Claws (Brown Bear)\\|Claws]] | 7 |'),
+		);
+	});
+
+	it('draws every row of a five-row table', () => {
+		const rows = ['| A | 1 | x |', '| B | 2 | x |', '| C | 3 | x |', '| D | 4 | x |', '| E | 5 | x |'].join('\n');
+		const body = BEAR.replace(/\| Bite[^\n]*\n\| \[\[Claws[^\n]*/, rows);
+		const { el } = zoned(body);
+		expect(el.querySelectorAll('.sheetsmith-stat-block-table tbody tr')).toHaveLength(5);
+	});
+});
+
+describe('the commit guards', () => {
+	const detail = (el: HTMLElement) => {
+		toLibrary(el);
+		return el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+	};
+
+	it('refuses a text zone line that would start a zone', () => {
+		const { el, edits } = zoned();
+		const box = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(box, 'Smell.\n\n#### Actions\n\nmore');
+		expect(edits).toHaveLength(0);
+		expect(el.textContent).toContain('Not saved. "#### Actions" would start the Actions zone. Use ##### for a heading inside text.');
+	});
+
+	it('takes a text zone heading that matches no zone, which reads back as its text', () => {
+		const { el, edits } = zoned();
+		const box = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(box, 'Smell.\n\n#### Senses\n\nmore');
+		expect(edits).toHaveLength(1);
+	});
+
+	it('refuses any heading in a feature\'s text and lead', () => {
+		const { el, edits } = zoned();
+		const zone = detail(el).querySelector('.sheetsmith-stat-block-zone-features') as HTMLElement;
+		const [lead, text] = Array.from(zone.querySelectorAll<HTMLTextAreaElement>('.sheetsmith-record-body-input'));
+		typeInto(lead as HTMLTextAreaElement, '#### Senses');
+		typeInto(text as HTMLTextAreaElement, 'x\n\n#### Senses');
+		expect(edits).toHaveLength(0);
+		expect(zone.textContent).toContain('would start a heading this layout has no zone for');
+	});
+
+	it('refuses a table cell opening with a heading', () => {
+		const { el, edits } = zoned();
+		const cell = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-table textarea') as HTMLTextAreaElement;
+		typeInto(cell, '#### Traits');
+		expect(edits).toHaveLength(0);
+	});
+
+	it('refuses a ### line in any body text, as before', () => {
+		const { el, edits } = zoned();
+		const box = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(box, '### Wolf');
+		expect(edits).toHaveLength(0);
+	});
+
+	it('refuses a 0.9.0 lead\'s text opening with a lone embed, with Picture on', () => {
+		const { el, edits } = render(BODY, { ...ZONED });
+		const box = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(box, '![[Bear.png]]\n\nKeen smell.');
+		expect(edits).toHaveLength(0);
+		expect(el.textContent).toContain('Not saved. A picture on its own first line is the form\'s picture. Set it under Picture instead.');
+	});
+});
+
+describe('the record picture', () => {
+	const resource = (target: string) => (target === 'Brown bear.png' ? 'app://bear.png' : null);
+
+	it('draws a thumbnail before the name in play, and nothing with no line', () => {
+		const { el } = zoned(BEAR, {}, { resource });
+		const head = el.querySelector('.sheetsmith-stat-block-play-head') as HTMLElement;
+		expect(head.firstElementChild?.classList.contains('sheetsmith-stat-block-thumb')).toBe(true);
+		expect(head.querySelector('img')?.getAttribute('src')).toBe('app://bear.png');
+		document.body.replaceChildren();
+		const none = zoned(BEAR.replace('![[Brown bear.png]]\n\n', ''), {}, { resource });
+		expect(none.el.querySelector('.sheetsmith-stat-block-thumb')).toBeNull();
+	});
+
+	it('says the painter\'s sentence under the head for a missing file, with no thumbnail', () => {
+		const { el } = zoned(BEAR, {}, { resource: () => null });
+		expect(el.querySelector('.sheetsmith-stat-block-thumb')).toBeNull();
+		expect(el.querySelector('.sheetsmith-stat-block-picture-problem')?.textContent).toBe(
+			'No file in this vault is called "Brown bear.png". Set it under Every form, in Picture.',
+		);
+	});
+
+	it('names each form before its sentence where two are on', () => {
+		const two = BEAR.replace('Active: no\nHP: 1', 'Active: yes\nHP: 1').replace('HP: 1 / 1\n```\n', 'HP: 1 / 1\n```\n\n![[Mook.png]]\n');
+		const { el } = zoned(two, {}, { resource: () => null });
+		expect(Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent)).toEqual([
+			'Brown Bear: No file in this vault is called "Brown bear.png". Set it under Every form, in Picture.',
+			'Mook: No file in this vault is called "Mook.png". Set it under Every form, in Picture.',
+		]);
+	});
+
+	it('is prose with Picture off', () => {
+		const { el } = zoned(BEAR, { image: false }, { resource });
+		expect(el.querySelector('.sheetsmith-stat-block-thumb')).toBeNull();
+	});
+
+	it('draws the frame and its field under Every form, refusing a bare path', () => {
+		const { el, edits } = zoned(BEAR, {}, { resource });
+		toLibrary(el);
+		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+		const field = detail.querySelector<HTMLInputElement>('.sheetsmith-stat-block-picture .sheetsmith-image-input') as HTMLInputElement;
+		expect(field.value).toBe('![[Brown bear.png]]');
+		typeInto(field, 'Wolf.png');
+		expect(edits).toHaveLength(0);
+		expect(detail.textContent).toContain('Write the picture as an embed');
+		typeInto(field, '');
+		expect(applied(edits[0] as StatBlockData, BEAR, ZONED)).toBe(BEAR.replace('![[Brown bear.png]]\n\n', ''));
+	});
+});
+
+describe('the configuration zones refuse', () => {
+	const refused = (zones: unknown[], extra: Record<string, unknown> = {}) => {
+		const result = statBlock.read(BEAR, { ...ZONED, zones, ...extra } as StatBlockConfig);
+		return result.ok ? null : result.error;
+	};
+	const table = (over: Record<string, unknown> = {}) => ({ key: 'a', type: 'table', heading: 'A', columns: [{ key: 'X' }], ...over });
+
+	it('reports the keys zones replaced', () => {
+		const result = statBlock.read(BEAR, { ...ZONED, actions: [], bodyName: 'Traits' } as unknown as StatBlockConfig);
+		expect(result).toEqual({
+			ok: false,
+			error: "Zones replaced actions and bodyName. Set this stat block's zones, then remove those keys from the layout.",
+		});
+		for (const key of ['actions', 'actionName', 'bodyName', 'sections']) {
+			expect(refused([], { [key]: 'x' })).toBe(`Zones replaced ${key}. Set this stat block's zones, then remove that key from the layout.`);
+		}
+		const el = document.createElement('div');
+		const edits: StatBlockData[] = [];
+		statBlock.render(el, { ...ZONED, sections: [] } as unknown as StatBlockConfig, null, {
+			...context,
+			onChange: (data) => edits.push(data),
+		});
+		expect(edits).toHaveLength(0);
+		expect(el.children).toHaveLength(1);
+		expect(el.firstElementChild?.classList.contains('sheetsmith-error')).toBe(true);
+	});
+
+	it('refuses a zone with no key', () => expect(refused([{ type: 'text', heading: 'A' }])).toContain('no key'));
+	it('refuses a key that is not a name', () => expect(refused([{ key: 'a b', type: 'text', heading: 'A' }])).toContain('not a name'));
+	it('refuses two zones with one key', () =>
+		expect(refused([{ key: 'a', type: 'text', heading: 'A' }, { key: 'A', type: 'text', heading: 'B' }])).toContain('share the key'));
+	it('refuses a built-in given a type', () => expect(refused([{ key: 'vitals', type: 'text' }])).toContain('built in'));
+	it('refuses a body zone keyed changes', () =>
+		expect(refused([{ key: 'changes', type: 'table', heading: 'Changes', columns: [{ key: 'X' }] }])).toContain('built in'));
+	it('refuses a body zone with no heading', () => expect(refused([{ key: 'a', type: 'text' }])).toContain('no heading'));
+	it('refuses a heading that normalises to nothing', () => expect(refused([{ key: 'a', type: 'text', heading: '...' }])).toContain('nothing to match'));
+	it('refuses two headings that normalise alike', () =>
+		expect(refused([{ key: 'a', type: 'text', heading: 'Traits' }, { key: 'b', type: 'text', heading: 'traits:' }])).toContain('cannot tell apart'));
+	it('refuses a heading holding a line break', () => expect(refused([{ key: 'a', type: 'text', heading: 'A\nB' }])).toContain('line break'));
+	it('refuses a heading holding a wikilink', () => expect(refused([{ key: 'a', type: 'text', heading: '[[Traits]]' }])).toContain('link'));
+	it('refuses a type other than the three', () => expect(refused([{ key: 'a', type: 'image', heading: 'A' }])).toContain('image zone'));
+	it('refuses a table zone with no columns', () => expect(refused([table({ columns: [] })])).toContain('no columns'));
+	it('refuses two columns that normalise alike', () =>
+		expect(refused([table({ columns: [{ key: 'X' }, { key: 'x' }] })])).toContain('share the heading'));
+	it('refuses a column key holding a pipe', () => expect(refused([table({ columns: [{ key: 'A|B' }] })])).toContain('"|"'));
+	it('refuses collapsed on a zone that is not text', () => expect(refused([table({ collapsed: true })])).toContain('only a text zone'));
+});
+
 describe('a form below 0', () => {
 	it('says the stored value, with a true minus sign', () => {
 		const below = render(BODY.replace('HP: 22 / 34', 'HP: -3 / 34'));
-		expect(below.el.textContent).toContain('At \u22123. Carry any leftover damage over by hand.');
+		expect(below.el.textContent).toContain('At −3. Carry any leftover damage over by hand.');
+	});
+});
+
+/*
+ * The guards `stat-block-zones.ts` adds past the spec's first list, each driven
+ * through the face that draws it: one refused spelling per case, and a near
+ * miss each guard lets through. Through the component rather than in a file of
+ * the painter's own, on `picture-frame.ts`'s and `card-face.ts`'s practice: a
+ * painter's rules are observable only in the box a component draws them into.
+ */
+describe('the entry and cell guards', () => {
+	const library = (body: string = BEAR) => {
+		const drawn = zoned(body);
+		toLibrary(drawn.el);
+		return { ...drawn, detail: drawn.el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement };
+	};
+	const features = (detail: HTMLElement) => detail.querySelector('.sheetsmith-stat-block-zone-features') as HTMLElement;
+
+	it('refuses a lead paragraph that opens with a bold name, and takes a stop outside the bold', () => {
+		const { detail, edits } = library();
+		const lead = features(detail).querySelector<HTMLTextAreaElement>('.sheetsmith-record-body-input') as HTMLTextAreaElement;
+		typeInto(lead, '**Pounce.** Leaps.');
+		expect(edits).toHaveLength(0);
+		expect(features(detail).textContent).toContain('would start a new entry. Add it with Add entry instead.');
+		typeInto(lead, '**Pounce**. Leaps.');
+		expect(edits).toHaveLength(1);
+	});
+
+	it('refuses an entry text paragraph that opens with a bold name, and takes one on the name\'s own line', () => {
+		const { detail, edits } = library();
+		const text = features(detail).querySelectorAll<HTMLTextAreaElement>('.sheetsmith-record-body-input')[1] as HTMLTextAreaElement;
+		typeInto(text, 'Two attacks.\n\n**Pounce.** Leaps.');
+		expect(edits).toHaveLength(0);
+		typeInto(text, '**Pounce.** is how it opens.');
+		expect(edits).toHaveLength(1);
+	});
+
+	const name = (detail: HTMLElement) =>
+		features(detail).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-entry-name') as HTMLTextAreaElement;
+	const usage = (detail: HTMLElement) =>
+		features(detail).querySelector<HTMLInputElement>('.sheetsmith-stat-block-entry-usage') as HTMLInputElement;
+
+	for (const [said, typed, sentence] of [
+		['a blank name', '', 'An entry needs a name'],
+		['a name over two lines', 'Multi\nattack', 'A name is one line'],
+		['a name holding **', 'Multi**attack', 'cannot hold ** or __'],
+		['a name holding __', 'Multi__attack', 'cannot hold ** or __'],
+		['a name ending in a parenthesis', 'Multiattack (x)', 'reads as its usage'],
+	] as const) {
+		it(`refuses ${said}`, () => {
+			const { detail, edits } = library();
+			typeInto(name(detail), typed);
+			expect(edits).toHaveLength(0);
+			expect(features(detail).textContent).toContain(sentence);
+		});
+	}
+
+	it('takes a name with a parenthesis inside it', () => {
+		const { detail, edits } = library();
+		typeInto(name(detail), 'Multiattack (Bear) Form');
+		expect(edits).toHaveLength(1);
+	});
+
+	for (const [said, typed, sentence] of [
+		['a usage holding parentheses', '(1/Day)', 'written inside parentheses already'],
+	] as const) {
+		it(`refuses ${said}`, () => {
+			const { detail, edits } = library();
+			typeInto(usage(detail), typed);
+			expect(edits).toHaveLength(0);
+			expect(features(detail).textContent).toContain(sentence);
+		});
+	}
+
+	it('refuses a table cell holding a line break, and takes a #### past its start', () => {
+		const { detail, edits } = library();
+		const cell = detail.querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-table textarea') as HTMLTextAreaElement;
+		typeInto(cell, 'Bite\nagain');
+		expect(edits).toHaveLength(0);
+		expect(detail.textContent).toContain('A table cell is one line.');
+		typeInto(cell, 'Bite #### hard');
+		expect(edits).toHaveLength(1);
+	});
+
+	it('takes a legacy lead opening with an embed that runs into a sentence', () => {
+		const { el, edits } = render(BODY, { ...ZONED });
+		toLibrary(el);
+		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+		const box = detail.querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(box, '![[Bear.png]]\nKeen smell.');
+		expect(edits).toHaveLength(1);
+	});
+});
+
+describe('a layout edit to the zones', () => {
+	it('draws a removed zone\'s blocks as drift, and writes nothing on render', () => {
+		const zones = (ZONED.zones ?? []).filter((zone) => zone.key !== 'actions');
+		const { el, edits } = zoned(BEAR, { zones });
+		expect(edits).toHaveLength(0);
+		const drift = Array.from(el.querySelectorAll('.sheetsmith-stat-block-drift .sheetsmith-stat-block-section-heading')).map(
+			(one) => one.textContent,
+		);
+		expect(drift).toContain('Actions');
+		expect(statBlock.write({ records: {} }, BEAR, { ...ZONED, zones })).toBe(BEAR);
+	});
+
+	it('draws a table zone\'s columns in the layout\'s new order', () => {
+		const zones = (ZONED.zones ?? []).map((zone) =>
+			zone.key === 'attacks'
+				? { ...zone, columns: [{ key: 'Attack' }, { key: 'Damage' }, { key: 'Bonus', type: 'number' as const }] }
+				: zone,
+		);
+		const { el } = zoned(BEAR, { zones });
+		const heads = Array.from(el.querySelectorAll('.sheetsmith-stat-block-table thead th')).map((th) => th.textContent);
+		expect(heads).toEqual(['Attack', 'Damage', 'Bonus', '']);
+		const first = Array.from(el.querySelectorAll('.sheetsmith-stat-block-table tbody tr')[0]?.children ?? []).map(
+			(cell) => cell.textContent,
+		);
+		expect(first).toEqual(['Bite', '1d8+4 piercing', '+6', '']);
+	});
+});
+
+describe('a features entry with no app to render it', () => {
+	it('draws the parsed name bold and run in, with no marks, as the canvas shows it', () => {
+		const { el } = zoned(BEAR, {}, { renderMarkdown: undefined });
+		const entries = Array.from(el.querySelectorAll('.sheetsmith-stat-block-entry'));
+		expect(entries[1]?.querySelector('p > strong')?.textContent).toBe('Roar (1/Day).');
+		expect(entries[1]?.textContent).not.toContain('**');
+		expect(entries[1]?.textContent).toContain('On a failure it is frightened.');
+	});
+});
+
+describe('a row or entry named by a link, read aloud', () => {
+	const NAMED = BEAR.replace('| Bite | 6 |', '| [[Bite]] | 6 |')
+		.replace('**Multiattack.**', '**[[Multiattack (Bear)|Multiattack]].**')
+		.replace('**Roar (1/Day).**', '**[[Roar]] (1/Day).**');
+
+	function library(body: string = NAMED) {
+		const drawn = zoned(body);
+		toLibrary(drawn.el);
+		return { ...drawn, detail: drawn.el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement };
+	}
+	const labels = (root: HTMLElement, selector: string) =>
+		Array.from(root.querySelectorAll(selector)).map((one) => one.getAttribute('aria-label'));
+
+	it('names a table row\'s delete and cells by what the sheet draws: an aliased link, a plain link, plain text', () => {
+		const { detail } = library();
+		expect(labels(detail, '.sheetsmith-stat-block-table .sheetsmith-stat-block-remove')).toEqual(['Delete Bite', 'Delete Claws']);
+		const cells = labels(detail, '.sheetsmith-stat-block-table .sheetsmith-stat-block-action-cell textarea');
+		expect(cells[0]).toBe('Bite Bonus');
+		expect(cells[2]).toBe('Claws Bonus');
+		document.body.replaceChildren();
+		const plain = library(BEAR);
+		expect(labels(plain.detail, '.sheetsmith-stat-block-table .sheetsmith-stat-block-remove')[0]).toBe('Delete Bite');
+	});
+
+	it('names an entry\'s delete and usage the same way', () => {
+		const { detail } = library();
+		expect(labels(detail, '.sheetsmith-stat-block-entry-line .sheetsmith-stat-block-remove')).toEqual([
+			'Delete Multiattack',
+			'Delete Roar',
+		]);
+		expect(labels(detail, '.sheetsmith-stat-block-entry-usage')).toEqual(['Multiattack usage', 'Roar usage']);
+	});
+
+	it('announces a committed link by its display text', () => {
+		const { detail, el } = library(BEAR);
+		const name = detail.querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-table textarea') as HTMLTextAreaElement;
+		typeInto(name, '[[Bite (Brown Bear)|Bite]]');
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('Attack Bite');
 	});
 });

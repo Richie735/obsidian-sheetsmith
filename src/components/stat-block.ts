@@ -38,7 +38,27 @@ import { stepButton } from '../interaction/hold-repeat';
 import { commitWindow } from '../interaction/commit-window';
 import { splitBounded } from '../parse/bounded-entry';
 import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
-import { bodyText, writeBodyText } from '../parse/markdown-body';
+import { bodyText } from '../parse/markdown-body';
+import {
+	readFeatures,
+	withEntryAdded,
+	withEntryName,
+	withEntryRemoved,
+	withEntryText,
+	withLead,
+} from '../parse/features';
+import {
+	BUILT_IN_ZONES,
+	isBuiltInZone,
+	isZoneType,
+	pictureSource,
+	placeZones,
+	replaceZone,
+	splitZones,
+	withPicture,
+	writeZoneText,
+	ZoneSpec,
+} from '../parse/zones';
 import { cellParts } from '../parse/modifier-cell';
 import {
 	joinRecords,
@@ -48,13 +68,29 @@ import {
 } from '../parse/records';
 import { readTable, splitLeadingTable, TableUpdates, writeTable } from '../parse/table';
 import { HOLDER_MAX_SOURCE } from './column-types';
-import { paintLinkedText } from './linked-text';
 import { paintLevelRing } from './level-ring';
 import { outcomeWords } from './modifier-breakdown';
 import { bindRingControl } from './ring-control';
 import { sampleNumber, samplePart, sampleSeed } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
 import { boundedText } from './typed-value';
+import { embedRefusal } from './embed-rule';
+import { renderPictureFrame } from './picture-frame';
+import { columnKeyFault, zoneHeadingFault, zoneKeyFault } from './zone-rules';
+import {
+	BodyZone,
+	ZoneHost,
+	drawDrift,
+	drawZone,
+	shiftOpenZones,
+	FeatureZoneEdit,
+	StatBlockZone,
+	TableZoneEdit,
+	ZoneDriftRead,
+	ZoneEdit,
+	zoneHeaders,
+	ZoneRead,
+} from './stat-block-zones';
 import {
 	editRecords,
 	fieldLabel,
@@ -105,11 +141,24 @@ import { element } from '../ui/element';
 /** The key a stored uses count sits under in the preamble's fence. */
 const USES_KEY = 'uses';
 
-/** What the action table's first column is headed where the layout has not said. */
-const DEFAULT_ACTION_NAME = 'Action';
+/**
+ * The keys `zones` replaced, in the order the error names them. No released
+ * version wrote them, so a layout still holding one is reported rather than
+ * read (`docs/features/stat-block-zones.md`, Errors): drawing default zones
+ * beside an error would show a stat block shaped by keys the layout no longer
+ * means.
+ */
+const REPLACED_KEYS = ['actions', 'actionName', 'bodyName', 'sections'] as const;
 
-/** What the disclosure over a record's prose is called where the layout has not said. */
-const DEFAULT_BODY_NAME = 'Details';
+/**
+ * What a blank `zones` reads as: the vitals, the changes, then the body as text
+ * under a closed **Details** — the drawing a layout with no zones had before.
+ */
+const DEFAULT_ZONES: readonly StatBlockZone[] = [
+	{ key: 'vitals' },
+	{ key: 'changes' },
+	{ key: 'details', type: 'text', heading: 'Details', collapsed: true },
+];
 
 /**
  * The most rings the uses counter draws before it gives way to the numerals.
@@ -134,49 +183,7 @@ const SEVERAL_VALUE = 'sheetsmith-several';
  */
 let awaitingAdd: { id: string; held: number } | null = null;
 
-/**
- * Which records' prose disclosures are open, by `<id>:<position>`.
- *
- * **Held here rather than in the view's posture**, and that is a cost rather
- * than a design: the posture pairs are an index into alternatives and a set of
- * open records, and both are taken — the faces hold `activeTab` and the library
- * holds `openRecords`. A third pair is the generalisation the view's own
- * comment refuses at two. So the disclosure survives a rebuild and not a reload,
- * which is the cheaper half to lose.
- */
-const openBodies = new Set<string>();
-
-/** Shift one block's open prose disclosures up past a record that is going. */
-function shiftOpenBodies(id: string, removedAt: number, count: number): void {
-	const held = new Set<number>();
-	for (let at = 0; at < count; at++) {
-		if (openBodies.delete(`${id}:${at}`)) held.add(at);
-	}
-	for (const at of held) {
-		if (at < removedAt) openBodies.add(`${id}:${at}`);
-		else if (at > removedAt) openBodies.add(`${id}:${at - 1}`);
-	}
-}
-
-/** One column of a record's action table: text or a number. */
-export interface ActionColumn {
-	/** Its heading in the note, and the key a row's cell is written under. */
-	key: string;
-	/** What the column is called on the sheet, where it should differ from the key. */
-	name?: string;
-	type?: 'text' | 'number';
-}
-
-/** The four parts a stat block draws, in the order a layout says nothing about. */
-export const SECTION_KEYS = ['vitals', 'modifiers', 'actions', 'traits'] as const;
-
-/** One part of a form's stat block, as a layout orders and heads it. */
-export interface StatBlockSection {
-	/** Which part: `vitals`, `modifiers`, `actions` or `traits`. */
-	key: string;
-	/** The heading over it, where it should differ from the default. */
-	name?: string;
-}
+export type { StatBlockColumn, StatBlockZone } from './stat-block-zones';
 
 export interface StatBlockConfig extends ComponentConfig {
 	type: 'stat-block';
@@ -187,38 +194,29 @@ export interface StatBlockConfig extends ComponentConfig {
 	/** An expression: the uses counter's ceiling. */
 	uses?: string | number;
 	spendOnPick?: boolean;
-	actions?: ActionColumn[];
-	actionName?: string;
-	bodyName?: string;
 	/**
-	 * The order the parts are drawn in and the heading over each. A part the
-	 * list leaves out is drawn after the listed ones in the default order, so a
-	 * list can reorder and rename and never hide a form's data.
+	 * What each record's body is made of, in the order it is drawn. A built-in
+	 * the list leaves out is drawn first, so a list can reorder the vitals and
+	 * the changes and never hide them.
 	 */
-	sections?: StatBlockSection[];
+	zones?: StatBlockZone[];
+	image?: boolean;
 	hideLabel?: boolean;
 }
 
-/** One record as this component reads it: Record set's, plus its action list. */
+/** One record as this component reads it: Record set's, plus its body's zones. */
 export interface StatBlockEntry extends RecordEntry {
-	/**
-	 * The rows of the table the prose opens with, each cell in the order the
-	 * layout declares — the name first, then each action column — or absent
-	 * where no action columns are declared or the prose opens with no table.
-	 */
-	actions?: readonly (readonly string[])[];
+	/** What each body zone holds, by key; a zone holding nothing is absent. */
+	zones?: Record<string, ZoneRead>;
+	/** Content no zone owns, in file order. */
+	drift?: ZoneDriftRead[];
+	/** The picture line as the note writes it, where **Picture** is on and there is one. */
+	picture?: string;
 	/**
 	 * Whether the note holds this record switched on, for a record whose fence
 	 * will not read, so the panel can say so; absent everywhere else.
 	 */
 	heldOn?: boolean;
-}
-
-/** One edit to one record's action list, by heading as the note spells it. */
-export interface ActionEdit {
-	rows?: Record<number, Record<string, string>>;
-	added?: readonly Record<string, string>[];
-	removed?: readonly number[];
 }
 
 export interface StatBlockData extends RecordList {
@@ -230,8 +228,8 @@ export interface StatBlockData extends RecordList {
 	uses?: string;
 	/** Why the preamble's fence will not read, which draws a problem line. */
 	usesError?: string;
-	/** Edits to each record's action list, by record position. */
-	actionEdits?: Record<number, ActionEdit>;
+	/** One gesture's change to a record's body, by record position. */
+	zoneEdits?: Record<number, ZoneEdit>;
 }
 
 /** The uses counter's own ceiling, where it is set at all. */
@@ -257,55 +255,134 @@ function exclusiveField(config: StatBlockConfig): RecordField | null {
 	);
 }
 
-function actionName(config: StatBlockConfig): string {
-	return (config.actionName ?? '').trim() || DEFAULT_ACTION_NAME;
-}
-
-function bodyName(config: StatBlockConfig): string {
-	return (config.bodyName ?? '').trim() || DEFAULT_BODY_NAME;
-}
-
-function actionColumns(config: StatBlockConfig): ActionColumn[] {
-	return (config.actions ?? []).filter((column) => (column.key ?? '').trim() !== '');
+/** Whether a zone entry is one of the two built-ins, by its key. */
+function isBuiltIn(zone: StatBlockZone): boolean {
+	return isBuiltInZone(zone.key);
 }
 
 /**
- * The parts in the order a layout sets them, each with its heading where the
- * layout gives one. Absent, it is today's order — vitals, modifiers, actions,
- * traits — under today's headings: none over the vitals, a modifier field's own
- * name, `actionName` and `bodyName`. An entry `configError` would refuse is
- * passed over here, since a refused configuration draws nothing at all.
+ * The zones in the order a form draws them (The record in play). A built-in
+ * the list leaves out is drawn where the default puts it — `vitals` first,
+ * then `changes`, before the listed zones — so nothing a form holds is hidden.
+ * Blank is `DEFAULT_ZONES`. A configuration `configError` refuses draws
+ * nothing, so this reads only an accepted one.
  */
-function sectionOrder(config: StatBlockConfig): { key: string; name?: string }[] {
-	const listed: { key: string; name?: string }[] = [];
-	for (const entry of config.sections ?? []) {
-		const key = (entry.key ?? '').trim().toLowerCase();
-		if (!(SECTION_KEYS as readonly string[]).includes(key)) continue;
-		if (listed.some((one) => one.key === key)) continue;
-		const name = (entry.name ?? '').trim();
-		listed.push(name === '' ? { key } : { key, name });
-	}
-	for (const key of SECTION_KEYS) {
-		if (!listed.some((one) => one.key === key)) listed.push({ key });
-	}
-	return listed;
+function zoneOrder(config: StatBlockConfig): StatBlockZone[] {
+	const listed = config.zones !== undefined && config.zones.length > 0 ? config.zones : DEFAULT_ZONES;
+	const missing = BUILT_IN_ZONES.filter(
+		(key) => !listed.some((zone) => (zone.key ?? '').trim().toLowerCase() === key),
+	).map((key): StatBlockZone => ({ key }));
+	return [...missing, ...listed];
 }
 
-/** The action table's headings, in the order a fresh table writes them. */
-function actionHeaders(config: StatBlockConfig): string[] {
-	return [actionName(config), ...actionColumns(config).map((column) => column.key)];
+/** The body zones, accepted, in layout order. */
+function bodyZones(config: StatBlockConfig): BodyZone[] {
+	return zoneOrder(config)
+		.filter((zone) => !isBuiltIn(zone))
+		.map((zone) => ({
+			key: zone.key.trim(),
+			type: isZoneType(zone.type) ? zone.type : 'text',
+			heading: (zone.heading ?? '').trim(),
+			columns: (zone.columns ?? []).filter((column) => (column.key ?? '').trim() !== ''),
+			collapsed: zone.collapsed === true,
+		}));
 }
 
-/** What an action column is called on the sheet. */
-function columnLabel(column: ActionColumn): string {
-	return (column.name ?? '').trim() || column.key;
+/** The zones as `parse/zones.ts` places content into them. */
+function zoneSpecs(config: StatBlockConfig): ZoneSpec[] {
+	return bodyZones(config).map(({ key, type, heading }) => ({ key, type, heading }));
+}
+
+/** Whether the layout turns **Picture** on. */
+function hasPicture(config: StatBlockConfig): boolean {
+	return config.image === true;
+}
+
+/** `a`, `a and b`, `a, b and c`: keys as a sentence lists them. */
+function listed(names: readonly string[]): string {
+	if (names.length <= 1) return names[0] ?? '';
+	return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1] ?? ''}`;
+}
+
+/** Why the zone list cannot draw, or null where it can (Errors). */
+function zonesError(config: StatBlockConfig): string | null {
+	const zones = config.zones ?? [];
+	for (const [at, zone] of zones.entries()) {
+		// Against the zones before this one, so the first of two clashing is the
+		// one the sentence names first. The rules are `zone-rules.ts`'s, shared
+		// with the zone editor; the sentences are this check's own.
+		const before = zones.slice(0, at);
+		const key = (zone.key ?? '').trim();
+		const keyFault = zoneKeyFault(key, before.map((other) => other.key));
+		if (keyFault === 'blank') return 'A zone has no key. Give every zone a key under Zones.';
+		if (keyFault === 'not-a-name') {
+			return `The zone key "${key}" is not a name. Use letters, digits and underscores, starting with a letter, under Zones.`;
+		}
+		if (keyFault === 'taken') return `Two zones share the key "${key}". Give each zone its own key under Zones.`;
+		if (isBuiltIn(zone)) {
+			if (zone.type !== undefined) {
+				return `The zone "${key}" is built in, so it takes no type: it is drawn from each record's fence. Clear its type, or give the zone another key.`;
+			}
+			continue;
+		}
+		const type = zone.type ?? '';
+		if (!isZoneType(type)) {
+			return type === ''
+				? `The zone "${key}" has no type. Make it a table, features or text zone under Zones.`
+				: `The zone "${key}" is a ${type} zone, which a stat block does not draw. Make it a table, features or text zone.`;
+		}
+		const heading = zone.heading ?? '';
+		const headingFault = zoneHeadingFault(heading, before);
+		if (headingFault !== null) {
+			switch (headingFault.kind) {
+				case 'blank':
+					return `The zone "${key}" has no heading. Give it the heading each record stores it under, under Zones.`;
+				case 'line-break':
+					return `The zone "${key}" has a line break in its heading. A heading is one line in the note.`;
+				case 'link':
+					return `The zone "${key}" has a link in its heading, which would change when the note it names is renamed and leave the zone behind. Write the heading as plain text.`;
+				case 'no-words':
+					return `The zone "${key}" is headed "${heading.trim()}", which leaves nothing to match once its punctuation goes. Give it a heading with words in it.`;
+				case 'taken':
+					return `The zones "${headingFault.with}" and "${key}" have headings a note cannot tell apart. Give each zone its own heading.`;
+			}
+		}
+		if (type === 'table') {
+			const columns = zone.columns ?? [];
+			if (columns.length === 0) {
+				return `The table zone "${key}" has no columns. Give it at least one, the first naming each row.`;
+			}
+			for (const [index, column] of columns.entries()) {
+				const columnKey = (column.key ?? '').trim();
+				const fault = columnKeyFault(columnKey, columns.slice(0, index).map((other) => other.key));
+				if (fault === 'blank') return `A column of the zone "${key}" has no key. Give it one, or remove it.`;
+				if (fault === 'pipe') {
+					return `The column "${columnKey}" of the zone "${key}" holds a "|", which ends a table cell. Rename it.`;
+				}
+				if (fault === 'taken') {
+					return `Two columns of the zone "${key}" share the heading "${columnKey}". Give each its own.`;
+				}
+			}
+		}
+		if (zone.collapsed !== undefined && zone.collapsed !== false && type !== 'text') {
+			return `The zone "${key}" is a ${type} zone, and only a text zone can be collapsed. Clear Collapsed on it.`;
+		}
+	}
+	return null;
 }
 
 /**
  * Why this configuration cannot draw, or null where it can (`docs/features/
- * character-forms.md`, Error states). Each names the fix, in the editor's words.
+ * character-forms.md` and `stat-block-zones.md`, Error states). Each names the
+ * fix, in the editor's words. **A replaced key is asked first**, so it is the
+ * one error shown while it stands.
  */
 function configError(config: StatBlockConfig): string | null {
+	const held = config as unknown as Record<string, unknown>;
+	const replaced = REPLACED_KEYS.filter((key) => held[key] !== undefined);
+	if (replaced.length > 0) {
+		return `Zones replaced ${listed(replaced)}. Set this stat block's zones, then remove ${replaced.length === 1 ? 'that key' : 'those keys'} from the layout.`;
+	}
 	const seen = new Set<string>();
 	for (const field of config.fields ?? []) {
 		const key = (field.key ?? '').trim();
@@ -335,44 +412,163 @@ function configError(config: StatBlockConfig): string | null {
 			return `One at a time by names "${fieldLabel(field)}", a ${fieldType(field)} field. Name a toggle field's key instead.`;
 		}
 	}
-	const seenSections = new Set<string>();
-	for (const entry of config.sections ?? []) {
-		const key = (entry.key ?? '').trim().toLowerCase();
-		if (!(SECTION_KEYS as readonly string[]).includes(key)) {
-			return `The section "${entry.key ?? ''}" is not one a stat block draws. Use vitals, modifiers, actions or traits under Sections.`;
+	return zonesError(config);
+}
+
+/**
+ * One record's body read into its zones (Data and file model): the pieces
+ * placed by `parse/zones.ts`, then each zone's content read by its type. A
+ * zone holding nothing is left out, so an empty one and a missing one are one
+ * case.
+ */
+function readZones(config: StatBlockConfig, rest: string): Pick<StatBlockEntry, 'zones' | 'drift' | 'picture'> {
+	const picture = hasPicture(config);
+	const split = splitZones(rest, { picture });
+	const placement = placeZones(split, zoneSpecs(config));
+	const zones: Record<string, ZoneRead> = {};
+	for (const zone of bodyZones(config)) {
+		const place = placement.zones.get(zone.key);
+		if (place === undefined) continue;
+		const fromLead = place.from !== 'block';
+		if (zone.type === 'text') {
+			const text = bodyText(place.content);
+			if (text !== '') zones[zone.key] = { type: 'text', text, fromLead };
+		} else if (zone.type === 'features') {
+			const read = readFeatures(place.content);
+			zones[zone.key] = {
+				type: 'features',
+				lead: read.lead,
+				entries: read.entries.map(({ name, usage, source, text }) => ({ name, usage, source, text })),
+			};
+		} else {
+			zones[zone.key] = readTableZone(zone, place.content);
 		}
-		if (seenSections.has(key)) {
-			return `The section "${key}" is listed twice under Sections. List each part once.`;
-		}
-		seenSections.add(key);
 	}
-	const headings = new Set<string>([actionName(config).toLowerCase()]);
-	for (const column of config.actions ?? []) {
-		const heading = (column.key ?? '').trim();
-		if (heading === '') {
-			return 'An action column has no key. Give it one under Action columns, or remove it.';
-		}
-		if (heading.toLowerCase() === actionName(config).toLowerCase()) {
-			return `The action column "${heading}" has the same heading as the column that names each action. Rename one of them.`;
-		}
-		if (headings.has(heading.toLowerCase()) && heading.toLowerCase() !== actionName(config).toLowerCase()) {
-			return `Two action columns share the heading "${heading}". Give each its own.`;
-		}
-		headings.add(heading.toLowerCase());
+	const source = picture ? pictureSource(split) : '';
+	return {
+		zones,
+		drift: placement.drift.map(({ kind, heading, content }) => ({ kind, heading, content })),
+		...(source === '' ? {} : { picture: source }),
+	};
+}
+
+/**
+ * A table zone's content: the table at its head, every row, each cell matched
+ * to its column by header without regard to case, the first cell the row's
+ * name; the text after it; or the content itself, where it opens with none.
+ */
+function readTableZone(zone: BodyZone, content: string): ZoneRead {
+	const split = splitLeadingTable(content);
+	if (split === null) {
+		return content.trim() === ''
+			? { type: 'table', rows: [], after: '', notTable: null }
+			: { type: 'table', rows: [], after: '', notTable: bodyText(content) };
 	}
-	return null;
+	const read = readTable(split.table);
+	if (!read.ok || read.table === null) {
+		return { type: 'table', rows: [], after: '', notTable: bodyText(content) };
+	}
+	const at = new Map(read.table.headers.map((heading, index) => [heading.toLowerCase(), index]));
+	const rows = read.table.rows.map((row) => [
+		row[0] ?? '',
+		...zone.columns.slice(1).map((column) => {
+			const index = at.get(column.key.toLowerCase());
+			return index === undefined || index === 0 ? '' : (row[index] ?? '');
+		}),
+	]);
+	return { type: 'table', rows, after: bodyText(split.rest), notTable: null };
+}
+
+/** A table zone's content with one edit applied, every other byte kept. */
+function writeTableZone(zone: BodyZone, content: string | null, edit: TableZoneEdit): string | null {
+	const updates: TableUpdates = {
+		rows: new Map(
+			Object.entries(edit.rows ?? {}).map(([row, cells]) => [Number(row), new Map(Object.entries(cells))]),
+		),
+		added: (edit.added ?? []).map((cells) => new Map(Object.entries(cells))),
+		removed: edit.removed ?? [],
+	};
+	const headers = zoneHeaders(zone);
+	if (content === null || content.trim() === '') {
+		// A zone with no table yet gains one on its first added row, and nothing
+		// on an edit that has no row to land in.
+		if ((edit.added ?? []).length === 0) return content;
+		const fresh = writeTable(null, headers, { added: updates.added });
+		if (content === null) return fresh;
+		const at = content.indexOf('\n');
+		return fresh + (at < 0 ? '' : content.slice(at + 1));
+	}
+	const split = splitLeadingTable(content);
+	// Prose where a table belongs is the zone's error: edits are off, and a
+	// write that reached here anyway writes nothing.
+	if (split === null) return content;
+	return writeTable(split.table, headers, updates) + split.rest;
+}
+
+/** A features zone's content with one edit applied, every other byte kept. */
+function writeFeaturesZone(content: string | null, edit: FeatureZoneEdit): string | null {
+	const raw = content ?? '';
+	if (edit.added === true) return withEntryAdded(raw);
+	if (edit.lead !== undefined) return content === null && edit.lead === '' ? null : withLead(raw, edit.lead);
+	if (content === null || edit.entry === undefined) {
+		return edit.removed === undefined || content === null ? content : withEntryRemoved(content, edit.removed);
+	}
+	if (edit.text !== undefined) return withEntryText(content, edit.entry, edit.text);
+	if (edit.name !== undefined || edit.usage !== undefined) {
+		return withEntryName(content, edit.entry, {
+			...(edit.name === undefined ? {} : { name: edit.name }),
+			...(edit.usage === undefined ? {} : { usage: edit.usage }),
+		});
+	}
+	return content;
+}
+
+/**
+ * A record's rest with one gesture's change applied, every other byte kept: the
+ * picture line, or one zone's content through `replaceZone`, which rewrites a
+ * zone in place or gives one with no content anywhere a block of its own.
+ */
+function withZoneEdit(config: StatBlockConfig, rest: string, edit: ZoneEdit): string {
+	const picture = hasPicture(config);
+	if (edit.picture !== undefined) {
+		if (!picture) return rest;
+		return withPicture(rest, edit.picture.trim() === '' ? null : edit.picture.trim());
+	}
+	const zone = bodyZones(config).find((one) => one.key === edit.zone);
+	if (zone === undefined) return rest;
+	const specs = zoneSpecs(config);
+	let unchanged = false;
+	const next = replaceZone(rest, specs, zone.key, { picture }, (content) => {
+		let written: string | null = content;
+		if (zone.type === 'text' && edit.text !== undefined) {
+			written = content === null && edit.text === '' ? null : writeZoneText(content ?? '', edit.text);
+		} else if (zone.type === 'table' && edit.table !== undefined) {
+			written = writeTableZone(zone, content, edit.table);
+		} else if (zone.type === 'features' && edit.features !== undefined) {
+			written = writeFeaturesZone(content, edit.features);
+		}
+		if (written === null) {
+			unchanged = true;
+			return '';
+		}
+		return written;
+	});
+	return unchanged ? rest : next;
 }
 
 /** Every record, as read or as an edit reported, in file order. */
 function entries(data: StatBlockData | null): StatBlockEntry[] {
 	const views = recordViews(data);
-	return views.map((view, at) => ({
-		...view,
-		...(data?.records[at]?.actions === undefined
-			? {}
-			: { actions: data.records[at]?.actions }),
-		...(data?.records[at]?.heldOn === true ? { heldOn: true } : {}),
-	}));
+	return views.map((view, at) => {
+		const held = data?.records[at];
+		return {
+			...view,
+			...(held?.zones === undefined ? {} : { zones: held.zones }),
+			...(held?.drift === undefined ? {} : { drift: held.drift }),
+			...(held?.picture === undefined ? {} : { picture: held.picture }),
+			...(held?.heldOn === true ? { heldOn: true } : {}),
+		};
+	});
 }
 
 /** Whether this record is on, by the exclusive toggle. */
@@ -408,28 +604,6 @@ function usesLeft(data: StatBlockData | null, ceiling: number | null): number | 
 	return storedUses(data) ?? ceiling;
 }
 
-/** One record's action table, by declared column, or absent where it has none. */
-function readActions(
-	config: StatBlockConfig,
-	rest: string,
-): { actions?: string[][]; prose: string } {
-	if (actionColumns(config).length === 0) return { prose: bodyText(rest) };
-	const split = splitLeadingTable(rest);
-	if (split === null) return { prose: bodyText(rest) };
-	const read = readTable(split.table);
-	if (!read.ok || read.table === null) return { prose: bodyText(rest) };
-	const at = new Map(read.table.headers.map((heading, index) => [heading.toLowerCase(), index]));
-	const columns = actionColumns(config);
-	const actions = read.table.rows.map((row) => [
-		row[0] ?? '',
-		...columns.map((column) => {
-			const index = at.get(column.key.toLowerCase());
-			return index === undefined || index === 0 ? '' : (row[index] ?? '');
-		}),
-	]);
-	return { actions, prose: bodyText(split.rest) };
-}
-
 /** Put a uses count into the preamble, keeping every other byte of it. */
 function withUses(preamble: string, uses: string): string {
 	const read = readFenced(preamble);
@@ -442,45 +616,17 @@ function withUses(preamble: string, uses: string): string {
 	return fence + (preamble.trim() === '' ? '\n' : preamble);
 }
 
-/**
- * A record's prose with its action edits and its new text applied, every other
- * byte left as it was: the table through `writeTable`, the prose through
- * `writeBodyText`, and the two rejoined in the order they were.
- */
-function withBody(
-	config: StatBlockConfig,
-	rest: string,
-	edit: ActionEdit | undefined,
-	text: string | undefined,
-): string {
-	const declared = actionColumns(config).length > 0;
-	const split = declared ? splitLeadingTable(rest) : null;
-	let table = split?.table ?? '';
-	let prose = split?.rest ?? rest;
-	if (edit !== undefined && declared) {
-		const updates: TableUpdates = {
-			rows: new Map(
-				Object.entries(edit.rows ?? {}).map(([row, cells]) => [
-					Number(row),
-					new Map(Object.entries(cells)),
-				]),
-			),
-			added: (edit.added ?? []).map((cells) => new Map(Object.entries(cells))),
-			removed: edit.removed ?? [],
-		};
-		if (split !== null) {
-			table = writeTable(split.table, actionHeaders(config), updates);
-		} else if ((edit.added ?? []).length > 0) {
-			// A body with no list yet gains one at its head, header and all, so the
-			// prose a reader already wrote stays under it.
-			table = writeTable(null, actionHeaders(config), { added: updates.added });
-			if (prose.trim() !== '' && !/^\r?\n/.test(prose)) prose = `\n${prose}`;
-		}
+/** What one zone holds in a sample: filler that says it is filler, on Rich text's rule. */
+function sampleZone(zone: BodyZone, noun: string, at: number): string {
+	if (zone.type === 'table') {
+		const headers = zone.columns.map((column) => column.key);
+		const cells = zone.columns.map((column, index) =>
+			index === 0 ? 'Sample' : column.type === 'number' ? String(sampleNumber(at + index)) : 'Sample text',
+		);
+		return `|${headers.join('|')}|\n|${headers.map(() => '---').join('|')}|\n|${cells.join('|')}|`;
 	}
-	if (text !== undefined && text !== bodyText(prose)) {
-		prose = prose.trim() === '' && table !== '' ? `\n${text}\n` : writeBodyText(prose, text);
-	}
-	return table + prose;
+	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${noun.toLowerCase()} shows where an entry starts.`;
+	return `Sample text, so an open ${noun.toLowerCase()} shows where its prose starts.`;
 }
 
 /** What one field holds in a sample, or null where it stores nothing. */
@@ -560,52 +706,20 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			default: false,
 		},
 		{
-			key: 'actions',
-			kind: 'columns',
-			label: 'Action columns',
-			columnOptions: {
-				types: ['text', 'number'],
-				total: false,
-				publish: false,
-				hideHeading: false,
-				unit: 'column',
-				holder: 'action',
-				cell: 'cell',
-				heading: 'Name',
-			},
+			key: 'zones',
+			kind: 'zones',
+			label: 'Zones',
+			addressesHeading: 'record',
 			description:
-				"The columns of a table at the head of each record's body, for attacks or actions: text or number. Blank keeps any such table in the note and draws it as part of the body's prose.",
+				"What each record's body is made of, in the order it is drawn: tables, named features or text, each under a heading the note stores, plus the record's vitals and changes, which can be moved but not removed. Renaming a heading renames it in every note on this layout. Removing a zone keeps its text in every note, shown as not in this layout. A collapsed text zone is closed in play and drawn open under Every form, where it is filled. Blank draws the vitals, the changes, then the body as text under a closed Details heading.",
 		},
 		{
-			key: 'actionName',
-			kind: 'text',
-			label: 'Action column heading',
+			key: 'image',
+			kind: 'boolean',
+			label: 'Picture',
 			description:
-				"The heading of the action table's first column, which names each row. Defaults to \"Action\".",
-		},
-		{
-			key: 'bodyName',
-			kind: 'text',
-			label: 'Body heading',
-			description:
-				'What the disclosure over each record\'s prose is called. Defaults to "Details". Changes nothing in the note.',
-		},
-		{
-			key: 'sections',
-			kind: 'columns',
-			label: 'Sections',
-			columnOptions: {
-				types: ['text'],
-				total: false,
-				publish: false,
-				hideHeading: false,
-				unit: 'section',
-				holder: 'panel',
-				cell: 'section',
-				heading: 'Heading',
-			},
-			description:
-				'The order a form\'s parts are drawn in, each keyed vitals, modifiers, actions or traits, with the heading over it. A part left out is drawn after the listed ones, so nothing a form holds is hidden. Blank draws vitals, modifiers, actions, then traits, under the field\'s name, the action column heading and the body heading. Changes nothing in the note.',
+				'Each record may open its body with one picture, drawn beside its name in play. The picture is an embed line in the note, so renaming the file updates it. Off, that line is read as ordinary text. Off by default.',
+			default: false,
 		},
 		{
 			key: 'hideLabel',
@@ -640,6 +754,11 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		},
 	],
 
+	/*
+	 * One zone of each type, so the contract sweeps a table, a list of features
+	 * and a block of text through a read and a write, and the canvas shows all
+	 * three under the vitals.
+	 */
 	example: {
 		recordName: 'Form',
 		fields: [
@@ -647,6 +766,17 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			{ key: 'HP', type: 'number', maxSource: HOLDER_MAX_SOURCE },
 		],
 		exclusive: 'Active',
+		zones: [
+			{ key: 'vitals' },
+			{
+				key: 'attacks',
+				type: 'table',
+				heading: 'Attacks',
+				columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }],
+			},
+			{ key: 'actions', type: 'features', heading: 'Actions' },
+			{ key: 'notes', type: 'text', heading: 'Notes' },
+		],
 	},
 
 	/*
@@ -668,7 +798,11 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (value !== null) lines.push(`${field.key}: ${value}`);
 			});
 			if (lines.length > 0) parts.push(`\n\`\`\`sheet\n${lines.join('\n')}\n\`\`\`\n`);
-			parts.push(`\nSample text, so an open ${noun.toLowerCase()} shows where its prose starts.\n`);
+			// One block per body zone, each with something in it, so an open
+			// form shows every zone the layout declares where it starts.
+			bodyZones(config).forEach((zone, at) => {
+				parts.push(`\n#### ${zone.heading}\n\n${sampleZone(zone, noun, seed + which * 7 + at)}\n`);
+			});
 			if (which === 0) parts.push('\n');
 		}
 		return parts.join('');
@@ -691,9 +825,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		);
 		section.records.forEach((block, at) => {
 			const entry = records[at] as StatBlockEntry;
-			const { actions, prose } = readActions(config, block.rest);
-			entry.body = prose;
-			if (actions !== undefined) entry.actions = actions;
+			// A record whose fence will not read keeps its body as prose, which is
+			// all that is drawn of it; a readable one reads its zones.
+			if (entry.error === null) Object.assign(entry, readZones(config, block.rest));
 			const toggle = exclusiveField(config);
 			if (entry.error !== null && toggle !== null && linesSayOn(block.head, toggle.key)) {
 				entry.heldOn = true;
@@ -779,11 +913,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		if (data.uses !== undefined) preamble = withUses(preamble, data.uses);
 		const records = [...section.records];
 		/*
-		 * **The prose and the action list first, by position as read**, because
-		 * both live in the record's rest and Record set's delta writes a body as
-		 * one string — which here would overwrite the table. Removals and appends
-		 * then run on the shared path, after, so a position still means what the
-		 * render meant by it.
+		 * **A record's body first, by position as read**, because Record set's
+		 * delta writes a body as one string — which here would overwrite every
+		 * zone. Removals and appends then run on the shared path, after, so a
+		 * position still means what the render meant by it.
 		 */
 		const deltas: Record<number, Partial<RecordEntry>> = {};
 		for (const [position, delta] of Object.entries(data.records ?? {})) {
@@ -791,24 +924,13 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			void text;
 			deltas[Number(position)] = rest;
 		}
-		const touched = new Set([
-			...Object.keys(data.records ?? {}).filter(
-				(position) => data.records[Number(position)]?.body !== undefined,
-			),
-			...Object.keys(data.actionEdits ?? {}),
-		]);
-		for (const position of touched) {
+		for (const [position, edit] of Object.entries(data.zoneEdits ?? {})) {
 			const at = Number(position);
 			const block = records[at];
 			if (block === undefined) continue;
 			// A record whose fence will not read is one this must not write.
 			if (!readFenced(block.head + block.rest).ok) continue;
-			const rest = withBody(
-				config,
-				block.rest,
-				data.actionEdits?.[at],
-				data.records?.[at]?.body,
-			);
+			const rest = withZoneEdit(config, block.rest, edit);
 			if (rest !== block.rest) records[at] = withRecordBody(block, block.head, rest);
 		}
 		const next: RecordSection = editRecords(
@@ -1089,6 +1211,11 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			 */
 			const playHead = element('div', 'sheetsmith-stat-block-play-head', content);
 			const names = active.map(({ record }) => recordLabel(record.name, noun));
+			// With one form on, its picture sits at the title row's inline start;
+			// with two, each form's own name row carries its own.
+			const failures = element('div', 'sheetsmith-stat-block-picture-problems', content);
+			const only = active.length === 1 ? active[0] : undefined;
+			if (only !== undefined) drawThumb(playHead, only.record, recordLabel(only.record.name, noun), failures, false);
 			element(
 				'div',
 				`sheetsmith-stat-block-title${active.length === 0 ? ' sheetsmith-stat-block-title-none' : ''}`,
@@ -1157,7 +1284,11 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			for (const { record, at } of active) {
 				const named = recordLabel(record.name, noun);
 				const panel = element('div', 'sheetsmith-stat-block-form', content);
-				if (active.length > 1) element('div', 'sheetsmith-stat-block-form-name', panel, named);
+				if (active.length > 1) {
+					const row = element('div', 'sheetsmith-stat-block-form-name', panel);
+					drawThumb(row, record, named, failures, true);
+					element('span', 'sheetsmith-stat-block-form-title', row, named);
+				}
 				drawForm(panel, record, at, named, false);
 			}
 			// Active but unreadable is not "on" to `isOn`, so it is said here: the
@@ -1301,7 +1432,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				(at, inSet) => context.onToggleRecord?.(at, inSet),
 				defaultOpen,
 			);
-			shiftOpenBodies(config.id, removedAt, records.length);
+			shiftOpenZones(config.id, removedAt);
 		}
 
 		/** Append a record named for the noun, open it, and land in its name. */
@@ -1325,6 +1456,75 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 * edit glyph labelled. What a reader steps at the table — a ceilinged
 		 * number's steppers, a toggle — is a control in both.
 		 */
+		/**
+		 * A form's picture in play: a thumbnail through the shared painter, drawn
+		 * only where the note holds a picture line and **Picture** is on. A
+		 * reference that does not draw takes no thumbnail and says the painter's
+		 * own sentence under the head, so the failure is on screen.
+		 */
+		function drawThumb(
+			row: HTMLElement,
+			record: StatBlockEntry,
+			named: string,
+			failures: HTMLElement,
+			/**
+			 * Whether the sentence names its form: only with two on, where two
+			 * lines under one head would otherwise not say whose picture failed.
+			 * With one on, the painter's sentence alone, under that form's title.
+			 */
+			prefixed: boolean,
+		): void {
+			if (!hasPicture(config) || record.picture === undefined) return;
+			const thumb = element('div', 'sheetsmith-stat-block-thumb', row);
+			row.insertBefore(thumb, row.firstChild);
+			renderPictureFrame(thumb, {
+				classes: { frame: 'sheetsmith-image-frame', picture: 'sheetsmith-image-picture', field: 'sheetsmith-image-input' },
+				source: record.picture,
+				name: `${named} picture`,
+				// The form's name is beside it in the title's type.
+				alt: '',
+				prefix: null,
+				status,
+				readOnly: true,
+				onError: (message) => {
+					thumb.remove();
+					// The painter's sentence names the fault; the fix is this
+					// component's, since in play the thumbnail has no field to press
+					// (`docs/UI.md` §10). Image and Passport keep theirs, whose frame
+					// is the field.
+					const said = `${message} Set it under Every form, in Picture.`;
+					element('div', 'sheetsmith-stat-block-picture-problem', failures, prefixed ? `${named}: ${said}` : said);
+				},
+				...(context.resource === undefined ? {} : { resource: context.resource }),
+				onCommit: () => undefined,
+			});
+		}
+
+		/**
+		 * The open form's **Picture** section under Every form: the whole frame and
+		 * its field, `picture-frame.ts`'s gesture, suggester and refusals exactly.
+		 * A draft that is not one embed is refused in the field and nothing is
+		 * written; an empty field removes the line.
+		 */
+		function drawPictureSection(into: HTMLElement, record: StatBlockEntry, at: number, named: string): void {
+			const wrap = element('section', 'sheetsmith-stat-block-section sheetsmith-stat-block-picture', into);
+			const head = element('div', 'sheetsmith-stat-block-section-head', wrap);
+			element('h4', 'sheetsmith-component-label sheetsmith-stat-block-section-heading', head, 'Picture');
+			const box = element('div', 'sheetsmith-stat-block-picture-box', wrap);
+			renderPictureFrame(box, {
+				classes: { frame: 'sheetsmith-image-frame', picture: 'sheetsmith-image-picture', field: 'sheetsmith-image-input' },
+				source: record.picture ?? '',
+				name: `${named} picture`,
+				alt: '',
+				prefix: null,
+				status,
+				...(context.resource === undefined ? {} : { resource: context.resource }),
+				...(context.suggestFile === undefined ? {} : { suggestFile: context.suggestFile }),
+				refuse: (next) => embedRefusal(next),
+				onCommit: (next) => context.onChange({ records: {}, zoneEdits: { [at]: { picture: next } } }),
+			});
+		}
+
 		function drawForm(
 			into: HTMLElement,
 			record: StatBlockEntry,
@@ -1347,15 +1547,30 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			// A form's `=` on a component's single number is one of its stats, so it
 			// is read in the strip beside HP and Speed rather than in the list.
 			const set = [...changes.values()].flat().filter((change) => change.vital);
-			for (const part of sectionOrder(config)) {
-				if (part.key === 'vitals') {
+			if (editing && hasPicture(config)) drawPictureSection(into, record, at, named);
+			const zones = bodyZones(config);
+			const zoneHost: ZoneHost = {
+				host: controls,
+				armed,
+				doc,
+				record: at,
+				named,
+				editing,
+				zones,
+				pictureGuard: hasPicture(config) && record.picture === undefined,
+				commit: (edit) => context.onChange({ records: {}, zoneEdits: { [at]: edit } }),
+			};
+			for (const part of zoneOrder(config)) {
+				const key = part.key.trim().toLowerCase();
+				const heading = (part.heading ?? '').trim();
+				if (key === 'vitals') {
 					const vitals = fields.filter((field) => fieldType(field) !== 'modifier');
 					if (vitals.length === 0 && set.length === 0) continue;
-					const host = part.name === undefined ? into : section(into, part.name).body;
+					const host = heading === '' ? into : section(into, heading).body;
 					const strip = element('div', 'sheetsmith-stat-block-vitals', host);
 					for (const field of vitals) drawVital(strip, into, field, record, at, named, scope, editing);
 					for (const change of set) drawSetVital(strip, change);
-				} else if (part.key === 'modifiers') {
+				} else if (key === 'changes') {
 					for (const field of fields) {
 						if (fieldType(field) === 'modifier') {
 							drawPlayChanges(
@@ -1364,20 +1579,19 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 								record,
 								at,
 								named,
-								part.name ?? fieldLabel(field),
+								heading === '' ? fieldLabel(field) : heading,
 								editing,
 								changes.get(field.key) ?? [],
 							);
 						}
 					}
-				} else if (part.key === 'actions') {
-					if (actionColumns(config).length === 0) continue;
-					const heading = part.name ?? actionName(config);
-					drawActionTable(section(into, heading).body, record, at, named, heading, editing);
 				} else {
-					drawProse(into, record, at, named, part.name ?? bodyName(config));
+					const zone = zones.find((one) => one.key === part.key.trim());
+					if (zone !== undefined) drawZone(into, zone, record.zones?.[zone.key], zoneHost);
 				}
 			}
+			// After the layout's zones: what no zone owns, drawn on both faces.
+			for (const drift of record.drift ?? []) drawDrift(into, drift, context, editing);
 		}
 
 		/** A record whose fence will not read: its prose alone, which is what survives. */
@@ -1658,251 +1872,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				onCommit: commit,
 			});
 		}
-
-		/**
-		 * **The action list, one table in both faces**: the sheet's own Table —
-		 * `.sheetsmith-table` inside `.sheetsmith-table-box`, its header row,
-		 * its row rules and its framed surface — with one column structure held
-		 * by one `<colgroup>`: the name about 30%, a number about five
-		 * characters, a text column the rest. **In play the cells are text**, the
-		 * name bold with its links live and a number signed; **under Every form
-		 * they are fields**, chromeless until hovered or focused, set so their
-		 * text sits where In play's does, with a delete column and **Add** as the
-		 * box's foot, the Table's own add row.
-		 */
-		function drawActionTable(
-			into: HTMLElement,
-			record: StatBlockEntry,
-			at: number,
-			named: string,
-			heading: string,
-			editing: boolean,
-		): void {
-			const columns = actionColumns(config);
-			const all = record.actions ?? [];
-			/*
-			 * **A placeholder row is not an action in play.** **Add** writes a row
-			 * named for `actionName` with every other cell empty, which is
-			 * scaffolding to fill in under Every form; read as a row it would be an
-			 * attack called *Attack* with no bonus and no damage. So In play leaves
-			 * out a row whose name is still that word and whose other cells are all
-			 * empty. A row with a name of its own and no numbers — *Multiattack* —
-			 * is a real action and is drawn.
-			 */
-			const shown = all
-				.map((cells, index) => ({ cells, index }))
-				.filter(({ cells }) => editing || !isPlaceholderAction(cells, actionName(config)));
-			if (!editing && shown.length === 0) {
-				element('p', 'sheetsmith-stat-block-empty', into, 'None yet. Add them under Every form.');
-				return;
-			}
-			const wrap = element(
-				'div',
-				`sheetsmith-table-box sheetsmith-stat-block-actions${editing ? ' sheetsmith-stat-block-actions-editing' : ''}`,
-				into,
-			);
-			const table = element('table', 'sheetsmith-table sheetsmith-stat-block-table', wrap);
-			table.setAttribute('aria-label', `${named} ${actionName(config)}`);
-			const widths = element('colgroup', '', table);
-			element('col', 'sheetsmith-stat-block-col-name', widths);
-			for (const column of columns) {
-				element('col', `sheetsmith-stat-block-col-${column.type ?? 'text'}`, widths);
-			}
-			// The delete column on both faces, empty in play, so the percentages
-			// resolve against one width and no column moves on a face switch.
-			element('col', 'sheetsmith-stat-block-col-remove', widths);
-			const headRow = element('tr', '', element('thead', '', table));
-			/*
-			 * **A column heading that says what its section's heading says is
-			 * hidden from sight and kept for a screen reader**, which reads each
-			 * cell by its column: *Attack* over *Attack* says one word twice. Any
-			 * column, by what it says, rather than always the name column, so a
-			 * renamed section that no longer repeats it shows it again.
-			 */
-			const repeats = (text: string): boolean => text.trim().toLowerCase() === heading.trim().toLowerCase();
-			const headCell = (cls: string, text: string): void => {
-				const th = element('th', cls, headRow);
-				th.setAttribute('scope', 'col');
-				if (repeats(text)) element('span', 'sheetsmith-sr-only', th, text);
-				else th.textContent = text;
-			};
-			headCell('sheetsmith-stat-block-action-name', actionName(config));
-			for (const column of columns) {
-				headCell(`sheetsmith-stat-block-action-${column.type ?? 'text'}`, columnLabel(column));
-			}
-			const removeHead = element('th', 'sheetsmith-stat-block-remove-cell', headRow);
-			if (editing) element('span', 'sheetsmith-sr-only', removeHead, 'Delete');
-			else removeHead.setAttribute('aria-hidden', 'true');
-			const body = element('tbody', '', table);
-			if (!editing) {
-				for (const { cells } of shown) {
-					const tr = element('tr', 'sheetsmith-stat-block-action-row', body);
-					const name = element('th', 'sheetsmith-stat-block-action-name', tr);
-					name.setAttribute('scope', 'row');
-					paintLinkedText(element('strong', '', name), cells[0] ?? '', { link: context.link });
-					columns.forEach((column, offset) => {
-						const td = element('td', `sheetsmith-stat-block-action-${column.type ?? 'text'}`, tr);
-						const text = (cells[offset + 1] ?? '').trim();
-						paintLinkedText(td, column.type === 'number' ? signedText(text) : text, { link: context.link });
-					});
-					element('td', 'sheetsmith-stat-block-remove-cell', tr).setAttribute('aria-hidden', 'true');
-				}
-				return;
-			}
-			const showRefusal = recordRefusalNotice(controls, wrap);
-			all.forEach((cells, index) => {
-				const tr = element('tr', '', body);
-				const actionLabel = (cells[0] ?? '').trim() === '' ? `${actionName(config)} ${index + 1}` : cells[0] ?? '';
-				const write = (heading: string, next: string): void => {
-					context.onChange({
-						records: {},
-						actionEdits: { [at]: { rows: { [index]: { [heading]: next } } } },
-					});
-				};
-				/*
-				 * **One control for every cell, the name included**: a one-row field
-				 * that wraps, at one height, padding and weight. The name was the
-				 * record name's field and drew taller and bold beside its neighbours;
-				 * its link reads live under In play, where the row is text.
-				 */
-				const nameCell = element('td', 'sheetsmith-stat-block-action-name', tr);
-				const nameInput = element('textarea', 'sheetsmith-record-input sheetsmith-stat-block-cell', nameCell);
-				nameInput.rows = 1;
-				nameInput.value = cells[0] ?? '';
-				nameInput.setAttribute('aria-label', `${named} ${actionName(config)} ${index + 1}`);
-				bindEditable(nameInput, {
-					initial: cells[0] ?? '',
-					announceCommit: (next) => {
-						status.textContent = `${actionName(config)} ${next}`;
-					},
-					refuse: pipeRefusal,
-					onRefusal: showRefusal,
-					onCommit: (next) => write(actionName(config), next),
-				});
-				columns.forEach((column, offset) => {
-					const td = element('td', `sheetsmith-stat-block-action-cell sheetsmith-stat-block-action-${column.type ?? 'text'}`, tr);
-					/*
-					 * **A one-line field that wraps**: a `<textarea>` one row tall that
-					 * grows with its text, on the same one-line gesture — Enter commits,
-					 * a line break is refused — so "1d8+4 piercing" shows whole in a
-					 * narrow cell rather than clipping, and the table never scrolls.
-					 */
-					const input = element('textarea', 'sheetsmith-record-input sheetsmith-stat-block-cell', td);
-					input.rows = 1;
-					const stored = cells[offset + 1] ?? '';
-					/*
-					 * **A number reads signed in its field as in its row**, `+6`; the
-					 * sign is the drawing's, so a commit that only kept it writes nothing
-					 * and one that changed the number writes it in the note's spelling.
-					 */
-					const signed = column.type === 'number';
-					const shown = signed ? signedText(stored) : stored;
-					input.value = shown;
-					input.setAttribute('aria-label', `${actionLabel} ${columnLabel(column)}`);
-					bindEditable(input, {
-						initial: shown,
-						step: column.type === 'number',
-						announceCommit: (next) => {
-							status.textContent = `${actionLabel} ${columnLabel(column)} ${next}`;
-						},
-						refuse: pipeRefusal,
-						onRefusal: showRefusal,
-						onCommit: (next) =>
-							write(column.key, signed && !/^\+/.test(stored) ? next.replace(/^\+/, '') : next),
-					});
-				});
-				const removeCell = element('td', 'sheetsmith-stat-block-remove-cell', tr);
-				const remove = element('button', 'sheetsmith-table-remove-button sheetsmith-stat-block-remove', removeCell);
-				remove.type = 'button';
-				setIcon(remove, REMOVE_ICON);
-				bindArmToConfirm({
-					button: remove,
-					row: tr,
-					armedClass: 'sheetsmith-table-remove-armed',
-					rowClass: 'sheetsmith-table-row-arming',
-					named: `Delete ${actionLabel}`,
-					announce: (said) => {
-						status.textContent = said;
-					},
-					commit: () => {
-						context.onChange({ records: {}, actionEdits: { [at]: { removed: [index] } } });
-					},
-					register: armed,
-					doc,
-				});
-			});
-			// The Table's own add row, the box's foot.
-			const add = element(
-				'button',
-				'sheetsmith-table-add-button sheetsmith-stat-block-add-action',
-				wrap,
-				`Add ${actionName(config).toLowerCase()}`,
-			);
-			add.type = 'button';
-			add.addEventListener('click', () => {
-				status.textContent = `${actionName(config)} added`;
-				context.onChange({
-					records: {},
-					actionEdits: { [at]: { added: [{ [actionName(config)]: actionName(config) }] } },
-				});
-			});
-		}
-
-		/** A record's prose behind a disclosure named `bodyName`, closed at first. */
-		function drawProse(
-			into: HTMLElement,
-			record: StatBlockEntry,
-			at: number,
-			named: string,
-			/** The section's heading, which is the disclosure's own word. */
-			heading: string,
-		): void {
-			const key = `${config.id}:${at}`;
-			const wrap = element('div', 'sheetsmith-stat-block-prose sheetsmith-stat-block-section', into);
-			const toggleButton = element('button', 'sheetsmith-stat-block-disclosure', wrap);
-			const glyph = element('span', 'sheetsmith-stat-block-disclosure-glyph', toggleButton);
-			glyph.setAttribute('aria-hidden', 'true');
-			element('span', 'sheetsmith-component-label sheetsmith-stat-block-section-heading', toggleButton, heading);
-			const prose = element('div', 'sheetsmith-record-body sheetsmith-stat-block-body sheetsmith-stat-block-panel', wrap);
-			prose.id = `sheetsmith-stat-block-body-${config.id}-${at}-${into.closest('.sheetsmith-stat-block-detail') === null ? 'play' : 'list'}`;
-			// The button's visible word is its name, so the disclosure adds none.
-			bindDisclosure({
-				button: toggleButton,
-				region: prose,
-				glyph,
-				open: openBodies.has(key),
-				onToggle: (open) => {
-					if (open) openBodies.add(key);
-					else openBodies.delete(key);
-				},
-			});
-			drawRecordBody(prose, wrap, controls, { text: record.body, error: null, named }, (next) =>
-				context.onChange({ records: { [at]: { body: next } } }),
-			);
-		}
 	},
 };
-
-/**
- * Why an action cell's text cannot be stored, or null: a line break, which a
- * table row cannot hold. A pipe is escaped by `writeTable`, and a link is
- * welcome, since the table is plain markdown Obsidian indexes.
- */
-function pipeRefusal(next: string): string | null {
-	return /[\r\n]/.test(next)
-		? 'Not saved. A table cell is one line. Remove the line break.'
-		: null;
-}
-
-/**
- * Whether an action row is the placeholder **Add** writes: its name still the
- * action column's own word, or blank, and every other cell empty.
- */
-function isPlaceholderAction(cells: readonly string[], placeholder: string): boolean {
-	const name = (cells[0] ?? '').trim().toLowerCase();
-	if (name !== '' && name !== placeholder.trim().toLowerCase()) return false;
-	return cells.slice(1).every((cell) => cell.trim() === '');
-}
 
 /**
  * A number as a modifier reads, signed: `6` reads `+6` and `0` reads `+0`, the

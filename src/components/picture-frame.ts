@@ -133,6 +133,18 @@ export interface PictureFrameOptions {
 	 * a property this file would otherwise be stating an opinion about.
 	 */
 	fit?: 'contain' | 'cover' | 'stretch';
+	/**
+	 * Draw the picture alone, with no field and no press: a Stat block form's
+	 * thumbnail in play, which is read there and set under Every form.
+	 */
+	readOnly?: boolean;
+	/**
+	 * Hand a failure to the caller rather than drawing it in the frame: the
+	 * thumbnail, which is too small to hold a sentence and says it under its
+	 * head instead. The sentence is this module's either way, so a missing file
+	 * reads the same on every surface.
+	 */
+	onError?: (message: string) => void;
 	onCommit: (next: string) => void;
 }
 
@@ -162,19 +174,11 @@ export function renderPictureFrame(
 	const frame = box.createDiv();
 	frame.classList.add(options.classes.frame);
 
-	const field = box.createEl('input');
-	field.type = 'text';
-	field.classList.add(options.classes.field);
-	field.value = options.source;
-	field.placeholder = EMBED_PLACEHOLDER;
-	// The label may be hidden and the field still has to have a name.
-	field.setAttribute('aria-label', options.name);
-	// A reference is not prose — `Sildar Hallwinter.png` squiggles — and the
-	// field's text is transparent unfocused, so the marks would land on the
-	// portrait rather than on anything the reader is reading.
-	spellcheckWhileFocused(field);
-
 	const showError = (message: string): void => {
+		if (options.onError !== undefined) {
+			options.onError(message);
+			return;
+		}
 		const error = frame.createDiv('sheetsmith-error');
 		error.textContent =
 			options.prefix === null ? message : `${options.prefix}: ${message}`;
@@ -263,6 +267,20 @@ export function renderPictureFrame(
 	};
 
 	paint(null);
+	if (options.readOnly === true) return;
+
+	const field = box.createEl('input');
+	field.type = 'text';
+	field.classList.add(options.classes.field);
+	field.value = options.source;
+	field.placeholder = EMBED_PLACEHOLDER;
+	// The label may be hidden and the field still has to have a name.
+	field.setAttribute('aria-label', options.name);
+	// A reference is not prose — `Sildar Hallwinter.png` squiggles — and the
+	// field's text is transparent unfocused, so the marks would land on the
+	// portrait rather than on anything the reader is reading.
+	spellcheckWhileFocused(field);
+
 	if (unusable !== null) {
 		// Said as well as drawn, since a reader who cannot see the frame has only
 		// the label and an empty box otherwise.

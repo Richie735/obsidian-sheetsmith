@@ -360,6 +360,28 @@ export default defineConfig(
 								 */
 								'!./record-fields',
 								'!./record-controls',
+								/*
+								 * **A stat block form's body zones, drawn**: a table, a list
+								 * of features or a block of text under each heading, and
+								 * the drift no zone owns (`docs/features/stat-block-zones.md`).
+								 * On `modifier-form.ts`'s terms, for atomicity at one
+								 * consumer: drawing three kinds of zone on two faces is a
+								 * second job in `stat-block.ts`, whose job is a list of
+								 * records under a picker. In no registry, declaring no
+								 * `ComponentDefinition`, touching no file, and taking only
+								 * `setIcon` from `obsidian`.
+								 */
+								'!./stat-block-zones',
+								/*
+								 * **What a Stat block zone's key, heading and columns may be**,
+								 * shared by the component's configuration check and the zone
+								 * editor, each phrasing its own sentence around one predicate
+								 * (`docs/features/stat-block-zones.md`). On `typed-value.ts`'s
+								 * terms: a predicate shared is one copy (PATTERNS §1). In no
+								 * registry, declaring no `ComponentDefinition`, importing
+								 * nothing from `obsidian` and touching no file.
+								 */
+								'!./zone-rules',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -378,6 +400,8 @@ export default defineConfig(
 								'!../components/record-line-fit',
 								'!../components/record-fields',
 								'!../components/record-controls',
+								'!../components/stat-block-zones',
+								'!../components/zone-rules',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
