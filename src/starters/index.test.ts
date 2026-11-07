@@ -259,10 +259,16 @@ describe.each(TWELVE_COLUMN)('%s shares the twelve-column architecture', (_name,
 			const tabs = tabSet.children ?? [];
 			expect(tabs.length).toBeGreaterThanOrEqual(2);
 			for (const tab of tabs) {
-				expect(
-					isContainer(getComponent(tab.type)),
-					`${tab.label} is not a container`,
-				).toBe(true);
+				/*
+				 * **A tab is a container, or a component that fills the tab whole.**
+				 * The 5e sheet's Forms tab is a Stat block placed straight in its tab
+				 * set (`docs/features/character-forms.md`): one block filling the
+				 * region, so a group around it would hold one child and nothing else.
+				 */
+				if (!isContainer(getComponent(tab.type))) {
+					expect(tab.children, `${tab.label} holds children it cannot draw`).toBeUndefined();
+					continue;
+				}
 				expect((tab.children ?? []).length).toBeGreaterThan(0);
 				// Two deep is the cap `parseLayout` enforces, so a tab's own children
 				// hold none of their own — the file would be refused outright if they
@@ -1283,6 +1289,7 @@ describe('the 5e sheet is a complete system sheet', () => {
 		'capacity card 3,2,3,1',
 		'attuned card 1,3,5,1',
 		'inventory table 1,4,5,5',
+		'forms stat-block 1,1,5,10',
 		'senses table 1,7,3,2',
 		'hit_dice pool 1,9,3,1',
 		'training rich-text 1,10,3,4',
@@ -1310,7 +1317,7 @@ describe('the 5e sheet is a complete system sheet', () => {
 	];
 
 	it('replicates every component, its type and its placement', () => {
-		expect(walked).toHaveLength(54);
+		expect(walked).toHaveLength(55);
 		expect(layout.components).toHaveLength(15);
 		expect(
 			walked.map((config) => {
@@ -1333,7 +1340,32 @@ describe('the 5e sheet is a complete system sheet', () => {
 		const skills = walked.find((config) => config.id === 'skills');
 		expect((skills as { rows?: unknown[] }).rows).toHaveLength(18);
 		// And the reset bindings, which are what the two triggers act through.
-		expect(walked.filter((config) => config.reset !== undefined)).toHaveLength(8);
+		expect(walked.filter((config) => config.reset !== undefined)).toHaveLength(9);
+	});
+
+	it('reads a raw ability score in one formula only, the known limit forms leave', () => {
+		/*
+		 * A form changes ability *modifiers*, so a formula reading a score keeps the
+		 * character's own while a form is active (`docs/features/character-forms.md`).
+		 * The list of such formulas is the release note's known limit, so it is
+		 * scanned rather than trusted: a second one is a decision to say so.
+		 */
+		const reading = walked.filter((config) =>
+			JSON.stringify({ ...config, children: undefined }).match(/abilities\.[A-Z]+\.value/),
+		);
+		expect(reading.map((config) => config.id)).toEqual(['capacity']);
+	});
+
+	it('gives its abilities, saves and skills a slot a form can push at', () => {
+		const abilities = walked.find((config) => config.id === 'abilities') as { derived?: string };
+		expect(abilities.derived).toBe('mod(value + mod.self)');
+		const total = (id: string) =>
+			(walked.find((config) => config.id === id) as { columns?: { key: string; formula?: string }[] })
+				.columns?.find((column) => column.key === 'Total')?.formula;
+		expect(total('saves')).toBe('ability + Prof * prof + mod.self');
+		expect(total('skills')).toBe('ability + Training * prof + mod.self');
+		// And Bark Skin floors armour class rather than setting it.
+		expect(layout.modifiers?.find((one) => one.name === 'Bark Skin')?.operator).toBe('upgrade');
 	});
 
 	it('binds every reset to a trigger the layout declares', () => {
