@@ -1486,6 +1486,18 @@ export interface ModifierPush {
 	 * definition it enrols in.
 	 */
 	row: RowValues;
+	/**
+	 * That the row belongs to a state the character is currently in — a form
+	 * that is on — so a value it changes is tinted on the sheet
+	 * (`docs/features/character-forms.md`, "The tint").
+	 *
+	 * **A fact about the row, never about the modifier**, which is what keeps
+	 * this interface's opening sentence true: the push still carries no target,
+	 * no bonus type, no amount and no reason. Absent is false, which is every
+	 * push written before this existed. Nothing here names the component that
+	 * sets it; a Table could flag a Conditions row tomorrow.
+	 */
+	inPlay?: boolean;
 }
 
 /**
@@ -1570,6 +1582,12 @@ export interface ModifierLine {
 	applies?: ModifierPhase;
 	/** Why this line contributes nothing, or null where it does. */
 	suppressed: string | null;
+	/**
+	 * That the row this line came from is in play (`ModifierPush.inPlay`), which
+	 * is what the sheet's tint reads: an applied line carrying it is a value a
+	 * form changed. Absent is false.
+	 */
+	inPlay?: boolean;
 }
 
 /**

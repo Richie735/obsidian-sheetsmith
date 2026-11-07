@@ -3826,6 +3826,9 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		'sheetsmith-trigger',
 		'sheetsmith-panel-line',
 		'sheetsmith-panel-add',
+		'sheetsmith-stat-block-revert',
+		'sheetsmith-stat-block-action',
+		'sheetsmith-stat-block-disclosure',
 	];
 	/**
 	 * Classes on a sheet `<button>` that set no padding of their own: the four
@@ -4749,5 +4752,100 @@ describe('the selected canvas block is ringed outside its box', () => {
 		expect(forced.map((rule) => declarations(rule.body))).toEqual([
 			['outline-color: SelectedItem'],
 		]);
+	});
+});
+
+describe('the stat block under Every form (docs/features/character-forms.md)', () => {
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	it('titles an open form\'s name at In play\'s title size, field and link layer alike', () => {
+		const open = all.find((rule) => rule.selector.includes("[aria-expanded='true']") && rule.selector.includes('stat-block-record'));
+		expect(open?.selector).toContain('.sheetsmith-record-name-input');
+		expect(open?.selector).toContain('.sheetsmith-record-name-layer');
+		expect(open?.body).toMatch(/font-size:\s*var\(--font-ui-large\)/);
+		expect(open?.body).toMatch(/font-weight:\s*var\(--font-bold\)/);
+		// The same pair as In play's title, so the two faces title a form alike.
+		const title = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-title');
+		expect(title?.body).toMatch(/font-size:\s*var\(--font-ui-large\)/);
+		expect(title?.body).toMatch(/font-weight:\s*var\(--font-bold\)/);
+	});
+
+	it('draws each vital as a tile in the Card\'s clothes, its number at the card value size', () => {
+		const tile = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital');
+		expect(tile?.body).toMatch(/border:\s*1px solid var\(--background-modifier-border\)/);
+		expect(tile?.body).toMatch(/border-radius:\s*var\(--radius-m\)/);
+		expect(tile?.body).toMatch(/background-color:\s*var\(--background-secondary\)/);
+		const value = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital-value');
+		expect(value?.body).toMatch(/font-size:\s*var\(--sheetsmith-card-value-size\)/);
+	});
+
+	it('raises the tiles, the boxes and the head rule under more contrast, after their base rules', () => {
+		// Equal weight, so only order decides: a block above the base rules lost.
+		const css = CSS_WITHOUT_COMMENTS;
+		const more = [...css.matchAll(/@media \(prefers-contrast: more\) \{/g)]
+			.map((match) => match.index ?? -1)
+			.find((at) => {
+				const block = css.slice(at, css.indexOf('\n}', at));
+				return block.includes('.sheetsmith-stat-block-panel') && /border-color:\s*var\(--text-muted\)/.test(block);
+			});
+		expect(more).toBeDefined();
+		const block = css.slice(more ?? 0, css.indexOf('\n}', more ?? 0));
+		for (const selector of [
+			'.sheetsmith-stat-block-vital',
+			'.sheetsmith-stat-block-panel',
+			'.sheetsmith-stat-block-play-head',
+			'.sheetsmith-stat-block-record > .sheetsmith-record-summary',
+			'.sheetsmith-table-box.sheetsmith-stat-block-actions',
+		]) {
+			expect(block, selector).toContain(selector);
+		}
+		const base = (pattern: RegExp): number => css.search(pattern);
+		for (const at of [
+			base(/\n\.sheetsmith-stat-block-vital \{/),
+			base(/\n\.sheetsmith-stat-block-panel \{/),
+			base(/\n\.sheetsmith-stat-block-play-head,\s*\n\.sheetsmith-stat-block-record > /),
+			base(/\n\.sheetsmith-view \.sheetsmith-table-box\.sheetsmith-stat-block-actions \{/),
+			base(/\n\.sheetsmith-table-box \{/),
+		]) {
+			expect(at).toBeGreaterThan(0);
+			expect(more ?? 0).toBeGreaterThan(at);
+		}
+	});
+
+	it('sets the attack table on the tiles\' surface and its header a gentle step off it, theme variables only', () => {
+		const box = all.find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions',
+		);
+		const tile = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital');
+		// The body is exactly the tiles' fill, and lays nothing over it.
+		const fill = /background-color:\s*(var\(--[a-z-]+\))/;
+		expect(box?.body.match(fill)?.[1]).toBe('var(--background-secondary)');
+		expect(box?.body.match(fill)?.[1]).toBe(tile?.body.match(fill)?.[1]);
+		expect(box?.body).not.toMatch(/background-image/);
+		// The header: half a hover step, under the row hover's whole one.
+		const head = all.find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-view .sheetsmith-stat-block-table thead th',
+		);
+		expect(head?.body).toMatch(/color-mix\(in srgb, var\(--background-modifier-hover\) 50%, transparent\)/);
+		for (const rule of [box, head]) expect(rule?.body).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
+		// Scoped to the stat block: no rule mixing the hover step is a bare Table's.
+		for (const rule of all) {
+			if (!/color-mix\(in srgb, var\(--background-modifier-hover\)/.test(rule.body)) continue;
+			expect(rule.selector, rule.selector).toContain('stat-block');
+		}
+	});
+
+	it('frames a text section in the same clothes and draws no divider between sections', () => {
+		const panel = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-panel');
+		expect(panel?.body).toMatch(/border-radius:\s*var\(--radius-m\)/);
+		const sectionRule = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-section');
+		expect(sectionRule?.body).not.toMatch(/border-top/);
+	});
+
+	it('floors a text vital at about 8em of the field\'s size, so Speed keeps its row', () => {
+		const vital = all.find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text)',
+		);
+		expect(vital?.body).toMatch(/min-width:\s*calc\(8 \* var\(--font-ui-small\)\)/);
 	});
 });

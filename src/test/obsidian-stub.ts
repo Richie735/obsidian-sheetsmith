@@ -350,6 +350,10 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 		['line', { x1: '10', x2: '10', y1: '11', y2: '17' }],
 		['line', { x1: '14', x2: '14', y1: '11', y2: '17' }],
 	],
+	'undo-2': [
+		['path', { d: 'M9 14 4 9l5-5' }],
+		['path', { d: 'M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11' }],
+	],
 	'chevron-down': [['path', { d: 'm6 9 6 6 6-6' }]],
 	'chevron-right': [['path', { d: 'm9 18 6-6-6-6' }]],
 	'chevron-left': [['path', { d: 'm15 18-6-6 6-6' }]],

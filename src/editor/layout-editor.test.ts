@@ -599,7 +599,7 @@ describe('the component picker', () => {
 	});
 
 	it('labels an example for the bare types that draw one and for no other line', () => {
-		const examples = ['card-set', 'roster', 'table', 'track', 'group', 'tab-set'];
+		const examples = ['card-set', 'roster', 'stat-block', 'table', 'track', 'group', 'tab-set'];
 		for (const value of pickerLines(harness)) {
 			pick(harness, value);
 			const option = harness.container.querySelector(
