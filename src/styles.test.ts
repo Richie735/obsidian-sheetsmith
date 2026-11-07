@@ -4933,4 +4933,12 @@ describe('stat block zones\' small fixes (docs/features/stat-block-zones.md)', (
 		expect(field?.body).toMatch(/field-sizing:\s*content/);
 		expect(field?.body).toMatch(/min-height:\s*calc\(2lh/);
 	});
+
+	it('starts an open form at the box\'s padding under the 360px query, and nowhere else', () => {
+		const narrow = all.filter((rule) => rule.context.join() === '@container sheetsmith-stat-block (max-width: 360px)');
+		const detail = narrow.find((rule) => rule.selector === '.sheetsmith-stat-block-detail');
+		expect(detail?.body).toMatch(/padding-inline-start:\s*0/);
+		const base = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-detail');
+		expect(base?.body).toMatch(/--sheetsmith-record-indent/);
+	});
 });

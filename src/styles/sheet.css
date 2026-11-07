@@ -8984,6 +8984,15 @@ a.sheetsmith-notice-action {
 }
 
 @container sheetsmith-stat-block (max-width: 360px) {
+	/* **An open form takes the whole width on a phone**
+	   (`docs/features/stat-block-zones.md`, the third small fix): the record
+	   indent that lines the detail up under the name squeezes the tiles and the
+	   tables here, so the detail starts at the box's own padding. The chevron
+	   stays on the summary line. */
+	.sheetsmith-stat-block-detail {
+		padding-inline-start: 0;
+	}
+
 	/* The picker takes a line of its own under the title; **Revert** follows on
 	   it where both fit. */
 	/* Past the head's own rule, (0,2,0) and later in the file, or its
