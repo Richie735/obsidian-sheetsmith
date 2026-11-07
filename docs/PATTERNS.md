@@ -682,9 +682,10 @@ still wants it.
   such method in the current typings. Read the report as "stop calling
   `createElement` here", never as a fix to apply.
 - **A style belongs in the stylesheet; an element's own `style` carries only what
-  a class cannot** [judgement]. Two things qualify and nothing else does:
-  **runtime geometry, through `setCssStyles()`**, and **a `--sheetsmith-*` value
-  the stylesheet then reads, through `style.setProperty`**. Never a bare
+  a class cannot** [judgement]. Two things qualify and nothing else does, besides
+  the vocabulary word below: **runtime geometry, through `setCssStyles()`**, and
+  **a `--sheetsmith-*` value the stylesheet then reads, through
+  `style.setProperty`**. Never a bare
   `.style.x =`. Obsidian's review guidelines ask for classes and name
   `setCssStyles`/`setCssProps` as the sanctioned exception.
 
@@ -708,6 +709,20 @@ still wants it.
   nothing today, every site that had it having been converted, and a check that
   can only pass vacuously is what §10 forbids. This one is held in review, which
   is what [judgement] means.
+
+  **A value from a fixed vocabulary takes a third route: a word in a
+  `data-sheetsmith-*` attribute, which the stylesheet maps one rule per word**
+  [checked: `styles.test.ts`, for the form tint]. A colour per value is the
+  case: a form's tint is one of `TINT_COLOURS`, written as
+  `data-sheetsmith-tint="green"`, and `sheet.css` holds
+  `[data-sheetsmith-tint='green'] { --sheetsmith-tint: var(--color-green); }`
+  per word, so no element carries a colour and every one is a theme variable
+  (`docs/UI.md` §1). Reaching for `setProperty` with the colour's variable
+  instead would put a theme reference in an inline style and leave nothing to
+  hold the vocabulary and the rules together; here `styles.test.ts` holds every
+  word in the list to its rule and every rule to a word in the list
+  (`docs/features/form-tint-colour.md`). Runtime geometry and an open-ended value
+  still take the two routes above.
 - **Config guard first.** Render the error, return, build nothing.
 
 ### The paint closure
