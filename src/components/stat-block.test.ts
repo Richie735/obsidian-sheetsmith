@@ -882,3 +882,10 @@ describe('a signed number cell', () => {
 		expect(applied(edits[0] as StatBlockData)).toBe(BODY.replace('| Bite | 6 |', '| Bite | 7 |'));
 	});
 });
+
+describe('a form below 0', () => {
+	it('says the stored value, with a true minus sign', () => {
+		const below = render(BODY.replace('HP: 22 / 34', 'HP: -3 / 34'));
+		expect(below.el.textContent).toContain('At \u22123. Carry any leftover damage over by hand.');
+	});
+});

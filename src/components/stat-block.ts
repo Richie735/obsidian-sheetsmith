@@ -1438,7 +1438,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const stored = splitBounded(raw).value;
 			if (stored.trim() !== '' && Number.isFinite(Number(stored)) && Number(stored) <= 0) {
 				item.classList.add('sheetsmith-stat-block-down');
-				element('div', 'sheetsmith-stat-block-down-note', row, 'At 0. Carry any leftover damage over by hand.');
+				// The stored value as the tile draws it, with a true minus sign.
+				const shown = Number(stored.trim());
+				const said = shown < 0 ? `\u2212${String(-shown)}` : String(shown);
+				element('div', 'sheetsmith-stat-block-down-note', row, `At ${said}. Carry any leftover damage over by hand.`);
 			}
 			drawSteppers(cell, number.input, accessible, field, (next) => number.set(next), number.ceiling);
 		}
