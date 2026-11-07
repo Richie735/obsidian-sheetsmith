@@ -138,6 +138,55 @@ function disableAtEnd(arrow: HTMLButtonElement, atEnd: boolean): void {
 }
 
 /**
+ * An item's up and down arrows, **one spelling for every list that draws
+ * them** — the outer lists' touch rows and a nested list whose order is
+ * observable (`nested-list-field.ts`) — so the two cannot drift on what an
+ * arrow is called, where it disables, or where focus goes (`docs/UI.md` §6).
+ *
+ * Each arrow names its item, disables at its end, and moves through
+ * `moveItem`. **Focus follows the item**: `tokenAt(to)` is the item's token
+ * after the move, which an outer list keys by name — the same token, which
+ * the pane restores on its own — and a nested list keys by index, which it has
+ * to be told. Where the move lands at an end, whose arrow
+ * is then disabled, focus goes to the other one — and only where it already
+ * stood on the pressed arrow, since a tap that focused nothing must not be
+ * given focus.
+ */
+export function reorderArrows<T>(
+	parent: HTMLElement,
+	list: T[],
+	index: number,
+	label: string,
+	tokenAt: (index: number) => string,
+	context: ListContext,
+): void {
+	const arrow = (direction: 'up' | 'down', glyph: string): void => {
+		const to = direction === 'up' ? index - 1 : index + 1;
+		const button = parent.createEl('button', {
+			cls: 'clickable-icon',
+			attr: { 'aria-label': `Move ${label} ${direction}` },
+		});
+		setIcon(button, glyph);
+		button.dataset.sheetsmithFocus = `${tokenAt(index)}-${direction}`;
+		const atEnd = to < 0 || to >= list.length;
+		disableAtEnd(button, atEnd);
+		if (atEnd) return;
+		button.addEventListener('click', () => {
+			// Asked only where the pane's own restoration would land it wrong: at
+			// an end, or where the item's token moved with its index.
+			const landsAtEnd = to === 0 || to === list.length - 1;
+			if (button.ownerDocument.activeElement === button && (landsAtEnd || tokenAt(to) !== tokenAt(index))) {
+				const other = direction === 'up' ? 'down' : 'up';
+				context.focusAfterRedraw(`${tokenAt(to)}-${landsAtEnd ? other : direction}`);
+			}
+			moveItem(list, index, to, context);
+		});
+	};
+	arrow('up', 'arrow-up');
+	arrow('down', 'arrow-down');
+}
+
+/**
  * Reorder and remove controls, and the drop target that goes with them —
  * every list field's, named for the item they act on (`docs/UI.md` §6).
  *
@@ -199,38 +248,7 @@ export function addControls<T>(
 		// `styles/editor.css` says why. Set here, it reaches every list that
 		// draws arrows and none that does not.
 		row.addClass('sheetsmith-entry-arrows');
-		const first = index === 0;
-		const last = index === list.length - 1;
-		const up = row.createEl('button', {
-			cls: 'clickable-icon',
-			attr: { 'aria-label': `Move ${label} up` },
-		});
-		setIcon(up, 'arrow-up');
-		up.dataset.sheetsmithFocus = `${token}-up`;
-		disableAtEnd(up, first);
-		up.addEventListener('click', () => {
-			// Landing first disables this arrow, so focus goes to the other one
-			// rather than falling to the body — and only where it already stood
-			// here, since a tap that focused nothing must not be given focus.
-			if (index === 1 && up.ownerDocument.activeElement === up) {
-				context.focusAfterRedraw(`${token}-down`);
-			}
-			moveItem(list, index, index - 1, context);
-		});
-
-		const down = row.createEl('button', {
-			cls: 'clickable-icon',
-			attr: { 'aria-label': `Move ${label} down` },
-		});
-		setIcon(down, 'arrow-down');
-		down.dataset.sheetsmithFocus = `${token}-down`;
-		disableAtEnd(down, last);
-		down.addEventListener('click', () => {
-			if (index === list.length - 2 && down.ownerDocument.activeElement === down) {
-				context.focusAfterRedraw(`${token}-up`);
-			}
-			moveItem(list, index, index + 1, context);
-		});
+		reorderArrows(row, list, index, label, () => token, context);
 	} else {
 		const handle = row.createEl('button', {
 			cls: 'clickable-icon sheetsmith-entry-handle',

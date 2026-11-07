@@ -25,20 +25,22 @@
  * A one-consumer sibling arrives with the atomicity argument or it does not
  * arrive.
  *
- * **No reorder control and no drag**, and that is a refusal rather than an
- * omission (`docs/UI.md` §6 asks for the argument). Order inside a nested list is
- * not observable for the one caller there is: a breakdown lists contributors in
- * *definition* declaration order, two changes at different targets appear in two
- * different breakdowns, and two at one target contest by size rather than by
- * position. So there is no reading a reorder could change. The outer list keeps
- * its drag, and `ListContext.drag` stays the single shared `{ index }` it is,
- * with nothing nested inside it competing for the same slot. A second caller for
- * which order *is* observable is what would earn one, and it would earn a second
- * shared index with it.
+ * **Up and down arrows where the caller hands its list over, and never a
+ * drag.** Order inside a modifier definition's changes is not observable — a
+ * breakdown lists contributors in *definition* order, and two changes at one
+ * target contest by size — so that caller passes no `items` and draws none. A
+ * Stat block table zone's columns are the second caller, and there order *is*
+ * observable: it is the order the columns are drawn in and the order a fresh
+ * table is written in (`docs/features/stat-block-zones.md`). The arrows are
+ * `list-fields.ts`'s own `reorderArrows`, the builder the outer lists draw, so
+ * the write, the redraw, the disabling at an end and the focus handoff are one
+ * spelling rather than two (`docs/UI.md` §6). No drag, so `ListContext.drag` stays the
+ * single shared `{ index }` the outer list owns, with nothing nested competing
+ * for the same slot.
  */
 
 import { setIcon } from 'obsidian';
-import { ListContext } from './list-fields';
+import { ListContext, reorderArrows } from './list-fields';
 
 export interface NestedListOptions {
 	/**
@@ -77,7 +79,15 @@ export interface NestedListOptions {
 	 * ask on the same terms.
 	 */
 	describeRemoval?: (index: number) => string | null;
-	/** Focus tokens are `${token}-${index}-remove` and `${token}-add`. */
+	/**
+	 * The list itself, where its order is observable and its lines are moved
+	 * with up and down arrows. Absent where order means nothing, which draws none.
+	 */
+	items?: unknown[];
+	/**
+	 * Focus tokens are `${token}-${index}-remove`, `${token}-${index}-up`,
+	 * `${token}-${index}-down` and `${token}-add`.
+	 */
 	token: string;
 	context: ListContext;
 }
@@ -140,6 +150,10 @@ export function nestedList(
 		 * rather than claiming a dividend it measured at zero.
 		 */
 		const track = line.createDiv('sheetsmith-nested-controls');
+		const items = options.items;
+		if (items !== undefined && options.count > 1) {
+			reorderArrows(track, items, index, options.nameOf(index), (at) => `${options.token}-${at}`, context);
+		}
 		const remove = track.createEl('button', {
 			cls: 'clickable-icon',
 			attr: { 'aria-label': `Remove ${options.nameOf(index)}` },

@@ -201,3 +201,50 @@ describe('the add control', () => {
 		expect(recorded.removes).toEqual([]);
 	});
 });
+
+describe('the reorder arrows a caller with an ordered list asks for', () => {
+	it('draws none where the caller hands no list over', () => {
+		const el = draw();
+		expect(el.querySelector('[aria-label^="Move"]')).toBeNull();
+	});
+
+	it('moves a line through moveItem, disabled at its ends, named for the line', () => {
+		const items = ['a', 'b', 'c'];
+		let persisted = 0;
+		list.persist = () => {
+			persisted++;
+		};
+		const el = draw({ count: 3, items, nameOf: (index) => String(items[index]) });
+		const up = (name: string) => el.querySelector<HTMLButtonElement>(`[aria-label="Move ${name} up"]`);
+		const down = (name: string) => el.querySelector<HTMLButtonElement>(`[aria-label="Move ${name} down"]`);
+		expect(up('a')?.disabled).toBe(true);
+		expect(down('c')?.disabled).toBe(true);
+		expect(down('a')?.disabled).toBe(false);
+		down('a')?.click();
+		expect(items).toEqual(['b', 'a', 'c']);
+		expect(persisted).toBe(1);
+	});
+
+	it('draws no arrows on the only line', () => {
+		const el = draw({ count: 1, items: ['a'] });
+		expect(el.querySelector('[aria-label^="Move"]')).toBeNull();
+	});
+});
+
+describe('focus through a move', () => {
+	it('follows the line to its new index, and to the other arrow where it lands at an end', () => {
+		const focusAfter: string[] = [];
+		list.focusAfterRedraw = (token) => {
+			focusAfter.push(token);
+		};
+		const items = ['a', 'b', 'c', 'd'];
+		const el = draw({ count: 4, items, nameOf: (index) => String(items[index]) });
+		const down = el.querySelector<HTMLButtonElement>('[aria-label="Move b down"]') as HTMLButtonElement;
+		down.focus();
+		down.click();
+		const up = el.querySelector<HTMLButtonElement>('[aria-label="Move b up"]') as HTMLButtonElement;
+		up.focus();
+		up.click();
+		expect(focusAfter).toEqual(['thing-2-down', 'thing-0-down']);
+	});
+});
