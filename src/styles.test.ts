@@ -4922,3 +4922,15 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(host?.body).toMatch(/position:\s*relative/);
 	});
 });
+
+describe('stat block zones\' small fixes (docs/features/stat-block-zones.md)', () => {
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	it('grows a record body\'s edit box with its text, from a two-line floor', () => {
+		// One rule for both components: a Record set's body and a Stat block's
+		// zone text are both `drawRecordBody`'s field.
+		const field = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-view .sheetsmith-record-body-input');
+		expect(field?.body).toMatch(/field-sizing:\s*content/);
+		expect(field?.body).toMatch(/min-height:\s*calc\(2lh/);
+	});
+});

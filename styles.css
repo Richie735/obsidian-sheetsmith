@@ -7820,6 +7820,13 @@ a.sheetsmith-notice-action {
 	/* The grid cell is the sizing control, so the browser's own corner handle
 	   would be a second one disagreeing with it. */
 	resize: none;
+	/* **It grows with its text, from a two-line floor**
+	   (`docs/features/stat-block-zones.md`, the second small fix): a fixed box
+	   scrolled a paragraph through two lines while it was typed. Up to the
+	   component's box, which scrolls past that. A Record set's body and every
+	   Stat block zone's text box share it. */
+	field-sizing: content;
+	min-height: calc(2lh + 2 * var(--size-2-1) + 2px);
 }
 
 /* Unfocused, the field is the thing underneath the rendered prose: its text
