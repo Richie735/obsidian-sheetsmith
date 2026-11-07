@@ -85,6 +85,46 @@ import { roundSum } from '../formula/expression';
 export const MODIFIED_CLASS = 'sheetsmith-modified';
 
 /**
+ * The attribute saying which published name a modified value is the number of
+ * (`docs/features/character-forms.md`, "Where a decoration lands").
+ *
+ * **What lets a sheet-wide pass find a value without knowing a component.** A
+ * component already knows which element is which number at the one moment it
+ * marks one modified, so the name is written there, beside the mark, and the
+ * tint pass (`view/placement-decorations.ts`) looks for it rather than for any
+ * component's own classes. A component that stamps nothing is tinted at its box.
+ */
+export const NAME_ATTRIBUTE = 'data-sheetsmith-name';
+
+/**
+ * The attribute on the box a modified value belongs to — its card, or its
+ * table row — which is what the form tint fills and outlines
+ * (`docs/features/character-forms.md`, "The tint"). Written by the component,
+ * which alone knows which box is which value's.
+ */
+export const BOX_ATTRIBUTE = 'data-sheetsmith-box';
+
+/**
+ * Mark a value something has been pushed at, say which published name it is,
+ * and say which box it belongs to.
+ *
+ * **The one route to the mark**, so the name cannot be missing where the mark is
+ * — a scan in `components/isolation.test.ts` holds every other spelling of
+ * either to none. `name` is absent where the caller publishes no name, which
+ * leaves the mark alone and the tint at the placement. `box` is the card or row
+ * the value sits in: absent or null, the tint falls back to the placement.
+ */
+export function stampModifiedHost(
+	host: HTMLElement,
+	name: string | undefined,
+	box?: HTMLElement | null,
+): void {
+	host.classList.add(MODIFIED_CLASS);
+	if (name !== undefined) host.setAttribute(NAME_ATTRIBUTE, name);
+	box?.setAttribute(BOX_ATTRIBUTE, '');
+}
+
+/**
  * The glyph every read-only account of a value wears: a Track's breakdown door,
  * a Pool's ceiling door and the note mark (`docs/UI.md` §9, "Which glyph").
  * `zap` is the modifier-*authoring* glyph; this is the one that opens something

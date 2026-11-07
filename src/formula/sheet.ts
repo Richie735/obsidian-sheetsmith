@@ -500,7 +500,16 @@ export function buildSheet(
 	 * the surface depends on which host drew it.
 	 */
 	promote?: (name: string, effect: TypedEffect) => Promise<PromoteResult>,
-): { env: FormulaEnv; modifiers: ModifierContext } {
+): {
+	env: FormulaEnv;
+	modifiers: ModifierContext;
+	/**
+	 * The names whose own formula reads a modifier (`SheetModifiers.marked`),
+	 * which is every name a breakdown can list a line at — so every name the
+	 * sheet's in-play tint can land on (`view/placement-decorations.ts`).
+	 */
+	marked: ReadonlySet<string>;
+} {
 	/*
 	 * The sources come from the *configuration* and never from a note, which is
 	 * SPEC §7's decision: which names accept a modifier, and which changes the
@@ -527,6 +536,7 @@ export function buildSheet(
 	let candidates: ReadonlySet<string> | null = null;
 	return {
 		env,
+		marked: input.marked,
 		modifiers: sheetModifiers(
 			input,
 			env,

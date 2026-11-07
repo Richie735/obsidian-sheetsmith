@@ -723,6 +723,24 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		expect(env.sheet('abilities.STR')).toBe(16);
 	});
 
+	it('names its card as the box in the card layout, so the tint fills the card', () => {
+		const { env, modifiers, data } = sheetOf();
+		const carded = { ...abilities, cardLayout: true };
+		const el = document.createElement('div');
+		roster.render(el, carded, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(roster, carded, data, env),
+			explainField: makeFieldExplainer(roster, carded, data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		const field = el.querySelector<HTMLElement>('[data-sheetsmith-name="abilities.STR"]');
+		expect(field).not.toBeNull();
+		const box = field?.closest('[data-sheetsmith-box]');
+		expect(box?.classList.contains('sheetsmith-card')).toBe(true);
+		expect(box).toBe(field?.closest('.sheetsmith-card'));
+	});
+
 	it('marks the value field and names the row and the component in the breakdown', () => {
 		const { env, modifiers, data } = sheetOf();
 		const el = document.createElement('div');
@@ -739,6 +757,12 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		const field = el.querySelector<HTMLInputElement>('.sheetsmith-card-input');
 		expect(field?.value).toBe('18');
 		expect(field?.classList.contains('sheetsmith-modified')).toBe(true);
+		expect(field?.getAttribute('data-sheetsmith-name')).toBe('abilities.STR');
+		// And its box is its row, the roster's band in this table layout, which
+		// the tint fills through its cells (a card layout's box is the card).
+		const box = field?.closest('[data-sheetsmith-box]');
+		expect(box?.tagName).toBe('TR');
+		expect(box).toBe(field?.closest('tr'));
 		expect(field?.title).toBe('18 with modifiers, 16 stored');
 		const describedBy = field?.getAttribute('aria-describedby');
 		expect(describedBy).not.toBeNull();

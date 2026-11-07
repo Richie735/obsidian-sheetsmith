@@ -508,3 +508,27 @@ describe("a field's placement is spelled in one place", () => {
 		expect(hits.sort()).toEqual(['list-fields.ts', 'record-set.ts']);
 	});
 });
+
+describe('a modified value is marked through one helper, which also names it', () => {
+	/*
+	 * **The tint finds a value by the name stamped beside its mark**
+	 * (`docs/features/character-forms.md`), so a mark written any other way is a
+	 * value a form changed that the tint cannot find. Card, Card set, Table and
+	 * Roster all mark through `stampModifiedHost`; this holds every other spelling
+	 * of the mark, and of the attribute, to none.
+	 */
+	it('adds the modified class, the name attribute and the box attribute in no file but the helper', () => {
+		const spelled = (source: string): boolean =>
+			/classList\.add\(\s*MODIFIED_CLASS\s*\)/.test(source) ||
+			/['"]data-sheetsmith-(name|box)['"]/.test(source);
+		const { files, hits } = scan(SRC, spelled, true);
+		expect(files).toBeGreaterThan(100);
+		expect(hits).toEqual(['modifier-breakdown.ts']);
+	});
+
+	it('is called where each of the four components marks a value', () => {
+		const calling = (source: string): boolean => source.includes('stampModifiedHost(');
+		const { hits } = scan(join(SRC, 'components'), calling, true);
+		expect(hits.sort()).toEqual(['card-face.ts', 'modifier-breakdown.ts', 'roster.ts', 'table.ts']);
+	});
+});

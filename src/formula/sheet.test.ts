@@ -925,6 +925,9 @@ describe('the sheet has one modifier assembly', () => {
 		// on one card, which is exactly the arithmetic a second assembly would get
 		// quietly wrong.
 		'../starters/index.test.ts',
+		// The eighth: the form tint is a pass over a drawn sheet, so its test draws
+		// one, through the same assembly (`docs/features/character-forms.md`).
+		'../view/placement-decorations.test.ts',
 	] as const;
 
 	/** The steps `buildSheet` owns, which a host naming any of them has copied. */

@@ -5977,6 +5977,15 @@ describe('table and mod.self', () => {
 			el.querySelectorAll('tbody .sheetsmith-table-value'),
 		).map((cell) => cell.classList.contains('sheetsmith-modified'));
 		expect(marked).toEqual([true, false]);
+		expect(
+			Array.from(el.querySelectorAll('[data-sheetsmith-name]')).map((one) =>
+				one.getAttribute('data-sheetsmith-name'),
+			),
+		).toEqual(['skills.acrobatics']);
+		// And its box is its row, which the tint fills through its cells.
+		const named = el.querySelector('[data-sheetsmith-name]') as HTMLElement;
+		expect(named.closest('[data-sheetsmith-box]')?.tagName).toBe('TR');
+		expect(named.closest('[data-sheetsmith-box]')).toBe(named.closest('tr'));
 	});
 
 	it('draws no mark on a computed column with no formula to modify', () => {

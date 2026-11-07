@@ -4849,3 +4849,73 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		expect(vital?.body).toMatch(/min-width:\s*calc\(8 \* var\(--font-ui-small\)\)/);
 	});
 });
+
+describe('the form tint (docs/features/character-forms.md)', () => {
+	const tint = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+		rule.selector.includes('.sheetsmith-in-play'),
+	);
+
+	it('fills and outlines at rest, and takes no literal colour', () => {
+		const base = tint.find(
+			(rule) => rule.context.length === 0 && /background-image:/.test(rule.body),
+		);
+		expect(base?.body).toMatch(/outline:\s*1px solid var\(--interactive-accent\)/);
+		expect(base?.body).toMatch(/color-mix\(in srgb, var\(--interactive-accent\) 12%/);
+		for (const rule of tint) expect(rule.body, rule.selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
+	});
+
+	it('drops the fill and doubles the outline under more contrast', () => {
+		const more = tint.filter((rule) => rule.context.includes('@media (prefers-contrast: more)'));
+		const fill = more.find((rule) => /background-image:\s*none/.test(rule.body));
+		const outline = more.find((rule) => /outline-width:\s*2px/.test(rule.body));
+		// The box and a row's cells both lose the fill; the box doubles its outline.
+		expect(fill?.selector).toContain('tr.sheetsmith-in-play > td');
+		expect(outline?.selector).toBe('.sheetsmith-view .sheetsmith-in-play:not(tr)');
+		// A row's cells thicken their share of the outline the same way.
+		const edge = more.find((rule) => /--sheetsmith-in-play-edge:\s*2px/.test(rule.body));
+		expect(edge?.selector).toContain('tr.sheetsmith-in-play > th');
+	});
+
+	it('fills and outlines a row through every cell, the name cell included, and not the row', () => {
+		const rowCells = tint.find(
+			(rule) => rule.context.length === 0 && rule.selector.includes('tr.sheetsmith-in-play > td'),
+		);
+		// One rule for both cell kinds, so the pinned name cell takes exactly the
+		// fill and the outline the value cells take, one layer each.
+		expect(rowCells?.selector).toContain('tr.sheetsmith-in-play > th');
+		expect(rowCells?.body).toMatch(/background-image:/);
+		expect(rowCells?.body).toMatch(/box-shadow:[^;]*inset/);
+		// The row itself draws neither, which is what made a second layer.
+		const box = tint.find((rule) => rule.context.length === 0 && /outline:/.test(rule.body));
+		expect(box?.selector).toBe('.sheetsmith-view .sheetsmith-in-play:not(tr)');
+		// And forced colors, which drops the shadow, rules the row top and bottom.
+		const forced = tint.find((rule) => rule.context.includes('@media (forced-colors: active)'));
+		expect(forced?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > th');
+		expect(forced?.body).toMatch(/border-bottom-color:\s*Highlight/);
+		// And at each end, which the shadows drew, so the row is closed all round.
+		const forcedRules = tint.filter((rule) => rule.context.includes('@media (forced-colors: active)'));
+		const start = forcedRules.find((rule) => /border-inline-start:\s*1px solid Highlight/.test(rule.body));
+		const end = forcedRules.find((rule) => /border-inline-end:\s*1px solid Highlight/.test(rule.body));
+		expect(start?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :first-child');
+		expect(end?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :last-child');
+	});
+
+	it('lays the pill over its box, taking no room', () => {
+		const pill = tint.find(
+			(rule) => rule.context.length === 0 && rule.selector === ".sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true']",
+		);
+		expect(pill?.body).toMatch(/position:\s*absolute/);
+		// On the top edge at the inline-start corner.
+		expect(pill?.body).toMatch(/inset-block-start:\s*0/);
+		expect(pill?.body).toMatch(/inset-inline-start:/);
+		// Overhanging the edge by under half its height, so 4px of the gap stays.
+		expect(pill?.body).toMatch(/transform:\s*translateY\(-30%\)/);
+		expect(pill?.body).not.toMatch(/display:\s*block/);
+		// In a fixed-pixel size, so its overhang fits the fixed padding at any
+		// text size, and hit-testable, so a clipped name's reveal answers it.
+		expect(pill?.body).toMatch(/font-size:\s*var\(--font-ui-smaller\)/);
+		expect(pill?.body).not.toMatch(/pointer-events/);
+		const host = tint.find((rule) => rule.selector === '.sheetsmith-view .sheetsmith-in-play-marked:not(tr)');
+		expect(host?.body).toMatch(/position:\s*relative/);
+	});
+});

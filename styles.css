@@ -10038,6 +10038,179 @@ a.sheetsmith-notice-action {
 	}
 }
 
+/* ---------------------------------------------------------------------------
+   The form tint (`docs/features/character-forms.md`, "The tint";
+   `view/placement-decorations.ts`).
+
+   **The box a form changed takes it, not the number**: a Card's card, each card
+   of a Card set or a Roster whose value the form set, a Table's or a Roster's
+   row, and the placement itself where the component names no box — a Pool, a
+   Track. The number keeps its modified underline, so a reader still sees which
+   value in the box moved. **Only a value a form that is on changed directly**:
+   an item, a condition or a typed one-off draws the underline and nothing else,
+   an at least the number was already past draws nothing, and a value that moved
+   only through its own formula is not tinted. Never the colour alone: the
+   outline is a shape, the pill is words, and the underline says the number
+   moved (WCAG 1.4.1).
+
+   **The fill is laid over the surface the box already wears**, as an image over
+   its own background colour, so a card and a placed box each take the accent
+   into their own surface with one rule. An outline at -1px rather than a border
+   or a shadow, so the box model is untouched and forced colors keeps it.
+   --------------------------------------------------------------------------- */
+.sheetsmith-view .sheetsmith-in-play:not(tr) {
+	background-image: linear-gradient(
+		color-mix(in srgb, var(--interactive-accent) 12%, transparent),
+		color-mix(in srgb, var(--interactive-accent) 12%, transparent)
+	);
+	outline: 1px solid var(--interactive-accent);
+	outline-offset: -1px;
+}
+
+/* **A row is filled and outlined through its cells, once each, the name cell
+   included.** A row's cells paint their own background — the pinned name above
+   all, which sits on its own layer — so a fill or an outline on the row itself
+   showed through some cells and not others: the value cells took the row's
+   layer and their own, the name cell neither the row's layer nor its outline.
+   So the row draws nothing, and every cell takes one fill layer and its share
+   of one outline, as inset shadows — top and bottom on every cell, the start
+   edge on the first and the end edge on the last — which move nothing. */
+.sheetsmith-view tr.sheetsmith-in-play > th,
+.sheetsmith-view tr.sheetsmith-in-play > td {
+	--sheetsmith-in-play-edge: 1px;
+	background-image: linear-gradient(
+		color-mix(in srgb, var(--interactive-accent) 12%, transparent),
+		color-mix(in srgb, var(--interactive-accent) 12%, transparent)
+	);
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--interactive-accent),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--interactive-accent);
+}
+
+.sheetsmith-view tr.sheetsmith-in-play > :first-child {
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--interactive-accent),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--interactive-accent),
+		inset var(--sheetsmith-in-play-edge) 0 0 var(--interactive-accent);
+}
+
+.sheetsmith-view tr.sheetsmith-in-play > :last-child {
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--interactive-accent),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--interactive-accent),
+		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--interactive-accent);
+}
+
+/* Forced colors drops a shadow, so there the row's outline is its rules: its
+   own bottom rule and the one above it, which is the previous row's bottom, in
+   the mode's highlight across every cell, the name cell included, and a rule
+   at each end. */
+@media (forced-colors: active) {
+	.sheetsmith-view tr.sheetsmith-in-play > th,
+	.sheetsmith-view tr.sheetsmith-in-play > td,
+	.sheetsmith-view tr:has(+ tr.sheetsmith-in-play) > th,
+	.sheetsmith-view tr:has(+ tr.sheetsmith-in-play) > td {
+		border-bottom-color: Highlight;
+	}
+
+	/* A last row drops its rule against the box's own edge; a tinted one keeps
+	   it, past that rule's weight, so the row is closed top and bottom. */
+	.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-in-play:last-child > th,
+	.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-in-play:last-child > td {
+		border-bottom: 1px solid Highlight;
+	}
+
+	/* And its two ends, which the shadows drew: the start edge on the first
+	   cell and the end edge on the last, so the row is closed on all four sides
+	   as the outline closes a card. A border, since forced colors keeps one. */
+	.sheetsmith-view tr.sheetsmith-in-play > :first-child {
+		border-inline-start: 1px solid Highlight;
+	}
+
+	.sheetsmith-view tr.sheetsmith-in-play > :last-child {
+		border-inline-end: 1px solid Highlight;
+	}
+}
+
+/* **The pill sits on the first tinted box's top edge at its inline-start
+   corner, over the outline, taking no room**: no line is reserved, so a box is
+   the same size with the form on as off and a Card set's row does not grow.
+   It overhangs the edge by under a third of its height, about 3px, and sits the
+   rest in the box's top padding, so it leaves at least 4px of the sheet's 8px
+   gap to the box above — centred on the edge it left 1px — and clears
+   everything a box draws at any width: the label starts
+   below the padding, the value and a card's score pill are lower still, and a
+   card's note mark and a Pool's door hold the other top corner. A corner tab
+   flush inside the box was tried first: on a card narrower than about two
+   hundred pixels the centred label reaches the corner and the tab covered its
+   first letters, as the earlier bottom corner covered the score.
+
+   **Sized in the card label's own fixed-pixel token, `--font-ui-smaller`**, not
+   `--font-smallest`: that one is em-based and grows with the sheet's text
+   size, while the padding and gap its overhang has to fit are fixed pixels, so
+   at a larger text the part inside spread onto the label. One tight line
+   (`line-height: 1.1`) with its edge an outline rather than a border, so the
+   part inside fits the padding above the label. It takes the pointer, so a clipped name's reveal
+   (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over
+   a control. */
+.sheetsmith-view .sheetsmith-in-play-marked:not(tr) {
+	position: relative;
+}
+
+.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'] {
+	position: absolute;
+	inset-block-start: 0;
+	inset-inline-start: var(--size-4-2);
+	z-index: 1;
+	max-width: min(12ch, calc(100% - 2 * var(--size-4-2)));
+	margin: 0;
+	padding: 0 var(--size-2-2);
+	overflow: hidden;
+	border-radius: var(--radius-s);
+	/* An outline nothing paints in an ordinary theme, so forced colors, which
+	   drops the fill, still draws the pill's edge; an outline, unlike a border,
+	   adds nothing to its height. */
+	outline: 1px solid transparent;
+	outline-offset: -1px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.1;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	transform: translateY(-30%);
+}
+
+/* **A row has no free corner**: its start holds the name (and a ring, where
+   the table has one), its end the value. So on a row the pill rides the name
+   cell's inline end, centred on the row, in the slack between the name and the
+   numbers that the name cell takes by design — over the cell, still taking no
+   room. The pinned name cell is `position: sticky`, so it is the pill's
+   containing block already. */
+.sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
+	inset-block-start: 50%;
+	inset-inline-start: auto;
+	inset-inline-end: var(--size-2-2);
+}
+
+@media (prefers-contrast: more) {
+	.sheetsmith-view .sheetsmith-in-play:not(tr),
+	.sheetsmith-view tr.sheetsmith-in-play > th,
+	.sheetsmith-view tr.sheetsmith-in-play > td {
+		background-image: none;
+	}
+
+	.sheetsmith-view .sheetsmith-in-play:not(tr) {
+		outline-width: 2px;
+		outline-offset: -2px;
+	}
+
+	.sheetsmith-view tr.sheetsmith-in-play > th,
+	.sheetsmith-view tr.sheetsmith-in-play > td {
+		--sheetsmith-in-play-edge: 2px;
+	}
+}
+
 /*
  * The layout editor, which lives in a workspace pane of its own
  * (docs/SPEC.md §7).

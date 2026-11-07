@@ -391,6 +391,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			const card = strip.createDiv();
 			renderCardFace(card, {
 				title: entry.name ?? entry.key,
+				publishes: `${config.id}.${entry.key}`,
 				abbreviation:
 					entry.name !== undefined && entry.name !== entry.key
 						? entry.key

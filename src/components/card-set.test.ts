@@ -603,6 +603,18 @@ describe('cardSet and its modifier slots', () => {
 				one.classList.contains('sheetsmith-modified'),
 			),
 		).toEqual([true, false, false]);
+		// Named beside the mark, and only where there is one.
+		expect(
+			Array.from(el.querySelectorAll('[data-sheetsmith-name]')).map((one) =>
+				one.getAttribute('data-sheetsmith-name'),
+			),
+		).toEqual(['card-set.STR']);
+		// And its box is its own card, not the set, so the tint fills that card.
+		const named = el.querySelector('[data-sheetsmith-name]') as HTMLElement;
+		const box = named.closest('[data-sheetsmith-box]');
+		expect(box?.classList.contains('sheetsmith-card')).toBe(true);
+		expect(box).toBe(el.querySelectorAll('.sheetsmith-card')[0]);
+		expect(el.querySelectorAll('[data-sheetsmith-box]')).toHaveLength(1);
 	});
 
 	/*
