@@ -2932,3 +2932,82 @@
 		padding-inline-start: var(--size-2-3);
 	}
 }
+
+/* ---------------------------------------------------------------------------
+   A Stat block's Zones field (`editor/zones-field.ts`,
+   `docs/features/stat-block-zones.md`): **each zone a stacked card, never a
+   wide row**, so phone width costs nothing. Line one is the key, the type and
+   the card's own controls; line two the heading; line three what the type
+   adds. Every control carries its label over it, since the card has no header
+   row to name its columns.
+   --------------------------------------------------------------------------- */
+.sheetsmith-zone-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-2-2) 0;
+}
+
+/* **The controls never leave line one.** The key and the type wrap inside
+   their own group, and the reorder and remove controls sit beside the group,
+   level with its last field, so a narrow panel stacks the fields and leaves no
+   grip on a line of its own between them and the heading. */
+.sheetsmith-zone-line {
+	display: flex;
+	align-items: end;
+	gap: var(--size-4-2);
+	padding: 0 var(--size-2-2);
+}
+
+.sheetsmith-zone-fields {
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--size-2-2) var(--size-4-2);
+	min-width: 0;
+}
+
+.sheetsmith-zone-fields > .sheetsmith-detail-field,
+.sheetsmith-zone-detail > .sheetsmith-detail-field {
+	flex: 1 1 10em;
+	max-width: none;
+}
+
+.sheetsmith-zone-line > button {
+	flex: 0 0 auto;
+}
+
+/* *Built in*, where a body zone has its type select: muted words at the
+   select's own height, so the line keeps its rhythm. */
+.sheetsmith-zone-built-in {
+	display: flex;
+	align-items: center;
+	min-height: var(--input-height);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/* A table zone's column line: key, type and display name, wrapping. */
+.sheetsmith-zone-column {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--size-2-2) var(--size-4-2);
+}
+
+.sheetsmith-zone-column > .sheetsmith-detail-field {
+	flex: 1 1 8em;
+	max-width: none;
+}
+
+/* **Below 400px of panel every control takes the full width**, and a column
+   line wraps its type under its key, so nothing scrolls sideways. Below the
+   rules it overrides, since `@container` adds no specificity. */
+@container (max-width: 400px) {
+	.sheetsmith-zone-fields > .sheetsmith-detail-field,
+	.sheetsmith-zone-detail > .sheetsmith-detail-field,
+	.sheetsmith-zone-column > .sheetsmith-detail-field {
+		flex-basis: 100%;
+	}
+}

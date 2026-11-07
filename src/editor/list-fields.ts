@@ -209,6 +209,11 @@ export function addControls<T>(
 	 * added and still empty.
 	 */
 	describeRemoval?: () => string | null,
+	/**
+	 * Whether the entry can be removed at all. False draws no remove control: a
+	 * Stat block's built-in zone, which a layout places and never removes.
+	 */
+	removable = true,
 ): void {
 	row.addEventListener('dragover', (event) => {
 		const from = context.drag.index;
@@ -277,6 +282,7 @@ export function addControls<T>(
 		});
 	}
 
+	if (!removable) return;
 	const remove = row.createEl('button', {
 		cls: 'clickable-icon',
 		attr: { 'aria-label': `Remove ${label}` },
@@ -874,7 +880,7 @@ export function labelled(detail: HTMLElement, text: string): HTMLElement {
  * every one of them writes its "on" value or deletes the key, so a column
  * carrying its default reads as a column that never set it.
  */
-function checkField(
+export function checkField(
 	detail: HTMLElement,
 	text: string,
 	target: Record<string, unknown>,
