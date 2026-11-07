@@ -1608,7 +1608,10 @@ body {
    Auto margins on the flex items rather than a wrapper, so the face stays one
    flat structure shared with Card set. The sr-only carriers are absolutely
    positioned, so they are not flex items and must be skipped when finding the
-   last one; and the note is skipped too, so the centred run ends above it. */
+   last one; and the note is skipped too, so the centred run ends above it. The
+   form tag is the same case as a carrier (`docs/features/form-tint-colour.md`):
+   absolutely positioned and appended last, so without it in the list the auto
+   margin went to the tag and a tinted lone card's number dropped about 26px. */
 .sheetsmith-card-single > .sheetsmith-card-label + *,
 .sheetsmith-card-single > :first-child:not(.sheetsmith-card-label) {
 	margin-top: auto;
@@ -1616,7 +1619,13 @@ body {
 
 .sheetsmith-card-single
 	> :nth-last-child(
-		1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note, .sheetsmith-note-mark)
+		1 of
+			:not(
+				.sheetsmith-sr-only,
+				.sheetsmith-card-note,
+				.sheetsmith-note-mark,
+				.sheetsmith-in-play-mark
+			)
 	) {
 	margin-bottom: auto;
 }

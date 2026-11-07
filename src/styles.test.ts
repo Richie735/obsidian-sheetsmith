@@ -4921,6 +4921,16 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(end?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :last-child');
 	});
 
+	it("leaves a lone card's centring to the value, never to the tag laid over it", () => {
+		// The tag is appended last and taken out of flow, so a lone card's
+		// "last item" rule has to skip it, or the auto margin centring the number
+		// goes to the tag and a tinted card's number drops onto it.
+		const centring = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.selector.includes('.sheetsmith-card-single') && /margin-bottom:\s*auto/.test(rule.body),
+		);
+		expect(centring?.selector.replace(/\s+/g, ' ')).toMatch(/:not\([^)]*\.sheetsmith-in-play-mark/);
+	});
+
 	it('lays the pill over its box, taking no room', () => {
 		const pill = tint.find(
 			(rule) => rule.context.length === 0 && rule.selector === ".sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true']",
