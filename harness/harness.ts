@@ -89,7 +89,10 @@ type StateName =
 	| 'forms-expanded'
 	| 'forms-drift'
 	| 'forms-error'
-	| 'forms-missing';
+	| 'forms-missing'
+	| 'forms-tint'
+	| 'forms-tint-two'
+	| 'forms-tint-error';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -140,8 +143,21 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-drift') return formsSamples('drift');
 	if (name === 'forms-error') return formsSamples('error');
 	if (name === 'forms-missing') return formsSamples('missing');
+	if (name === 'forms-tint') return formsSamples('tint');
+	if (name === 'forms-tint-two') return formsSamples('tint-two');
+	if (name === 'forms-tint-error') return formsSamples('tint-error');
 	return SAMPLES;
 }
+
+/**
+ * `&tint=<colour>` — Wild Shape's `tint` on the forms states, so one shot per
+ * colour needs no sample of its own (`docs/features/form-tint-colour.md`). Any
+ * word is taken, `brown` included, since a layout holding one outside the list
+ * is a state the sheet and the editor both report. Read into the layout a state
+ * draws rather than patched over the sheet's, because the editor pane builds its
+ * file from `layoutFor` and would otherwise show a Tint the sheet is not using.
+ */
+let formsTint: string | null = null;
 
 /**
  * The layout a state draws: the harness layout over its samples, with the
@@ -149,11 +165,22 @@ function samplesFor(name: StateName): Sample[] {
  * editor opens on them (`docs/features/modifier-notes.md`).
  */
 function layoutFor(name: StateName): Layout {
-	const built = harnessLayout(samplesFor(name));
+	const built = withTint(harnessLayout(samplesFor(name)), formsTint);
 	if (name !== 'notes') return built;
 	return {
 		...built,
 		modifiers: [...NOTE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+	};
+}
+
+/** The layout with Wild Shape's `tint` set, where the query asks for one. */
+function withTint(built: Layout, tint: string | null): Layout {
+	if (tint === null) return built;
+	return {
+		...built,
+		components: built.components.map((config) =>
+			config.id === 'wild_shape' ? ({ ...config, tint } as ComponentConfig) : config,
+		),
 	};
 }
 
@@ -941,6 +968,8 @@ function applyQuery(): void {
 	setText(text);
 	press('text', text);
 
+	// Before the state loads, since the layout a state draws carries it.
+	formsTint = params.get('tint');
 	const wanted = params.get('state');
 	loadState(
 		wanted === 'empty' ||
@@ -961,7 +990,10 @@ function applyQuery(): void {
 			wanted === 'forms-expanded' ||
 			wanted === 'forms-drift' ||
 			wanted === 'forms-error' ||
-			wanted === 'forms-missing'
+			wanted === 'forms-missing' ||
+			wanted === 'forms-tint' ||
+			wanted === 'forms-tint-two' ||
+			wanted === 'forms-tint-error'
 			? wanted
 			: 'populated',
 	);

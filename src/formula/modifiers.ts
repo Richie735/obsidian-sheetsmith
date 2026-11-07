@@ -50,6 +50,7 @@ import {
 	ModifierOutcome,
 	ModifierPhase,
 	ModifierPush,
+	TintColour,
 	contestsByValue,
 	phaseOf,
 } from '../types';
@@ -229,6 +230,8 @@ export interface Contributor extends Contribution {
 	source: string;
 	/** The push's own `inPlay`, carried to the line the tint reads. */
 	inPlay?: boolean;
+	/** The push's own `tint`, carried beside `inPlay` and never without it. */
+	tint?: TintColour;
 	/**
 	 * The modifier, as the layout spells its name, or absent where it has none.
 	 *
@@ -424,6 +427,7 @@ export function buildModifierTable(
 						label: push.row.label,
 						source: push.source,
 						...(push.inPlay === true ? { inPlay: true } : {}),
+						...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
 						// The layout's name where the part named one, and nothing where
 						// the row typed its own: a push carries no tier and neither does
 						// the arithmetic, so this is the only place the two differ.
@@ -627,7 +631,7 @@ export function stackModifiers(
 	let total = 0;
 	let resultTotal = 0;
 	for (const entry of contributions) {
-		const { label, source, definition, operator, type, amount, inPlay } = entry;
+		const { label, source, definition, operator, type, amount, inPlay, tint } = entry;
 		const applies = phaseOf(entry);
 		/** Add to the phase this entry landed in, and to no other. */
 		const add = (by: number) => {
@@ -649,6 +653,9 @@ export function stackModifiers(
 				amount,
 				suppressed,
 				...(inPlay === true ? { inPlay: true } : {}),
+				// Carried as `inPlay` is: the rule that a tint means nothing without it
+				// is applied once, where the contributor is built from its push.
+				...(tint === undefined ? {} : { tint }),
 			});
 
 		if (operator === 'override') {

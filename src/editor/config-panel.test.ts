@@ -762,3 +762,130 @@ describe('a label another component already holds', () => {
 		);
 	});
 });
+
+describe('a select holding a value outside its choices', () => {
+	/*
+	 * A hand-edited layout can hold a word no select offers. It is shown and
+	 * reported rather than snapped to the first choice, which said the layout
+	 * held something it did not (`docs/features/form-tint-colour.md`, Errors).
+	 */
+	const strayLayout = (tint: string, direction = 'horizontal'): Layout =>
+		parseLayout(
+			JSON.stringify({
+				name: 'Stray selects',
+				columns: 12,
+				components: [
+					{
+						id: 'forms',
+						type: 'stat-block',
+						label: 'Wild Shape',
+						position: { col: 1, row: 1, width: 6, height: 4 },
+						fields: [{ key: 'Active', type: 'toggle' }],
+						exclusive: 'Active',
+						tint,
+					},
+					{
+						id: 'abilities',
+						type: 'card-set',
+						label: 'Abilities',
+						position: { col: 7, row: 1, width: 6, height: 1 },
+						entries: [{ key: 'STR' }],
+						direction,
+					},
+				],
+			}),
+		);
+
+	// The tint field names its options, so it says so in the sheet's own phrase;
+	// a select that names none keeps the generic one (Card set's, below).
+	const MESSAGE = '"brown" is not a tint colour. Choose one to replace it.';
+
+	it('shows the stored word as a disabled, selected option, with the message under it', async () => {
+		harness = await open(strayLayout('brown'));
+		const counted = writes(harness);
+		control(harness, 'edit-forms').click();
+		await settle(harness.pane);
+
+		const select = control<HTMLSelectElement>(harness, 'cfg-forms-tint');
+		expect(select.value).toBe('brown');
+		const held = Array.from(select.options).find((option) => option.value === 'brown');
+		expect(held?.disabled).toBe(true);
+		expect(held?.selected).toBe(true);
+		expect(select.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(select.parentElement?.textContent).toContain(MESSAGE);
+		// Nothing is written until the author chooses.
+		expect(counted()).toBe(0);
+		expect((await harness.stored()).components[0]).toMatchObject({ tint: 'brown' });
+
+		await harness.redraw();
+		const again = control<HTMLSelectElement>(harness, 'cfg-forms-tint');
+		expect(again.parentElement?.textContent).toContain(MESSAGE);
+	});
+
+	it('takes the first choice as a change, removing the key and the message', async () => {
+		harness = await open(strayLayout('brown'));
+		control(harness, 'edit-forms').click();
+		await settle(harness.pane);
+
+		choose(control<HTMLSelectElement>(harness, 'cfg-forms-tint'), 'accent');
+		await settle(harness.pane);
+
+		expect((await harness.stored()).components[0]).not.toHaveProperty('tint');
+		const select = control<HTMLSelectElement>(harness, 'cfg-forms-tint');
+		expect(select.parentElement?.textContent).not.toContain(MESSAGE);
+		expect(select.classList.contains('sheetsmith-input-invalid')).toBe(false);
+		expect(Array.from(select.options).some((option) => option.disabled)).toBe(false);
+	});
+
+	it('shows neither for a value among its choices', async () => {
+		harness = await open(strayLayout('green'));
+		control(harness, 'edit-forms').click();
+		await settle(harness.pane);
+
+		const select = control<HTMLSelectElement>(harness, 'cfg-forms-tint');
+		expect(select.value).toBe('green');
+		expect(Array.from(select.options).map((option) => option.value)).toEqual([
+			'accent',
+			'red',
+			'orange',
+			'yellow',
+			'green',
+			'cyan',
+			'blue',
+			'purple',
+			'pink',
+		]);
+		expect(select.parentElement?.querySelector('.sheetsmith-field-error')).toBeNull();
+	});
+
+	it('reports a word the choices hold only in another case, as the sheet does', async () => {
+		// The editor's copy of the stray predicate; the Stat block's is driven over
+		// the same `Green` in `stat-block.test.ts`, so the two cannot drift apart.
+		harness = await open(strayLayout('Green'));
+		control(harness, 'edit-forms').click();
+		await settle(harness.pane);
+		const select = control<HTMLSelectElement>(harness, 'cfg-forms-tint');
+		expect(select.value).toBe('Green');
+		expect(select.parentElement?.textContent).toContain(
+			'"Green" is not a tint colour. Choose one to replace it.',
+		);
+	});
+
+	it("reports another component's broken select the same way", async () => {
+		harness = await open(strayLayout('green', 'diagonal'));
+		const counted = writes(harness);
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		const select = control<HTMLSelectElement>(harness, 'cfg-abilities-direction');
+		expect(select.value).toBe('diagonal');
+		expect(select.parentElement?.textContent).toContain(
+			'"diagonal" is not one of the choices. Choose one to replace it.',
+		);
+		expect(counted()).toBe(0);
+
+		choose(select, 'vertical');
+		await settle(harness.pane);
+		expect((await harness.stored()).components[1]).toMatchObject({ direction: 'vertical' });
+	});
+});

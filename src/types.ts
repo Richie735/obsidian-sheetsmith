@@ -464,6 +464,15 @@ export interface ConfigFieldSpec<
 	/** Choices for 'select' fields. The first is the default and is omitted. */
 	options?: readonly string[];
 	/**
+	 * What one of a 'select' field's `options` is called, where the field says
+	 * so in the sheet's own words: a stored value outside them is then reported
+	 * as `"brown" is not a tint colour` rather than the generic `is not one of
+	 * the choices`, so the editor and the sheet name one fault one way
+	 * (`docs/features/form-tint-colour.md`). Read by the editor's select branch
+	 * alone, which learns a noun and nothing about the component.
+	 */
+	optionNoun?: string;
+	/**
 	 * What a 'columns' list offers, where the component holds fewer than every
 	 * column type or refuses a flag the field would otherwise show.
 	 *
@@ -1443,6 +1452,52 @@ export interface PromotedField {
 }
 
 /**
+ * The colours a form in play may tint the sheet in
+ * (`docs/features/form-tint-colour.md`), accent first, which is the default.
+ *
+ * **One list with several readers** — a config field's options, a fence value's
+ * validation, the push's type, the decoration's attribute and the stylesheet's
+ * rules — so it is declared once, on `docs/PATTERNS.md` §1's one-step tier for
+ * a set. Here beside `ModifierPush` because the push is the contract that
+ * carries one. Each is a theme variable, never a literal: `accent` is
+ * `--interactive-accent` and every other is the theme's `--color-<name>`
+ * (`docs/UI.md` §1). There is no brown, because the theme has none.
+ * `styles.test.ts` holds every entry to a rule in `sheet.css`, and no rule to a
+ * colour outside it.
+ */
+export const TINT_COLOURS = [
+	'accent',
+	'red',
+	'orange',
+	'yellow',
+	'green',
+	'cyan',
+	'blue',
+	'purple',
+	'pink',
+] as const;
+
+export type TintColour = (typeof TINT_COLOURS)[number];
+
+/**
+ * The attribute naming one of `TINT_COLOURS` on an element, which the
+ * stylesheet maps to its theme variable one rule per word, so no element
+ * carries an inline colour. Beside the list it carries: the tint pass writes it
+ * on each box and tag it paints, and a Stat block on its swatch.
+ */
+export const TINT_ATTRIBUTE = 'data-sheetsmith-tint';
+
+/**
+ * A stored word as a tint, or null where it is none: trimmed and matched
+ * without case, so `Green` is green, which is the same word and not a guess.
+ * Anything outside the list is null, never its nearest neighbour.
+ */
+export function tintColourOf(word: string): TintColour | null {
+	const wanted = word.trim().toLowerCase();
+	return TINT_COLOURS.find((colour) => colour === wanted) ?? null;
+}
+
+/**
  * One part of one row's modifier cell (SPEC §5).
  *
  * **A push is one part, as raw text.** The row says what its cell says and hands
@@ -1509,6 +1564,14 @@ export interface ModifierPush {
 	 * sets it; a Table could flag a Conditions row tomorrow.
 	 */
 	inPlay?: boolean;
+	/**
+	 * The colour a row in play tints what it changes
+	 * (`docs/features/form-tint-colour.md`). **A fact about the row, as `inPlay`
+	 * is**, on the same argument. Meaningless without `inPlay`, and ignored there.
+	 * Absent is the accent, which is every push written before this; the accent
+	 * is written as absence.
+	 */
+	tint?: TintColour;
 }
 
 /**
@@ -1599,6 +1662,8 @@ export interface ModifierLine {
 	 * form changed. Absent is false.
 	 */
 	inPlay?: boolean;
+	/** The push's own `tint`, carried only beside `inPlay`. Absent is the accent. */
+	tint?: TintColour;
 }
 
 /**

@@ -58,6 +58,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CHROME, checkPlatform, launch, stagePlatform, wait } from './cdp.mjs';
+import { TINT_COLOURS } from './tint-colours.mjs';
 
 /**
  * Whether this file is being run, or imported for its view list. Imported, it
@@ -3294,6 +3295,112 @@ export const DEFAULTS = [
 		query: 'surface=sheet&theme=light&state=forms&text=15',
 		size: '1400,1700',
 		frame: '.sheetsmith-grid',
+	},
+	/*
+	 * **Form tint colour** (`docs/features/form-tint-colour.md`): Brown Bear in
+	 * play in each of the theme's named colours, in both palettes, through
+	 * `&tint=` on Wild Shape, every one at an explicit frame so a scoped run
+	 * draws what a full one draws. `sheet-forms-light` and `-dark` are the accent
+	 * pair. The tag is the neutral chip with a coloured edge in every one.
+	 */
+	...TINT_COLOURS.filter((colour) => colour !== 'accent').flatMap((colour) => [
+		{
+			name: `sheet-forms-tint-${colour}`,
+			query: `surface=sheet&theme=light&state=forms&tint=${colour}`,
+			size: '1400,1500',
+		},
+		{
+			name: `sheet-forms-tint-${colour}-dark`,
+			query: `surface=sheet&theme=dark&state=forms&tint=${colour}`,
+			size: '1400,1500',
+		},
+	]),
+	{
+		// More contrast at yellow, the tightest colour: no fill on the box or the
+		// tag, a 2px edge on the box, the tag's edge kept in colour.
+		name: 'sheet-forms-tint-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms&tint=yellow',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-forms-tint-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=forms&tint=yellow',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		// Forced colors at green: the box, the row and the tag as before, and no
+		// swatch in the head.
+		name: 'sheet-forms-tint-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms&tint=green',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
+		// to, in the accent; Strength and Constitution orange and Dexterity green
+		// in one Card set whose one tag names both, in the accent.
+		name: 'sheet-forms-tint-two-on',
+		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+	},
+	{
+		// Every form, Brown Bear open on its Tint section: the dropdown on Orange
+		// and its swatch.
+		name: 'sheet-forms-tint-library',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&press=.sheetsmith-stat-block-switch',
+		size: '1400,1500',
+	},
+	{
+		// The Thug in play holding `Tint: brown`: tinted in the block's green, and
+		// the sentence under the head.
+		name: 'sheet-forms-tint-error',
+		query: 'surface=sheet&theme=light&state=forms-tint-error&tint=green',
+		size: '1400,1500',
+	},
+	{
+		// The same form under Every form, Brown Bear closed and the Thug opened: the
+		// disabled `"brown" (not a tint)` option selected, and the sentence under
+		// the dropdown.
+		name: 'sheet-forms-tint-error-library',
+		query:
+			'surface=sheet&theme=light&state=forms-tint-error&tint=green&press=.sheetsmith-stat-block-switch&press=.sheetsmith-stat-block-record:nth-child(1)%20.sheetsmith-record-disclosure&press=.sheetsmith-stat-block-record:nth-child(3)%20.sheetsmith-record-disclosure',
+		size: '1400,1500',
+	},
+	{
+		// The layout's own `tint` outside the list: the whole block drawn, Brown
+		// Bear in its own orange, and the one *Tint is "brown"* line under the head.
+		name: 'sheet-forms-tint-layout-error',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=brown',
+		size: '1400,1500',
+	},
+	{
+		// At a phone's width: the head swatch with the title as it wraps.
+		name: 'sheet-forms-tint-narrow',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&width=380',
+		size: '380,3000',
+	},
+	{
+		// And the Tint section's dropdown and swatch at that width.
+		name: 'sheet-forms-tint-library-narrow',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&width=380&press=.sheetsmith-stat-block-switch',
+		size: '380,3000',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// The two fields in the layout editor, Tint on green, Tint per record on.
+		name: 'editor-stat-block-tint',
+		query: 'surface=editor&theme=light&state=forms-tint&open=wild_shape&tint=green',
+		size: '1400,4200',
+		frame: '.sheetsmith-component-form',
+	},
+	{
+		// A hand-edited `brown`: the dropdown holding it disabled with the message
+		// under it, and the canvas still drawing the block.
+		name: 'editor-stat-block-tint-error',
+		query: 'surface=editor&theme=light&state=forms-tint&open=wild_shape&tint=brown',
+		size: '1400,4200',
 	},
 	{
 		// HP below 0 names the stored number (the fourth small fix).

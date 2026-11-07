@@ -1608,7 +1608,10 @@ body {
    Auto margins on the flex items rather than a wrapper, so the face stays one
    flat structure shared with Card set. The sr-only carriers are absolutely
    positioned, so they are not flex items and must be skipped when finding the
-   last one; and the note is skipped too, so the centred run ends above it. */
+   last one; and the note is skipped too, so the centred run ends above it. The
+   form tag is the same case as a carrier (`docs/features/form-tint-colour.md`):
+   absolutely positioned and appended last, so without it in the list the auto
+   margin went to the tag and a tinted lone card's number dropped about 26px. */
 .sheetsmith-card-single > .sheetsmith-card-label + *,
 .sheetsmith-card-single > :first-child:not(.sheetsmith-card-label) {
 	margin-top: auto;
@@ -1616,7 +1619,13 @@ body {
 
 .sheetsmith-card-single
 	> :nth-last-child(
-		1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note, .sheetsmith-note-mark)
+		1 of
+			:not(
+				.sheetsmith-sr-only,
+				.sheetsmith-card-note,
+				.sheetsmith-note-mark,
+				.sheetsmith-in-play-mark
+			)
 	) {
 	margin-bottom: auto;
 }
@@ -10165,7 +10174,11 @@ a.sheetsmith-notice-action {
 	cursor: default;
 }
 
-.sheetsmith-stat-block-form-name {
+/* A name row with two forms on, and the Tint section's line under Every form:
+   each a row of small marks and words that wraps where a narrow sheet will not
+   hold it. */
+.sheetsmith-stat-block-form-name,
+.sheetsmith-stat-block-tint-line {
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
@@ -10191,6 +10204,21 @@ a.sheetsmith-notice-action {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
+}
+
+/* **The swatch a form's tint is keyed by** (`docs/features/form-tint-colour.md`,
+   question 4): a square of the small UI size, filled solid in the tint's edge
+   colour, which clears 3:1 on every colour (the form tint's block below). Beside
+   a form's name in the In play head and beside the Tint dropdown under Every
+   form; it takes no pointer and no focus, and forced colors hides it, since a
+   square repainted in a system colour says nothing. */
+.sheetsmith-stat-block-tint-swatch {
+	flex: 0 0 auto;
+	width: var(--font-ui-small);
+	height: var(--font-ui-small);
+	border-radius: var(--radius-s);
+	background-color: var(--sheetsmith-tint-edge);
+	pointer-events: none;
 }
 
 /* Below the rules it overrides, since `@container` adds no specificity: under
@@ -10244,16 +10272,90 @@ a.sheetsmith-notice-action {
    moved (WCAG 1.4.1).
 
    **The fill is laid over the surface the box already wears**, as an image over
-   its own background colour, so a card and a placed box each take the accent
+   its own background colour, so a card and a placed box each take the colour
    into their own surface with one rule. An outline at -1px rather than a border
    or a shadow, so the box model is untouched and forced colors keeps it.
    --------------------------------------------------------------------------- */
+
+/* **The colour a form tints in** (`docs/features/form-tint-colour.md`):
+   `TINT_COLOURS` in `types.ts`, one rule per word, each naming a theme
+   variable and never a literal (`docs/UI.md` §1). The pass stamps the word on
+   each box and pill (`data-sheetsmith-tint`), a Stat block on its swatch, and
+   every rule below reads `--sheetsmith-tint`. **The accent behind it is written
+   once**, on the view at no specificity (`:where`), and inherited: an element
+   carrying no word draws exactly what the accent draws, and any word, on the
+   element or an ancestor, wins. `accent` still has its own rule, so a tag in
+   the accent inside a box in a colour is not handed the box's.
+   `styles.test.ts` holds the list and these rules to each other. */
+:where(.sheetsmith-view) {
+	--sheetsmith-tint: var(--interactive-accent);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='accent'] {
+	--sheetsmith-tint: var(--interactive-accent);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='red'] {
+	--sheetsmith-tint: var(--color-red);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='orange'] {
+	--sheetsmith-tint: var(--color-orange);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='yellow'] {
+	--sheetsmith-tint: var(--color-yellow);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='green'] {
+	--sheetsmith-tint: var(--color-green);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='cyan'] {
+	--sheetsmith-tint: var(--color-cyan);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='blue'] {
+	--sheetsmith-tint: var(--color-blue);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='purple'] {
+	--sheetsmith-tint: var(--color-purple);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='pink'] {
+	--sheetsmith-tint: var(--color-pink);
+}
+
+/* **The edge: the colour mixed 70% toward `--text-normal`**, which is the
+   box's outline, a row's inset shadows, the tag's outline and the swatch.
+   Mixing toward the theme's text moves the colour away from the surface in
+   either theme, because the theme defines `--text-normal` against that
+   surface: a light colour darkens in a light theme and lightens in a dark one,
+   and the hue survives at 70%. Raw, yellow outlined a light card at 1.93:1;
+   mixed, the lowest edge is 3.04:1, light yellow against its own tinted card.
+   70% is the lightest mix that clears 3:1 everywhere
+   (`harness/measure-form-tint.mjs` prints the table). Declared on every element
+   that reads it, never on the view: a custom property holding a `var()` is
+   worked out where it is declared, so one declared above the box would mix
+   the view's colour rather than the box's. A row's cells inherit it worked
+   out on the row, which carries the word. */
+.sheetsmith-view .sheetsmith-in-play,
+.sheetsmith-view .sheetsmith-in-play-mark,
+.sheetsmith-view [data-sheetsmith-tint] {
+	--sheetsmith-tint-edge: color-mix(
+		in srgb,
+		var(--sheetsmith-tint) 70%,
+		var(--text-normal)
+	);
+}
+
 .sheetsmith-view .sheetsmith-in-play:not(tr) {
 	background-image: linear-gradient(
-		color-mix(in srgb, var(--interactive-accent) 12%, transparent),
-		color-mix(in srgb, var(--interactive-accent) 12%, transparent)
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent),
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent)
 	);
-	outline: 1px solid var(--interactive-accent);
+	outline: 1px solid var(--sheetsmith-tint-edge);
 	outline-offset: -1px;
 }
 
@@ -10269,32 +10371,35 @@ a.sheetsmith-notice-action {
 .sheetsmith-view tr.sheetsmith-in-play > td {
 	--sheetsmith-in-play-edge: 1px;
 	background-image: linear-gradient(
-		color-mix(in srgb, var(--interactive-accent) 12%, transparent),
-		color-mix(in srgb, var(--interactive-accent) 12%, transparent)
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent),
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent)
 	);
 	box-shadow:
-		inset 0 var(--sheetsmith-in-play-edge) 0 var(--interactive-accent),
-		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--interactive-accent);
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge);
 }
 
 .sheetsmith-view tr.sheetsmith-in-play > :first-child {
 	box-shadow:
-		inset 0 var(--sheetsmith-in-play-edge) 0 var(--interactive-accent),
-		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--interactive-accent),
-		inset var(--sheetsmith-in-play-edge) 0 0 var(--interactive-accent);
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge),
+		inset var(--sheetsmith-in-play-edge) 0 0 var(--sheetsmith-tint-edge);
 }
 
 .sheetsmith-view tr.sheetsmith-in-play > :last-child {
 	box-shadow:
-		inset 0 var(--sheetsmith-in-play-edge) 0 var(--interactive-accent),
-		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--interactive-accent),
-		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--interactive-accent);
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge),
+		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--sheetsmith-tint-edge);
 }
 
 /* Forced colors drops a shadow, so there the row's outline is its rules: its
    own bottom rule and the one above it, which is the previous row's bottom, in
    the mode's highlight across every cell, the name cell included, and a rule
-   at each end. */
+   at each end. **The form's colour goes with the mode**, as it intends: two
+   forms in two colours look the same here, and the tag's words tell them apart.
+   The swatch, a square the mode would repaint in one system colour, says
+   nothing there, so it is not drawn. */
 @media (forced-colors: active) {
 	.sheetsmith-view tr.sheetsmith-in-play > th,
 	.sheetsmith-view tr.sheetsmith-in-play > td,
@@ -10320,6 +10425,10 @@ a.sheetsmith-notice-action {
 	.sheetsmith-view tr.sheetsmith-in-play > :last-child {
 		border-inline-end: 1px solid Highlight;
 	}
+
+	.sheetsmith-view .sheetsmith-stat-block-tint-swatch {
+		display: none;
+	}
 }
 
 /* **The pill sits on the first tinted box's bottom edge at its inline-end
@@ -10344,7 +10453,17 @@ a.sheetsmith-notice-action {
    sits in does not. One tight line (`line-height: 1.1`) with its edge an outline
    rather than a border. It takes the pointer, so a clipped name's reveal
    (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over a
-   control. */
+   control.
+
+   **A neutral chip with a coloured edge, never text on the colour**
+   (`docs/features/form-tint-colour.md`, "What it looks like"). It was white on
+   the accent, 3.43:1 in the default light theme, and no one text colour clears
+   4.5:1 on a solid fill of every named colour in both themes. So it is filled
+   with the colour mixed 20% into `--background-primary` and written in
+   `--text-normal`, which the theme defines against that page — UI.md §1's rule,
+   pick the text variable defined against what you mixed into: 7.22:1 at its
+   lowest, dark yellow. Its outline is the edge colour, which forced colors
+   repaints in the mode's own. */
 .sheetsmith-view .sheetsmith-in-play-marked:not(tr) {
 	position: relative;
 }
@@ -10359,13 +10478,15 @@ a.sheetsmith-notice-action {
 	padding: 0 var(--size-2-2);
 	overflow: hidden;
 	border-radius: var(--radius-s);
-	/* An outline nothing paints in an ordinary theme, so forced colors, which
-	   drops the fill, still draws the pill's edge; an outline, unlike a border,
-	   adds nothing to its height. */
-	outline: 1px solid transparent;
+	/* An outline, unlike a border, adds nothing to its height. */
+	outline: 1px solid var(--sheetsmith-tint-edge);
 	outline-offset: -1px;
-	background-color: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background-color: color-mix(
+		in srgb,
+		var(--sheetsmith-tint) 20%,
+		var(--background-primary)
+	);
+	color: var(--text-normal);
 	font-size: var(--font-ui-smaller);
 	line-height: 1.1;
 	text-overflow: ellipsis;
@@ -10373,6 +10494,19 @@ a.sheetsmith-notice-action {
 	/* Down by its own height less the padding: `--size-4-2` inside, the rest
 	   out. Geometry only, so no font moves it onto content. */
 	transform: translateY(calc(100% - var(--size-4-2)));
+}
+
+/* **A tag naming several forms takes its box's width**, less the padding it
+   is inset by at either end, rather than one name's 12ch
+   (`docs/features/form-tint-colour.md`, "Two forms on by hand"): drawn in the
+   accent, its words are the only thing saying which forms it means, and at
+   12ch *Brown Bear, Wolf* read *Brown Bear, …*. It stays clear of content by
+   geometry whatever its width, since only the bottom padding is inside the box.
+   Not on a row, where it is laid over the name cell and a wider tag would cover
+   the name the row is read by; the reveal answers a clipped one there. */
+.sheetsmith-view
+	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-several:not(.sheetsmith-in-play-mark-inline)[aria-hidden='true'] {
+	max-width: calc(100% - 2 * var(--size-4-2));
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where
@@ -10388,6 +10522,11 @@ a.sheetsmith-notice-action {
 	transform: translateY(-50%);
 }
 
+/* **Under more contrast the colour survives as the edge alone**: the fills go,
+   the box's outline is 2px in the edge colour (a row's shadows at 2px), and the
+   tag sits on the plain page in `--text-normal`, its 1px edge kept in colour.
+   The edge measures at least 3.30:1 against a card and 3.56:1 against the page
+   in every colour and theme, so it needs no fallback to `--text-muted`. */
 @media (prefers-contrast: more) {
 	.sheetsmith-view .sheetsmith-in-play:not(tr),
 	.sheetsmith-view tr.sheetsmith-in-play > th,
@@ -10403,6 +10542,10 @@ a.sheetsmith-notice-action {
 	.sheetsmith-view tr.sheetsmith-in-play > th,
 	.sheetsmith-view tr.sheetsmith-in-play > td {
 		--sheetsmith-in-play-edge: 2px;
+	}
+
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'] {
+		background-color: var(--background-primary);
 	}
 }
 

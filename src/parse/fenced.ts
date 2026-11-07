@@ -297,6 +297,25 @@ function freshBody(updates: ReadonlyMap<string, string | null>): string {
 }
 
 /**
+ * A body with an empty `sheet` fence taken out, as `freshBody` framed it: the
+ * open line, the close line straight after it, and the one blank line before
+ * the open, where there is one. **The inverse of a fresh fence**, so a write
+ * that gave a body its first entry and a later one removing that entry leave
+ * the body byte for byte as it was (Constraint 3). A fence holding anything,
+ * or none, returns the body unchanged.
+ */
+export function withoutEmptyFence(body: string): string {
+	const lines = splitLines(body);
+	for (let at = 0; at + 1 < lines.length; at++) {
+		if (!FENCE_OPEN.test(lineText(lines[at] as string))) continue;
+		if (!FENCE_CLOSE.test(lineText(lines[at + 1] as string))) return body;
+		const from = at > 0 && lineText(lines[at - 1] as string).trim() === '' ? at - 1 : at;
+		return [...lines.slice(0, from), ...lines.slice(at + 2)].join('');
+	}
+	return body;
+}
+
+/**
  * Write values into a section body, preserving everything else byte for
  * byte. Existing entries are rewritten in place only when the value actually
  * changed; keys not present yet are appended before the closing fence; a

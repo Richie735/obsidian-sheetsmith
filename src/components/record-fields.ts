@@ -208,6 +208,14 @@ export interface RecordEntry {
 	error: string | null;
 }
 
+/**
+ * One record's edit as a write is handed it: an entry's fields may hold `null`,
+ * which removes that entry's line, as `writeFenced` reads one.
+ */
+export type RecordDelta = Omit<Partial<RecordEntry>, 'fields'> & {
+	fields?: Record<string, string | null>;
+};
+
 /** Shared with Table through `typed-value.ts`, so the default cannot drift. */
 export const fieldType = typeOf;
 
@@ -614,7 +622,7 @@ export function noMaximum(field: RecordField): string {
 /** One record's stored pieces, with the delta applied and nothing else touched. */
 export function applyDelta(
 	block: RecordBlock,
-	delta: Partial<RecordEntry>,
+	delta: RecordDelta,
 	known: ReadonlyMap<string, string>,
 ): RecordBlock {
 	// A blank name is refused at the control rather than here, because a `### `
@@ -704,12 +712,19 @@ export function recordEntries(
  */
 export function editRecords(
 	section: RecordSection,
-	data: RecordList,
+	data: Omit<RecordList, 'records'> & { records?: Record<number, RecordDelta> },
 	fields: readonly RecordField[] | undefined,
+	/**
+	 * Fence keys a write may touch besides the declared fields, each as the note
+	 * spells it: a Stat block's `Tint`, and only while its layout turns **Tint
+	 * per record** on (`docs/features/form-tint-colour.md`). Without it a delta
+	 * can never reach an entry no field declares, which is SPEC §10's rule.
+	 */
+	extraKeys: readonly string[] = [],
 ): RecordSection {
 	const records = [...section.records];
 	const known = new Map(
-		storedFields(fields).map((field) => [field.key.toLowerCase(), field.key]),
+		[...storedFields(fields).map((field) => field.key), ...extraKeys].map((key) => [key.toLowerCase(), key]),
 	);
 	for (const [position, delta] of Object.entries(data.records ?? {})) {
 		const at = Number(position);

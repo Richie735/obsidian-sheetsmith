@@ -4651,12 +4651,25 @@ export type FormsVariant =
 	| 'expanded'
 	| 'drift'
 	| 'error'
-	| 'missing';
+	| 'missing'
+	/** Brown Bear choosing orange and the Thug a word the list lacks (`docs/features/form-tint-colour.md`). */
+	| 'tint'
+	/** The same, with the Wolf on beside the bear and both adding to Initiative. */
+	| 'tint-two'
+	/** The same, with the Thug in play holding its stray word. */
+	| 'tint-error';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
-	const bear = variant === 'none' || variant === 'mook' ? 'no' : 'yes';
-	const wolf = variant === 'two' ? 'yes' : 'no';
-	const mook = variant === 'mook' ? 'yes' : 'no';
+	const tinting = variant === 'tint' || variant === 'tint-two' || variant === 'tint-error';
+	const bear = variant === 'none' || variant === 'mook' || variant === 'tint-error' ? 'no' : 'yes';
+	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
+	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
+	/*
+	 * Two-on with a target both forms add to, so one card is reached by two
+	 * colours and is drawn in the accent (Design, "Two forms on by hand"), beside
+	 * the cards each form sets alone.
+	 */
+	const shared = variant === 'tint-two' ? '; initiative += 1' : '';
 	const bearHp = variant === 'zero' ? '0 / 34' : variant === 'below' ? '-3 / 34' : '22 / 34';
 	const picture = variant === 'missing' ? 'Brown bear (lost).png' : 'Brown bear.png';
 	const attacks =
@@ -4843,6 +4856,10 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				uses: '2',
 				spendOnPick: true,
 				image: true,
+				// Each form may choose its own colour on the tint states alone, so the
+				// accent pair stays a layout that chooses no tint and draws nothing new
+				// in its head; the block's own `tint` comes from `&tint=`.
+				...(tinting ? { tintPerRecord: true } : {}),
 				zones: [
 					{ key: 'vitals' },
 					{ key: 'changes' },
@@ -4872,7 +4889,8 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				`Active: ${bear}`,
 				`HP: ${bearHp}`,
 				'Speed: 40 ft., climb 30 ft.',
-				'Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5',
+				`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}`,
+				...(tinting ? ['Tint: orange'] : []),
 				'```',
 				'',
 				`![[${picture}]]`,
@@ -4906,7 +4924,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				`Active: ${wolf}`,
 				'HP: 11 / 11',
 				'Speed: 40 ft.',
-				'Modifiers: abilities.DEX = 2; skills.stealth >= 4',
+				`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}`,
 				'```',
 				'',
 				'| Attack | Bonus | Damage |',
@@ -4922,6 +4940,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				`Active: ${mook}`,
 				'HP: 3 / 3',
 				'Speed: 30 ft.',
+				...(tinting ? ['Modifiers: armour_class = 10', 'Tint: brown'] : []),
 				'```',
 				'',
 			].join('\n'),

@@ -29,6 +29,7 @@ import {
 	STEP_PX,
 } from './components/record-line-fit';
 import { EDGE_GUTTER } from './ui/popover';
+import { TINT_COLOURS } from './types';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -1835,6 +1836,13 @@ describe('every colour on the sheet comes from the theme', () => {
 	 */
 	const TRANSPARENT_STOP = /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/g;
 
+	/**
+	 * A theme's named colour, read by its variable: the form tint's palette
+	 * (`docs/features/form-tint-colour.md`). The word is the variable's name,
+	 * which every theme redefines for light and dark, not a colour written here.
+	 */
+	const THEME_NAMED_COLOUR = /var\(--color-[a-z]+\)/g;
+
 	const all = declarations();
 
 	it('finds the declarations it is meant to be checking', () => {
@@ -1849,11 +1857,54 @@ describe('every colour on the sheet comes from the theme', () => {
 			// comes from whatever theme variable is behind the mask. The
 			// colour word is part of the image, not part of the palette.
 			if (value.includes('url("data:')) continue;
-			if (LITERAL.test(value.replace(TRANSPARENT_STOP, ''))) {
+			if (LITERAL.test(value.replace(TRANSPARENT_STOP, '').replace(THEME_NAMED_COLOUR, ''))) {
 				literals.push(`${property}: ${value.replace(/\s+/g, ' ')}`);
 			}
 		}
 		expect(literals).toEqual([]);
+	});
+});
+
+describe('the form tint has one rule per colour, and no colour outside the list', () => {
+	/*
+	 * `TINT_COLOURS` is one list with several readers, and the stylesheet is the
+	 * one that cannot import it (`docs/features/form-tint-colour.md`). A colour
+	 * added to the list with no rule here tints in the accent with nothing to
+	 * say so; a rule for a word the list lacks is a colour no layout can choose.
+	 */
+	const rules = [
+		...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(
+			/\[data-sheetsmith-tint='([^']*)'\]\s*\{([^}]*)\}/g,
+		),
+	].map((match) => ({ colour: match[1] ?? '', body: match[2] ?? '' }));
+	const named = (colour: string) => (colour === 'accent' ? '--interactive-accent' : `--color-${colour}`);
+
+	it('finds the rules it is meant to be checking', () => {
+		expect(rules.length).toBeGreaterThan(8);
+	});
+
+	it('gives every colour in the list its rule, naming its theme variable', () => {
+		for (const colour of TINT_COLOURS) {
+			const rule = rules.find((one) => one.colour === colour);
+			expect(rule, colour).toBeDefined();
+			expect(rule?.body.replace(/\s+/g, ' ').trim(), colour).toBe(
+				`--sheetsmith-tint: var(${named(colour)});`,
+			);
+		}
+	});
+
+	it('names no colour outside the list', () => {
+		const outside = rules
+			.map((rule) => rule.colour)
+			.filter((colour) => !(TINT_COLOURS as readonly string[]).includes(colour));
+		expect(outside).toEqual([]);
+	});
+
+	it('mentions the attribute only with a colour in the list, or bare', () => {
+		const words = [...CSS.matchAll(/\[data-sheetsmith-tint(?:='([^']*)')?\]/g)].map((match) => match[1]);
+		expect(words.filter((word) => word !== undefined && !(TINT_COLOURS as readonly string[]).includes(word))).toEqual(
+			[],
+		);
 	});
 });
 
@@ -4859,8 +4910,24 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		const base = tint.find(
 			(rule) => rule.context.length === 0 && /background-image:/.test(rule.body),
 		);
-		expect(base?.body).toMatch(/outline:\s*1px solid var\(--interactive-accent\)/);
-		expect(base?.body).toMatch(/color-mix\(in srgb, var\(--interactive-accent\) 12%/);
+		// The colour the form chose, the accent behind it, and the edge mixed
+		// from it toward the text (`docs/features/form-tint-colour.md`).
+		expect(base?.body).toMatch(/outline:\s*1px solid var\(--sheetsmith-tint-edge\)/);
+		expect(base?.body).toMatch(
+			/color-mix\(in srgb, var\(--sheetsmith-tint\) 12%/,
+		);
+		// The accent behind every one of those, written once and at no weight, so
+		// a word on the element or an ancestor always wins.
+		expect(
+			rules(CSS_WITHOUT_COMMENTS).find(
+				(rule) => rule.selector === ':where(.sheetsmith-view)' && /--sheetsmith-tint:/.test(rule.body),
+			)?.body,
+		).toMatch(/--sheetsmith-tint:\s*var\(--interactive-accent\)/);
+		expect(CSS_WITHOUT_COMMENTS).not.toMatch(/var\(--sheetsmith-tint,/);
+		const edge = tint.find((rule) => /--sheetsmith-tint-edge:/.test(rule.body));
+		expect(edge?.body.replace(/\s+/g, ' ')).toMatch(
+			/color-mix\( in srgb, var\(--sheetsmith-tint\) 70%, var\(--text-normal\) \)/,
+		);
 		for (const rule of tint) expect(rule.body, rule.selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
 	});
 
@@ -4874,6 +4941,19 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		// A row's cells thicken their share of the outline the same way.
 		const edge = more.find((rule) => /--sheetsmith-in-play-edge:\s*2px/.test(rule.body));
 		expect(edge?.selector).toContain('tr.sheetsmith-in-play > th');
+		// The tag sits on the plain page, its coloured edge kept.
+		const tag = more.find((rule) => rule.selector.includes('.sheetsmith-in-play-mark'));
+		expect(tag?.body).toMatch(/background-color:\s*var\(--background-primary\)/);
+		expect(tag?.body).not.toMatch(/outline/);
+	});
+
+	it('hides the swatch in forced colors, where a repainted square says nothing', () => {
+		const forced = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) =>
+				rule.context.includes('@media (forced-colors: active)') &&
+				rule.selector.includes('.sheetsmith-stat-block-tint-swatch'),
+		);
+		expect(forced?.body).toMatch(/display:\s*none/);
 	});
 
 	it('fills and outlines a row through every cell, the name cell included, and not the row', () => {
@@ -4900,11 +4980,29 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(end?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :last-child');
 	});
 
+	it("leaves a lone card's centring to the value, never to the tag laid over it", () => {
+		// The tag is appended last and taken out of flow, so a lone card's
+		// "last item" rule has to skip it, or the auto margin centring the number
+		// goes to the tag and a tinted card's number drops onto it.
+		const centring = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.selector.includes('.sheetsmith-card-single') && /margin-bottom:\s*auto/.test(rule.body),
+		);
+		expect(centring?.selector.replace(/\s+/g, ' ')).toMatch(/:not\([^)]*\.sheetsmith-in-play-mark/);
+	});
+
 	it('lays the pill over its box, taking no room', () => {
 		const pill = tint.find(
 			(rule) => rule.context.length === 0 && rule.selector === ".sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true']",
 		);
 		expect(pill?.body).toMatch(/position:\s*absolute/);
+		// A neutral chip in the theme's own text with a coloured edge, never
+		// text on the colour (`docs/features/form-tint-colour.md`).
+		expect(pill?.body).toMatch(/color:\s*var\(--text-normal\)/);
+		expect(pill?.body).toMatch(/outline:\s*1px solid var\(--sheetsmith-tint-edge\)/);
+		expect(pill?.body.replace(/\s+/g, ' ')).toMatch(
+			/background-color: color-mix\( in srgb, var\(--sheetsmith-tint\) 20%, var\(--background-primary\) \)/,
+		);
+		expect(pill?.body).not.toMatch(/--text-on-accent/);
 		// On the bottom edge at the inline-end corner, clear of the label, the
 		// centred value and the note mark (the form tag fix).
 		expect(pill?.body).toMatch(/inset-block-end:\s*0/);

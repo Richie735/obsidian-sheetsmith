@@ -993,6 +993,7 @@ build and every round of findings.
   rewrites a layout to remove them.
 - **A chosen tint colour per form; value labels instead of keys in change
   lines; a form's picture standing in for Portrait.** These are out of scope
-  for this run.
+  for this run. The tint colour has since been built
+  (`docs/features/form-tint-colour.md`).
 - **Tracking code fences for `###` and `##`.** That rule is the record's and
   the section's, unchanged.
