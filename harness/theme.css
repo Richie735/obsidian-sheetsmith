@@ -135,6 +135,19 @@ body.theme-light {
 	--text-on-accent: #ffffff;
 	--interactive-accent: #8b6cef;
 	--interactive-accent-hover: #7a5cf0;
+	/* The theme's named colours, which a form may tint in
+	   (`docs/features/form-tint-colour.md`), at the default theme's values from
+	   Obsidian 1.15.0's `app.css`. Here so a clone that has never run
+	   `harness:calibrate` still draws every colour rather than the accent behind
+	   an undefined variable. */
+	--color-red: #e93147;
+	--color-orange: #ec7500;
+	--color-yellow: #e0ac00;
+	--color-green: #08b94e;
+	--color-cyan: #00bfbc;
+	--color-blue: #086ddd;
+	--color-purple: #7852ee;
+	--color-pink: #d53984;
 }
 
 body.theme-dark {
@@ -159,6 +172,15 @@ body.theme-dark {
 	--text-on-accent: #ffffff;
 	--interactive-accent: #8b6cef;
 	--interactive-accent-hover: #9d84f2;
+	/* The dark half of the named colours; see the light block for why. */
+	--color-red: #fb464c;
+	--color-orange: #e9973f;
+	--color-yellow: #e0de71;
+	--color-green: #44cf6e;
+	--color-cyan: #53dfdd;
+	--color-blue: #027aff;
+	--color-purple: #a882ff;
+	--color-pink: #fa99cd;
 }
 
 /* ------------------------------------------------------------------------ *
