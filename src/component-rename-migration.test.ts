@@ -608,3 +608,33 @@ describe('reportComponentRename', () => {
 		expect(Notice.messages).toEqual([]);
 	});
 });
+
+describe('a zone heading rename', () => {
+	const intent: RenameIntent = { kind: 'heading', label: 'Wild Shape', from: 'Traits', to: 'Features' };
+	const forms = (bear: string, wolf: string) =>
+		note(LAYOUT, `\n## Wild Shape\n\n### Brown Bear\n\`\`\`sheet\nHP: 22 / 34\n\`\`\`\n${bear}\n### Wolf\n\`\`\`sheet\nHP: 11 / 11\n\`\`\`\n${wolf}`);
+
+	it('rewrites every spelling in every record, keeps a record already holding the target, leaves a legacy lead', async () => {
+		await app.vault.create('Druid.md', forms('\n#### Traits\n\nSmell.\n', '\n#### traits:\n\nPack.\n\n#### Features\n\nx\n'));
+		await app.vault.create('Legacy.md', forms('\nKeen smell.\n', '\n'));
+		const summary = await migrateComponentRename(vault(), LAYOUT, intent);
+		expect(summary).toEqual({ renamed: 1, collided: 0, partlyKept: 1, unreadable: 0 });
+		expect(await app.vault.read(app.vault.getFileByPath('Druid.md')!)).toBe(
+			forms('\n#### Features\n\nSmell.\n', '\n#### traits:\n\nPack.\n\n#### Features\n\nx\n'),
+		);
+		expect(await app.vault.read(app.vault.getFileByPath('Legacy.md')!)).toBe(forms('\nKeen smell.\n', '\n'));
+	});
+
+	it('reports the counts in one Notice, and says nothing where nothing matched', async () => {
+		await app.vault.create('Druid.md', forms('\n#### Traits\n\nSmell.\n', '\n'));
+		await reportComponentRename(vault(), LAYOUT, intent);
+		expect(Notice.messages).toEqual(['Renamed "Traits" to "Features" in 1 character note.']);
+		Notice.messages = [];
+		await reportComponentRename(vault(), LAYOUT, intent);
+		expect(Notice.messages).toEqual([]);
+	});
+
+	it('names a heading, not an entry, when a note keeps the old one', () => {
+		expect(migrationMessage(intent, { renamed: 0, collided: 1, partlyKept: 0, unreadable: 0 })).toContain('a heading called "Features"');
+	});
+});
