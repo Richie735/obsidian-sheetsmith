@@ -133,6 +133,30 @@ function findTable(lines: readonly string[]): TableSpan | null {
 	return null;
 }
 
+/**
+ * A body that opens with a table, split into the table and what follows it, or
+ * null where its first non-blank lines are not a table
+ * (`docs/features/character-forms.md`, the action list).
+ *
+ * **Only a table at the head counts.** A table anywhere else is the reader's own
+ * prose and stays prose, so a stat block's action list is never a table the
+ * reader wrote three paragraphs down. The two pieces rejoin to the body exactly:
+ * the table piece keeps the blank lines above it and every byte of its rows, and
+ * the rest keeps whatever followed, so Constraint 3 holds by concatenation.
+ */
+export function splitLeadingTable(body: string): { table: string; rest: string } | null {
+	const lines = splitLines(body);
+	const span = findTable(lines);
+	if (span === null) return null;
+	for (let at = 0; at < span.start; at++) {
+		if (lineText(lines[at] as string).trim() !== '') return null;
+	}
+	return {
+		table: lines.slice(0, span.end).join(''),
+		rest: lines.slice(span.end).join(''),
+	};
+}
+
 /** Parse the markdown table in a section body. */
 export function readTable(body: string): TableResult {
 	const lines = splitLines(body);

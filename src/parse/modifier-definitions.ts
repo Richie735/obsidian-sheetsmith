@@ -39,13 +39,20 @@ import { Layout } from './layout';
 import { isNoteOnly, unspellableName, unspellableNote } from './modifier-cell';
 import { series, spelled } from './spelled';
 import {
+	contestsByValue,
 	MODIFIER_CHANGE_KEYS,
 	ModifierChangeView,
 	ModifierDefinitionView,
+	ModifierOperator,
 	operatorOf,
 	phaseOf,
 } from '../types';
 import { expressionProblem } from '../formula/expression';
+
+/** What a value-contesting change does, as a verb phrase: `sets`, `puts a floor under`. */
+function byValue(operator: ModifierOperator): string {
+	return operator === 'upgrade' ? 'puts a floor under' : 'sets';
+}
 
 /** Something wrong with one modifier definition, or with the list. */
 export interface ModifierDefinitionProblem {
@@ -255,7 +262,7 @@ export function parseModifierDefinitions(
 				...(note !== '' ? { note } : {}),
 				// Omitted for the value phase, so a layout gains a key only where it
 				// means something other than the default (PATTERNS §8).
-				...(applies === 'result' && operator !== 'override' ? { applies } : {}),
+				...(applies === 'result' && !contestsByValue(operator) ? { applies } : {}),
 				/*
 				 * The reader's own words for the value, wherever there are any.
 				 *
@@ -400,7 +407,7 @@ export function parseModifierDefinitions(
 				 * controls and the fix is to change one of them.
 				 */
 				const ignored = [
-					...(operator === 'override' ? ['operator'] : []),
+					...(contestsByValue(operator) ? ['operator'] : []),
 					...(text(one, 'bonusType') !== '' ? ['bonus type'] : []),
 					...(text(one, 'applies') !== '' ? ['phase'] : []),
 				];
@@ -432,22 +439,23 @@ export function parseModifierDefinitions(
 						? `"${name}" applies "${change.target}" to "${storedPhase}", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.`
 						: `"${name}" applies to "${storedPhase}", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.`,
 				});
-			} else if (phaseOf(one) === 'result' && operator === 'override') {
-				// An override already replaces the published number, which is the result
-				// phase by construction; saying so a second way would be two spellings
-				// for one behaviour.
+			} else if (phaseOf(one) === 'result' && contestsByValue(operator)) {
+				// An override already replaces the published number, and an at least
+				// floors it, which is the result phase by construction; saying so a
+				// second way would be two spellings for one behaviour.
 				problems.push({
 					definition: name,
-					message: `"${name}" sets ${which}, so it always applies to the result and "applies" is ignored. Clear it, or make ${other} add to the value instead.`,
+					message: `"${name}" ${byValue(operator)} ${which}, so it always applies to the result and "applies" is ignored. Clear it, or make ${other} add to the value instead.`,
 				});
 			}
 
-			if (bonusType !== '' && operator === 'override') {
-				// Ignored in the arithmetic rather than refused, because overrides do
-				// not contest by type: the highest wins whatever either was called.
+			if (bonusType !== '' && contestsByValue(operator)) {
+				// Ignored in the arithmetic rather than refused, because overrides and
+				// at leasts do not contest by type: the highest wins whatever either
+				// was called.
 				problems.push({
 					definition: name,
-					message: `"${name}" sets ${which}, so its bonus type "${bonusType}" is ignored: overrides are not contested by type. Clear it, or make ${other} add to the value instead.`,
+					message: `"${name}" ${byValue(operator)} ${which}, so its bonus type "${bonusType}" is ignored: ${operator === 'override' ? 'overrides' : 'at leasts'} are not contested by type. Clear it, or make ${other} add to the value instead.`,
 				});
 			}
 		});

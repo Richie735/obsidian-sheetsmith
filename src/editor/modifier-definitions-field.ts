@@ -63,6 +63,7 @@
  * `layout-editor.test.ts` keeps only what needs the pane.
  */
 
+import { OPERATOR_LABELS } from '../en';
 import {
 	acceptingTargets,
 	ModifierTargetSource,
@@ -87,6 +88,7 @@ import {
 	ModifierDefinition,
 	ModifierOperator,
 	operatorOf,
+	OPERATORS,
 	phaseOf,
 } from '../types';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
@@ -101,21 +103,6 @@ type DefinitionEntry = Partial<ModifierDefinition> & Record<string, unknown>;
 /** One change as the editor handles one, on the same terms. */
 type ChangeEntry = Partial<ModifierChange> & Record<string, unknown>;
 
-/**
- * What each operator is called on screen, against the value stored in the file.
- *
- * A `Record` over the operator rather than a list of its own, so an operator
- * added to the vocabulary does not compile until it has a word here — which is
- * `components/column-types.ts`'s own argument for the column labels.
- *
- * **Adds to** and **Sets** rather than "add" and "override": the stored ids are
- * the data model and read like it, and "override" is a word about the engine
- * where the author is choosing what their item does.
- */
-const OPERATOR_LABELS: Record<ModifierOperator, string> = {
-	add: 'Adds to',
-	override: 'Sets',
-};
 
 /**
  * How many values a definition names, in either spelling.
@@ -627,7 +614,7 @@ export function renderModifierDefinitions(
 				cls: 'dropdown',
 				attr: { 'aria-label': qualified(at, 'operator') },
 			});
-			for (const id of ['add', 'override'] as const) {
+			for (const id of OPERATORS) {
 				operator.createEl('option', {
 					value: id,
 					text: OPERATOR_LABELS[id],
@@ -643,7 +630,7 @@ export function renderModifierDefinitions(
 				// this pane follows: a change that adds reads as one that never said
 				// which it was.
 				if (operator.value === 'add') delete change.operator;
-				else change.operator = 'override';
+				else change.operator = operatorOf({ operator: operator.value });
 				/*
 				 * **And the phase goes with it, because the control that sets it does.**
 				 * An override is in the result phase by construction, so `applies` beside

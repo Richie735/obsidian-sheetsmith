@@ -16,6 +16,8 @@
  * stays a literal at that site, where the call-site rule reads it.
  */
 
+import type { ModifierOperator } from './types';
+
 export const TEXT = {
 	/**
 	 * The way from a keyed markdown view to its sheet: the command, the markdown
@@ -28,3 +30,17 @@ export const TEXT = {
 	 */
 	openAsMarkdown: 'Open as Markdown',
 } as const;
+
+/**
+ * What each modifier operator is called, which is what an author picks: the
+ * sheet's modifier form and the layout editor's definitions list offer the
+ * same three, in this order (`docs/features/character-forms.md`). A `Record`
+ * over the operator, so a fourth does not compile until it has a word here, and
+ * one copy so the two surfaces cannot call one operator two things. Words for
+ * what an item does rather than the stored ids, which read like the engine.
+ */
+export const OPERATOR_LABELS: Readonly<Record<ModifierOperator, string>> = {
+	add: 'Adds to',
+	override: 'Sets',
+	upgrade: 'At least',
+};

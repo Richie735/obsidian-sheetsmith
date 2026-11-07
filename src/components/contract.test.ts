@@ -364,7 +364,7 @@ describe('component registry', () => {
 		const holding = types.filter(
 			(type) => getComponent(type)?.scopeRows !== undefined,
 		);
-		expect(holding).toEqual(['record-set', 'roster', 'table']);
+		expect(holding).toEqual(['record-set', 'roster', 'stat-block', 'table']);
 	});
 
 	it('leaves the modifier source off unless a component declares any', () => {
@@ -382,7 +382,7 @@ describe('component registry', () => {
 		const pushing = types.filter(
 			(type) => getComponent(type)?.scopeModifiers !== undefined,
 		);
-		expect(pushing).toEqual(['record-set', 'table']);
+		expect(pushing).toEqual(['record-set', 'stat-block', 'table']);
 	});
 
 	it('holds a push to one part of a cell, and never to a definition name', () => {
@@ -740,7 +740,7 @@ describe('component registry', () => {
 		// one means updating that table with its photograph.
 		expect(
 			types.filter((type) => getComponent(type)?.example !== undefined),
-		).toEqual(['card-set', 'roster', 'table', 'track']);
+		).toEqual(['card-set', 'roster', 'stat-block', 'table', 'track']);
 	});
 
 	it('names the types a layout may use when one is unknown', () => {
@@ -913,6 +913,7 @@ describe('a component that draws a label asks whether it should', () => {
 		expect(wired.sort()).toEqual([
 			'record-set.ts',
 			'roster.ts',
+			'stat-block.ts',
 			'table.ts',
 			'track.ts',
 		]);
@@ -1105,6 +1106,9 @@ describe('a component that says what a sample of itself looks like', () => {
 		'rich-text bare',
 		'roster bare',
 		'roster example',
+		'stat-block bare',
+		'stat-block Forms',
+		'stat-block example',
 		'table bare',
 		'table Inventory',
 		'table Conditions',

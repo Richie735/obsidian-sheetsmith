@@ -65,14 +65,11 @@
 import { setIcon } from 'obsidian';
 import {
 	bindEditable,
-	bindMultiline,
-	keptRatherThanBlank,
 } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
-import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
-import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
-import { bodyText, writeBodyText } from '../parse/markdown-body';
-import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
+import { withCeiling } from '../parse/bounded-entry';
+import { fencedKeyProblem } from '../parse/fenced';
+import { cellParts } from '../parse/modifier-cell';
 import {
 	GroupReading,
 	groupMatchKey,
@@ -80,42 +77,17 @@ import {
 	OTHER_KEY,
 	RecordGroup,
 } from '../parse/record-groups';
-import {
-	appendRecord,
-	joinRecords,
-	RecordBlock,
-	renameRecord,
-	splitRecordBody,
-	splitRecords,
-	startsRecord,
-	withRecordBody,
-} from '../parse/records';
-import { startsSection } from '../parse/character';
+import { joinRecords, splitRecords } from '../parse/records';
 import { conditionReads, heldCondition } from '../formula/field-condition';
-import { expressionProblem } from '../formula/expression';
-import { displayText, hasLink } from '../parse/wikilink';
-import { formatDerived } from './card-face';
-import { fencedLinkRefusal } from './fenced-link';
-import {
-	BODY_PLACEMENT,
-	ColumnType,
-	HOLDER_MAX_SOURCE,
-	MaxSource,
-	Placement,
-} from './column-types';
+import { BODY_PLACEMENT } from './column-types';
 import {
 	boundedText,
 	formatComputed,
-	TypedField,
 	typedValue,
-	typeOf,
 } from './typed-value';
 import {
 	ComponentConfig,
 	ComponentDefinition,
-	ExpressionExplainer,
-	ExpressionResolver,
-	FieldResolver,
 	FieldValue,
 	ModifierPush,
 	ModifierSource,
@@ -124,26 +96,55 @@ import {
 	ResetBinding,
 	ResetColumn,
 	ResetContext,
-	ResetReach,
 	ResetResult,
 	RowsSource,
 	RowValues,
 	showsOwnLabel,
 } from '../types';
 import { levelCount, levelIndex, levelName, levelOf, parseLevel } from './level-ring';
+import {
+	countOf,
+	editRecords,
+	fieldLabel,
+	fieldType,
+	noMaximum,
+	RecordEntry,
+	RecordField,
+	recordEntries,
+	recordLabel,
+	RecordList,
+	recordsOwnMax,
+	recordValues,
+	recordViews,
+	recordWrites,
+	storedFields,
+	storedLayer,
+	storedValue,
+	admittedRecords,
+	fieldReset,
+	recordCount,
+	recordNoun,
+	resetColumnsOf,
+	resetOutcome,
+} from './record-fields';
+
+import {
+	drawRecordBody,
+	drawRecordModifier,
+	drawRecordName,
+	drawRecordNumber,
+	bindDisclosure,
+	CLOSED_ICON,
+	OPEN_ICON,
+	RecordHost,
+	REMOVE_ICON,
+	recordRefusalNotice,
+	shiftOpenRecords,
+	recordRefusals,
+} from './record-controls';
+
+export type { RecordEntry, RecordField } from './record-fields';
 import { FALLBACK_FIT_TIER, fitTier, type LineField } from './record-line-fit';
-import { adoptRenderedLinks, paintLinkedText } from './linked-text';
-import {
-	ModifierFormState,
-	modifierFormState,
-	renderModifierForm,
-} from './modifier-form';
-import {
-	applying,
-	modifierRowName,
-	modifierRowText,
-	rowModifiers,
-} from './modifier-breakdown';
 import { bindRingControl } from './ring-control';
 import {
 	sampleFlag,
@@ -153,31 +154,9 @@ import {
 	sampleText,
 } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
-import {
-	AnchoredPanel,
-	focusFirstControl,
-	openAnchoredPanelKey,
-	reanchorAnchoredPanel,
-	showAnchoredPanel,
-} from '../ui/anchored-panel';
 import { element } from '../ui/element';
 import { showPopover } from '../ui/popover';
-import { flagWhileFocused } from '../interaction/field-focus-flag';
-import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { revealWhenTruncated } from '../ui/truncation';
-
-/** What one record is called where the layout has not said. */
-const DEFAULT_RECORD_NAME = 'Record';
-
-/**
- * The disclosure's two marks. Lucide's own chevrons, so the control reads as
- * every other disclosure in the app rather than as a glyph of this plugin's.
- */
-const CLOSED_ICON = 'chevron-right';
-const OPEN_ICON = 'chevron-down';
-
-/** The delete control's mark, which is Table's and the layout editor's. */
-const REMOVE_ICON = 'trash';
 
 /**
  * The largest field count the stylesheet tabulates a strip threshold for.
@@ -190,23 +169,6 @@ const REMOVE_ICON = 'trash';
  * draws for that count with nothing red to say so.
  */
 export const MAX_TABULATED_FIELDS = 8;
-
-
-/** A blank line, which is what separates one paragraph from the next. */
-const PARAGRAPH_BREAK = /(?:\r?\n[ \t]*)+\r?\n/;
-
-/**
- * What clipping means on a record's name, for the shared linked-text painter.
- *
- * A summary line is one line whose neighbours have already agreed its height, so
- * a name clips exactly as a cell does — and the class name stays here rather
- * than in the painter, which is PATTERNS §1's rule: a module beside the
- * components must not name a record.
- */
-const NAME_CLIPPING = {
-	soleLinkClass: 'sheetsmith-record-link-only',
-	reveal: revealWhenTruncated,
-};
 
 /**
  * Which list's **Add** control was pressed, and how many records it held at the
@@ -263,125 +225,6 @@ let awaitingKeyEdit: {
 	key: string;
 } | null = null;
 
-/** One typed value every record holds, stored as an entry in its fence. */
-export interface RecordField {
-	/** Entry key in the note, and the name a formula reads the value by. */
-	key: string;
-	/** What the field is called on the sheet, when it should differ from the key. */
-	name?: string;
-	/** Defaults to text, which this component refuses. */
-	type?: ColumnType;
-	/** For a computed field: the expression, evaluated in the record's scope. */
-	formula?: string;
-	/**
-	 * Bounds for a number field, applied to typing and arrow steps alike; `max`
-	 * is also what a `full` reset restores to and what the field draws its value
-	 * against, which is what makes a number field with a maximum a uses counter
-	 * rather than a bounded number. For a level field, `max` is its highest
-	 * level and `min` is always 0, because "none" is a state every level needs.
-	 */
-	min?: number;
-	max?: number;
-	/**
-	 * Where a number field's ceiling comes from: the field, one number every
-	 * record is read against, or each record, a number or a formula the reader
-	 * types on the sheet beside the value and the note keeps inside that
-	 * record's own entry (`docs/features/record-ceiling-formula.md`).
-	 *
-	 * Absent means `'field'`, so every layout written before this reads exactly
-	 * as it did. Under `'record'` the field's own `max` is not read at all — it
-	 * survives untouched in the layout, so switching back restores the previous
-	 * reading exactly, which is Pool's own rule for a note carrying a `max`
-	 * entry: read in both modes, used in one.
-	 *
-	 * A string union rather than a boolean, so a third source could be added
-	 * rather than replacing a flag. A *field-level* formula `max` was the
-	 * obvious third and was refused: one formula speaks for every record, and a
-	 * features list needs `prof`, a typed number, `abilities.CHA` and no ceiling
-	 * side by side — so a formula is something a record's own ceiling may hold
-	 * instead. Ignored on every other field type, on `secondary`'s
-	 * rule: it promises nothing this component would have to deliver, and a
-	 * hand-edited layout may carry it.
-	 *
-	 * The union is `column-types.ts`'s rather than this file's, for that file's
-	 * own reason: the editor spells the same two ids and imports nothing from a
-	 * component, so two copies would drift in silence.
-	 */
-	maxSource?: MaxSource;
-	/**
-	 * Where the field is drawn: on the record's summary line, or inside the
-	 * opened record, in a block above its prose, for a value read once and
-	 * changed rarely. Absent means the summary line, so every layout written
-	 * before this reads as it did.
-	 *
-	 * **Display only.** The fence, the formulas, the resets and the modifiers do
-	 * not know it exists: a body field is the same control drawn by the same
-	 * `drawField`, only attached to the body, and a closed record simply does not
-	 * show it. Any value but `BODY_PLACEMENT` reads as the summary line with no
-	 * configuration error, on `maxSource`'s precedent, and is carried untouched.
-	 */
-	placement?: Placement;
-	/**
-	 * A boolean formula in the record's own scope, and where it is false on a
-	 * record the field is not drawn on that record
-	 * (`docs/features/conditional-field-visibility.md`). Absent or blank means
-	 * always shown; a hand-written `true` or `false` is its own answer.
-	 *
-	 * **Not `ConfigFieldSpec.visibleWhen`, and the shared word is all they
-	 * share.** That one is the plugin's own declaration over a closed set of
-	 * config keys, checked by `editor/config-fields.ts`'s `conditionMet`, and it
-	 * fails *closed*: a typo in the plugin's own declaration hides a control,
-	 * which is the safer way to be wrong. This one is an author's formula over
-	 * character data, evaluated by the formula engine, and it fails *open*: a
-	 * condition that cannot be worked out shows the field and says why, because
-	 * a hidden value still counting is the worse way to be wrong. Different
-	 * grammar, different evaluator, opposite failure — so do not unify them.
-	 *
-	 * **Display only, like `placement`.** A hidden field keeps its value in the
-	 * note and goes on counting in every aggregate, modifier and reset: no value
-	 * reads visibility, so the dependency graph cannot close through it. A
-	 * condition naming its own key is refused and the field shown, since a field
-	 * that can hide itself vanishes under the cursor.
-	 */
-	visibleWhen?: string | boolean;
-	/**
-	 * Names for a level field's states, from none upwards. Naming them settles
-	 * how many there are. A name may say what its ring shows after a colon; see
-	 * level-ring.ts, which owns that rule.
-	 */
-	levels?: string[];
-	/** How a level field is edited. Defaults to cycling on press. */
-	input?: 'cycle' | 'select';
-	/** Prefix a non-negative computed number with "+". Defaults to false. */
-	signed?: boolean;
-	/**
-	 * Ignored: a record's fields are already secondary to its name and its body,
-	 * so a second quiet rank inside one summary line would be a difference nobody
-	 * could read. Still declared, because a layout hand-edited from a Table's
-	 * columns may carry it and the key must survive the round trip.
-	 */
-	secondary?: boolean;
-	/**
-	 * Ignored, and **not** honoured now that a strip exists: the strip is the
-	 * component's and not the field's, and a hole in it over a ring would leave
-	 * exactly the unnamed ring the strip is there to name. Declared for
-	 * `secondary`'s reason — a hand-edited layout may carry a Table's, and the
-	 * key must survive the round trip.
-	 */
-	hideHeading?: boolean;
-	/**
-	 * Refused: a list of records draws no totals row for a total to sit in, so
-	 * `sum(<id>, <key>)` from elsewhere on the sheet is the arithmetic instead.
-	 */
-	total?: boolean;
-	/**
-	 * Refused: every record is the character's, and a name a formula reads has to
-	 * be knowable when the formula is written — so there is nothing for a
-	 * per-record name to be. `count()` and `sum()` over the list are what read it.
-	 */
-	publish?: boolean;
-}
-
 export interface RecordSetConfig extends ComponentConfig {
 	type: 'record-set';
 	recordName?: string;
@@ -402,25 +245,7 @@ export interface RecordSetConfig extends ComponentConfig {
 	groupBy?: string;
 }
 
-/** One record, as the note holds it. */
-export interface RecordEntry {
-	/** The record's name, exactly as its heading spells it. */
-	name: string;
-	/** Stored field values by the key the fence spells. */
-	fields: Record<string, string>;
-	/** The prose after the fence, with the record's own framing removed. */
-	body: string;
-	/**
-	 * Why this record's fence would not read, or null where it read.
-	 *
-	 * A member rather than a failed `read`, because the unit of failure here is
-	 * the record: a section holding forty spells must not be blanked by one
-	 * hand-typed colon (SPEC §10, read one level in).
-	 */
-	error: string | null;
-}
-
-export interface RecordSetData {
+export interface RecordSetData extends RecordList {
 	/**
 	 * Records by their position among the `###` blocks, 0 first. Read fills
 	 * every position; an edit reports only the positions it touched, so a commit
@@ -437,21 +262,6 @@ export interface RecordSetData {
 	added?: readonly { name: string }[];
 	/** Positions to remove, as read. */
 	removed?: readonly number[];
-}
-
-/** What one record is called, in the author's own word. */
-function recordNoun(config: RecordSetConfig): string {
-	return (config.recordName ?? '').trim() || DEFAULT_RECORD_NAME;
-}
-
-/** Shared with Table through `typed-value.ts`, so the default cannot drift. */
-const fieldType = typeOf;
-
-/** Fields whose values live in the fence. Computed ones are never stored. */
-function storedFields(config: RecordSetConfig): RecordField[] {
-	return (config.fields ?? []).filter(
-		(field) => fieldType(field) !== 'computed',
-	);
 }
 
 /** Whether this field draws inside the opened record rather than on its summary line. */
@@ -474,11 +284,6 @@ function honouredCondition(field: RecordField): string | boolean | null {
 	const held = heldCondition(field.visibleWhen);
 	if (typeof held === 'string' && conditionReads(held, field.key)) return null;
 	return held;
-}
-
-/** What a record's field is called on the sheet. */
-function fieldLabel(field: RecordField): string {
-	return (field.name ?? '').trim() || field.key;
 }
 
 /**
@@ -507,210 +312,6 @@ function lineFieldOf(field: RecordField): LineField {
 				? { fixed: String(field.max) }
 				: 'none',
 	};
-}
-
-/** Whether this field's ceiling belongs to each record rather than to the field. */
-function recordsOwnMax(field: RecordField): boolean {
-	return (
-		fieldType(field) === 'number' && field.maxSource === HOLDER_MAX_SOURCE
-	);
-}
-
-/**
- * The half of a stored entry that is the *value*.
- *
- * **Applied to every `number` field's entry whatever the mode, and that is the
- * decision rather than an over-reach.** Gating the split on `maxSource` would
- * mean that switching a field back to the field's own ceiling turned every
- * composite already in the note into text — and `typedValue` hands text back as
- * text, so `sum(features, Uses)` would start reading `'2 / 3'` as a name that is
- * not a number and take a card down with a `?`. The value half is what the
- * input, the clamp, `typedValue` and `scopeRows` see in both modes; only the
- * *ceiling* half changes meaning with the mode.
- */
-function storedValue(field: RecordField, raw: string | undefined): string {
-	return fieldType(field) === 'number'
-		? splitBounded(raw ?? '').value
-		: (raw ?? '');
-}
-
-/**
- * What a typed ceiling's text is worth as a number, or null where it is not a
- * number at all.
- *
- * **The rule every ceiling read before a ceiling could be a formula**, kept as
- * the first step of `ceilingOf` so a typed number never reaches the evaluator:
- * `03`, `1.5`, `+3` and `1e3` read exactly what they always read, whatever the
- * expression grammar thinks of them. A field-owned `max` is read by this alone,
- * since a literal the layout declared is never evaluated.
- */
-function typedCeiling(text: string): number | null {
-	const trimmed = text.trim();
-	if (trimmed === '') return null;
-	const value = Number(trimmed);
-	return Number.isFinite(value) ? value : null;
-}
-
-/**
- * What a record's ceiling comes to: a number, `null` where nothing is there,
- * or why it cannot be worked out (`docs/features/record-ceiling-formula.md`).
- */
-type Ceiling = number | null | { error: string };
-
-/** The evaluator a ceiling is worked out with, as a host hands it over. */
-interface CeilingReaders {
-	resolveExpression?: ExpressionResolver;
-	explainExpression?: ExpressionExplainer;
-}
-
-/** A sentence as the record's line ends it, whoever wrote it. */
-function asSentence(text: string): string {
-	const trimmed = text.trim();
-	return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-/**
- * What a record-owned ceiling's text comes to, in that record's stored scope.
- *
- * **One function, and every channel takes its answer** — the drawn number, the
- * value's clamp, the announcement's "of 3" and every reset — which is the lesson
- * of the defect this function's predecessor recorded: the announcement once took
- * the raw text where the clamp parsed it, and said "of lots" about a ceiling the
- * clamp and the reset both read as none. Two channels disagreeing about whether a
- * record has a ceiling is the failure, so there is one spelling.
- *
- * In order: blank is nothing; a typed number is that number, by `typedCeiling`;
- * text the parser refuses is its sentence; and anything else is evaluated. **Text
- * that is not a number is no longer "no ceiling"**, and that is the decision: a
- * mistyped `prfo` read as uncapped would be the silent default §5 forbids, and
- * `lots` and `prfo` cannot be told apart — both are perfectly good names to a
- * parser. So both say so, on the record that holds them.
- *
- * **An evaluated ceiling is held to the field's floor**, as a typed one is at its
- * commit, because a ceiling under the floor describes a range no value can
- * occupy; a typed one is not held here, so it reads exactly as before.
- *
- * **No evaluator is loud, not silent.** A host with no sheet draws every
- * expression ceiling as unresolved with its line, never as a number and never as
- * no ceiling.
- */
-function ceilingOf(
-	text: string,
-	field: RecordField,
-	scope: Readonly<Record<string, FieldValue>>,
-	readers: CeilingReaders,
-): Ceiling {
-	const trimmed = text.trim();
-	if (trimmed === '') return null;
-	const typed = typedCeiling(trimmed);
-	if (typed !== null) return typed;
-	const problem = expressionProblem(trimmed);
-	if (problem !== null) return { error: asSentence(problem) };
-	if (readers.resolveExpression === undefined) {
-		return { error: `there is no sheet here to work "${trimmed}" out against.` };
-	}
-	const value = readers.resolveExpression(trimmed, scope);
-	if (value === null) {
-		return {
-			error: asSentence(
-				readers.explainExpression?.(trimmed, scope) ?? 'it did not resolve.',
-			),
-		};
-	}
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		return { error: `it came to "${String(value)}", which is not a number.` };
-	}
-	return field.min === undefined ? value : Math.max(field.min, value);
-}
-
-/** A ceiling's number where it has one, and null where it has none or cannot be read. */
-function ceilingNumber(ceiling: Ceiling): number | null {
-	return typeof ceiling === 'number' ? ceiling : null;
-}
-
-/** Why a ceiling cannot be worked out, or null where it can or is absent. */
-function ceilingProblem(ceiling: Ceiling): string | null {
-	return ceiling !== null && typeof ceiling === 'object' ? ceiling.error : null;
-}
-
-/**
- * The ceiling this record holds for this field, or null where it holds none —
- * and always null where the ceiling is the field's, whose half of an entry is
- * carried and never evaluated.
- */
-function recordCeiling(
-	field: RecordField,
-	raw: string | undefined,
-	scope: Readonly<Record<string, FieldValue>>,
-	readers: CeilingReaders,
-): Ceiling {
-	if (!recordsOwnMax(field)) return null;
-	return ceilingOf(splitBounded(raw ?? '').ceiling ?? '', field, scope, readers);
-}
-
-/**
- * The bounds a number field's value is held to on this record: the field's own
- * floor, and whichever ceiling applies. A ceiling that cannot be worked out
- * holds nothing, so a value committed under one is not clamped.
- *
- * The floor is the layout's in both modes, which is why it is not conditional.
- * `typed-value.ts` goes on being handed one number — the splitting happens on
- * this component's side of the call, which is what keeps this feature out of
- * Table by construction.
- */
-function fieldBounds(field: RecordField, ceiling: Ceiling): TypedField {
-	if (!recordsOwnMax(field)) return field;
-	const max = ceilingNumber(ceiling);
-	return max === null
-		? { type: 'number', min: field.min }
-		: { type: 'number', min: field.min, max };
-}
-
-/**
- * Whether an action passes over this field on this record because its own
- * ceiling cannot be worked out (`docs/features/record-ceiling-formula.md`).
- *
- * `full` restores to the ceiling and `formula` holds its amount to it, so
- * neither has anything to write against; `empty` needs no ceiling, so a list
- * whose ceilings are broken can still be spent. **Per record and field**, as the
- * no-ceiling skip is: a toggle on the record still resets, and so does a second
- * number field whose ceiling reads.
- */
-function skipsUnreadCeiling(
-	field: RecordField,
-	action: NonNullable<ResetBinding['action']>,
-	ceiling: Ceiling,
-): boolean {
-	return (
-		action !== 'empty' &&
-		recordsOwnMax(field) &&
-		ceilingProblem(ceiling) !== null
-	);
-}
-
-/**
- * What a reset says about the records it reached and passed over, in this
- * component's own words: `1 feature skipped, its maximum could not be worked out`.
- * "Maximum" rather than "ceiling", because the field's own name says maximum.
- */
-function skippedSentence(count: number, noun: string): string {
-	return count === 1
-		? `${countOf(count, noun)} skipped, its maximum could not be worked out`
-		: `${countOf(count, noun)} skipped, their maximums could not be worked out`;
-}
-
-/**
- * What a record is called, wherever something has to name one.
- *
- * As a reader sees it, never as the file spells it: a heading may hold a
- * wikilink, and a delete control announcing "[[Sunblade|sword]]" names nothing a
- * listener could recognise. A blank name never reaches the note — the name field
- * refuses one, because a `### ` with nothing after it is not a heading and the
- * record would vanish on the next read — so this only meets one in a draft.
- */
-function recordLabel(name: string, noun: string): string {
-	const shown = displayText(name).trim();
-	return shown === '' ? `Unnamed ${noun.toLowerCase()}` : shown;
 }
 
 /**
@@ -885,79 +486,6 @@ function groupName(
 	return `${fieldLabel(field)} ${key}`;
 }
 
-/** Every record the list draws, in file order. */
-function recordViews(data: RecordSetData | null): RecordEntry[] {
-	const held = data?.records ?? {};
-	const positions = Object.keys(held).map(Number);
-	const count = positions.length === 0 ? 0 : Math.max(...positions) + 1;
-	const out: RecordEntry[] = [];
-	for (let at = 0; at < count; at++) {
-		const entry = held[at];
-		out.push({
-			name: entry?.name ?? '',
-			fields: entry?.fields ?? {},
-			body: entry?.body ?? '',
-			error: entry?.error ?? null,
-		});
-	}
-	return out;
-}
-
-/**
- * One record's stored names: every stored field by its key, never a computed
- * one — what a computed field, a condition and a reset's `where` all read.
- *
- * **One spelling for three readers**, because what is shared is the scope a
- * formula on a record sees, and two of those disagreeing is a condition that
- * admits a record on the sheet and not at the press. The value half, never the
- * whole entry: a record's `Uses` name is worth `2` when the entry says `2 / 3`,
- * which is what `sum(features, Uses)` added up before the ceiling was the
- * record's and what it must go on adding up.
- */
-function storedLayer(
-	config: RecordSetConfig,
-	record: RecordEntry,
-): Record<string, FieldValue> {
-	const stored: Record<string, FieldValue> = {};
-	for (const field of storedFields(config)) {
-		// A text field is a group key and nothing a formula can read: the language
-		// has no strings, and a name that resolved to one would be the accident a
-		// modifier field's raw text already is.
-		if (fieldType(field) === 'text') continue;
-		stored[field.key] = typedValue(
-			field,
-			storedValue(field, record.fields[field.key]),
-		);
-	}
-	return stored;
-}
-
-/**
- * One record's names as a formula reads them: every stored field by its key,
- * then the computed fields over the top.
- *
- * **Every computed field resolves against the stored layer, never against
- * another computed field**, which is Table's own rule for the same reason: the
- * value on screen and the value an aggregate reads must not disagree about what
- * a record says.
- */
-function recordValues(
-	config: RecordSetConfig,
-	record: RecordEntry,
-	resolve: FieldResolver,
-): RowValues {
-	const stored = storedLayer(config, record);
-	const values: Record<string, FieldValue> = { ...stored };
-	(config.fields ?? []).forEach((field, at) => {
-		if (fieldType(field) !== 'computed') return;
-		const value = resolve(`fields.${at}.formula`, stored);
-		// A field that would not resolve is absent rather than zero, so an
-		// expression reading it fails and the aggregate says which record.
-		if (value !== null) values[field.key] = value;
-	});
-	return { label: recordLabel(record.name, recordNoun(config)), values };
-}
-
 /** Group names a sample text field cycles through, by record. */
 const SAMPLE_GROUPS = ['Fighter', 'Wizard', 'Cleric'] as const;
 
@@ -1121,7 +649,7 @@ function resetWrite(
 	 * job is to put a number back, which is the defect `formula` was corrected
 	 * for above.
 	 */
-	const missing = storedFields(config).find(
+	const missing = storedFields(config.fields).find(
 		(field) =>
 			fieldType(field) === 'number' &&
 			!recordsOwnMax(field) &&
@@ -1129,428 +657,6 @@ function resetWrite(
 	);
 	if (missing !== undefined) return { error: noMaximum(missing) };
 	return {};
-}
-
-/**
- * What one field of one record is written as under an action, or null where
- * nothing is written (`docs/features/record-set-reset-field-targeting.md`,
- * Part 3).
- *
- * **One writer for the binding naming a field and the binding naming none**, on
- * `docs/PATTERNS.md` §1's one-step tier: what `empty`, `full` and `formula` mean
- * for a counter and a flag is a policy, and two copies of it could only drift —
- * a flag set on at one amount under **Every field** and at another under
- * **Acts on**. `amount` is `formula`'s, worked out by the caller in whichever
- * scope its binding reads: once for the sheet, or once per record.
- *
- * - A `number` is written through the join, so the ceiling survives every
- *   action: an emptied counter is `Uses: 0 / 3` and never `Uses: 0`, since a
- *   reset that deleted the reader's own ceiling would be Constraint 4 broken by
- *   the one control whose job is to restore. The number is held to whichever
- *   ceiling applies, so a `formula` writing 3 into a record whose ceiling is 2
- *   writes 2. Under `full`, a record with no ceiling of its own is null —
- *   skipped, and never written as a zero, which `resetWrite` argues.
- * - A `toggle`'s flag is **derived from the amount rather than set true** under
- *   `formula`, which is `track.ts`'s rule for a flag card: set unconditionally,
- *   `to: '0'` wrote zero into every counter *and turned every toggle on*.
- *   Derived, `formula` generalises the other two rather than being a third
- *   rule: `to: '0'` is `empty` and `to: '3'` is `full` on a field with that
- *   ceiling.
- * - Anything else — a `level` above all — is left alone by every action.
- */
-function fieldWrite(
-	field: RecordField,
-	action: NonNullable<ResetBinding['action']>,
-	amount: number | undefined,
-	raw: string,
-	/** This record's own ceiling for the field, worked out by the caller in its scope. */
-	ceiling: Ceiling,
-): string | null {
-	const type = fieldType(field);
-	if (type === 'toggle') {
-		return flagText(action === 'formula' ? (amount ?? 0) >= 1 : action === 'full');
-	}
-	if (type !== 'number') return null;
-	if (skipsUnreadCeiling(field, action, ceiling)) return null;
-	const value =
-		action === 'empty'
-			? 0
-			: action === 'formula'
-				? (amount ?? null)
-				: recordsOwnMax(field)
-					? ceilingNumber(ceiling)
-					: (field.max ?? null);
-	if (value === null) return null;
-	return withValue(raw, boundedText(String(value), fieldBounds(field, ceiling)));
-}
-
-/**
- * Every field a reset writes on one record, and whether a ceiling that would
- * not work out made it pass one over.
- *
- * **One loop for the binding naming a field and the binding naming none**, so
- * the two cannot disagree about which ceiling a record is held to or which
- * record counts as skipped. Each ceiling is worked out in that record's stored
- * scope, where `visibleWhen`, `where` and a per-record `to` are worked out.
- */
-function recordWrites(
-	config: RecordSetConfig,
-	record: RecordEntry,
-	fields: readonly RecordField[],
-	action: NonNullable<ResetBinding['action']>,
-	amount: number | undefined,
-	context: ResetContext,
-): { fields: Record<string, string>; skipped: boolean } {
-	const scope = storedLayer(config, record);
-	const readers = { resolveExpression: context.resolveExpression };
-	const written: Record<string, string> = {};
-	let skipped = false;
-	for (const field of fields) {
-		const raw = record.fields[field.key] ?? '';
-		const ceiling = recordCeiling(field, raw, scope, readers);
-		if (skipsUnreadCeiling(field, action, ceiling)) skipped = true;
-		const next = fieldWrite(field, action, amount, raw, ceiling);
-		if (next !== null) written[field.key] = next;
-	}
-	return { fields: written, skipped };
-}
-
-/**
- * How many records something happened on, in the words a list's problem lines
- * use: `every feature` where it was all of the readable ones, else `1 feature`
- * or `2 features`.
- *
- * One spelling for the `visibleWhen` problem line and a reset's refusal, which
- * both count failed records against the readable ones (`docs/PATTERNS.md` §1's
- * one-step tier: two copies of a count's wording can only drift).
- */
-function recordCount(count: number, readable: number, noun: string): string {
-	if (count >= readable) return `every ${noun.toLowerCase()}`;
-	return countOf(count, noun);
-}
-
-/**
- * `1 feature` or `2 features`: a count of records in the author's own word, for
- * every surface that counts them — the problem lines above, a reset's skipped
- * sentence and a group header's count.
- */
-function countOf(count: number, noun: string): string {
-	return `${count} ${noun.toLowerCase()}${count === 1 ? '' : 's'}`;
-}
-
-/**
- * Which records a binding's `where` admits, or why that could not be told
- * (`docs/features/record-set-reset-scope.md`).
- *
- * **Null where the binding holds no condition**: every readable record, and no
- * reach, so the confirmation stays the bare label rather than gaining "7 of 7".
- *
- * **Evaluated once per record in that record's own scope**, which is the grammar
- * `visibleWhen` fixed — the stored layer, then the sheet, never a computed field
- * — and the answer has to be true or false. **It fails closed, and whole**: one
- * record whose condition cannot be worked out, whether the name is unknown, the
- * text will not parse or it came to a number, and the binding writes nothing on
- * this list. That is the opposite of `visibleWhen`'s fail-open on purpose: on a
- * sheet the worse way to be wrong is a hidden value, and at a rest it is writing
- * records the author excluded, while writing nothing and saying so is the
- * direction a reader can recover from. A partial rest would leave them
- * reconciling record by record; the sentence names the first record instead, so
- * the fix is one field away.
- *
- * **An unreadable record is never evaluated**: it is left byte-identical, as
- * every reset leaves it, and counts in `of` because the reader sees it.
- */
-function admittedRecords(
-	config: RecordSetConfig,
-	records: readonly RecordEntry[],
-	reset: ResetBinding,
-	context: ResetContext,
-): { error: string } | { admitted: ReadonlySet<number>; reach: ResetReach } | null {
-	const condition = heldCondition(reset.where);
-	if (typeof condition !== 'string') return null;
-	const noun = recordNoun(config).toLowerCase();
-	const admitted = new Set<number>();
-	let readable = 0;
-	let failed = 0;
-	let first: { name: string; why: string } | null = null;
-	for (const [at, record] of records.entries()) {
-		if (record.error !== null) continue;
-		readable += 1;
-		const scope = storedLayer(config, record);
-		const value = context.resolve('reset.where', scope);
-		if (typeof value === 'boolean') {
-			if (value) admitted.add(at);
-			continue;
-		}
-		failed += 1;
-		first ??= {
-			name: recordLabel(record.name, noun),
-			why:
-				value === null
-					? (context.explain('reset.where', scope) ??
-						'the condition did not resolve.')
-					: `it came to "${String(value)}", which is not true or false.`,
-		};
-	}
-	if (first !== null) {
-		const on = failedOn(failed, readable, first.name, noun);
-		return {
-			error: `its condition under Only where could not be worked out on ${on}, so it resets none: ${first.why} Fix it under Only where in the layout editor.`,
-		};
-	}
-	return { admitted, reach: { reached: admitted.size, of: records.length } };
-}
-
-/**
- * Which records a whole-binding failure happened on, for the sentence that says
- * so: `every feature`, `"Rage"`, or `2 features, starting with "Rage"`.
- *
- * The count is `recordCount`, which the list's own `visibleWhen` problem line
- * reads too; what this adds is the first record's name wherever not every record
- * failed, because a reset refuses the whole list and the reader has to know
- * which record to go and fix, where a shown field is already on screen.
- *
- * **One spelling for a condition that will not work out and an amount that will
- * not** (`docs/features/record-set-reset-field-targeting.md`, Part 4), on §1's
- * one-step tier: two copies of a count's wording could only drift.
- */
-function failedOn(
-	failed: number,
-	readable: number,
-	first: string,
-	noun: string,
-): string {
-	if (failed >= readable) return recordCount(failed, readable, noun);
-	return failed === 1
-		? `"${first}"`
-		: `${recordCount(failed, readable, noun)}, starting with "${first}"`;
-}
-
-/** Whether a field stores a value a reset trigger can restore. */
-function restorable(field: RecordField): boolean {
-	const type = fieldType(field);
-	return type === 'number' || type === 'toggle';
-}
-
-/**
- * Which fields a reset binding may name, and why one refuses an action
- * (`docs/features/record-set-reset-field-targeting.md`, Part 1).
- *
- * **One list, two readers**, Table's own arrangement: the layout editor draws
- * its **Acts on** picker from this and `applyReset` looks a binding up in it, so
- * the two cannot disagree about which fields are eligible or about why one
- * refuses an action.
- *
- * `number` and `toggle` only. A `computed` field stores nothing and a `modifier`
- * field holds words; a `level` is left out on the ground the Table entry
- * recorded — a rest restoring a graded level has no reading in any system anyone
- * can name — and every action already leaves one alone.
- *
- * **Only a field-owned ceiling refuses `full`.** A field whose ceiling is each
- * record's refuses nothing: a record with none is skipped at the press rather
- * than failed, which `resetWrite` argues and which the editor cannot see.
- */
-function resetColumnsOf(config: RecordSetConfig): ResetColumn[] {
-	return (
-		(config.fields ?? [])
-			// A field with no key is one `configError` refuses, but the editor
-			// does not run `read`, and an option valued `''` would persist
-			// `column: ""`, which `parseBinding` refuses outright.
-			.filter((field) => (field.key ?? '').trim() !== '')
-			.filter(restorable)
-			.map((field) => {
-				const uncapped =
-					fieldType(field) === 'number' &&
-					!recordsOwnMax(field) &&
-					field.max === undefined;
-				return {
-					key: field.key,
-					...(field.name !== undefined && field.name.trim() !== ''
-						? { label: field.name }
-						: {}),
-					...(uncapped ? { refuses: { full: noMaximum(field) } } : {}),
-				};
-			})
-	);
-}
-
-/**
- * Why `full` cannot restore a field whose ceiling is the field's and missing.
- * One sentence for the binding naming the field and the binding naming none,
- * which both reach it.
- */
-function noMaximum(field: RecordField): string {
-	return `the field "${fieldLabel(field)}" has no maximum to restore to. Give it one, or set this trigger to empty.`;
-}
-
-/**
- * A binding that names a field: that field, and only that field, of each record
- * the binding reaches (`docs/features/record-set-reset-field-targeting.md`,
- * Parts 3 and 4).
- *
- * **Every other field is left out of the delta**, so a reached record's `Save DC`
- * keeps its bytes when its `Uses` is refilled — the whole of what naming the field
- * is for. The per-field rules are `resetWrite`'s, restricted to one field, and
- * every write still goes through the join so a reader-set ceiling survives.
- *
- * **`full` fails only on the named field**: its refusal is the one `resetColumns`
- * declares, so a DC with no maximum no longer blocks refilling `Uses`.
- *
- * **`to` is worked out on each reached record, in that record's own scope** —
- * the stored layer, then the sheet, never a computed field — which is the grammar
- * `where` already uses, and only after `where` has been worked out on every
- * readable record, so a broken condition is the one reported. It fails closed and
- * whole, as `where` does: one record whose amount cannot be worked out and the
- * binding writes nothing on this list, with the sentence naming the first.
- */
-function fieldReset(
-	config: RecordSetConfig,
-	records: readonly RecordEntry[],
-	reset: ResetBinding & { action: NonNullable<ResetBinding['action']> },
-	context: ResetContext,
-): ResetResult<RecordSetData> {
-	const named = resetColumnsOf(config).find(
-		(entry) => entry.key === reset.column,
-	);
-	const field = (config.fields ?? []).find(
-		(entry) => entry.key === named?.key,
-	);
-	if (named === undefined || field === undefined) {
-		// Two mistakes with two fixes, told apart as Table tells them apart: a
-		// field that is gone wants the trigger pointed elsewhere, and one that
-		// stores no restorable value wants a different field.
-		const declared = (config.fields ?? []).some(
-			(entry) => entry.key === reset.column,
-		);
-		return {
-			ok: false,
-			error: declared
-				? `the field "${reset.column ?? ''}" holds no value a trigger can restore. Point this trigger at a number or toggle field instead.`
-				: `this list has no field called "${reset.column ?? ''}". Point the trigger at one it has, or remove the binding.`,
-		};
-	}
-	const refusal = named.refuses?.[reset.action];
-	if (refusal !== undefined) return { ok: false, error: refusal };
-
-	const scope = admittedRecords(config, records, reset, context);
-	if (scope !== null && 'error' in scope) return { ok: false, error: scope.error };
-	const reached = [...records.entries()].filter(
-		([at, record]) =>
-			record.error === null && (scope === null || scope.admitted.has(at)),
-	);
-
-	const amounts = new Map<number, number>();
-	if (reset.action === 'formula') {
-		const noun = recordNoun(config).toLowerCase();
-		const readable = records.filter((record) => record.error === null).length;
-		let failed = 0;
-		let first: { name: string; why: string } | null = null;
-		for (const [at, record] of reached) {
-			const layer = storedLayer(config, record);
-			const value = context.resolve('reset.to', layer);
-			const number = value === null ? NaN : Number(value);
-			if (Number.isFinite(number)) {
-				amounts.set(at, number);
-				continue;
-			}
-			failed += 1;
-			first ??= {
-				name: recordLabel(record.name, noun),
-				why:
-					value === null
-						? (context.explain('reset.to', layer) ??
-							'its reset formula is empty.')
-						: `it came to "${String(value)}", which is not a number.`,
-			};
-		}
-		if (first !== null) {
-			const on = failedOn(failed, readable, first.name, noun);
-			return {
-				ok: false,
-				error: `its reset formula could not be worked out on ${on}, so it resets none: ${first.why} Fix it under Resets to in the layout editor.`,
-			};
-		}
-	}
-
-	const next: RecordSetData = { records: {} };
-	let skipped = 0;
-	for (const [at, record] of reached) {
-		const written = recordWrites(
-			config,
-			record,
-			[field],
-			reset.action,
-			amounts.get(at),
-			context,
-		);
-		if (written.skipped) skipped += 1;
-		if (Object.keys(written.fields).length > 0) {
-			next.records[at] = { fields: written.fields };
-		}
-	}
-	return resetOutcome(config, next, scope?.reach, skipped);
-}
-
-/**
- * A reset that applied, with its reach where it narrowed and its skipped
- * records where a ceiling would not work out — each absent where it says
- * nothing, so a confirmation with neither reads exactly as it did.
- */
-function resetOutcome(
-	config: RecordSetConfig,
-	data: RecordSetData,
-	reach: ResetReach | undefined,
-	skipped: number,
-): ResetResult<RecordSetData> {
-	return {
-		ok: true,
-		data,
-		...(reach === undefined ? {} : { reach }),
-		...(skipped === 0
-			? {}
-			: { skipped: skippedSentence(skipped, recordNoun(config)) }),
-	};
-}
-
-/** One record's stored pieces, with the delta applied and nothing else touched. */
-function applyDelta(
-	block: RecordBlock,
-	delta: Partial<RecordEntry>,
-	known: ReadonlyMap<string, string>,
-): RecordBlock {
-	// A blank name is refused at the control rather than here, because a `### `
-	// with nothing after it is not a heading: the record would vanish on the next
-	// read and its body would be swallowed by the record above it (Constraint 4).
-	const named =
-		delta.name !== undefined && delta.name.trim() !== ''
-			? renameRecord(block, delta.name)
-			: block;
-
-	let head = named.head;
-	if (delta.fields !== undefined) {
-		const updates = new Map<string, string | null>();
-		for (const [key, value] of Object.entries(delta.fields)) {
-			// Mapped back to the layout's own spelling, so the entry the note
-			// already holds is the one that is rewritten. A key the layout no
-			// longer declares is never reached at all (SPEC §10).
-			const spelled = known.get(key.toLowerCase());
-			if (spelled !== undefined) updates.set(spelled, value);
-		}
-		// Written into the head alone, so a fresh fence lands between the heading
-		// and the prose rather than after it.
-		if (updates.size > 0) head = writeFenced(head, updates);
-	}
-
-	let rest = named.rest;
-	if (delta.body !== undefined && delta.body !== bodyText(rest)) {
-		rest = writeBodyText(rest, delta.body);
-	}
-
-	if (head === named.head && rest === named.rest) return named;
-	// A fence written into a record that had none arrives as one string; the
-	// split puts it back into the two pieces the join expects.
-	const framed = splitRecordBody(head);
-	return withRecordBody(named, framed.head, framed.rest + rest);
 }
 
 export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
@@ -1721,7 +827,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	sample(config): string {
 		if (configError(config) !== null) return '';
 		const noun = recordNoun(config);
-		const fields = storedFields(config);
+		const fields = storedFields(config.fields);
 		// This list's own place in the sequence, so two record sets in one layout
 		// do not fill their number fields identically.
 		const seed = sampleSeed(config.id);
@@ -1758,29 +864,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// what a new character looks like: SPEC §10's "a section without a data
 		// block is empty, not malformed".
 		if (section.records.length === 0) return { ok: true, data: null };
-		const noun = recordNoun(config).toLowerCase();
-		const records: Record<number, RecordEntry> = {};
-		section.records.forEach((block, at) => {
-			// The whole block rather than its fence alone, so a second fence and an
-			// unclosed one are both reported rather than silently drawn as prose.
-			const parsed = readFenced(block.head + block.rest);
-			const fields: Record<string, string> = Object.create(
-				null,
-			) as Record<string, string>;
-			if (parsed.ok && parsed.values !== null) {
-				for (const [key, value] of parsed.values) fields[key] = value;
-			}
-			records[at] = {
-				name: block.name,
-				fields,
-				body: bodyText(block.rest),
-				// `readFenced` already says what to fix, and where; what only this
-				// list knows is that the damage stops at this one record.
-				error: parsed.ok
-					? null
-					: `${parsed.error} Every other ${noun} on this list still works.`,
-			};
-		});
+		const records = recordEntries(section.records, recordNoun(config));
 		return { ok: true, data: { records } };
 	},
 
@@ -1804,7 +888,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		if (configError(config) !== null) return undefined;
 		const records = recordViews(data);
 		return (resolve) =>
-			records.map((record) => recordValues(config, record, resolve));
+			records.map((record) => recordValues(config.fields, recordNoun(config), record, resolve));
 	},
 
 	/**
@@ -1841,7 +925,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					for (const part of cellParts(
 						record.fields[field.key] ?? '',
 					)) {
-						row ??= recordValues(config, record, resolve);
+						row ??= recordValues(config.fields, recordNoun(config), record, resolve);
 						pushes.push({
 							part,
 							// The list's own name, which is the half a record's label
@@ -1858,39 +942,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	},
 
 	write(data, body, config): string {
-		const section = splitRecords(body ?? '');
-		const records = [...section.records];
-		const known = new Map(
-			storedFields(config).map((field) => [
-				field.key.toLowerCase(),
-				field.key,
-			]),
-		);
-
-		for (const [position, delta] of Object.entries(data.records ?? {})) {
-			const at = Number(position);
-			const block = records[at];
-			if (block === undefined) continue;
-			// **A record this component cannot read is one it must not write.**
-			// Which lines are the fence and which are the prose comes out of the
-			// read, so a block whose fence is unreadable would take a write aimed at
-			// a line nobody meant. Recomputed here rather than trusted from the
-			// render the edit came from, because this side is the file boundary.
-			if (!readFenced(block.head + block.rest).ok) continue;
-			records[at] = applyDelta(block, delta, known);
-		}
-
-		// Highest first, so an earlier removal cannot shift a later one's position.
-		const removed = [...new Set(data.removed ?? [])]
-			.filter((at) => records[at] !== undefined)
-			.sort((left, right) => right - left);
-		for (const at of removed) records.splice(at, 1);
-
-		let next = { preamble: section.preamble, records };
-		for (const record of data.added ?? []) {
-			next = appendRecord(next, record.name);
-		}
-		return joinRecords(next);
+		return joinRecords(editRecords(splitRecords(body ?? ''), data, config.fields));
 	},
 
 	resetColumns(config): readonly ResetColumn[] {
@@ -1966,10 +1018,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// within a reached record every `number` field is written, which is
 			// what a binding naming no field means.
 			if (scope !== null && !scope.admitted.has(at)) return;
-			const written = recordWrites(
-				config,
+			const written = recordWrites(config.fields,
 				record,
-				storedFields(config),
+				storedFields(config.fields),
 				action,
 				write.amount,
 				context,
@@ -2144,6 +1195,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// document by the time any of them speaks; a live region has to be attached
 		// before its text changes or the message is never queued.
 		const status = element('div', 'sheetsmith-sr-only', block);
+		/** What the shared record controls need from this list. */
+		const controls: RecordHost = { context, id: config.id, noun, status };
 		status.setAttribute('aria-live', 'polite');
 
 		/**
@@ -2168,124 +1221,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * a generalisation of `activeTab`, since an index into alternatives and a
 		 * set of open records are two shapes.
 		 */
-		const shiftOpen = (removedAt: number): void => {
-			const target = new Set<number>();
-			for (const at of opened) {
-				if (at < removedAt) target.add(at);
-				else if (at > removedAt) target.add(at - 1);
-			}
-			for (const at of opened) {
-				if (!target.has(at)) context.onToggleRecord?.(at, false);
-			}
-			for (const at of target) {
-				if (!opened.has(at)) context.onToggleRecord?.(at, true);
-			}
-		};
+		const shiftOpen = (removedAt: number): void =>
+			shiftOpenRecords(opened, removedAt, records.length, (at, open) =>
+				context.onToggleRecord?.(at, open),
+			);
 
-		/** Draw prose as paragraphs with its wikilinks live, for where there is no app. */
-		const paintProse = (into: HTMLElement, text: string): void => {
-			into.replaceChildren();
-			into.classList.add('sheetsmith-record-body-plain');
-			for (const paragraph of text.split(PARAGRAPH_BREAK)) {
-				if (paragraph.trim() === '') continue;
-				const p = element('p', '', into);
-				paintLinkedText(p, paragraph, { link: context.link });
-			}
-		};
-
-		/**
-		 * Why a note reference cannot be stored in a record's fields, or null.
-		 *
-		 * **One builder for every route that reaches the fence**, because the
-		 * sentence is the whole of what the reader is told and two copies of it is
-		 * one design pass away from saying two things — which is the drift
-		 * `components/isolation.test.ts` scans for by clause.
-		 *
-		 * **And the builder is `components/fenced-link.ts` now rather than this
-		 * closure**, because Passport is the second fenced component with a
-		 * free-text field and the sentence above was about to be written twice —
-		 * which is the paragraph directly above happening across two files instead
-		 * of within one. The two words that differ are arguments: a record has a
-		 * name and a body to move a link into and a passport has neither.
-		 *
-		 * **It used to be bound to the modifier field alone, and that was a hole
-		 * rather than a scoping decision.** The claim covering the rest was that no
-		 * field type this component offers can hold a wikilink, which is true of the
-		 * *type* and false of the *input*: a `number` field is an
-		 * `<input type="text">` and `boundedText` leaves text that is not a number
-		 * exactly as typed, so a pasted `[[Ring]]` in a `Uses` field was written
-		 * into the fence. A scan over the offered types could not see it.
-		 *
-		 * **Table has the same free text and does not have this problem**, which is
-		 * why it never came up: a modifier cell there is a markdown table cell, so a
-		 * `[[…]]` in one *is* indexed. A record's fields are a `sheet` fence, and
-		 * Obsidian indexes no link inside one — backlinks, graph view, hover preview
-		 * and rename propagation all break with no warning, which is the whole of
-		 * Constraint 2.
-		 *
-		 * Refused rather than escaped, on Rich text's own rule: escaping puts a
-		 * plugin's syntax into a file the user owns. And refused at the *commit*
-		 * rather than in `read`, so a note that already holds one is rendered and
-		 * carried rather than corrected (SPEC §10) — the message is for the reader
-		 * who is typing one now.
-		 */
-		const refuseLink = (text: string): string | null =>
-			fencedLinkRefusal(text, {
-				subject: `A ${noun.toLowerCase()}'s fields`,
-				instead: `Put it in the ${noun.toLowerCase()}'s name or its body instead.`,
-			});
-
-		/** The whole sentence a refused commit says, or null where the text is fine. */
-		const refusal = (text: string): string | null => {
-			const said = refuseLink(text);
-			return said === null ? null : `Not saved. ${said}`;
-		};
-
-		/**
-		 * Why a number field's commit cannot be stored, or null.
-		 *
-		 * A link, as everywhere else that reaches the fence — **and a slash**,
-		 * which this feature made syntax. `parse/bounded-entry.ts` splits an entry
-		 * at its first slash, so a value half holding one is not a value that
-		 * module can write back: committing `1/2` into a field whose entry is
-		 * `Uses: 2 / 3` produces `Uses: 1/2 / 3`, which re-reads as a value of 1
-		 * against a ceiling of `2 / 3` — text, so nothing clamps to it and `full`
-		 * starts skipping that record. Nothing is deleted, so Constraint 4 holds;
-		 * what goes is the reading the reader set, silently, on an ordinary typo.
-		 *
-		 * **Refused rather than repaired**, on `boundedText`'s own rule one level
-		 * up: `1/2` might mean "one of two" and might be a slip, and replacing what
-		 * somebody wrote with a number they did not is the thing this codebase
-		 * refuses to do. It is also PATTERNS §7 exactly — validate what the file
-		 * format requires, not what looks tidy — and the slash is now what a colon
-		 * already was.
-		 *
-		 * The value field's alone, in both modes: where the ceiling is the
-		 * record's there is a field after the slash to type it in, and where it is
-		 * the layout's there is nothing to type at all, so neither is told to go
-		 * anywhere in particular. The ceiling field takes `refuseCeiling` below,
-		 * since a slash after the first is division there.
-		 */
-		const refuseNumber = (text: string): string | null => {
-			const link = refusal(text);
-			if (link !== null) return link;
-			if (!text.includes('/')) return null;
-			return `Not saved. A slash separates a value from the maximum it is read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
-		};
-
-		/**
-		 * Why a record's own ceiling cannot be stored, or null: a link, and nothing
-		 * else (`docs/features/record-ceiling-formula.md`).
-		 *
-		 * **The slash is lifted here and kept on the value.** The entry splits at
-		 * its *first* slash, so a slash after it is the ceiling's own: `level / 2`
-		 * is division, and `Uses: 1 / level / 2` reads back as the value 1 against
-		 * the ceiling `level / 2`. The value half can still hold none, which is why
-		 * `refuseNumber` keeps it. A parse problem is not refused either: it is
-		 * stored as typed and the line under the record says what is wrong, since a
-		 * refusal would keep the reader's words only until the next render.
-		 */
-		const refuseCeiling = (text: string): string | null => refusal(text);
+		// The fence's refusals, shared with Stat block (`record-controls.ts`).
+		const { refusal } = recordRefusals(controls);
 
 		/**
 		 * Why a group name cannot be stored, or null.
@@ -2316,34 +1258,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			return null;
 		};
 
-		/**
-		 * Draw or clear one standing refusal under a record, and say it.
-		 *
-		 * **A closure per message rather than a function taking one**, because what
-		 * has to be remembered is *which* element to remove — so a message about a
-		 * record's value is not cleared by a commit on the ceiling beside it, and
-		 * the modifier field's is not cleared by the body's.
-		 *
-		 * Four sites had these same four lines: the value field, the ceiling field,
-		 * the modifier cell and the body. §1 allows two copies only under a test
-		 * driving both and each of these is driven by its own case, so at four this
-		 * is well past where the ladder stops arguing. The host is a parameter
-		 * because it differs — the summary line is one row of fields and has nowhere
-		 * to put a sentence, so a field's message hangs on the record while the
-		 * body's hangs under the body's own row.
-		 */
-		const refusalNotice = (
-			into: HTMLElement,
-		): ((message: string | null) => void) => {
-			let notice: HTMLElement | null = null;
-			return (message) => {
-				notice?.remove();
-				notice = null;
-				if (message === null) return;
-				notice = element('div', 'sheetsmith-error', into, message);
-				status.textContent = message;
-			};
-		};
+		/** Draw or clear one standing refusal under a record (`record-controls.ts`). */
+		const refusalNotice = (into: HTMLElement): ((message: string | null) => void) =>
+			recordRefusalNotice(controls, into);
 
 		/** Which delete control is armed, one register per list. */
 		const armedRecord = armRegister();
@@ -2631,37 +1548,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				'sheetsmith-record-disclosure',
 				summary,
 			);
-			chevron.type = 'button';
-			chevron.setAttribute('aria-controls', bodyEl.id);
-
-			let open = opened.has(at);
-			const paintDisclosure = (): void => {
-				chevron.replaceChildren();
-				setIcon(chevron, open ? OPEN_ICON : CLOSED_ICON);
-				chevron.setAttribute('aria-expanded', String(open));
-				const said = open ? `Close ${named}` : `Open ${named}`;
-				chevron.setAttribute('aria-label', said);
-				chevron.setAttribute('title', said);
-				// The attribute's *value*, not the boolean: `until-found` is what
-				// keeps find-in-page able to reach a closed body and reveal it.
-				if (open) bodyEl.removeAttribute('hidden');
-				else bodyEl.setAttribute('hidden', 'until-found');
-			};
-			const setOpen = (next: boolean): void => {
-				if (next === open) return;
-				open = next;
-				// Painted before reporting, because nothing here reaches the note: no
-				// write means no rebuild, so a control waiting for one would never
-				// answer the press at all (PATTERNS §5).
-				paintDisclosure();
-				context.onToggleRecord?.(at, open);
-			};
-			chevron.addEventListener('click', () => setOpen(!open));
-			// The browser found the text inside a closed body, so the component
-			// agrees it is open. happy-dom implements neither the attribute nor the
-			// event, so a test asserts the wiring and the harness cannot photograph
-			// it — the same bargain `visibility`/`inert` took on Tab set.
-			bodyEl.addEventListener('beforematch', () => setOpen(true));
+			bindDisclosure({
+				button: chevron,
+				region: bodyEl,
+				open: opened.has(at),
+				named,
+				onToggle: (open) => context.onToggleRecord?.(at, open),
+			});
 
 			drawName(summary, record, at, named);
 
@@ -2755,7 +1648,6 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 
 			drawBody(bodyEl, row, record, at, named);
-			paintDisclosure();
 		}
 
 		/**
@@ -2802,7 +1694,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * stored field's value half, never a computed one.
 		 */
 		function storedScope(record: RecordEntry): Record<string, FieldValue> {
-			return storedLayer(config, record);
+			return storedLayer(config.fields, record);
 		}
 
 		/**
@@ -2846,13 +1738,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		}
 
 		/**
-		 * The record's name: a field over a rendered layer in one grid cell, which
-		 * is `docs/UI.md` §9's stacked arrangement. Editing shows the raw
-		 * `[[Sunblade|sword]]`, exactly as a cell does.
-		 *
-		 * A record whose fence will not read gets the display alone. Its bytes have
-		 * to survive and every write into it is refused at the file boundary, so a
-		 * field there would be a gesture that does nothing.
+		 * The record's name, through the shared control (`record-controls.ts`),
+		 * kept by position so a landing after **Add** finds it.
 		 */
 		function drawName(
 			into: HTMLElement,
@@ -2860,104 +1747,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			at: number,
 			named: string,
 		): void {
-			const cell = element('div', 'sheetsmith-record-name', into);
-			if (record.error !== null) {
-				cell.classList.add('sheetsmith-record-name-plain');
-				paintLinkedText(cell, record.name, {
-					link: context.link,
-					clipping: NAME_CLIPPING,
-				});
-				// The cell clips its own text, so it is what reveals it: the name is
-				// the track that gives first on a fields-first line
-				// (`docs/features/record-summary-fields-first.md`). A sole link's
-				// anchor is bound by the painter as well, and reveals the same words.
-				revealWhenTruncated(cell);
-				return;
-			}
-			const input = nameField(cell, record.name);
-			input.type = 'text';
-			input.value = record.name;
-			// The noun alone, where every other control is named for its record as
-			// well: this field's *value* is the record's name, so qualifying it would
-			// announce the same word twice.
-			input.setAttribute('aria-label', noun);
-			nameFields.set(at, input);
-			const handle = bindEditable(input, {
-				initial: record.name,
-				announceCommit: (next) => {
-					status.textContent = `${noun} ${next}`;
-				},
-				announceRestore: (restored) => {
-					status.textContent = `${noun} restored to ${restored}`;
-				},
-				onCommit: (next) => {
-					if (next.trim() === '') {
-						/*
-						 * **A record needs a name, and this is where that is enforced.**
-						 * `### ` with nothing after it is not a heading, so an empty name
-						 * would drop the record on the next read and hand its body to the
-						 * record above it — a silent deletion, which Constraint 4 refuses.
-						 *
-						 * **This is the repository's one refused commit that discards the
-						 * draft, and it departs from `editable.ts`'s stated policy on
-						 * purpose.** That binding's `refuse` keeps the draft, because a
-						 * refusal that hid what the reader typed would be the silent loss
-						 * it exists to stop — and this field is the case where keeping it
-						 * is worse: the draft is *empty*, so keeping it leaves a blank
-						 * field with a message beside it where the name that is actually
-						 * stored would say more. It is also not a "do not write this" but
-						 * a "put the stored one back and say so", which is why it is here
-						 * rather than in `refuse` at all. Named here because
-						 * `docs/PATTERNS.md` §11 held a row asking exactly that this
-						 * departure be stated somewhere.
-						 */
-						handle.sync(record.name);
-						status.textContent = keptRatherThanBlank(
-							noun.toLowerCase(),
-							named,
-						);
-						return;
-					}
-					context.onChange({ records: { [at]: { name: next } } });
-				},
+			const input = drawRecordName(into, controls, record, named, (next) => {
+				context.onChange({ records: { [at]: { name: next } } });
 			});
-		}
-
-		/**
-		 * A field over a rendered layer, where the name holds a wikilink.
-		 *
-		 * A name with no link gets the field alone — no wrapper, no layer, the same
-		 * DOM a forty-record list has always had.
-		 */
-		function nameField(cell: HTMLElement, raw: string): HTMLInputElement {
-			if (!hasLink(raw)) {
-				const input = element('input', 'sheetsmith-record-name-input', cell);
-				// The field clips with an ellipsis and holds exactly what is drawn,
-				// so its `value` is the reveal. Not bound in the linked branch below:
-				// there the field holds the raw `[[…]]`, and a `title` would reveal
-				// the source rather than the words on screen (`docs/BACKLOG.md` § UI).
-				revealWhenTruncated(input);
-				return input;
-			}
-			const stack = element('div', 'sheetsmith-record-linked', cell);
-			const input = element(
-				'input',
-				'sheetsmith-record-name-input',
-				stack,
-			);
-			// This branch is the stacked one: unfocused, the field's text is
-			// transparent under the link layer, and its spelling marks would not be.
-			spellcheckWhileFocused(input);
-			// And the name layer goes inert while the field is focused. A class
-			// rather than `:has(.sheetsmith-record-name-input:focus)`.
-			flagWhileFocused(stack, input, 'sheetsmith-record-name-focused');
-			const layer = element('div', 'sheetsmith-record-name-layer', stack);
-			paintLinkedText(layer, raw, {
-				link: context.link,
-				clipping: NAME_CLIPPING,
-			});
-			revealWhenTruncated(layer);
-			return input;
+			if (input !== null) nameFields.set(at, input);
 		}
 
 		/** One field control, whichever kind the layout declared. */
@@ -3059,370 +1852,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 
 			// A number, whose entry may carry its ceiling beside its value.
-			const ownMax = recordsOwnMax(field);
-			const entry = splitBounded(raw);
-			const input = element('input', 'sheetsmith-record-input', cell);
-			input.type = 'text';
-			// The full keyboard, a Table number cell's own reason: a field's value
-			// may be negative or a fraction, and iOS's `numeric` keypad has neither
-			// a minus nor a decimal point (`docs/UI.md` §7).
-			input.inputMode = 'text';
-			input.value = entry.value;
-			input.setAttribute('aria-label', accessible);
-			/*
-			 * **An empty body number says it is empty; a summary one does not need
-			 * to.** On the summary line a blank value sits in a line of values, under
-			 * a heading or beside its neighbours, and the slot reads as a slot. In the
-			 * body a name followed by nothing reads as missing content, or as a
-			 * subheading over the prose, so the field takes Pool's own `—`, the one a
-			 * record-owned ceiling already shows. Body only, so the summary line — and
-			 * every layout without a body field — draws exactly what it drew.
-			 */
-			if (body) input.placeholder = '—';
-			/*
-			 * **A ceiling is drawn beside the value, in Pool's own vocabulary
-			 * rather than a second spelling of it.**
-			 *
-			 * `Uses 1` cannot tell a reader whether that is all of them or one of
-			 * three, which undercuts the one thing this component has that a Track
-			 * or a Pool beside the list could never do: a uses counter that belongs
-			 * to a record the character added. So a bounded number reads
-			 * `Uses 1 / 3`.
-			 *
-			 * The classes are `.sheetsmith-pool-ceiling`, `-separator` and `-max`,
-			 * borrowed rather than copied under a `record` name — a lookalike beside
-			 * them is the drift `docs/UI.md` §9 opens by forbidding, and §9's own
-			 * rule is that the name belongs to the component that is nothing but the
-			 * thing (a Pool is a value over its ceiling) and everyone else wears it,
-			 * exactly as this field's name already wears the card's abbreviation.
-			 * One declaration is overridden in the stylesheet, the size, because a
-			 * pool's ceiling qualifies a headline number and a record's qualifies a
-			 * 13px one.
-			 *
-			 * **Which of Pool's two branches is drawn is the layout's `maxSource`.**
-			 * A field-owned `max` is a literal the layout declared, so there is
-			 * nothing to type into — a read-only span, no placeholder, and no
-			 * `aria-label` for Pool's own reason: a bare span is `role=generic`,
-			 * which prohibits naming, and what carries it to a screen reader is the
-			 * announcement below ("5 of 9", which is how the slash is read aloud).
-			 * A record-owned ceiling is a number the character holds, so it is a
-			 * field with the same `—` placeholder Pool uses — which is also the only
-			 * invitation to type — drawn on *every* record whether or not one is
-			 * set, because otherwise there is nothing to type into.
-			 *
-			 * **`.sheetsmith-pool-max-input` is deliberately not borrowed**, and
-			 * that is not a contradiction of "reuse Pool's vocabulary". That class
-			 * is the *pool card's* field chrome, sized in `ch` against the card's
-			 * value size with its own hover and focus. Two fields on one summary
-			 * line answering a hover two different ways is exactly the defect §9's
-			 * "reuse rather than a lookalike" rule exists to prevent, and here the
-			 * lookalike would be the pool's treatment sitting next to the record's.
-			 * So the ceiling wears the record's field chrome and the pool's
-			 * *reading*: `.sheetsmith-record-input` and `.sheetsmith-pool-max`
-			 * together, with one stylesheet rule putting the muted colour back and
-			 * narrowing it, since a ceiling is one or two digits where a value may
-			 * be three.
-			 */
-			/**
-			 * The entry as this field last wrote it, rather than as the render read
-			 * it.
-			 *
-			 * **Both halves rebuild the whole entry, so a snapshot is not enough.**
-			 * `docs/PATTERNS.md` §7 is about reporting a delta rather than a
-			 * snapshot so a commit racing a rebuild cannot write back a stale
-			 * sibling — the delta *is* right here, one field of one record, and the
-			 * staleness moved one level in: a write is asynchronous, so a reader who
-			 * leaves the value and then the ceiling commits both out of one render,
-			 * and a second commit composed from `raw` puts the first half back to
-			 * what the note said before either.
-			 */
-			let held = raw;
-
-			let ceilingInput: HTMLInputElement | null = null;
-			/** What a formula ceiling came to, drawn over its field; null for a typed one. */
-			let ceilingLayer: HTMLElement | null = null;
-			/** The field's own title, and what a formula ceiling adds to it. */
-			const ceilingTitle = (text: string): string => {
-				const base = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
-				const trimmed = text.trim();
-				return trimmed === '' || typedCeiling(trimmed) !== null
-					? base
-					: `${base} Worked out from ${trimmed}.`;
-			};
-			if (ownMax || field.max !== undefined) {
-				const ceiling = element(
-					'span',
-					'sheetsmith-pool-ceiling',
-					cell,
-				);
-				element('span', 'sheetsmith-pool-separator', ceiling, '/');
-				if (ownMax) {
-					const stored = (entry.ceiling ?? '').trim();
-					/*
-					 * **A ceiling that is a formula is drawn as what it came to**, over
-					 * the field that holds its text: `docs/UI.md` §9's stacked
-					 * arrangement, which this record's name already uses for its links.
-					 * Unfocused the layer shows the number and the field's own text is
-					 * transparent under it; focused the layer goes inert and the reader
-					 * edits `prof`, not 3. The layer takes no press — one short line,
-					 * so a press lands the caret in the field, as a table cell's does.
-					 *
-					 * **A typed number, or nothing, gets no stack at all**: the field
-					 * alone, the DOM it has always had, which is what makes "a typed
-					 * number reads exactly as before" true by construction.
-					 */
-					const worked =
-						stored !== '' && typedCeiling(stored) === null
-							? element('span', 'sheetsmith-record-worked-out', ceiling)
-							: null;
-					// `maxInput`, which is Pool's own name for the same control — and
-					// deliberately not `held`, which is the mutable entry above and the
-					// state every commit on this line composes from.
-					const maxInput = element(
-						'input',
-						'sheetsmith-record-input sheetsmith-pool-max',
-						worked ?? ceiling,
-					);
-					maxInput.type = 'text';
-					/*
-					 * **Text, always**, where this was `numeric`: a phone's numeric
-					 * keypad has no letters, so `prof` could not be typed there. A
-					 * keypad that switched on what the field holds would be stuck on
-					 * the keypad from an empty or numeric ceiling, the one state from
-					 * which a formula is typed (`docs/features/record-ceiling-formula.md`).
-					 */
-					maxInput.inputMode = 'text';
-					maxInput.value = entry.ceiling ?? '';
-					maxInput.placeholder = '—';
-					// **The one thing the field gains that the span could not have.** A
-					// bare span prohibits naming, so the read-only ceiling reaches a
-					// screen reader only through the field's announcement; an input is
-					// nameable, and both channels are kept rather than traded.
-					maxInput.setAttribute(
-						'aria-label',
-						`${accessible} maximum`,
-					);
-					maxInput.title = ceilingTitle(stored);
-					if (worked !== null) {
-						// A formula is not prose: a squiggle under `prof` is noise, and
-						// under transparent text it would show through the layer.
-						maxInput.spellcheck = false;
-						flagWhileFocused(
-							worked,
-							maxInput,
-							'sheetsmith-record-worked-out-focused',
-						);
-						ceilingLayer = element(
-							'span',
-							'sheetsmith-pool-max sheetsmith-record-worked-out-layer',
-							worked,
-						);
-					}
-					ceilingInput = maxInput;
-					context.suggestFormula?.(maxInput, config.id);
-				} else {
-					element(
-						'span',
-						'sheetsmith-pool-max',
-						ceiling,
-						String(field.max),
-					);
-				}
-			}
-
-			const readers: CeilingReaders = {
-				resolveExpression: context.resolveExpression,
-				explainExpression: context.explainExpression,
-			};
-			/**
-			 * The ceiling the value is read against as it stands — the *draft* where
-			 * one is being typed, which is Pool's own rule: what the value is
-			 * announced against and held to is what the reader can see. Worked out
-			 * in the record's stored layer, the scope `visibleWhen` reads.
-			 *
-			 * **This says which text; `ceilingOf` says what it is worth**, and every
-			 * channel on this line goes through both. The announcement used to take
-			 * the raw text where the clamp parsed it, so a record storing
-			 * `Uses: 2 / lots` clamped to nothing and *still* announced "Uses 40 of
-			 * lots". The one channel that was wrong is the only one a reader who
-			 * cannot see the field has.
-			 */
-			const ceilingNow = (): Ceiling =>
-				ownMax
-					? ceilingOf(ceilingInput?.value ?? '', field, drawn.scope, readers)
-					: field.max === undefined
-						? null
-						: typedCeiling(String(field.max));
-			/** "of 3", or nothing at all where this record has no ceiling it can read. */
-			const said = (): string => {
-				const ceiling = ceilingNumber(ceilingNow());
-				return ceiling === null ? '' : ` of ${ceiling}`;
-			};
-			/** The bounds the value is held to, against that same standing ceiling. */
-			const valueBounds = (): TypedField =>
-				ownMax ? fieldBounds(field, ceilingNow()) : field;
-
-			/**
-			 * The ceiling's reading and its problem line, from the field's text as it
-			 * stands: at the draw, so a hand-edited or renamed ceiling says so on
-			 * first paint, and after a commit, so the line answers before the rebuild
-			 * (PATTERNS §5's optimistic paint).
-			 *
-			 * **Its own line, not the refusal's**, so a refused link on the value
-			 * beside it does not clear it, and two failing fields draw two. Hung on
-			 * the record, where a refusal hangs, because the summary line has nowhere
-			 * to put a sentence.
-			 *
-			 * **Drawn whether or not the field's condition shows it.** A reset never
-			 * reads visibility, so it skips and counts a hidden field whose ceiling
-			 * will not work out exactly as a shown one, and the confirmation's "1
-			 * feature skipped" has to name a record the reader can find. The line is
-			 * the only place on the sheet that says which.
-			 */
-			let ceilingLine: HTMLElement | null = null;
-			const paintCeiling = (): void => {
-				if (!ownMax || ceilingInput === null) return;
-				const ceiling = ceilingNow();
-				const problem = ceilingProblem(ceiling);
-				if (ceilingLayer !== null) {
-					const blank = ceilingInput.value.trim() === '';
-					// Blank shows the field's own `—` placeholder through the layer.
-					ceilingLayer.textContent = blank
-						? ''
-						: formatDerived(ceilingNumber(ceiling), false);
-					ceilingLayer.classList.toggle(
-						'sheetsmith-pool-max-unresolved',
-						problem !== null,
-					);
-				}
-				ceilingInput.title = ceilingTitle(ceilingInput.value);
-				ceilingLine?.remove();
-				ceilingLine = null;
-				if (problem === null) return;
-				ceilingLine = element(
-					'div',
-					'sheetsmith-error',
-					row,
-					`${name} maximum could not be worked out: ${problem} Change it after the slash, or clear it.`,
-				);
-			};
-			paintCeiling();
-
-			const showValueRefusal = refusalNotice(row);
-			bindEditable(input, {
-				initial: entry.value,
-				step: true,
-				min: field.min,
-				/*
-				 * **Read on every step rather than captured at bind**, because the
-				 * ceiling can move under this field while every other channel here
-				 * already follows it. `clamp` reads these off the options object each
-				 * time it runs, so a getter is all it takes.
-				 *
-				 * **Two states make the difference reachable, and neither is "a
-				 * ceiling raised but not yet left".** That one cannot happen: the
-				 * arrows need focus in *this* field, and moving focus here blurs the
-				 * ceiling, which commits it. What is reachable is (1) a ceiling draft
-				 * holding a note reference, which the refusal above *keeps* by design,
-				 * so it is on screen while `valueBounds` correctly reads it as no
-				 * ceiling; and (2) the moment after any ceiling commit, because the
-				 * commit is reported synchronously and the write is not — until the
-				 * rebuild lands, the ceiling on screen is the new one and a captured
-				 * bound is the old one. That second window is the same one `held`
-				 * above exists for.
-				 */
-				get max() {
-					return ceilingNumber(ceilingNow()) ?? undefined;
-				},
-				announceCommit: (next) => {
-					status.textContent =
-						next === ''
-							? `${accessible} cleared`
-							: `${accessible} ${next}${said()}`;
-				},
-				announceRestore: (restored) => {
-					status.textContent =
-						restored === ''
-							? `${accessible} restored to empty`
-							: `${accessible} restored to ${restored}${said()}`;
-				},
-				refuse: refuseNumber,
-				onRefusal: showValueRefusal,
-				onCommit: (next) => {
-					// Bounds hold however the value arrived: a uses counter typed past
-					// its ceiling is the same mistake as one stepped there, and the
-					// ceiling is the record's own where the layout says so.
-					const settled = boundedText(next, valueBounds());
-					if (settled !== next) {
-						input.value = settled;
-						status.textContent = `${accessible} held to ${settled}${said()}`;
-					}
-					// Written back into the entry as this field last left it, so the
-					// ceiling beside it survives with its own spelling of the slash —
-					// and survives a ceiling edit this render already reported.
-					held = withValue(held, settled);
-					commit(held);
-				},
-			});
-
-			if (ceilingInput === null) return;
-			const ceilingName = `${accessible} maximum`;
-			const showCeilingRefusal = refusalNotice(row);
-			bindEditable(ceilingInput, {
-				initial: entry.ceiling ?? '',
-				step: true,
-				// **Held to the field's `min` and to nothing else.** A ceiling under
-				// the floor describes a range no value can occupy, and the value
-				// beside it is already clamped to that same floor — one line must not
-				// hold a floor the value obeys and the ceiling contradicts. There is
-				// no upper bound on a ceiling to hold it to.
-				min: field.min,
-				// **No arithmetic settles**, and this is a departure from Pool stated
-				// rather than hidden: a record's *value* field does not settle `31+7`,
-				// so turning a ceiling's `prof + 1` into a number at the commit would
-				// put two commit rules on one line. An expression is stored as typed
-				// and worked out on every read instead, which is the value field's
-				// own rule: store what was typed. Arrow keys step a typed number and
-				// leave an expression alone, `editable.ts`'s rule for text.
-				announceCommit: (next) => {
-					// A formula that will not work out is stored as typed — the note is
-					// where the reader's words belong — and the commit says what is
-					// wrong with it, which the line under the record then shows.
-					const unread =
-						ceilingProblem(ceilingOf(next, field, drawn.scope, readers)) !== null;
-					status.textContent =
-						next === ''
-							? `${ceilingName} cleared`
-							: `${ceilingName} ${next}${unread ? ', which could not be worked out' : ''}`;
-				},
-				announceRestore: (restored) => {
-					status.textContent =
-						restored === ''
-							? `${ceilingName} restored to empty`
-							: `${ceilingName} restored to ${restored}`;
-				},
-				refuse: refuseCeiling,
-				onRefusal: showCeilingRefusal,
-				onCommit: (next) => {
-					const settled = boundedText(next, {
-						type: 'number',
-						min: field.min,
-					});
-					if (settled !== next) {
-						ceilingInput.value = settled;
-						status.textContent = `${ceilingName} held to ${settled}`;
-					}
-					// **Only the ceiling.** Lowering one under the value does not
-					// rewrite the value: `5 / 3` is drawn as it is stored, which is the
-					// standing rule to render rather than correct — the alternative is
-					// a write the reader did not ask for on the press of another field.
-					// And clearing it drops the separator with it, so the entry goes
-					// back to a bare number rather than to `2 /`.
-					held = withCeiling(held, settled);
-					paintCeiling();
-					commit(held);
-				},
-			});
+			drawRecordNumber(
+				cell,
+				row,
+				controls,
+				{ field, raw, name, accessible, body, scope: drawn.scope },
+				commit,
+			);
 		}
 
 		/**
@@ -3644,18 +2080,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			});
 		}
 
-		/**
-		 * The modifier field: one glyph per record, opening the shared form.
-		 *
-		 * `ui/anchored-panel.ts` and `components/modifier-form.ts` are reused whole
-		 * — the form takes its label, parts, outcomes, definitions, targets and
-		 * bonus types as arguments, so it knows nothing about a table and nothing
-		 * about a record. That is the claim its own header makes about knowing the
-		 * shape of a modifier and none of its meaning, tested by a second consumer.
-		 */
+		/** The modifier field, through the shared control (`record-controls.ts`). */
 		function drawModifier(
 			cell: HTMLElement,
-			/** The record's own element, where a refused commit hangs its message. */
 			recordEl: HTMLElement,
 			field: RecordField,
 			record: RecordEntry,
@@ -3663,217 +2090,23 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			named: string,
 			commit: (next: string) => void,
 		): void {
-			const raw = record.fields[field.key] ?? '';
-			const button = element(
-				'button',
-				'sheetsmith-record-modifier',
+			drawRecordModifier(
 				cell,
+				recordEl,
+				controls,
+				{
+					raw: record.fields[field.key] ?? '',
+					named,
+					fieldName: fieldLabel(field),
+					panelKey: `${config.id}:${at}:${field.key}`,
+					values: () =>
+						recordValues(config.fields, noun, record, context.resolveField),
+				},
+				commit,
 			);
-			button.type = 'button';
-			const glyph = element(
-				'span',
-				'sheetsmith-record-modifier-glyph',
-				button,
-			);
-			glyph.setAttribute('aria-hidden', 'true');
-
-			// The stored list is what the form addresses, so every index is an index
-			// into the note; the collapsed list is what the record is *doing*, so the
-			// glyph and its count agree with the arithmetic.
-			const stored = storedParts(raw);
-			const enrolled = cellParts(raw);
-			/** Built once per record, however many parts the field holds. */
-			let values: RowValues | null = null;
-			const ask = (part: string) =>
-				context.modifiers?.outcomes(
-					part,
-					(values ??= recordValues(
-						config,
-						record,
-						context.resolveField,
-					)),
-				) ?? [];
-			const applied = rowModifiers(enrolled, ask);
-			// Through the shared predicate: see `modifier-breakdown.ts` for why one
-			// name rather than four copies.
-			const applyingParts = applied.filter((one) =>
-				applying(one.outcomes),
-			).length;
-			if (enrolled.length === 0) {
-				cell.classList.add('sheetsmith-record-modifier-empty');
-			}
-			// Three shapes for four states, because docs/UI.md §6 refuses a mark
-			// whose only channel is fill strength: a faint `plus` on an empty field,
-			// `zap` where any part applies, `zap-off` where none does.
-			setIcon(
-				glyph,
-				enrolled.length === 0
-					? 'plus'
-					: applyingParts > 0
-						? 'zap'
-						: 'zap-off',
-			);
-			button.setAttribute(
-				'aria-label',
-				modifierRowName(`${named} ${fieldLabel(field)}`, applied),
-			);
-			const said = modifierRowText(applied);
-			if (said !== null) button.setAttribute('title', said);
-			button.setAttribute('aria-haspopup', 'dialog');
-			button.setAttribute('aria-expanded', 'false');
-
-			/** What identifies this panel across a rebuild of the list. */
-			const panelKey = `${config.id}:${at}:${field.key}`;
-
-			/** The standing refusal, drawn under the record and cleared when it lifts. */
-			const showRefusal = refusalNotice(recordEl);
-
-			/**
-			 * Commit the cell, unless a part of it holds a note reference.
-			 *
-			 * **A `modifier` field's part is free text on three routes**: the shared
-			 * form's **Amount** and **Only when** inputs, and a promoted
-			 * definition's name, whose only refusals are a semicolon and an
-			 * assignment shape. So `armour_class += [[Ring]]` was an acceptable
-			 * part, and this component's fence is where it landed. `refuseLink`
-			 * above holds the sentence and the argument.
-			 */
-			const commitParts = (parts: readonly string[]): void => {
-				/*
-				 * **The part being *written*, which is the part that is not already
-				 * stored.** The form hands back the whole list with one entry changed,
-				 * so "the part being written" is the one this cell does not already
-				 * hold — and a part identical to a stored one is carried, byte for
-				 * byte, exactly as `spellParts`' own contract promises.
-				 *
-				 * Tested over the joined cell, or over every part, a record whose note
-				 * already reads `Modifiers: armour_class += 1; [[Ring]]` — reachable by
-				 * hand, which §10 requires be carried — refused *every* commit from the
-				 * form, including edits to the other part, whose only way out was
-				 * deleting the link. That is this refusal's own "rendered and carried
-				 * rather than corrected" claim broken by the refusal: rendering a state
-				 * is not carrying it if nothing else on the record can be edited.
-				 */
-				const held = new Set(stored);
-				const offending = parts.find(
-					(part) => !held.has(part) && refuseLink(part) !== null,
-				);
-				const said =
-					offending === undefined ? null : refusal(offending);
-				// Called on every attempt including the ones that succeed, so the last
-				// message clears without this tracking when to.
-				showRefusal(said);
-				if (said !== null) return;
-				commit(spellParts(parts));
-			};
-
-			const fill = (panel: AnchoredPanel<ModifierFormState>): void => {
-				renderModifierForm(panel.body, panel.state, {
-					label: named,
-					// The stored list, never the collapsed one: the form's indices are
-					// indices into the note.
-					parts: stored,
-					outcomes: ask,
-					definitions: context.modifiers?.definitions ?? [],
-					targets: context.modifiers?.targets ?? [],
-					published: context.modifiers?.published ?? [],
-					noteTargets: context.modifiers?.noteTargets ?? [],
-					bonusTypes: context.modifiers?.bonusTypes ?? [],
-					// The one import from `obsidian` in this folder, passed on rather
-					// than taken again: the allowlist stays one name long.
-					icon: (into, name) => setIcon(into, name),
-					onCommit: commitParts,
-					/*
-					 * **Refused here, before the layout is written**, which is where
-					 * the ordering had it wrong: the form checks `unspellableName`,
-					 * which refuses only a semicolon and an assignment shape, then
-					 * awaits this — so a `[[…]]` name reached the layout file, the
-					 * reader was told "Saved" and *then* the cell rewrite was declined
-					 * on the same name. The layout kept a definition it should never
-					 * have gained. A wrapper rather than a rule inside
-					 * `unspellableName`, because that predicate is Table's too and a
-					 * link in a *markdown cell* is a working link — this refusal is
-					 * about the fence, which is this component's alone.
-					 */
-					onPromote: (name, effect) => {
-						const refused = refuseLink(name);
-						if (refused !== null) {
-							// Returned rather than announced, so the form draws it in its
-							// own problem line, beside the field the name is typed in.
-							return Promise.resolve({ error: refused });
-						}
-						return (
-							context.modifiers?.promote(name, effect) ??
-							Promise.resolve({
-								error: 'This sheet cannot save a modifier to its layout.',
-							})
-						);
-					},
-					announce: (text) => {
-						status.textContent = text;
-					},
-					onResize: () => panel.place(),
-				});
-				panel.place();
-			};
-
-			// The panel stays open across every commit: a commit re-renders the
-			// sheet, so this button is a *new* button and the panel — which lives on
-			// `document.body` — is handed to it with the reader's own posture intact.
-			//
-			// **Held in a `let` rather than read once**, because the panel this
-			// render is handed and the panel this press opens are the same object to
-			// the reader and two different values here: without it, a second press on
-			// a glyph opened in *this* render would find a null handle and close
-			// nothing, which is a control carrying `aria-expanded` that only answers
-			// the attribute after a commit has rebuilt it.
-			let standing = reanchorAnchoredPanel<ModifierFormState>(
-				panelKey,
-				button,
-			);
-			if (standing !== null) {
-				button.setAttribute('aria-expanded', 'true');
-				fill(standing);
-			}
-
-			button.addEventListener('click', () => {
-				if (openAnchoredPanelKey() === panelKey) {
-					// A second press on the same glyph closes it, which is what a
-					// control carrying `aria-expanded` owes.
-					standing?.close();
-					return;
-				}
-				const panel = showAnchoredPanel<ModifierFormState>(
-					button,
-					`Modifiers on "${named}"`,
-					panelKey,
-					modifierFormState(stored),
-					() => {
-						button.setAttribute('aria-expanded', 'false');
-					},
-				);
-				standing = panel;
-				button.setAttribute('aria-expanded', 'true');
-				fill(panel);
-				// Focus moves to the first control on open, which is the platform's
-				// own contract for a dialog — unless the form has already placed it,
-				// which it does on a record with no parts.
-				if (!panel.body.contains(doc.activeElement))
-					focusFirstControl(panel);
-			});
 		}
 
-		/**
-		 * The record's prose, on Rich text's box gesture and its three stated
-		 * departures: the rendered layer is hidden rather than left transparent,
-		 * the caret is not placed from the click, and the two layers scroll
-		 * separately.
-		 *
-		 * The one thing that differs is the box: Rich text's is the placement and
-		 * this one is as tall as its prose, which is not a violation of "never
-		 * sized by its content" — that rule is about the *component's* box, and
-		 * this sits inside the scrollport.
-		 */
+		/** The record's prose, through the shared control (`record-controls.ts`). */
 		function drawBody(
 			into: HTMLElement,
 			row: HTMLElement,
@@ -3881,135 +2114,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			at: number,
 			named: string,
 		): void {
-			const text = record.body;
-			if (record.error !== null) {
-				// A record whose fence will not read still shows what it holds, and
-				// shows it read-only: every write into it is refused at the file
-				// boundary, so a field would be a gesture that does nothing.
-				const shown = element(
-					'div',
-					'sheetsmith-record-body-rendered',
-					into,
-				);
-				paintProse(shown, text);
-				return;
-			}
-
-			const input = element(
-				'textarea',
-				'sheetsmith-record-body-input',
+			drawRecordBody(
 				into,
+				row,
+				controls,
+				{ text: record.body, error: record.error, named },
+				(next) => context.onChange({ records: { [at]: { body: next } } }),
 			);
-			input.value = text;
-			// The start, chosen, rather than the end, inherited: assigning `value`
-			// moves the cursor to the end of the control and focusing scrolls it into
-			// view, which is the one position in the text nobody asked for.
-			input.setSelectionRange(0, 0);
-			input.placeholder = `Write anything about this ${noun.toLowerCase()}.`;
-			input.setAttribute('aria-label', `${named} body`);
-			// Its text is transparent unfocused and the prose is drawn over it, so
-			// its squiggles would be too.
-			spellcheckWhileFocused(input);
-			// And the rendered prose hides while the field is focused. A class rather
-			// than `:has(.sheetsmith-record-body-input:focus)`. Flagged on `into`,
-			// which is what holds the rendered layer below, so the pair cannot be
-			// separated by a wrapper appearing between them.
-			flagWhileFocused(
-				into,
-				input,
-				'sheetsmith-record-body-field-focused',
-			);
-
-			const rendered = element(
-				'div',
-				'sheetsmith-record-body-rendered',
-				into,
-			);
-			// The links the app draws, given this plugin's behaviour. Bound to the
-			// layer once, before anything is painted into it: the fallback painter
-			// wires each anchor as it makes it, and the app's renderer makes its own.
-			adoptRenderedLinks(rendered, context.link);
-			if (text !== '') {
-				if (context.renderMarkdown !== undefined) {
-					// And the fallback again where the app's renderer rejected, which is
-					// not something the reader caused or can fix.
-					context.renderMarkdown(text, rendered, () =>
-						paintProse(rendered, text),
-					);
-				} else {
-					paintProse(rendered, text);
-				}
-			}
-
-			// The layer is the pointer target rather than `pointer-events: none`,
-			// because it is what scrolls: a layer that is not a hit target never
-			// receives a wheel, and the gesture would go to the invisible field
-			// behind it. A link owns its own press, as everywhere else on the sheet.
-			rendered.addEventListener('click', (event) => {
-				const target = event.target;
-				if (target instanceof HTMLElement && target.closest('a[href]'))
-					return;
-				event.preventDefault();
-				// A drag that selected text is not a request to edit.
-				const selection = doc.getSelection();
-				if (selection !== null && !selection.isCollapsed) return;
-				input.focus();
-			});
-
-			/** The standing refusal, drawn under the body and cleared when it lifts. */
-			const showRefusal = refusalNotice(row);
-
-			bindMultiline(input, {
-				initial: text,
-				/*
-				 * The two reserved line starts, and both are the note format's rather
-				 * than this component's taste: `## ` splits the *note* and `### `
-				 * splits the *record*. Neither is escaped and neither fails `read` —
-				 * the write is declined instead, the field keeps the draft, and the
-				 * message names the line and the fix.
-				 */
-				refuse: (next) => {
-					const section = startsSection(next);
-					if (section !== null) {
-						return `Not saved. "${section.trim()}" would start a new section in this note — use "#### " instead.`;
-					}
-					const record = startsRecord(next);
-					if (record !== null) {
-						return `Not saved. "${record.trim()}" would start a new ${noun.toLowerCase()} in this list — use "#### " instead.`;
-					}
-					return null;
-				},
-				/*
-				 * **The draft is shown, not hidden, for as long as it is refused.**
-				 * Unfocused, this field's text is transparent under the rendered
-				 * layer, so a refusal left alone would put the *stored* prose back on
-				 * screen with an error under it and the reader's actual words
-				 * invisible. The class swaps that round, as Rich text's does.
-				 */
-				onRefusal: (message) => {
-					into.classList.toggle(
-						'sheetsmith-record-body-refused',
-						message !== null,
-					);
-					// Under the body rather than inside it: the body is a two-layer
-					// stack in one grid cell, so a third child there would sit on top
-					// of the prose the message is about — which is why the host is the
-					// shared helper's parameter rather than its own rule.
-					showRefusal(message);
-				},
-				// The label and the outcome, never the prose: reading a record's text
-				// back at its author is not feedback.
-				announceCommit: (next) => {
-					status.textContent =
-						next === '' ? `${named} cleared` : `${named} saved`;
-				},
-				announceRestore: () => {
-					status.textContent = `${named} restored`;
-				},
-				onCommit: (next) => {
-					context.onChange({ records: { [at]: { body: next } } });
-				},
-			});
 		}
 
 		/**

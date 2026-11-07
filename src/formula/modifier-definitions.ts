@@ -41,6 +41,7 @@
 
 import { isNoteOnly, parseModifierPart } from '../parse/modifier-cell';
 import {
+	contestsByValue,
 	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierOperator,
@@ -529,7 +530,7 @@ function settle(
 			// Blank is untyped, so every modifier of that kind stacks — which is
 			// what an author who has never heard of bonus types expects. An
 			// override carries none whatever the part says.
-			type: fields.operator === 'override' ? null : fields.bonusType,
+			type: contestsByValue(fields.operator) ? null : fields.bonusType,
 			/*
 			 * **An override is in the result phase**, which is what SPEC §5 means by
 			 * "by construction": it replaces the number the formula came to, which is
@@ -545,7 +546,7 @@ function settle(
 			 * than leaving: the one field named for the phase carried the opposite of
 			 * the phase, and nothing would have said so until something read it.
 			 */
-			applies: fields.operator === 'override' ? 'result' : fields.applies,
+			applies: contestsByValue(fields.operator) ? 'result' : fields.applies,
 			amount: amount.value,
 		},
 	};

@@ -139,6 +139,13 @@ const ALLOWED = [
 	// `record-set.ts`, and kept pure so it is tested without a DOM.
 	"import { fitTier } from './record-line-fit';",
 	"import { fitTier } from '../components/record-line-fit';",
+	// A fenced record's typed fields as data, and the controls that edit one:
+	// Record set's, moved out when Stat block became the second consumer, on
+	// §1's two-consumer rung rather than copied (`docs/features/character-forms.md`).
+	"import { recordEntries } from './record-fields';",
+	"import { recordEntries } from '../components/record-fields';",
+	"import { drawRecordBody } from './record-controls';",
+	"import { drawRecordBody } from '../components/record-controls';",
 	// A painted level ring, made into a control: its ARIA, its tooltip, its touch
 	// route and its presses. Added deliberately, and at four consumers rather
 	// than two — Table, Track, Record set and Roster — which is one past where
@@ -499,5 +506,29 @@ describe("a field's placement is spelled in one place", () => {
 			);
 		const { hits } = scan(SRC, importsBody, true);
 		expect(hits.sort()).toEqual(['list-fields.ts', 'record-set.ts']);
+	});
+});
+
+describe('a modified value is marked through one helper, which also names it', () => {
+	/*
+	 * **The tint finds a value by the name stamped beside its mark**
+	 * (`docs/features/character-forms.md`), so a mark written any other way is a
+	 * value a form changed that the tint cannot find. Card, Card set, Table and
+	 * Roster all mark through `stampModifiedHost`; this holds every other spelling
+	 * of the mark, and of the attribute, to none.
+	 */
+	it('adds the modified class, the name attribute and the box attribute in no file but the helper', () => {
+		const spelled = (source: string): boolean =>
+			/classList\.add\(\s*MODIFIED_CLASS\s*\)/.test(source) ||
+			/['"]data-sheetsmith-(name|box)['"]/.test(source);
+		const { files, hits } = scan(SRC, spelled, true);
+		expect(files).toBeGreaterThan(100);
+		expect(hits).toEqual(['modifier-breakdown.ts']);
+	});
+
+	it('is called where each of the four components marks a value', () => {
+		const calling = (source: string): boolean => source.includes('stampModifiedHost(');
+		const { hits } = scan(join(SRC, 'components'), calling, true);
+		expect(hits.sort()).toEqual(['card-face.ts', 'modifier-breakdown.ts', 'roster.ts', 'table.ts']);
 	});
 });

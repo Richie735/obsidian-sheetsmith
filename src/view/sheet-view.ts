@@ -65,6 +65,8 @@ import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
+import { applyDecorations, inPlayDecorations } from './placement-decorations';
+import { revealWhenTruncated } from '../ui/truncation';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -646,7 +648,7 @@ export class SheetView extends TextFileView {
 		// cell still drew `zap`. `buildSheet` holds the sequence, the harness and
 		// the fixture test go through the same one, and `sheet.test.ts` scans all
 		// three for it.
-		const { env, modifiers } = buildSheet(
+		const { env, modifiers, marked } = buildSheet(
 			layout,
 			prepared,
 			library,
@@ -735,6 +737,15 @@ export class SheetView extends TextFileView {
 				this.collapsedGroups.set(config.id, held);
 			},
 		}));
+
+		// The form tint, after every component has drawn and stamped its values
+		// (`placement-decorations.ts`), read off the same breakdowns the numbers'
+		// own popovers open.
+		applyDecorations(
+			grid,
+			inPlayDecorations(marked, (name) => modifiers.breakdown(name)),
+			revealWhenTruncated,
+		);
 
 		// SPEC §10: sections the layout does not map are left alone — they stay
 		// in the note untouched and simply do not render.

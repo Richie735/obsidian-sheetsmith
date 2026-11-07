@@ -1357,3 +1357,45 @@ describe('a rest over ceilings that are formulas', () => {
 		expect(failed).toEqual([]);
 	});
 });
+
+describe('a long rest on the 5e starter\'s forms', () => {
+	it('turns every form off and fills each HP to its own ceiling, in one edit', async () => {
+		const { readFileSync } = await import('node:fs');
+		const source = readFileSync(new URL('../starters/5e.json', import.meta.url), 'utf8');
+		const note = `---
+sheet-layout: DnD 5e Standard
+---
+
+## Forms
+
+### Brown Bear
+\`\`\`sheet
+Active: yes
+HP: 4 / 34
+\`\`\`
+
+### Wolf
+\`\`\`sheet
+Active: no
+HP: 2 / 11
+\`\`\`
+
+### Homid
+\`\`\`sheet
+Active: no
+HP: 5
+\`\`\`
+`;
+		const { text, failed, plan } = applyTrigger(note, source, 'Long rest');
+		// The note holds the forms alone, so the rest's other components have
+		// nothing to restore to; none of what failed is the forms'.
+		expect(failed.filter((line) => line.startsWith('Forms'))).toEqual([]);
+		// One binding each, applied together in the one batch the trigger writes,
+		// so the rest is one write and one step back in the note's history.
+		expect(plan.edits.filter((edit) => edit.config.id === 'forms')).toHaveLength(2);
+		expect(text).toContain('### Brown Bear\n```sheet\nActive: no\nHP: 34 / 34');
+		expect(text).toContain('### Wolf\n```sheet\nActive: no\nHP: 11 / 11');
+		// A form with no ceiling of its own is left where it was.
+		expect(text).toContain('### Homid\n```sheet\nActive: no\nHP: 5\n');
+	});
+});

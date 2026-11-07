@@ -558,6 +558,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			hideTitle: !showsOwnLabel(config, context),
 			// A lone card has no row of siblings to keep on one baseline.
 			reserveAbbreviation: false,
+			publishes: config.id,
 			value: showValue
 				? {
 						current: value,

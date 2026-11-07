@@ -259,7 +259,16 @@ function clamp(value: number, options: EditableOptions): number {
  * places the caret rather than opening iOS's edit menu, and one digit can
  * still be fixed.
  */
-function selectNumberOnFocus(input: HTMLInputElement): void {
+/**
+ * A one-line field as the element its listeners go on. The union of the two
+ * field types has no single `addEventListener` overload to resolve, so the
+ * events are typed through the element they share.
+ */
+function field(input: HTMLInputElement | HTMLTextAreaElement): HTMLElement {
+	return input;
+}
+
+function selectNumberOnFocus(input: HTMLInputElement | HTMLTextAreaElement): void {
 	/** The `pointerType` of the press that is about to focus the field, if any. */
 	let pressedBy: string | null = null;
 	/** Whether this focus came from a touch, whose tap end may move the caret. */
@@ -276,7 +285,7 @@ function selectNumberOnFocus(input: HTMLInputElement): void {
 		input.setSelectionRange(0, input.value.length);
 	};
 
-	input.addEventListener('pointerdown', (event) => {
+	field(input).addEventListener('pointerdown', (event) => {
 		lastMove = null;
 		reselect = false;
 		if (input.ownerDocument.activeElement === input) {
@@ -296,21 +305,21 @@ function selectNumberOnFocus(input: HTMLInputElement): void {
 		}
 		pressedBy = event.pointerType;
 	});
-	input.addEventListener('pointermove', (event) => {
+	field(input).addEventListener('pointermove', (event) => {
 		lastMove = event;
 	});
-	input.addEventListener('pointercancel', () => {
+	field(input).addEventListener('pointercancel', () => {
 		pressedBy = null;
 		reselect = false;
 	});
-	input.addEventListener('focusin', () => {
+	field(input).addEventListener('focusin', () => {
 		const by = pressedBy;
 		pressedBy = null;
 		reselect = by === 'touch';
 		if (by === 'mouse' || by === 'pen') return;
 		selectNumber();
 	});
-	input.addEventListener('click', () => {
+	field(input).addEventListener('click', () => {
 		const pending = reselect;
 		reselect = false;
 		pressedBy = null;
@@ -344,7 +353,13 @@ export interface EditableHandle {
 }
 
 export function bindEditable(
-	input: HTMLInputElement,
+	/**
+	 * A one-line field. A `<textarea>` is taken too, for a one-line value whose
+	 * text has to wrap where an `<input>` would clip it — a Stat block's action
+	 * cell: Enter still commits rather than breaking the line, so it is the same
+	 * gesture on a field that can show all of what it holds.
+	 */
+	input: HTMLInputElement | HTMLTextAreaElement,
 	options: EditableOptions,
 ): EditableHandle {
 	let committed = options.initial;
@@ -384,9 +399,9 @@ export function bindEditable(
 	};
 
 	// Live feedback on every keystroke; persistence only on commit.
-	input.addEventListener('input', redraw);
-	input.addEventListener('blur', commitIfChanged);
-	input.addEventListener('keydown', (event) => {
+	field(input).addEventListener('input', redraw);
+	field(input).addEventListener('blur', commitIfChanged);
+	field(input).addEventListener('keydown', (event) => {
 		if (event.key === 'Enter') {
 			// Commit in place. Blurring would also throw away the user's
 			// position in the document, and Enter never asked for that.

@@ -346,6 +346,20 @@ export default defineConfig(
 								 * without a DOM.
 								 */
 								'!./record-line-fit',
+								/*
+								 * **A fenced record's typed fields as data, and the
+								 * controls that edit one**, shared by Record set and Stat
+								 * block (`docs/features/character-forms.md`). Moved out of
+								 * `record-set.ts` on PATTERNS §1's two-consumer rung rather
+								 * than copied: what a record stores, how its ceiling is
+								 * worked out and what a reset writes are rules about the
+								 * note's bytes, and the name, number, modifier and body
+								 * controls are one gesture each on two surfaces. In no
+								 * registry, declaring no `ComponentDefinition`, touching no
+								 * file, and taking only `setIcon` from `obsidian`.
+								 */
+								'!./record-fields',
+								'!./record-controls',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -362,6 +376,8 @@ export default defineConfig(
 								'!../components/ring-control',
 								'!../components/note-mark',
 								'!../components/record-line-fit',
+								'!../components/record-fields',
+								'!../components/record-controls',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',

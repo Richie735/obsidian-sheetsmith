@@ -26,6 +26,7 @@
  */
 
 import { componentsInside, WalkEntry, walkComponents } from '../parse/layout-walk';
+import { COMPONENT_ATTRIBUTE } from './placement-decorations';
 import {
 	getComponent,
 	undrawableMessage,
@@ -347,6 +348,10 @@ export function renderGrid(
 			return;
 		}
 
+		// Which component this cell holds, so a pass after the render can find a
+		// published name's owner without knowing any component
+		// (`placement-decorations.ts`).
+		cell.setAttribute(COMPONENT_ATTRIBUTE, config.id);
 		const children = config.children ?? [];
 		component.render(cell, config, data, {
 			// The host's own object, narrowed rather than copied: a host may hold
