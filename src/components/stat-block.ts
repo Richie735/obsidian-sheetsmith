@@ -29,6 +29,13 @@
  *
  * **It never corrects a form at 0**: the number says it, in the error colour,
  * and one sentence says what the reader does next. Reverting is the reader's.
+ *
+ * **The colour a form tints in is the block's `tint`, or the form's own `Tint`
+ * entry where the layout turns that on** (`docs/features/form-tint-colour.md`),
+ * carried on the push beside `inPlay` as a fact about the row. A colour outside
+ * the theme's list is reported and drawn as the accent, never refused as a
+ * configuration error: a colour is cosmetic, and losing a druid's picker over a
+ * mistyped word would be out of proportion.
  */
 
 import { setIcon } from 'obsidian';
@@ -37,7 +44,7 @@ import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { stepButton } from '../interaction/hold-repeat';
 import { commitWindow } from '../interaction/commit-window';
 import { splitBounded } from '../parse/bounded-entry';
-import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, withoutEmptyFence, writeFenced } from '../parse/fenced';
 import { bodyText } from '../parse/markdown-body';
 import {
 	readFeatures,
@@ -99,6 +106,7 @@ import {
 	recordEntries,
 	RecordEntry,
 	RecordField,
+	RecordDelta,
 	RecordList,
 	recordLabel,
 	recordNoun,
@@ -135,11 +143,22 @@ import {
 	ScopeEntry,
 	ScopeValues,
 	showsOwnLabel,
+	TINT_ATTRIBUTE,
+	TINT_COLOURS,
+	TintColour,
+	tintColourOf,
 } from '../types';
 import { element } from '../ui/element';
 
 /** The key a stored uses count sits under in the preamble's fence. */
 const USES_KEY = 'uses';
+
+/**
+ * The fence entry a record's own tint is kept under, where **Tint per record**
+ * is on. Read by the key as written, as a field's is; only the collision check
+ * with a field ignores case, on `uses`' precedent.
+ */
+const TINT_KEY = 'Tint';
 
 /**
  * The keys `zones` replaced, in the order the error names them. No released
@@ -201,6 +220,13 @@ export interface StatBlockConfig extends ComponentConfig {
 	 */
 	zones?: StatBlockZone[];
 	image?: boolean;
+	/**
+	 * One of `TINT_COLOURS`, absent for the accent. Typed as text because a
+	 * hand-edited layout may hold any word, and one outside the list is reported
+	 * and drawn as the accent rather than refused.
+	 */
+	tint?: string;
+	tintPerRecord?: boolean;
 	hideLabel?: boolean;
 }
 
@@ -230,6 +256,11 @@ export interface StatBlockData extends RecordList {
 	usesError?: string;
 	/** One gesture's change to a record's body, by record position. */
 	zoneEdits?: Record<number, ZoneEdit>;
+	/**
+	 * One gesture's change to a record's own tint, by record position: a colour
+	 * written lower case, or null, which removes the entry.
+	 */
+	tints?: Record<number, TintColour | null>;
 }
 
 /** The uses counter's own ceiling, where it is set at all. */
@@ -296,6 +327,81 @@ function zoneSpecs(config: StatBlockConfig): ZoneSpec[] {
 /** Whether the layout turns **Picture** on. */
 function hasPicture(config: StatBlockConfig): boolean {
 	return config.image === true;
+}
+
+/** Whether the layout turns **Tint per record** on. */
+function hasTintPerRecord(config: StatBlockConfig): boolean {
+	return config.tintPerRecord === true;
+}
+
+/**
+ * The layout's `tint` where it is not one of the theme's colours, or null.
+ * Matched exactly, as the editor's select matches it, so the sheet and the
+ * editor agree on what is a stray: a word the select would report as not one
+ * of its choices is never drawn here as a colour.
+ */
+function strayBlockTint(config: StatBlockConfig): string | null {
+	const tint = config.tint;
+	if (tint === undefined) return null;
+	return (TINT_COLOURS as readonly string[]).includes(tint) ? null : tint;
+}
+
+/** The colour the block tints in: its `tint`, or the accent where it is absent or a stray. */
+function blockTint(config: StatBlockConfig): TintColour {
+	return strayBlockTint(config) === null ? (tintColourOf(config.tint ?? '') ?? 'accent') : 'accent';
+}
+
+/**
+ * A record's own `Tint` entry, read where **Tint per record** is on: the colour,
+ * a stray word the list does not hold, or neither where the entry is absent or
+ * blank. Trimmed and matched without case, so `Green` is green.
+ */
+function recordTint(
+	config: StatBlockConfig,
+	record: RecordEntry,
+): { colour: TintColour } | { stray: string } | null {
+	if (!hasTintPerRecord(config)) return null;
+	const raw = (record.fields[TINT_KEY] ?? '').trim();
+	if (raw === '') return null;
+	const colour = tintColourOf(raw);
+	return colour === null ? { stray: raw } : { colour };
+}
+
+/** The colour a record tints in: its own valid `Tint`, else the block's. */
+function tintOf(config: StatBlockConfig, record: RecordEntry): TintColour {
+	const own = recordTint(config, record);
+	return own !== null && 'colour' in own ? own.colour : blockTint(config);
+}
+
+/**
+ * Whether the layout has chosen a tint at all, which is what draws a swatch in
+ * the In play head: a block colour other than the accent, or the switch on. A
+ * layout choosing nothing draws nothing new there.
+ */
+function choosesTint(config: StatBlockConfig): boolean {
+	return blockTint(config) !== 'accent' || hasTintPerRecord(config);
+}
+
+/** `accent` reads **Accent**: a colour's word as a choice in the dropdown. */
+function tintWord(colour: TintColour): string {
+	return colour.charAt(0).toUpperCase() + colour.slice(1);
+}
+
+/**
+ * What one of the theme's colours is called wherever a word is not one: the
+ * lines under the In play head, and the Every form dropdown. One phrase, so
+ * every surface names one fault one way.
+ */
+const TINT_NOUN = 'tint colour';
+
+/** A stray colour word, said: `"brown" is not a tint colour`. */
+function notATint(stray: string): string {
+	return `"${stray}" is not a ${TINT_NOUN}`;
+}
+
+/** The sentence a stray colour word is reported with, ending in where it is fixed. */
+function strayTintSentence(stray: string, where: string): string {
+	return `${notATint(stray)}. Choose one${where}.`;
 }
 
 /** `a`, `a and b`, `a, b and c`: keys as a sentence lists them. */
@@ -396,6 +502,9 @@ function configError(config: StatBlockConfig): string | null {
 		seen.add(lower);
 		if (lower === USES_KEY) {
 			return `A field cannot be keyed "${key}", because that is where the uses counter is kept. Rename it under Fields.`;
+		}
+		if (hasTintPerRecord(config) && lower === TINT_KEY.toLowerCase()) {
+			return `A field cannot be keyed "${key}" while Tint per record is on, because that is where each record's tint is kept. Rename the field under Fields, or turn Tint per record off.`;
 		}
 		const type = fieldType(field);
 		if (type !== 'number' && type !== 'toggle' && type !== 'text' && type !== 'modifier') {
@@ -722,6 +831,22 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			default: false,
 		},
 		{
+			key: 'tint',
+			kind: 'select',
+			label: 'Tint',
+			description:
+				"The colour a record in play tints the values it changes, and the tag that names it: the theme's accent, or one of its named colours, which the theme sets for light and dark. Only a record in play tints, so this needs One at a time by. Changes nothing in the note.",
+			options: TINT_COLOURS,
+		},
+		{
+			key: 'tintPerRecord',
+			kind: 'boolean',
+			label: 'Tint per record',
+			description:
+				'Each record may choose its own tint under Every form, kept as a Tint entry in its fence; a record that chooses none takes Tint above. Off, a Tint entry already in a note is kept and ignored. While on, no field can be keyed Tint. Off by default.',
+			default: false,
+		},
+		{
 			key: 'hideLabel',
 			group: 'Appearance',
 			kind: 'boolean',
@@ -757,7 +882,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 	/*
 	 * One zone of each type, so the contract sweeps a table, a list of features
 	 * and a block of text through a read and a write, and the canvas shows all
-	 * three under the vitals.
+	 * three under the vitals. **Tint per record** on, so it sweeps a `Tint`
+	 * entry too.
 	 */
 	example: {
 		recordName: 'Form',
@@ -766,6 +892,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			{ key: 'HP', type: 'number', maxSource: HOLDER_MAX_SOURCE },
 		],
 		exclusive: 'Active',
+		tintPerRecord: true,
 		zones: [
 			{ key: 'vitals' },
 			{
@@ -797,6 +924,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				const value = sampleField(field, which, seed + which * fields.length + at);
 				if (value !== null) lines.push(`${field.key}: ${value}`);
 			});
+			// The second record chooses its own colour, so a canvas shows one.
+			if (which === 1 && hasTintPerRecord(config)) lines.push(`${TINT_KEY}: green`);
 			if (lines.length > 0) parts.push(`\n\`\`\`sheet\n${lines.join('\n')}\n\`\`\`\n`);
 			// One block per body zone, each with something in it, so an open
 			// form shows every zone the layout declares where it starts.
@@ -892,13 +1021,15 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (gated && !isOn(config, record)) continue;
 				let row: RowValues | null = null;
 				for (const field of enrolling) {
+					// The accent is written as absence, which is every push before this.
+					const tint = tintOf(config, record);
 					for (const part of cellParts(record.fields[field.key] ?? '')) {
 						row ??= recordValues(config.fields, noun, record, resolve);
 						pushes.push({
 							part,
 							source: config.label,
 							row,
-							...(gated ? { inPlay: true } : {}),
+							...(gated ? { inPlay: true, ...(tint === 'accent' ? {} : { tint }) } : {}),
 						});
 					}
 				}
@@ -918,11 +1049,26 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 * zone. Removals and appends then run on the shared path, after, so a
 		 * position still means what the render meant by it.
 		 */
-		const deltas: Record<number, Partial<RecordEntry>> = {};
+		const deltas: Record<number, RecordDelta> = {};
 		for (const [position, delta] of Object.entries(data.records ?? {})) {
 			const { body: text, ...rest } = delta;
 			void text;
 			deltas[Number(position)] = rest;
+		}
+		/*
+		 * **A record's tint is one more fence entry, and only while the layout
+		 * turns Tint per record on**: off, the delta never reaches it, and an
+		 * entry already in the note keeps its bytes (Constraint 4). Null removes
+		 * the line, so setting a tint and choosing **Default** again restores the
+		 * record byte for byte.
+		 */
+		const tinting = hasTintPerRecord(config);
+		if (tinting) {
+			for (const [position, tint] of Object.entries(data.tints ?? {})) {
+				const at = Number(position);
+				const held = deltas[at] ?? {};
+				deltas[at] = { ...held, fields: { ...held.fields, [TINT_KEY]: tint } };
+			}
 		}
 		for (const [position, edit] of Object.entries(data.zoneEdits ?? {})) {
 			const at = Number(position);
@@ -937,7 +1083,24 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			{ preamble, records },
 			{ records: deltas, added: data.added, removed: data.removed },
 			config.fields,
+			tinting ? [TINT_KEY] : [],
 		);
+		/*
+		 * **A tint taken back takes its fence with it, where the fence held
+		 * nothing else**: a record with no fence gains one on its first tint, and
+		 * **Default** would otherwise leave it empty, so the record would not read
+		 * byte for byte as it did (Constraint 3). Only a record this write changed,
+		 * and only while no removal has moved the positions the edit names.
+		 */
+		if (tinting && (data.removed ?? []).length === 0) {
+			for (const [position, tint] of Object.entries(data.tints ?? {})) {
+				const at = Number(position);
+				const block = next.records[at];
+				if (tint !== null || block === undefined || block === records[at]) continue;
+				const head = withoutEmptyFence(block.head);
+				if (head !== block.head) next.records[at] = withRecordBody(block, head, block.rest);
+			}
+		}
 		return joinRecords(next);
 	},
 
@@ -1214,8 +1377,28 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			// With one form on, its picture sits at the title row's inline start;
 			// with two, each form's own name row carries its own.
 			const failures = element('div', 'sheetsmith-stat-block-picture-problems', content);
+			/*
+			 * **A layout tint outside the list is said once, under the head**, in
+			 * the picture problem's host and clothes, whether or not a form is
+			 * chosen: the forms tint in the accent meanwhile, and the editor's
+			 * select reports the same word where it is fixed.
+			 */
+			const stray = strayBlockTint(config);
+			if (stray !== null) {
+				element(
+					'div',
+					'sheetsmith-stat-block-picture-problem',
+					failures,
+					strayTintSentence(stray, ' under Tint in the layout editor'),
+				);
+			}
 			const only = active.length === 1 ? active[0] : undefined;
-			if (only !== undefined) drawThumb(playHead, only.record, recordLabel(only.record.name, noun), failures, false);
+			if (only !== undefined) {
+				const named = recordLabel(only.record.name, noun);
+				drawThumb(playHead, only.record, named, failures, false);
+				drawHeadSwatch(playHead, only.record);
+				reportStrayTint(only.record, named, failures, false);
+			}
 			element(
 				'div',
 				`sheetsmith-stat-block-title${active.length === 0 ? ' sheetsmith-stat-block-title-none' : ''}`,
@@ -1287,6 +1470,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (active.length > 1) {
 					const row = element('div', 'sheetsmith-stat-block-form-name', panel);
 					drawThumb(row, record, named, failures, true);
+					drawHeadSwatch(row, record);
+					reportStrayTint(record, named, failures, true);
 					element('span', 'sheetsmith-stat-block-form-title', row, named);
 				}
 				drawForm(panel, record, at, named, false);
@@ -1501,6 +1686,75 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		}
 
 		/**
+		 * The swatch keying a form's name in the In play head to the boxes it is
+		 * tinting, drawn after its thumbnail and before its name, and only where
+		 * the layout has chosen a tint: a layout choosing nothing draws nothing
+		 * new in the head. With two on, each name row carries its own, which is
+		 * what says which colour is which form.
+		 */
+		function drawHeadSwatch(row: HTMLElement, record: StatBlockEntry): void {
+			if (!choosesTint(config)) return;
+			tintSwatch(row, tintOf(config, record));
+		}
+
+		/**
+		 * A form's own `Tint` outside the list, said under the head in the
+		 * picture problem's clothes, the form named only with two on, on the
+		 * picture line's rule. The form tints in the block's colour meanwhile,
+		 * exactly as if it held none; nothing is written until the reader chooses.
+		 */
+		function reportStrayTint(record: StatBlockEntry, named: string, failures: HTMLElement, prefixed: boolean): void {
+			const own = recordTint(config, record);
+			if (own === null || !('stray' in own)) return;
+			const said = strayTintSentence(own.stray, ' under Every form, in Tint');
+			element('div', 'sheetsmith-stat-block-picture-problem', failures, prefixed ? `${named}: ${said}` : said);
+		}
+
+		/**
+		 * The open form's **Tint** section under Every form (`docs/features/
+		 * form-tint-colour.md`, question 4): a dropdown in Obsidian's own clothes
+		 * and a swatch previewing the colour the sheet will draw. **Default**
+		 * names the block's colour and removes the entry; every other choice
+		 * writes it lower case, **Accent** included, so a form can stay accent in
+		 * a green block. A stray word is the first option, disabled and selected,
+		 * so any choice is a change, and its sentence sits under the dropdown.
+		 */
+		function drawTintSection(into: HTMLElement, record: StatBlockEntry, at: number, named: string): void {
+			const wrap = element('section', 'sheetsmith-stat-block-section sheetsmith-stat-block-tint', into);
+			const head = element('div', 'sheetsmith-stat-block-section-head', wrap);
+			element('h4', 'sheetsmith-component-label sheetsmith-stat-block-section-heading', head, 'Tint');
+			const line = element('div', 'sheetsmith-stat-block-tint-line', wrap);
+			const select = element('select', 'dropdown sheetsmith-stat-block-tint-choice', line);
+			select.setAttribute('aria-label', `${named} tint`);
+			const own = recordTint(config, record);
+			if (own !== null && 'stray' in own) {
+				const held = element('option', '', select, `"${own.stray}" (not a ${TINT_NOUN})`);
+				held.value = own.stray;
+				held.disabled = true;
+			}
+			const block = blockTint(config);
+			element('option', '', select, `Default (${block})`).value = '';
+			for (const colour of TINT_COLOURS) element('option', '', select, tintWord(colour)).value = colour;
+			select.value = own === null ? '' : 'colour' in own ? own.colour : own.stray;
+			const swatch = tintSwatch(line, tintOf(config, record));
+			if (own !== null && 'stray' in own) {
+				// Tied to the dropdown, so a reader standing on it hears why its
+				// value is marked rather than finding the sentence by moving on.
+				const problem = element('div', 'sheetsmith-stat-block-picture-problem', wrap, strayTintSentence(own.stray, ''));
+				problem.id = `sheetsmith-stat-block-${config.id}-${at}-tint-problem`;
+				select.setAttribute('aria-invalid', 'true');
+				select.setAttribute('aria-describedby', problem.id);
+			}
+			select.addEventListener('change', () => {
+				const chosen = tintColourOf(select.value);
+				// Painted before reporting (PATTERNS §5): the swatch answers the
+				// choice whether or not the write comes back as a rebuild.
+				swatch.setAttribute(TINT_ATTRIBUTE, chosen ?? block);
+				context.onChange({ records: {}, tints: { [at]: chosen } });
+			});
+		}
+
+		/**
 		 * The open form's **Picture** section under Every form: the whole frame and
 		 * its field, `picture-frame.ts`'s gesture, suggester and refusals exactly.
 		 * A draft that is not one embed is refused in the field and nothing is
@@ -1548,6 +1802,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			// is read in the strip beside HP and Speed rather than in the list.
 			const set = [...changes.values()].flat().filter((change) => change.vital);
 			if (editing && hasPicture(config)) drawPictureSection(into, record, at, named);
+			// Under Every form alone: a companion block has no form in play, so
+			// nothing it holds could tint.
+			if (editing && exclusive && hasTintPerRecord(config)) drawTintSection(into, record, at, named);
 			const zones = bodyZones(config);
 			const zoneHost: ZoneHost = {
 				host: controls,
@@ -1989,6 +2246,18 @@ function vitalsSummary(
 		if (change.vital && change.applies) said.push(`${change.label} ${change.text}`);
 	}
 	return said.join(' · ');
+}
+
+/**
+ * A square in a colour's edge, taking no pointer and no focus, and hidden from
+ * assistive tech because the words beside it already say the colour or the
+ * form. The stylesheet draws it from the attribute, so no inline colour is set.
+ */
+function tintSwatch(into: HTMLElement, colour: TintColour): HTMLElement {
+	const swatch = element('span', 'sheetsmith-stat-block-tint-swatch', into);
+	swatch.setAttribute('aria-hidden', 'true');
+	swatch.setAttribute(TINT_ATTRIBUTE, colour);
+	return swatch;
 }
 
 /** `Brown Bear and Wolf`, or `A, B and C`: names as a sentence lists them. */

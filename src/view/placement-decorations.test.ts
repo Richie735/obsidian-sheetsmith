@@ -13,6 +13,7 @@ import {
 	IN_PLAY_BOX,
 	IN_PLAY_MARK_INLINE,
 	IN_PLAY_MARK,
+	IN_PLAY_MARK_SEVERAL,
 	IN_PLAY_PLACEMENT,
 	inPlayDecorations,
 } from './placement-decorations';
@@ -136,9 +137,17 @@ Modifiers: abilities.DEX = 2
 \`\`\`
 `;
 
+/** The fixture with Wild Shape tinting in `tint`, each form choosing its own. */
+const TINTED = {
+	...LAYOUT,
+	components: LAYOUT.components.map((component) =>
+		component.id === 'forms' ? { ...component, tint: 'green', tintPerRecord: true } : component,
+	),
+};
+
 /** Draw the whole sheet, tint included, and keep the note the view would write. */
-function draw(source: string) {
-	const layout = parseLayout(JSON.stringify(LAYOUT));
+function draw(source: string, fixture: object = LAYOUT) {
+	const layout = parseLayout(JSON.stringify(fixture));
 	const note = parseCharacter(source);
 	const walk = walkLayout(layout.components);
 	const prepared = walk.map(({ config }) => {
@@ -290,7 +299,7 @@ describe('where a decoration lands without a stamped host', () => {
 		const cell = root.createDiv('sheetsmith-cell');
 		cell.setAttribute('data-sheetsmith-component', 'hp');
 		cell.createDiv('sheetsmith-pool');
-		applyDecorations(root, [{ kind: 'in-play', label: 'Brown Bear', names: ['hp.max'] }]);
+		applyDecorations(root, [{ kind: 'in-play', label: 'Brown Bear', tint: 'accent', names: ['hp.max'] }]);
 		expect(cell.classList.contains(IN_PLAY_PLACEMENT)).toBe(true);
 		expect(cell.firstElementChild?.classList.contains(IN_PLAY_BOX)).toBe(true);
 		expect(cell.querySelector(`.${IN_PLAY_MARK}`)?.textContent).toBe('Brown Bear');
@@ -325,5 +334,115 @@ describe('a value typed while in form', () => {
 		const reverted = draw(after.replace('Active: yes', 'Active: no'));
 		const card = reverted.root.querySelector('[data-sheetsmith-component="abilities"] .sheetsmith-card-derived');
 		expect(card?.textContent).toContain('+1');
+	});
+});
+
+describe('the colour a form tints in', () => {
+	/** Brown Bear choosing orange in a green block; Wolf taking the block's green. */
+	const tinted = (bear: 'yes' | 'no', wolf: 'yes' | 'no' = 'no') =>
+		NOTE(bear, wolf).replace(
+			'Modifiers: abilities.STR = 4; abilities.CON = 3; perception >= 3; skills.stealth >= 5\n',
+			'Modifiers: abilities.STR = 4; abilities.CON = 3; perception >= 3; skills.stealth >= 5\nTint: orange\n',
+		);
+	const tintOf = (el: Element | null | undefined) => el?.getAttribute('data-sheetsmith-tint') ?? null;
+
+	it('lands on every box it tints and on its pill, and a second pass takes it off', () => {
+		const { root } = draw(tinted('yes'), TINTED);
+		const cards = Array.from(cellOf(root, 'abilities').querySelectorAll<HTMLElement>('.sheetsmith-card'));
+		expect(cards.map(tintOf)).toEqual(['orange', null, 'orange', null, null, null]);
+		const rows = Array.from(cellOf(root, 'skills').querySelectorAll<HTMLElement>('tbody tr'));
+		expect(rows.map(tintOf)).toEqual([null, 'orange']);
+		const pills = Array.from(root.querySelectorAll(`.${IN_PLAY_MARK}[aria-hidden="true"]`));
+		expect(pills.length).toBeGreaterThan(0);
+		for (const pill of pills) expect(tintOf(pill)).toBe('orange');
+
+		applyDecorations(root, []);
+		expect(cards.map(tintOf)).toEqual([null, null, null, null, null, null]);
+		expect(rows.map(tintOf)).toEqual([null, null]);
+		expect(root.querySelector(`.${IN_PLAY_BOX}`)).toBeNull();
+	});
+
+	it('takes the block colour for a form choosing none', () => {
+		const { root } = draw(NOTE('no', 'yes'), TINTED);
+		const cards = Array.from(cellOf(root, 'abilities').querySelectorAll<HTMLElement>('.sheetsmith-card'));
+		expect(tintOf(cards[1])).toBe('green');
+	});
+
+	it('keeps each box its own colour in one placement, and draws the one pill in the accent', () => {
+		const { root } = draw(tinted('yes', 'yes'), TINTED);
+		const cell = cellOf(root, 'abilities');
+		const cards = Array.from(cell.querySelectorAll<HTMLElement>('.sheetsmith-card'));
+		expect(cards.map(tintOf)).toEqual(['orange', 'green', 'orange', null, null, null]);
+		const pill = cell.querySelector(`.${IN_PLAY_MARK}[aria-hidden="true"]`);
+		expect(pill?.textContent).toBe('Brown Bear, Wolf');
+		expect(tintOf(pill)).toBe('accent');
+		// Marked as naming several, so it is not clipped at one name's width.
+		expect(pill?.classList.contains(IN_PLAY_MARK_SEVERAL)).toBe(true);
+		const single = draw(tinted('yes'), TINTED).root.querySelector(`.${IN_PLAY_MARK}[aria-hidden="true"]`);
+		expect(single?.classList.contains(IN_PLAY_MARK_SEVERAL)).toBe(false);
+	});
+
+	/** One placement with no stamped host, which two decorations both reach. */
+	const lone = () => {
+		const root = document.createElement('div');
+		const cell = root.createDiv('sheetsmith-cell');
+		cell.setAttribute('data-sheetsmith-component', 'hp');
+		cell.createDiv('sheetsmith-pool');
+		return { root, cell };
+	};
+
+	it('draws a box two colours reach in the accent', () => {
+		const { root, cell } = lone();
+		applyDecorations(root, [
+			{ kind: 'in-play', label: 'Brown Bear', tint: 'orange', names: ['hp.max'] },
+			{ kind: 'in-play', label: 'Wolf', tint: 'green', names: ['hp.max'] },
+		]);
+		expect(tintOf(cell.firstElementChild)).toBe('accent');
+		expect(tintOf(cell.querySelector(`.${IN_PLAY_MARK}[aria-hidden="true"]`))).toBe('accent');
+	});
+
+	it('keeps one colour two forms agree on', () => {
+		const { root, cell } = lone();
+		applyDecorations(root, [
+			{ kind: 'in-play', label: 'Brown Bear', tint: 'green', names: ['hp.max'] },
+			{ kind: 'in-play', label: 'Wolf', tint: 'green', names: ['hp.max'] },
+		]);
+		expect(tintOf(cell.firstElementChild)).toBe('green');
+		expect(tintOf(cell.querySelector(`.${IN_PLAY_MARK}[aria-hidden="true"]`))).toBe('green');
+	});
+
+	it('leaves the attribute on anything that is not a box it tinted', () => {
+		const { root, cell } = lone();
+		const swatch = cell.createSpan('sheetsmith-stat-block-tint-swatch');
+		swatch.setAttribute('data-sheetsmith-tint', 'pink');
+		applyDecorations(root, [{ kind: 'in-play', label: 'Wolf', tint: 'green', names: ['hp.max'] }]);
+		applyDecorations(root, []);
+		expect(tintOf(swatch)).toBe('pink');
+	});
+
+	it('keeps two forms of one name and two colours as two decorations', () => {
+		const line = (tint: 'orange' | 'green') => ({
+			label: 'Bear',
+			source: 'Forms',
+			operator: 'add' as const,
+			type: null,
+			amount: 1,
+			suppressed: null,
+			inPlay: true,
+			tint,
+		});
+		const decorations = inPlayDecorations(['a', 'b'], (name) => ({
+			lines: [line(name === 'a' ? 'orange' : 'green')],
+			notes: [],
+		}) as unknown as ReturnType<Parameters<typeof inPlayDecorations>[1]>);
+		expect(decorations.map(({ label, tint, names }) => ({ label, tint, names }))).toEqual([
+			{ label: 'Bear', tint: 'orange', names: ['a'] },
+			{ label: 'Bear', tint: 'green', names: ['b'] },
+		]);
+	});
+
+	it('reads a line with no tint as the accent', () => {
+		const decorations = draw(NOTE('yes')).decorations;
+		expect(decorations.map((one) => one.tint)).toEqual(['accent']);
 	});
 });

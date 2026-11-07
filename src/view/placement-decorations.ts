@@ -22,7 +22,7 @@
  * design, and would paint half a 5e sheet for one form.
  */
 
-import { ModifierBreakdown } from '../types';
+import { ModifierBreakdown, TINT_ATTRIBUTE, TintColour } from '../types';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
 import { BOX_ATTRIBUTE, NAME_ATTRIBUTE } from '../components/modifier-breakdown';
 
@@ -44,6 +44,14 @@ export const IN_PLAY_MARK = 'sheetsmith-in-play-mark';
 /** The pill's class where it rides in a row's name cell rather than over a box. */
 export const IN_PLAY_MARK_INLINE = 'sheetsmith-in-play-mark-inline';
 
+/**
+ * The pill's class where it names more than one form. Its words are the only
+ * thing telling the forms apart where it is drawn in the accent
+ * (`docs/features/form-tint-colour.md`), so on a box it takes the box's width
+ * rather than the one form's 12ch.
+ */
+export const IN_PLAY_MARK_SEVERAL = 'sheetsmith-in-play-mark-several';
+
 /** The attribute a cell carries naming the component drawn into it. */
 export const COMPONENT_ATTRIBUTE = 'data-sheetsmith-component';
 
@@ -52,7 +60,21 @@ export interface PlacementDecoration {
 	kind: 'in-play';
 	/** What the mark says: the form's name, as its row reads. */
 	label: string;
+	/** The colour it paints in: the push's `tint`, the accent where it carried none. */
+	tint: TintColour;
 	names: readonly string[];
+}
+
+/**
+ * The colour one box or one pill takes from the forms reaching it
+ * (`docs/features/form-tint-colour.md`, "Two forms on by hand"): **a form's
+ * colour where every form reaching it agrees, and the accent where they
+ * disagree**, since no named colour can claim two forms. The words on the tag
+ * say who did it.
+ */
+function agreed(tints: readonly TintColour[]): TintColour {
+	const first = tints[0];
+	return first !== undefined && tints.every((tint) => tint === first) ? first : 'accent';
 }
 
 /**
@@ -63,25 +85,30 @@ export interface PlacementDecoration {
  * Read off the breakdown rather than worked out beside it, so the tint and the
  * popover behind the number cannot disagree: the breakdown carries the floor's
  * verdict on its line (`withFloorVerdict`), which is the one fact both read.
- * One decoration per form, in the order the names first meet it.
+ * One decoration per form, in the order the names first meet it: **a form is
+ * its label and its tint together**, so two forms sharing a name and differing
+ * in colour stay two decorations.
  */
 export function inPlayDecorations(
 	names: Iterable<string>,
 	breakdown: (name: string) => ModifierBreakdown,
 ): PlacementDecoration[] {
-	const byLabel = new Map<string, string[]>();
+	const byForm = new Map<string, { label: string; tint: TintColour; names: string[] }>();
 	for (const name of names) {
 		const seen = new Set<string>();
 		for (const line of breakdown(name).lines) {
 			if (line.inPlay !== true || line.suppressed !== null) continue;
-			if (seen.has(line.label)) continue;
-			seen.add(line.label);
-			const held = byLabel.get(line.label);
-			if (held === undefined) byLabel.set(line.label, [name]);
-			else held.push(name);
+			const tint = line.tint ?? 'accent';
+			// A row's label is one line, so a newline keys the pair without a collision.
+			const key = `${line.label}\n${tint}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			const held = byForm.get(key);
+			if (held === undefined) byForm.set(key, { label: line.label, tint, names: [name] });
+			else held.names.push(name);
 		}
 	}
-	return [...byLabel].map(([label, landsOn]) => ({ kind: 'in-play', label, names: landsOn }));
+	return [...byForm.values()].map((form) => ({ kind: 'in-play', ...form }));
 }
 
 /** The cell a component was drawn into, by its id. */
@@ -131,13 +158,19 @@ export function applyDecorations(
 	/** Where the pill may reveal a name it clips, as `ui/truncation.ts` does. */
 	reveal?: (el: HTMLElement) => void,
 ): void {
+	// The colour first, off the boxes the last pass tinted, which the class
+	// still names: a Stat block's swatch carries the attribute too, and is not
+	// this pass's to clear.
+	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_BOX}`))) el.removeAttribute(TINT_ATTRIBUTE);
 	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED]) {
 		for (const el of Array.from(root.querySelectorAll(`.${cls}`))) el.classList.remove(cls);
 	}
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_MARK}`))) el.remove();
 
 	/** The boxes each cell's forms reached, in DOM order, and which forms. */
-	const marked = new Map<HTMLElement, { boxes: HTMLElement[]; labels: string[] }>();
+	const marked = new Map<HTMLElement, { boxes: HTMLElement[]; labels: string[]; tints: TintColour[] }>();
+	/** The colours of the forms reaching each box. */
+	const boxTints = new Map<HTMLElement, TintColour[]>();
 	for (const decoration of decorations) {
 		for (const name of decoration.names) {
 			const owner = name.split('.')[0] ?? name;
@@ -152,16 +185,21 @@ export function applyDecorations(
 				const first = cell.firstElementChild;
 				boxes = first instanceof HTMLElement ? [first] : [];
 			}
-			const held = marked.get(cell) ?? { boxes: [], labels: [] };
+			const held = marked.get(cell) ?? { boxes: [], labels: [], tints: [] };
 			for (const box of boxes) {
 				box.classList.add(IN_PLAY_BOX);
 				if (!held.boxes.includes(box)) held.boxes.push(box);
+				const tints = boxTints.get(box) ?? [];
+				tints.push(decoration.tint);
+				boxTints.set(box, tints);
 			}
 			if (!held.labels.includes(decoration.label)) held.labels.push(decoration.label);
+			held.tints.push(decoration.tint);
 			marked.set(cell, held);
 		}
 	}
-	for (const [cell, { boxes, labels }] of marked) {
+	for (const [box, tints] of boxTints) box.setAttribute(TINT_ATTRIBUTE, agreed(tints));
+	for (const [cell, { boxes, labels, tints }] of marked) {
 		const said = labels.join(', ');
 		// The first tinted box in reading order, which is where a reader meets it.
 		const first = [...boxes].sort((left, right) =>
@@ -173,10 +211,15 @@ export function applyDecorations(
 		const host = rowName ?? first;
 		if (rowName === null) first.classList.add(IN_PLAY_MARKED);
 		const pill = host.createSpan({
-			cls: rowName === null ? IN_PLAY_MARK : `${IN_PLAY_MARK} ${IN_PLAY_MARK_INLINE}`,
+			cls: [
+				IN_PLAY_MARK,
+				...(rowName === null ? [] : [IN_PLAY_MARK_INLINE]),
+				...(labels.length > 1 ? [IN_PLAY_MARK_SEVERAL] : []),
+			].join(' '),
 			text: said,
 		});
 		pill.setAttribute('aria-hidden', 'true');
+		pill.setAttribute(TINT_ATTRIBUTE, agreed(tints));
 		reveal?.(pill);
 		cell.createSpan({ cls: `sheetsmith-sr-only ${IN_PLAY_MARK}`, text: `Changed by ${said}` });
 	}

@@ -9458,7 +9458,11 @@ a.sheetsmith-notice-action {
 	cursor: default;
 }
 
-.sheetsmith-stat-block-form-name {
+/* A name row with two forms on, and the Tint section's line under Every form:
+   each a row of small marks and words that wraps where a narrow sheet will not
+   hold it. */
+.sheetsmith-stat-block-form-name,
+.sheetsmith-stat-block-tint-line {
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
@@ -9484,6 +9488,21 @@ a.sheetsmith-notice-action {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
+}
+
+/* **The swatch a form's tint is keyed by** (`docs/features/form-tint-colour.md`,
+   question 4): a square of the small UI size, filled solid in the tint's edge
+   colour, which clears 3:1 on every colour (the form tint's block below). Beside
+   a form's name in the In play head and beside the Tint dropdown under Every
+   form; it takes no pointer and no focus, and forced colors hides it, since a
+   square repainted in a system colour says nothing. */
+.sheetsmith-stat-block-tint-swatch {
+	flex: 0 0 auto;
+	width: var(--font-ui-small);
+	height: var(--font-ui-small);
+	border-radius: var(--radius-s);
+	background-color: var(--sheetsmith-tint-edge);
+	pointer-events: none;
 }
 
 /* Below the rules it overrides, since `@container` adds no specificity: under
@@ -9542,12 +9561,54 @@ a.sheetsmith-notice-action {
    or a shadow, so the box model is untouched and forced colors keeps it.
    --------------------------------------------------------------------------- */
 
-/* **The colour the tint is drawn in** (`docs/features/form-tint-colour.md`):
-   every rule below reads `--sheetsmith-tint`, written once here on the view at
-   no specificity (`:where`) and inherited, so a later word on an element wins
-   and an element carrying none draws the accent. */
+/* **The colour a form tints in** (`docs/features/form-tint-colour.md`):
+   `TINT_COLOURS` in `types.ts`, one rule per word, each naming a theme
+   variable and never a literal (`docs/UI.md` §1). The pass stamps the word on
+   each box and pill (`data-sheetsmith-tint`), a Stat block on its swatch, and
+   every rule below reads `--sheetsmith-tint`. **The accent behind it is written
+   once**, on the view at no specificity (`:where`), and inherited: an element
+   carrying no word draws exactly what the accent draws, and any word, on the
+   element or an ancestor, wins. `accent` still has its own rule, so a tag in
+   the accent inside a box in a colour is not handed the box's.
+   `styles.test.ts` holds the list and these rules to each other. */
 :where(.sheetsmith-view) {
 	--sheetsmith-tint: var(--interactive-accent);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='accent'] {
+	--sheetsmith-tint: var(--interactive-accent);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='red'] {
+	--sheetsmith-tint: var(--color-red);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='orange'] {
+	--sheetsmith-tint: var(--color-orange);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='yellow'] {
+	--sheetsmith-tint: var(--color-yellow);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='green'] {
+	--sheetsmith-tint: var(--color-green);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='cyan'] {
+	--sheetsmith-tint: var(--color-cyan);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='blue'] {
+	--sheetsmith-tint: var(--color-blue);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='purple'] {
+	--sheetsmith-tint: var(--color-purple);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='pink'] {
+	--sheetsmith-tint: var(--color-pink);
 }
 
 /* **The edge: the colour mixed 70% toward `--text-normal`**, which is the
@@ -9619,8 +9680,10 @@ a.sheetsmith-notice-action {
 /* Forced colors drops a shadow, so there the row's outline is its rules: its
    own bottom rule and the one above it, which is the previous row's bottom, in
    the mode's highlight across every cell, the name cell included, and a rule
-   at each end. **The form's colour goes with the mode**, as it intends: the
-   tag's words say which form it was. */
+   at each end. **The form's colour goes with the mode**, as it intends: two
+   forms in two colours look the same here, and the tag's words tell them apart.
+   The swatch, a square the mode would repaint in one system colour, says
+   nothing there, so it is not drawn. */
 @media (forced-colors: active) {
 	.sheetsmith-view tr.sheetsmith-in-play > th,
 	.sheetsmith-view tr.sheetsmith-in-play > td,
@@ -9645,6 +9708,10 @@ a.sheetsmith-notice-action {
 
 	.sheetsmith-view tr.sheetsmith-in-play > :last-child {
 		border-inline-end: 1px solid Highlight;
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-tint-swatch {
+		display: none;
 	}
 }
 
@@ -9711,6 +9778,19 @@ a.sheetsmith-notice-action {
 	/* Down by its own height less the padding: `--size-4-2` inside, the rest
 	   out. Geometry only, so no font moves it onto content. */
 	transform: translateY(calc(100% - var(--size-4-2)));
+}
+
+/* **A tag naming several forms takes its box's width**, less the padding it
+   is inset by at either end, rather than one name's 12ch
+   (`docs/features/form-tint-colour.md`, "Two forms on by hand"): drawn in the
+   accent, its words are the only thing saying which forms it means, and at
+   12ch *Brown Bear, Wolf* read *Brown Bear, …*. It stays clear of content by
+   geometry whatever its width, since only the bottom padding is inside the box.
+   Not on a row, where it is laid over the name cell and a wider tag would cover
+   the name the row is read by; the reveal answers a clipped one there. */
+.sheetsmith-view
+	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-several:not(.sheetsmith-in-play-mark-inline)[aria-hidden='true'] {
+	max-width: calc(100% - 2 * var(--size-4-2));
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where

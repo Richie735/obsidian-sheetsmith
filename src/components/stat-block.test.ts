@@ -1484,3 +1484,277 @@ describe('a row or entry named by a link, read aloud', () => {
 		expect(el.querySelector('[aria-live]')?.textContent).toBe('Attack Bite');
 	});
 });
+
+describe('the colour a form tints in', () => {
+	const TINTED: Partial<StatBlockConfig> = { tint: 'green', tintPerRecord: true };
+	/** Brown Bear choosing orange; Wolf choosing nothing. */
+	const ORANGE_BEAR = BODY.replace('Modifiers: abilities.STR = 4;', 'Tint: orange\nModifiers: abilities.STR = 4;');
+	const pushes = (body: string, over: Partial<StatBlockConfig>): readonly ModifierPush[] => {
+		const from = { ...config, ...over };
+		return statBlock.scopeModifiers?.(read(body, from), from)?.(() => null) ?? [];
+	};
+	const tints = (pushed: readonly ModifierPush[]) => [...new Set(pushed.map((push) => push.tint))];
+
+	it("pushes a form's own valid Tint, else the block's, and nothing for the accent", () => {
+		expect(tints(pushes(ORANGE_BEAR, TINTED))).toEqual(['orange']);
+		expect(tints(pushes(BODY, TINTED))).toEqual(['green']);
+		// The switch off: the entry is ignored, and the block's colour taken.
+		expect(tints(pushes(ORANGE_BEAR, { tint: 'green' }))).toEqual(['green']);
+		// The accent is written as absence, whoever chose it.
+		expect(pushes(BODY, {}).every((push) => !('tint' in push))).toBe(true);
+		expect(
+			pushes(ORANGE_BEAR.replace('Tint: orange', 'Tint: accent'), TINTED).every((push) => !('tint' in push)),
+		).toBe(true);
+	});
+
+	it('pushes neither inPlay nor tint without exclusive', () => {
+		const pushed = pushes(ORANGE_BEAR, { ...TINTED, exclusive: '' });
+		expect(pushed.length).toBeGreaterThan(0);
+		expect(pushed.some((push) => push.inPlay === true || push.tint !== undefined)).toBe(false);
+	});
+
+	it('reads Green as green, and a blank entry as none', () => {
+		expect(tints(pushes(ORANGE_BEAR.replace('Tint: orange', 'Tint: Green'), { ...TINTED, tint: 'red' }))).toEqual([
+			'green',
+		]);
+		expect(tints(pushes(ORANGE_BEAR.replace('Tint: orange', 'Tint:'), TINTED))).toEqual(['green']);
+	});
+
+	describe('a layout tint outside the list', () => {
+		const BROWN: Partial<StatBlockConfig> = { tint: 'brown', tintPerRecord: true };
+		const SENTENCE = '"brown" is not a tint colour. Choose one under Tint in the layout editor.';
+
+		it('reads, and tints in the accent except where a form chose its own', () => {
+			expect(statBlock.read(BODY, { ...config, ...BROWN }).ok).toBe(true);
+			expect(pushes(BODY, BROWN).every((push) => push.inPlay === true && !('tint' in push))).toBe(true);
+			expect(tints(pushes(ORANGE_BEAR, BROWN))).toEqual(['orange']);
+		});
+
+		it('draws the whole block, with one line under the head, a form chosen or not', () => {
+			const { el, edits } = render(BODY, BROWN);
+			expect(picker(el)).not.toBeNull();
+			expect(el.querySelector('.sheetsmith-stat-block-revert')).not.toBeNull();
+			expect(el.querySelector('.sheetsmith-stat-block-form')).not.toBeNull();
+			const lines = Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map(
+				(one) => one.textContent,
+			);
+			expect(lines).toEqual([SENTENCE]);
+			expect(edits).toEqual([]);
+			document.body.replaceChildren();
+
+			const none = render(BODY.replace('Active: yes', 'Active: no'), BROWN);
+			expect(
+				Array.from(none.el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+			).toEqual([SENTENCE]);
+			expect(none.edits).toEqual([]);
+		});
+
+		it('reports a word the list holds only in another case, as the editor does', () => {
+			// One predicate with two copies: this one and the editor select's
+			// (`config-panel.test.ts`, the same `Green`), held together by this pair.
+			const { el } = render(BODY, { tint: 'Green' });
+			expect(
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+			).toEqual(['"Green" is not a tint colour. Choose one under Tint in the layout editor.']);
+			expect(tints(pushes(BODY, { tint: 'Green' }))).toEqual([undefined]);
+		});
+
+		it('names Default as the accent under Every form', () => {
+			const { el } = render(BODY, BROWN);
+			toLibrary(el);
+			const select = el.querySelector<HTMLSelectElement>('.sheetsmith-stat-block-tint-choice');
+			expect(select?.options[0]?.textContent).toBe('Default (accent)');
+		});
+	});
+
+	it('refuses a field keyed Tint while Tint per record is on, in any case', () => {
+		const keyed = (key: string, over: Partial<StatBlockConfig>) => ({
+			...config,
+			...over,
+			fields: [...(config.fields ?? []), { key, type: 'text' as const }],
+		});
+		const result = statBlock.read(BODY, keyed('tint', TINTED));
+		expect(result.ok ? null : result.error).toBe(
+			'A field cannot be keyed "tint" while Tint per record is on, because that is where each record\'s tint is kept. Rename the field under Fields, or turn Tint per record off.',
+		);
+		expect(statBlock.read(BODY, keyed('Tint', { tint: 'green' })).ok).toBe(true);
+	});
+
+	describe('the Tint section under Every form', () => {
+		const section = (el: HTMLElement) => {
+			toLibrary(el);
+			const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+			return {
+				detail,
+				select: detail.querySelector<HTMLSelectElement>('.sheetsmith-stat-block-tint-choice') as HTMLSelectElement,
+				swatch: detail.querySelector<HTMLElement>('.sheetsmith-stat-block-tint .sheetsmith-stat-block-tint-swatch'),
+			};
+		};
+
+		it('sits after Picture and before the zones, naming the block colour as Default', () => {
+			const { el } = render(BODY, { ...TINTED, image: true });
+			const { detail, select, swatch } = section(el);
+			const headings = Array.from(detail.querySelectorAll('.sheetsmith-stat-block-section-heading')).map(
+				(one) => one.textContent,
+			);
+			expect(headings.slice(0, 2)).toEqual(['Picture', 'Tint']);
+			expect(select.getAttribute('aria-label')).toBe('Brown Bear tint');
+			expect(select.classList.contains('dropdown')).toBe(true);
+			expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+				'Default (green)',
+				'Accent',
+				'Red',
+				'Orange',
+				'Yellow',
+				'Green',
+				'Cyan',
+				'Blue',
+				'Purple',
+				'Pink',
+			]);
+			expect(select.value).toBe('');
+			expect(select.hasAttribute('aria-invalid')).toBe(false);
+			expect(select.hasAttribute('aria-describedby')).toBe(false);
+			expect(swatch?.getAttribute('data-sheetsmith-tint')).toBe('green');
+			expect(swatch?.getAttribute('aria-hidden')).toBe('true');
+		});
+
+		it('writes Orange, turns the swatch, and Default restores the record byte for byte', () => {
+			const { el, edits } = render(BODY, TINTED);
+			const { select, swatch } = section(el);
+			choose(select, 'orange');
+			expect(swatch?.getAttribute('data-sheetsmith-tint')).toBe('orange');
+			const from = { ...config, ...TINTED };
+			const written = applied(edits[0] as StatBlockData, BODY, from);
+			expect(written).toBe(ORANGE_BEAR.replace('Tint: orange\nModifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3', 'Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3\nTint: orange'));
+			document.body.replaceChildren();
+
+			const again = render(written, TINTED);
+			const opened = section(again.el);
+			expect(opened.select.value).toBe('orange');
+			choose(opened.select, '');
+			expect(applied(again.edits[0] as StatBlockData, written, from)).toBe(BODY);
+		});
+
+		it('restores a CRLF note byte for byte', () => {
+			const crlf = BODY.replace(/\n/g, '\r\n');
+			const from = { ...config, ...TINTED };
+			const set = applied({ records: {}, tints: { 0: 'yellow' } }, crlf, from);
+			expect(set).toContain('Tint: yellow');
+			expect(applied({ records: {}, tints: { 0: null } }, set, from)).toBe(crlf);
+		});
+
+		it('restores a record with no fence byte for byte, the fence it gained going with the tint', () => {
+			const from = { ...config, ...TINTED };
+			for (const body of [
+				'\n### Thug\n\nSome prose.\n',
+				'\n### Thug\nSome prose.\n',
+				'\n### Thug\n',
+				'\n### Thug\n\n### Wolf\n```sheet\nActive: no\n```\n',
+			]) {
+				const set = applied({ records: {}, tints: { 0: 'yellow' } }, body, from);
+				expect(set, body).toContain('```sheet\nTint: yellow\n```');
+				expect(applied({ records: {}, tints: { 0: null } }, set, from), body).toBe(body);
+			}
+		});
+
+		it('keeps a fence that holds anything besides the tint', () => {
+			const from = { ...config, ...TINTED };
+			const body = '\n### Thug\n```sheet\nActive: no\nTint: red\n```\n';
+			expect(applied({ records: {}, tints: { 0: null } }, body, from)).toBe('\n### Thug\n```sheet\nActive: no\n```\n');
+		});
+
+		it('is absent with the switch off, and a tint then writes nothing', () => {
+			const { el } = render(ORANGE_BEAR, { tint: 'green' });
+			toLibrary(el);
+			expect(el.querySelector('.sheetsmith-stat-block-tint')).toBeNull();
+			expect(applied({ records: {}, tints: { 0: 'yellow' } }, ORANGE_BEAR, { ...config, tint: 'green' })).toBe(
+				ORANGE_BEAR,
+			);
+		});
+
+		it('keeps an entry through an edit to another field, with the switch on or off', () => {
+			const hand = ORANGE_BEAR.replace('Tint: orange', 'Tint: Green');
+			for (const over of [TINTED, {}]) {
+				const from = { ...config, ...over };
+				const edited = applied({ records: { 0: { fields: { HP: '20 / 34' } } } }, hand, from);
+				expect(edited).toBe(hand.replace('HP: 22 / 34', 'HP: 20 / 34'));
+			}
+		});
+	});
+
+	describe('a form Tint outside the list', () => {
+		const BROWN_BEAR = ORANGE_BEAR.replace('Tint: orange', 'Tint: brown');
+
+		it('tints in the block colour and says so under the head', () => {
+			expect(tints(pushes(BROWN_BEAR, TINTED))).toEqual(['green']);
+			const { el, edits } = render(BROWN_BEAR, TINTED);
+			expect(
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+			).toEqual(['"brown" is not a tint colour. Choose one under Every form, in Tint.']);
+			expect(edits).toEqual([]);
+		});
+
+		it('names the form with two on', () => {
+			const two = BROWN_BEAR.replace('Active: no', 'Active: yes');
+			const { el } = render(two, TINTED);
+			expect(
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+			).toEqual(['Brown Bear: "brown" is not a tint colour. Choose one under Every form, in Tint.']);
+		});
+
+		it('holds the word as a disabled, selected first option under Every form, writing nothing', () => {
+			const { el, edits } = render(BROWN_BEAR, TINTED);
+			toLibrary(el);
+			const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
+			const select = detail.querySelector<HTMLSelectElement>('.sheetsmith-stat-block-tint-choice') as HTMLSelectElement;
+			const first = select.options[0];
+			expect(first?.textContent).toBe('"brown" (not a tint colour)');
+			expect(first?.disabled).toBe(true);
+			expect(first?.selected).toBe(true);
+			expect(detail.querySelector('.sheetsmith-stat-block-tint')?.textContent).toContain(
+				'"brown" is not a tint colour. Choose one.',
+			);
+			expect(select.getAttribute('aria-invalid')).toBe('true');
+			const described = el.ownerDocument.getElementById(select.getAttribute('aria-describedby') ?? '');
+			expect(described?.textContent).toBe('"brown" is not a tint colour. Choose one.');
+			expect(edits).toEqual([]);
+			choose(select, 'yellow');
+			expect(applied(edits[0] as StatBlockData, BROWN_BEAR, { ...config, ...TINTED })).toBe(
+				ORANGE_BEAR.replace('Tint: orange', 'Tint: yellow'),
+			);
+		});
+	});
+
+	describe('the swatch in the In play head', () => {
+		const swatches = (el: HTMLElement) =>
+			Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-play-head .sheetsmith-stat-block-tint-swatch, .sheetsmith-stat-block-form-name .sheetsmith-stat-block-tint-swatch'));
+
+		it('is drawn before the form name where the layout chose a tint, and hidden from assistive tech', () => {
+			const { el } = render(ORANGE_BEAR, TINTED);
+			const found = swatches(el);
+			expect(found.map((one) => one.getAttribute('data-sheetsmith-tint'))).toEqual(['orange']);
+			expect(found[0]?.getAttribute('aria-hidden')).toBe('true');
+			expect(found[0]?.nextElementSibling?.classList.contains('sheetsmith-stat-block-title')).toBe(true);
+		});
+
+		it('is drawn for a block colour alone, or the switch alone', () => {
+			expect(swatches(render(BODY, { tint: 'red' }).el).length).toBe(1);
+			document.body.replaceChildren();
+			expect(swatches(render(BODY, { tintPerRecord: true }).el).length).toBe(1);
+		});
+
+		it('is not drawn where the layout chose nothing', () => {
+			expect(swatches(render(BODY).el)).toEqual([]);
+		});
+
+		it('is one per form row with two on, each its own colour', () => {
+			const two = ORANGE_BEAR.replace('Active: no', 'Active: yes');
+			const found = swatches(render(two, TINTED).el);
+			expect(found.map((one) => one.getAttribute('data-sheetsmith-tint'))).toEqual(['orange', 'green']);
+			for (const one of found) {
+				expect(one.nextElementSibling?.classList.contains('sheetsmith-stat-block-form-title')).toBe(true);
+			}
+		});
+	});
+});

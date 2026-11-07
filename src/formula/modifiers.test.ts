@@ -737,6 +737,32 @@ describe('buildModifierTable', () => {
 	});
 });
 
+describe('a push in play, and its colour', () => {
+	/** One row's push at Strength, carrying whatever `extra` says about the row. */
+	const lines = (extra: Partial<ModifierPush>) => {
+		const table = buildModifierTable(
+			[{ id: 'forms', pushes: () => [{ ...enrol('Bear', 'Brown Bear'), ...extra }] }],
+			[define({ name: 'Bear', target: 'abilities.STR', amount: '4' })],
+		);
+		const result = table('abilities.STR');
+		return 'error' in result ? [] : result.lines;
+	};
+
+	it("carries a push's tint to its line, as it carries inPlay", () => {
+		expect(lines({ inPlay: true, tint: 'orange' }).map(({ inPlay, tint }) => ({ inPlay, tint }))).toEqual([
+			{ inPlay: true, tint: 'orange' },
+		]);
+	});
+
+	it('carries no tint where the push carried none, which is the accent', () => {
+		expect(lines({ inPlay: true }).map((line) => 'tint' in line)).toEqual([false]);
+	});
+
+	it('drops a tint the push carried without inPlay, which means nothing', () => {
+		expect(lines({ tint: 'orange' }).map((line) => [line.inPlay, line.tint])).toEqual([[undefined, undefined]]);
+	});
+});
+
 describe('a part typed on the row', () => {
 	/*
 	 * The second tier through the same walk (feature doc §1, §6). **Nothing here
