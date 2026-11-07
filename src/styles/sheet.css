@@ -6509,6 +6509,14 @@ a.sheetsmith-notice-action {
 	outline-offset: 2px;
 }
 
+/* A disclosure a pointer focused draws no ring: the ring is for the keyboard,
+   and a chevron pressed with a mouse would otherwise keep one until the next
+   click elsewhere (`record-controls.ts`, `bindDisclosure`). */
+.sheetsmith-view .sheetsmith-record-disclosure.sheetsmith-pointer-focus:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-disclosure.sheetsmith-pointer-focus:focus-visible {
+	outline: none;
+}
+
 /* The name's own track is capped above (`--sheetsmith-record-name`), so all this
    owes is the shrink: without it a long link inside the stack would push the
    track past its cap. */

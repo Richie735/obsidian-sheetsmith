@@ -139,6 +139,13 @@ const ALLOWED = [
 	// `record-set.ts`, and kept pure so it is tested without a DOM.
 	"import { fitTier } from './record-line-fit';",
 	"import { fitTier } from '../components/record-line-fit';",
+	// A fenced record's typed fields as data, and the controls that edit one:
+	// Record set's, moved out when Stat block became the second consumer, on
+	// §1's two-consumer rung rather than copied (`docs/features/character-forms.md`).
+	"import { recordEntries } from './record-fields';",
+	"import { recordEntries } from '../components/record-fields';",
+	"import { drawRecordBody } from './record-controls';",
+	"import { drawRecordBody } from '../components/record-controls';",
 	// A painted level ring, made into a control: its ARIA, its tooltip, its touch
 	// route and its presses. Added deliberately, and at four consumers rather
 	// than two — Table, Track, Record set and Roster — which is one past where

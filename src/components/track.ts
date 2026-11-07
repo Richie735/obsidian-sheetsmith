@@ -60,7 +60,7 @@ import {
 	armedPrompt,
 	STOOD_DOWN,
 } from '../interaction/arm-to-confirm';
-import { GESTURE_COMMIT } from '../interaction/commit-window';
+import { commitWindow } from '../interaction/commit-window';
 import {
 	bindEditable,
 	keptRatherThanBlank,
@@ -1932,7 +1932,6 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		}
 
 		const runs: Run[] = [];
-		let commitTimer: number | undefined;
 
 		/**
 		 * Write every run that moved, in one change to the note.
@@ -1941,14 +1940,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * three slot levels is one edit and one undo, which is the whole
 		 * argument for a row set over three components.
 		 */
-		const commit = (): void => {
-			if (commitTimer !== undefined) {
-				view?.clearTimeout(commitTimer);
-				commitTimer = undefined;
-			}
-			// A rebuild replaces the card, and a commit arriving after that
-			// would be writing out of a detached control.
-			if (!card.isConnected) return;
+		const write = (): void => {
 			// Null-prototype for `read`'s own reason: with the toggle on, a
 			// run's key is text out of the note.
 			const values = Object.create(null) as Record<string, string>;
@@ -1970,14 +1962,14 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			context.onChange({ values });
 		};
 
-		/** Write at the end of the run of presses, unless something ends it sooner. */
-		const commitSoon = (): void => {
-			if (commitTimer !== undefined) view?.clearTimeout(commitTimer);
-			commitTimer = view?.setTimeout(() => {
-				commitTimer = undefined;
-				commit();
-			}, GESTURE_COMMIT);
-		};
+		/**
+		 * Write at the end of the run of presses, unless something ends it
+		 * sooner; a write after a rebuild replaced the card writes nothing
+		 * (`commit-window.ts`).
+		 */
+		const runWindow = commitWindow(view, card, write);
+		const commit = runWindow.now;
+		const commitSoon = runWindow.soon;
 
 		/**
 		 * Move the keyboard to one run, and make it the card's only tab stop.
