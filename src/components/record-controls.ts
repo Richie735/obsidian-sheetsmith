@@ -1143,6 +1143,14 @@ export function drawRecordBody(
 		 * starts: a Stat block zone's heading guards (`stat-block-zones.ts`).
 		 */
 		refuse?: (next: string) => string | null;
+		/**
+		 * The heading a refused `## ` or `### ` line is advised to become,
+		 * where `#### ` is not one the caller takes: a Stat block features
+		 * entry or lead refuses every `####` line, so advising one there
+		 * would earn a second refusal (`stat-block-zones.ts`). The marker
+		 * rather than the clause, so the sentence stays one template here.
+		 */
+		subheading?: string;
 	},
 	onCommit: (next: string) => void,
 ): void {
@@ -1241,13 +1249,14 @@ export function drawRecordBody(
 		 * message names the line and the fix.
 		 */
 		refuse: (next) => {
+			const subheading = options.subheading ?? '#### ';
 			const section = startsSection(next);
 			if (section !== null) {
-				return `Not saved. "${section.trim()}" would start a new section in this note — use "#### " instead.`;
+				return `Not saved. "${section.trim()}" would start a new section in this note — use "${subheading}" instead.`;
 			}
 			const record = startsRecord(next);
 			if (record !== null) {
-				return `Not saved. "${record.trim()}" would start a new ${noun.toLowerCase()} in this list — use "#### " instead.`;
+				return `Not saved. "${record.trim()}" would start a new ${noun.toLowerCase()} in this list — use "${subheading}" instead.`;
 			}
 			return options.refuse?.(next) ?? null;
 		},

@@ -343,7 +343,9 @@ so a commit is refused in place, with the field keeping the draft, where:
 - a features entry, a features lead or a table cell holds a `####` line at
   all. This uses the same sentence shape, because there it would be drift.
 - any body text holds a `###` or `##` line, which is the existing record
-  refusal, unchanged.
+  refusal. A text zone keeps its advice, *use "#### " instead*; a features
+  entry or lead advises *use "##### " instead*, since it refuses every `####`
+  line and the first advice would earn a second refusal.
 - with **Picture** on, a legacy lead's new text opens with a lone embed
   paragraph, which would read as the picture next time: *Not saved. A picture
   on its own first line is the form's picture. Set it under Picture instead.*

@@ -3351,6 +3351,14 @@ export const DEFAULTS = [
 		size: '1400,1500',
 	},
 	{
+		// Brown Bear orange lengthening Rage's run by one: a Track stamps no host,
+		// so the tag lands on its placed box, the case `measure-form-tag.mjs`
+		// measures beside the cards and the Pool.
+		name: 'sheet-forms-tint-track',
+		query: 'surface=sheet&theme=light&state=forms-tint-track&tint=orange',
+		size: '1400,1500',
+	},
+	{
 		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
 		// to, in the accent; Strength and Constitution orange and Dexterity green
 		// in one Card set whose one tag names both, in the accent.

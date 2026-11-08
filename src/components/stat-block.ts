@@ -1380,10 +1380,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const names = active.map(({ record }) => recordLabel(record.name, noun));
 			// With one form on, its picture sits at the title row's inline start;
 			// with two, each form's own name row carries its own.
-			const failures = element('div', 'sheetsmith-stat-block-picture-problems', content);
+			const failures = element('div', 'sheetsmith-stat-block-problems', content);
 			/*
 			 * **A layout tint outside the list is said once, under the head**, in
-			 * the picture problem's host and clothes, whether or not a form is
+			 * the problem line's host and clothes, whether or not a form is
 			 * chosen: the forms tint in the accent meanwhile, and the editor's
 			 * select reports the same word where it is fixed.
 			 */
@@ -1391,7 +1391,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			if (stray !== null) {
 				element(
 					'div',
-					'sheetsmith-stat-block-picture-problem',
+					'sheetsmith-stat-block-problem',
 					failures,
 					strayTintSentence(stray, ' under Tint in the layout editor'),
 				);
@@ -1682,7 +1682,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					// (`docs/UI.md` §10). Image and Passport keep theirs, whose frame
 					// is the field.
 					const said = `${message} Set it under Every form, in Picture.`;
-					element('div', 'sheetsmith-stat-block-picture-problem', failures, prefixed ? `${named}: ${said}` : said);
+					element('div', 'sheetsmith-stat-block-problem', failures, prefixed ? `${named}: ${said}` : said);
 				},
 				...(context.resource === undefined ? {} : { resource: context.resource }),
 				onCommit: () => undefined,
@@ -1703,7 +1703,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 
 		/**
 		 * A form's own `Tint` outside the list, said under the head in the
-		 * picture problem's clothes, the form named only with two on, on the
+		 * problem line's clothes, the form named only with two on, on the
 		 * picture line's rule. The form tints in the block's colour meanwhile,
 		 * exactly as if it held none; nothing is written until the reader chooses.
 		 */
@@ -1711,7 +1711,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const own = recordTint(config, record);
 			if (own === null || !('stray' in own)) return;
 			const said = strayTintSentence(own.stray, ' under Every form, in Tint');
-			element('div', 'sheetsmith-stat-block-picture-problem', failures, prefixed ? `${named}: ${said}` : said);
+			element('div', 'sheetsmith-stat-block-problem', failures, prefixed ? `${named}: ${said}` : said);
 		}
 
 		/**
@@ -1744,7 +1744,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			if (own !== null && 'stray' in own) {
 				// Tied to the dropdown, so a reader standing on it hears why its
 				// value is marked rather than finding the sentence by moving on.
-				const problem = element('div', 'sheetsmith-stat-block-picture-problem', wrap, strayTintSentence(own.stray, ''));
+				const problem = element('div', 'sheetsmith-stat-block-problem', wrap, strayTintSentence(own.stray, ''));
 				problem.id = `sheetsmith-stat-block-${config.id}-${at}-tint-problem`;
 				select.setAttribute('aria-invalid', 'true');
 				select.setAttribute('aria-describedby', problem.id);

@@ -242,6 +242,14 @@ function drawMarkdown(into: HTMLElement, text: string, context: MarkdownContext)
 }
 
 /**
+ * The heading a features entry or lead advises for a refused `## ` or `### `
+ * line. `headingRefusal` refuses every `####` line there, so the record body's
+ * default advice would be refused in turn; `#####` reads as no zone. One
+ * spelling for both sentences that name it: the guard below says it too.
+ */
+const MINOR_HEADING = '##### ';
+
+/**
  * The commit guard for a heading line (`docs/features/stat-block-zones.md`,
  * The commit guards): the plugin's own gestures never write a body it would
  * read differently. In text a `####` line is refused only where it matches a
@@ -253,10 +261,10 @@ function headingRefusal(text: string, zones: readonly BodyZone[], anyHeading: bo
 		const key = zoneHeadingKey(line);
 		const zone = zones.find((one) => zoneHeadingKey(one.heading) === key);
 		if (zone !== undefined) {
-			return `Not saved. "${line.trim()}" would start the ${zone.heading} zone. Use ##### for a heading inside text.`;
+			return `Not saved. "${line.trim()}" would start the ${zone.heading} zone. Use ${MINOR_HEADING.trim()} for a heading inside text.`;
 		}
 		if (anyHeading) {
-			return `Not saved. "${line.trim()}" would start a heading this layout has no zone for. Use ##### for a heading inside text.`;
+			return `Not saved. "${line.trim()}" would start a heading this layout has no zone for. Use ${MINOR_HEADING.trim()} for a heading inside text.`;
 		}
 	}
 	return null;
@@ -569,6 +577,7 @@ function drawFeaturesZone(into: HTMLElement, zone: BodyZone, read: Extract<ZoneR
 			label: `${named} ${zone.heading} text before the first entry`,
 			placeholder: 'Text before the first entry',
 			refuse: (next) => headingRefusal(next, host.zones, true) ?? entryRefusal(next, true),
+			subheading: MINOR_HEADING,
 		},
 		(next) => commit({ lead: next }),
 	);
@@ -638,6 +647,7 @@ function drawFeaturesZone(into: HTMLElement, zone: BodyZone, read: Extract<ZoneR
 				label: `${entryName} text`,
 				placeholder: 'Add text',
 				refuse: (next) => headingRefusal(next, host.zones, true) ?? entryRefusal(next, false),
+				subheading: MINOR_HEADING,
 			},
 			(next) => commit({ entry: index, text: next }),
 		);
