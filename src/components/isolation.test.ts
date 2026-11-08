@@ -150,6 +150,10 @@ const ALLOWED = [
 	// `modifier-form.ts`'s atomicity terms at one consumer (PATTERNS §2).
 	"import { drawZone } from './stat-block-zones';",
 	"import { drawZone } from '../components/stat-block-zones';",
+	// A Stat block's briefs on In play: Stat block's private half, on the same
+	// atomicity terms at one consumer (`docs/features/stat-block-in-play-polish.md`).
+	"import { drawBriefs } from './stat-block-briefs';",
+	"import { drawBriefs } from '../components/stat-block-briefs';",
 	// What a Stat block zone's key, heading and columns may be: one predicate
 	// each, phrased by the configuration check and the zone editor alike.
 	"import { zoneKeyFault } from './zone-rules';",

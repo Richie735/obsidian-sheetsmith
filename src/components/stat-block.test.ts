@@ -1826,3 +1826,230 @@ describe('the colour a form tints in', () => {
 		});
 	});
 });
+
+/*
+ * The briefs (`docs/features/stat-block-in-play-polish.md` §4): with no form on,
+ * In play offers each readable form as a button whose press is the picker's
+ * own write.
+ */
+describe('the briefs with no form on', () => {
+	const NONE = BODY.replace('Active: yes', 'Active: no');
+	const briefs = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLButtonElement>('.sheetsmith-stat-block-brief'));
+	const nameOf = (button: HTMLElement) =>
+		button.ownerDocument.getElementById(button.getAttribute('aria-labelledby') ?? '')?.textContent ?? null;
+
+	it('draws one brief per readable form in file order, each its name, its tiles read-only and its changes', () => {
+		const { el } = render(NONE);
+		const found = briefs(el);
+		expect(found.map(nameOf)).toEqual(['Brown Bear', 'Wolf']);
+		// Under the head and its sentence, which stay as they were.
+		expect(el.textContent).toContain('No form is active. Choosing one spends a use.');
+		expect(el.querySelector('.sheetsmith-stat-block-revert')).toBeNull();
+		expect(picker(el).value).toBe('');
+		const bear = found[0] as HTMLButtonElement;
+		// In play's fields as pairs: every field but the picker's toggle and the
+		// modifier field, a label over its value, and no tile among them.
+		const pairs = Array.from(bear.querySelectorAll('.sheetsmith-stat-block-brief-stats > .sheetsmith-stat-block-brief-stat'));
+		expect(pairs.map((pair) => pair.querySelector('.sheetsmith-stat-block-brief-stat-label')?.textContent)).toEqual(['HP', 'Speed']);
+		expect(pairs.map((pair) => pair.querySelector('.sheetsmith-stat-block-brief-stat-value')?.textContent)).toEqual([
+			'22/34',
+			'40 ft., climb 30 ft.',
+		]);
+		expect(bear.querySelector('.sheetsmith-stat-block-vital, .sheetsmith-component-label')).toBeNull();
+		// The ceiling compact and run in, as the closed line says it, not In play's spaced reading.
+		const hp = pairs[0]?.querySelector('.sheetsmith-stat-block-brief-stat-value');
+		expect(Array.from(hp?.children ?? []).map((one) => [one.className, one.textContent])).toEqual([
+			['sheetsmith-stat-block-reading', '22'],
+			['sheetsmith-stat-block-brief-ceiling', '/34'],
+		]);
+		expect(bear.querySelector('.sheetsmith-pool-ceiling')).toBeNull();
+		// Described by what the tiles and the changes say, the tiles as words.
+		const described = (bear.getAttribute('aria-describedby') ?? '').split(' ').map((id) => el.ownerDocument.getElementById(id)?.textContent);
+		expect(described).toEqual([
+			'HP 22/34 · Speed 40 ft., climb 30 ft.',
+			'abilities.STR = 4 · armour_class = 11 · skills.perception >= 3',
+		]);
+	});
+
+	it('reads, and edits nothing: no field, no stepper, no ring control, only spans inside the button', () => {
+		const flying = NONE.replace('HP: 22 / 34', 'HP: 22 / 34\nFlying: yes');
+		const fields = [...(config.fields ?? []), { key: 'Flying', type: 'toggle' as const }];
+		const { el, edits } = render(flying, { fields });
+		const bear = briefs(el)[0] as HTMLButtonElement;
+		expect(bear.querySelectorAll('input, textarea, select, button')).toHaveLength(0);
+		expect(bear.querySelector('.sheetsmith-stat-block-step')).toBeNull();
+		expect(bear.querySelectorAll('div')).toHaveLength(0);
+		// A toggle field is its ring, painted on and hidden, its reading in the words.
+		const ring = bear.querySelector<HTMLElement>('.sheetsmith-stat-block-brief-stat.sheetsmith-stat-block-vital-toggle .sheetsmith-level-ring');
+		expect(ring?.tagName).toBe('SPAN');
+		expect(ring?.getAttribute('aria-hidden')).toBe('true');
+		expect(ring?.hasAttribute('aria-pressed')).toBe(false);
+		const twin = el.ownerDocument.getElementById((bear.getAttribute('aria-describedby') ?? '').split(' ')[0] ?? '');
+		expect(twin?.textContent).toBe('HP 22/34 · Speed 40 ft., climb 30 ft. · Flying on');
+		ring?.click();
+		expect(edits).toHaveLength(1);
+		// The press is the brief's: it chooses the form, and writes no field.
+		expect(edits[0]?.records[0]?.fields).toEqual({ Active: 'yes' });
+	});
+
+	it('says the changes and the set numbers as In play says them for the same form', () => {
+		const modifiers = modifierContext();
+		const labelled = {
+			...modifiers,
+			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
+				modifiers.outcomes(part, row).map((outcome) => ({
+					...outcome,
+					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
+				})),
+		};
+		const { el } = render(NONE, {}, { modifiers: labelled });
+		const bear = briefs(el)[0] as HTMLButtonElement;
+		const brief = bear.querySelector('.sheetsmith-stat-block-brief-changes')?.textContent;
+		const set = Array.from(bear.querySelectorAll('.sheetsmith-stat-block-vital-set')).map((tile) => tile.textContent);
+		document.body.replaceChildren();
+		const play = render(BODY, {}, { modifiers: labelled }).el;
+		const items = Array.from(play.querySelectorAll('.sheetsmith-stat-block-change-item')).map((one) => one.textContent);
+		expect(brief).toBe(items.join(' · '));
+		expect(brief).not.toBe('');
+		expect(set).toEqual(
+			Array.from(play.querySelectorAll('.sheetsmith-stat-block-vital-set')).map((tile) => tile.textContent),
+		);
+		expect(set).toEqual(['Armour class11']);
+	});
+
+	it('says what a form changes without In play\'s reasons, since a form that is off applies nothing yet', () => {
+		const modifiers = modifierContext();
+		const idle = {
+			...modifiers,
+			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
+				modifiers.outcomes(part, row).map((outcome) => ({
+					...outcome,
+					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
+					applies: false,
+					suppressed: 'a higher override applies',
+				})),
+		};
+		const bear = briefs(render(NONE, {}, { modifiers: idle }).el)[0] as HTMLButtonElement;
+		expect(bear.querySelector('.sheetsmith-stat-block-brief-changes')?.textContent).not.toContain('(');
+		expect(bear.querySelector('.sheetsmith-stat-block-vital-set')?.textContent).toBe('Armour class11');
+		expect(bear.querySelector('.sheetsmith-stat-block-change-idle')).toBeNull();
+	});
+
+	it('leaves out a field with no value, which In play keeps with its dash', () => {
+		const blank = NONE.replace('Speed: 40 ft.\n', 'Speed:\n').replace('HP: 11 / 11', 'HP: / 11');
+		const { el } = render(blank);
+		const wolf = briefs(el)[1] as HTMLButtonElement;
+		expect(
+			Array.from(wolf.querySelectorAll('.sheetsmith-stat-block-brief-stat-label')).map((one) => one.textContent),
+		).toEqual([]);
+		expect(wolf.querySelector('.sheetsmith-stat-block-brief-stats')).toBeNull();
+		// The Bear, whose fields hold values, keeps its pairs.
+		const bear = briefs(el)[0] as HTMLButtonElement;
+		expect(bear.querySelectorAll('.sheetsmith-stat-block-brief-stat')).toHaveLength(2);
+		document.body.replaceChildren();
+		// In play draws the Wolf's Speed and HP tiles, the dash in the text one.
+		const play = render(blank.replace('### Wolf\n```sheet\nActive: no', '### Wolf\n```sheet\nActive: yes')).el;
+		const tiles = Array.from(play.querySelectorAll('.sheetsmith-stat-block-vital')).map(
+			(tile) => tile.querySelector('.sheetsmith-stat-block-vital-label')?.textContent,
+		);
+		expect(tiles).toEqual(['HP', 'Speed']);
+		expect(play.querySelector('.sheetsmith-stat-block-vital-text .sheetsmith-stat-block-vital-value')?.textContent).toBe('—');
+	});
+
+	it('keeps a toggle that is off, which is a value', () => {
+		const fields = [...(config.fields ?? []), { key: 'Flying', type: 'toggle' as const }];
+		const bear = briefs(render(NONE, { fields }).el)[0] as HTMLButtonElement;
+		expect(
+			Array.from(bear.querySelectorAll('.sheetsmith-stat-block-brief-stat-label')).map((one) => one.textContent),
+		).toEqual(['HP', 'Speed', 'Flying']);
+	});
+
+	it('draws no tile row, no changes line and no description for a form that has neither', () => {
+		const fields = [
+			{ key: 'Active', type: 'toggle' as const },
+			{ key: 'Modifiers', type: 'modifier' as const },
+		];
+		const { el } = render('\n### Lone\n```sheet\nActive: no\n```\n', { fields, uses: '' });
+		const [lone] = briefs(el);
+		expect(nameOf(lone as HTMLElement)).toBe('Lone');
+		expect(lone?.hasAttribute('aria-describedby')).toBe(false);
+		expect(lone?.querySelector('.sheetsmith-stat-block-brief-stats')).toBeNull();
+		expect(lone?.querySelector('.sheetsmith-stat-block-brief-changes')).toBeNull();
+	});
+
+	it('switches and spends nothing at no uses left', () => {
+		const empty = NONE.replace('uses: 1', 'uses: 0');
+		const { el, edits } = render(empty);
+		briefs(el)[0]?.click();
+		expect(edits).toHaveLength(1);
+		expect(edits[0]?.uses).toBeUndefined();
+		expect(el.textContent).toContain('Brown Bear active, no uses left');
+		document.body.replaceChildren();
+	});
+
+	it('is a named list of buttons, named by the form and described by its summary, between the picker and Every form', () => {
+		const { el } = render(NONE);
+		const list = el.querySelector('.sheetsmith-stat-block-briefs') as HTMLElement;
+		expect(list.tagName).toBe('UL');
+		expect(list.getAttribute('aria-label')).toBe('Wild Shape: choose a form');
+		for (const button of briefs(el)) {
+			expect(button.tagName).toBe('BUTTON');
+			expect(button.type).toBe('button');
+			expect(button.parentElement?.tagName).toBe('LI');
+		}
+		const stops = Array.from(el.querySelectorAll<HTMLElement>('button, select, [tabindex="0"]'));
+		const at = (target: Element | null) => stops.indexOf(target as HTMLElement);
+		const every = el.querySelector('.sheetsmith-stat-block-switch');
+		const order = [picker(el), ...briefs(el), every].map(at);
+		expect(order.every((index) => index >= 0)).toBe(true);
+		expect([...order].sort((a, b) => a - b)).toEqual(order);
+		// Nothing focusable sits between them.
+		expect(order[order.length - 1]! - order[0]!).toBe(order.length - 1);
+	});
+
+	it('stamps each brief with its form\'s colour: its own Tint, else the block\'s, else the accent', () => {
+		const tinted = { tint: 'green', tintPerRecord: true } as const;
+		const own = NONE.replace('Modifiers: abilities.STR = 4;', 'Tint: orange\nModifiers: abilities.STR = 4;');
+		const word = (el: HTMLElement) => briefs(el).map((one) => one.getAttribute('data-sheetsmith-tint'));
+		expect(word(render(own, tinted).el)).toEqual(['orange', 'green']);
+		expect(word(render(NONE).el)).toEqual(['accent', 'accent']);
+		// The switch off: the entry is ignored, as the head would ignore it.
+		expect(word(render(own, { tint: 'green' }).el)).toEqual(['green', 'green']);
+	});
+
+	it('draws a thumbnail where the layout draws pictures and the form holds one, and none where it will not draw', () => {
+		const resource = (target: string) => (target === 'Brown bear.png' ? 'app://bear.png' : null);
+		const none = BEAR.replace('Active: yes', 'Active: no');
+		const { el } = zoned(none, {}, { resource });
+		const [bear, mook] = briefs(el);
+		expect(bear?.querySelector('.sheetsmith-stat-block-brief-thumb img')?.getAttribute('src')).toBe('app://bear.png');
+		expect(bear?.querySelector('img')?.getAttribute('alt')).toBe('');
+		expect(mook?.querySelector('.sheetsmith-stat-block-brief-thumb')).toBeNull();
+		document.body.replaceChildren();
+		// A file the vault does not hold: no thumbnail, and no sentence here.
+		const lost = zoned(none, {}, { resource: () => null });
+		expect(lost.el.querySelector('.sheetsmith-stat-block-brief-thumb')).toBeNull();
+		expect(lost.el.querySelector('.sheetsmith-stat-block-problem')).toBeNull();
+		document.body.replaceChildren();
+		expect(zoned(none, { image: false }, { resource }).el.querySelector('.sheetsmith-stat-block-brief-thumb')).toBeNull();
+	});
+
+	it('leaves out a form whose fence will not read, and draws no list where none reads', () => {
+		const broken = NONE.replace('Active: no\nHP: 11 / 11', 'Active no\nHP: 11 / 11');
+		const one = render(broken);
+		expect(briefs(one.el).map(nameOf)).toEqual(['Brown Bear']);
+		document.body.replaceChildren();
+		const neither = render(broken.replace('Active: no\nHP: 22 / 34', 'Active no\nHP: 22 / 34'));
+		expect(neither.el.querySelector('.sheetsmith-stat-block-briefs')).toBeNull();
+	});
+
+	it('draws none while a form is on, with two on, with no forms, or on a companion block', () => {
+		expect(briefs(render(BODY).el)).toEqual([]);
+		expect(briefs(render(BODY.replace('Active: no', 'Active: yes')).el)).toEqual([]);
+		const empty = render('\n```sheet\nuses: 1\n```\n');
+		expect(briefs(empty.el)).toEqual([]);
+		expect(empty.el.textContent).toContain('No forms yet.');
+		expect(empty.el.querySelector('.sheetsmith-stat-block-action')?.textContent).toBe('Add form');
+		expect(briefs(render(NONE, { exclusive: '' }).el)).toEqual([]);
+	});
+});

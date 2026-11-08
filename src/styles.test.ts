@@ -3896,6 +3896,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		'sheetsmith-panel-add',
 		'sheetsmith-stat-block-revert',
 		'sheetsmith-stat-block-action',
+		'sheetsmith-stat-block-brief',
 		'sheetsmith-stat-block-disclosure',
 	];
 	/**
@@ -5207,5 +5208,110 @@ describe('the stat block In play polish (docs/features/stat-block-in-play-polish
 		const forced = all.filter((rule) => rule.context.includes('@media (forced-colors: active)'));
 		expect(forced.find((rule) => rule.selector === head?.selector)?.body).toMatch(/border-bottom-width:\s*1px/);
 		expect(forced.find((rule) => rule.selector === row?.selector)?.body).toMatch(/border-top-width:\s*1px/);
+	});
+
+	it('draws a brief in the tile\'s clothes with a 2px bottom rule in its edge, never a fill or an outline in the tint', () => {
+		const brief = base.find((rule) => rule.selector === '.sheetsmith-view .sheetsmith-stat-block-brief');
+		// Its other clothes are the tiles' one rule (above); the rule overrides one side, after it.
+		expect(brief?.body).toMatch(/border-bottom:\s*2px solid var\(--sheetsmith-tint-edge\)/);
+		const clothes = base.find((rule) => selectorsOf(rule).includes(brief?.selector ?? '') && /border-radius/.test(rule.body));
+		expect(CSS_WITHOUT_COMMENTS.indexOf('.sheetsmith-view .sheetsmith-stat-block-brief {')).toBeGreaterThan(
+			CSS_WITHOUT_COMMENTS.indexOf(clothes?.selector ?? '\u0000'),
+		);
+		for (const rule of all.filter((one) => one.selector.includes('stat-block-brief'))) {
+			expect(rule.body, rule.selector).not.toMatch(/background-image|outline:\s*\S+ solid var\(--sheetsmith-tint/);
+			expect(rule.body, rule.selector).not.toMatch(/var\(--sheetsmith-tint\)/);
+		}
+		// More contrast raises the three plain sides and leaves the rule its colour.
+		const more = all.find(
+			(rule) => rule.context.includes('@media (prefers-contrast: more)') && rule.selector === brief?.selector,
+		);
+		expect(more?.body).toMatch(/border-inline-color:\s*var\(--text-muted\)/);
+		expect(more?.body).toMatch(/border-top-color:\s*var\(--text-muted\)/);
+		expect(more?.body).not.toMatch(/border-(?:bottom-)?color:/);
+		const forced = all.find(
+			(rule) => rule.context.includes('@media (forced-colors: active)') && rule.selector === brief?.selector,
+		);
+		expect(forced?.body).toMatch(/border-bottom-width:\s*1px/);
+		// Its parts stacked from the top, past the app button's centring.
+		expect(brief?.body).toMatch(/flex-direction:\s*column/);
+		expect(brief?.body).toMatch(/justify-content:\s*flex-start/);
+		// The name at the head's title size; the picture about 64px.
+		const name = base.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-name');
+		const title = base.find((rule) => rule.selector === '.sheetsmith-stat-block-title');
+		for (const property of ['font-size', 'font-weight']) {
+			const read = (body: string | undefined) => declarations(body ?? '').find((one) => one.startsWith(`${property}:`));
+			expect(read(name?.body), property).toBe(read(title?.body));
+		}
+		expect(base.find((rule) => rule.selector === '.sheetsmith-stat-block-thumb.sheetsmith-stat-block-brief-thumb')?.body).toMatch(
+			/width:\s*64px/,
+		);
+		// The fields as pairs, not tiles: no box or fill, nothing truncating, a
+		// row that wraps, the value bold at the body size and the ceiling muted.
+		const pairRules = all.filter((rule) => /stat-block-brief-(?:stats?|stat-label|stat-value|ceiling)\b/.test(rule.selector));
+		expect(pairRules.length).toBeGreaterThanOrEqual(5);
+		for (const rule of pairRules) {
+			expect(rule.body, rule.selector).not.toMatch(/(?:^|;|\s)(?:border|background(?:-color)?|outline|box-shadow)\s*:/);
+			expect(rule.body, rule.selector).not.toMatch(/text-overflow|ellipsis|white-space:\s*nowrap|-webkit-line-clamp/);
+		}
+		// Nothing borrowed that truncates or clothes: no pair is a tile or a component label.
+		for (const rule of all.filter((one) => /stat-block-vital\b|sheetsmith-component-label/.test(one.selector))) {
+			// The brief itself wears the tile's clothes; its pairs never do.
+			expect(rule.selector).not.toMatch(/brief-stat|brief-ceiling/);
+		}
+		const row = base.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-stats');
+		expect(row?.body).toMatch(/flex-wrap:\s*wrap/);
+		expect(row?.body).toMatch(/gap:\s*var\(--size-2-2\) calc\(var\(--size-4-2\) \+ var\(--size-2-1\)\)/);
+		const value = base.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-stat-value');
+		expect(value?.body).toMatch(/font-size:\s*var\(--font-ui-small\)/);
+		expect(value?.body).toMatch(/font-weight:\s*var\(--font-bold\)/);
+		expect(value?.body).toMatch(/overflow-wrap:\s*anywhere/);
+		expect(base.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-stat-label')?.body).toMatch(
+			/color:\s*var\(--text-muted\)/,
+		);
+		expect(base.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-ceiling')?.body).toMatch(
+			/color:\s*var\(--text-muted\)/,
+		);
+		// The changes line clamped to two lines in the prefixed form Chromium draws
+		// an ellipsis for, and not the unprefixed `line-clamp`, whose handling has
+		// moved between releases.
+		const changes = base.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-changes');
+		const said = declarations(changes?.body ?? '');
+		for (const wanted of [
+			'display: -webkit-box',
+			'-webkit-box-orient: vertical',
+			'-webkit-line-clamp: 2',
+			'overflow: hidden',
+			'text-overflow: ellipsis',
+		]) {
+			expect(said, wanted).toContain(wanted);
+		}
+		expect(said.some((one) => one.startsWith('line-clamp:'))).toBe(false);
+		expect(CSS_WITHOUT_COMMENTS).not.toMatch(/(?:^|[;{\s])line-clamp\s*:/);
+		// A one-line brief still holds a finger's 44px.
+		const coarse = all.find(
+			(rule) => rule.context.includes('@media (pointer: coarse)') && rule.selector === brief?.selector,
+		);
+		expect(coarse?.body).toMatch(/min-height:\s*44px/);
+		// Forced colors repaints an author fill on a button as ButtonFace, so
+		// Revert and a brief drop theirs and sit on the page as the picker does.
+		const unfilled = all.find(
+			(rule) =>
+				rule.context.includes('@media (forced-colors: active)') &&
+				selectorsOf(rule).includes('.sheetsmith-view .sheetsmith-stat-block-revert') &&
+				selectorsOf(rule).includes('.sheetsmith-view .sheetsmith-stat-block-brief'),
+		);
+		expect(unfilled?.body).toMatch(/background-color:\s*transparent/);
+		const clothesAt = CSS_WITHOUT_COMMENTS.indexOf(clothes?.selector ?? '\u0000');
+		expect(CSS_WITHOUT_COMMENTS.indexOf(unfilled?.selector ?? '\u0000', clothesAt)).toBeGreaterThan(clothesAt);
+		// A wrapping grid that does not stretch one brief across the box, one column narrow.
+		const grid = base.find((rule) => rule.selector === '.sheetsmith-stat-block-briefs');
+		expect(grid?.body).toMatch(/grid-template-columns:\s*repeat\(auto-fill, minmax\(min\(100%, 240px\), 1fr\)\)/);
+		const narrow = all.find(
+			(rule) =>
+				rule.context.some((one) => one.includes('sheetsmith-stat-block (max-width: 360px)')) &&
+				rule.selector === '.sheetsmith-stat-block-briefs',
+		);
+		expect(narrow?.body).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
 	});
 });

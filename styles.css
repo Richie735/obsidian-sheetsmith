@@ -10316,12 +10316,184 @@ a.sheetsmith-notice-action {
 	pointer-events: none;
 }
 
+/* **With no form on, In play offers each form as a brief**
+   (`docs/features/stat-block-in-play-polish.md` §4; `components/stat-block-briefs.ts`):
+   a wrapping grid of buttons at the tiles' gap, each at least 240px (or the
+   whole row where the row is narrower), so one form draws one brief at the
+   track's width rather than a bar across the box, and many fill the row, wrap
+   and scroll with the face. px, since what has to fit is a row of tiles in
+   fixed-px type (`docs/UI.md` §5). A list, so its markers go. */
+.sheetsmith-stat-block-briefs {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+	gap: var(--size-4-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.sheetsmith-stat-block-brief-item {
+	display: flex;
+	min-width: 0;
+}
+
+/* **A brief wears the stat tile's clothes**, its parts stacked from the inline
+   start — the picture and name, the tiles, the changes — and **its bottom edge is a 2px rule in its form's edge colour**: the
+   rule the head draws once that form is on, so the choice previews it. A rule
+   only: a fill and an outline say a box a form *changed*. (0,2,0), past the
+   app's `button:not(.clickable-icon)`, whose height and padding would hold a
+   two-line brief to one input's height; the padding again past the tablet's
+   (0,2,1) below. */
+.sheetsmith-view .sheetsmith-stat-block-brief {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	align-items: stretch;
+	/* From the top, past the app button's centring, so briefs of different
+	   lengths in one row start their names on one line. */
+	justify-content: flex-start;
+	gap: var(--size-4-2);
+	min-width: 0;
+	height: auto;
+	margin: 0;
+	/* The tile's border, radius and surface are the tiles' own rule's; this
+	   is the one side it overrides. */
+	border-bottom: 2px solid var(--sheetsmith-tint-edge);
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-normal);
+	text-align: start;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-brief.sheetsmith-stat-block-brief {
+	padding: var(--size-4-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-brief:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* A finger's target, on `docs/UI.md` §7: a brief with no picture, no tiles and
+   no changes is one line, about 43px, so it holds 44px under a coarse pointer. */
+@media (pointer: coarse) {
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		min-height: 44px;
+	}
+}
+
+/* The picture beside the name on one line. */
+.sheetsmith-stat-block-brief-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+/* About 64px: large enough to tell one beast from another, smaller than the
+   head's portrait. */
+.sheetsmith-stat-block-thumb.sheetsmith-stat-block-brief-thumb {
+	width: 64px;
+}
+
+/* The press is the brief's, so the picture in it takes the brief's pointer
+   rather than the head thumbnail's plain arrow. */
+.sheetsmith-stat-block-brief-thumb > .sheetsmith-image-frame {
+	cursor: inherit;
+}
+
+/* The name at the head's title size, so a brief is titled as the form will be
+   once it is on. */
+.sheetsmith-stat-block-brief-name {
+	min-width: 0;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+	line-height: var(--line-height-tight, 1.3);
+	overflow-wrap: anywhere;
+}
+
+/* **The fields as pairs, not tiles** (`docs/features/stat-block-in-play-polish.md`
+   §4): a small muted label over its value at the brief's body size, bold, in a
+   row that wraps. No box, no fill and no columns — a tile inside a tile was
+   noise — and each pair is as wide as what it says, so nothing truncates: a
+   long value wraps inside its pair. Between pairs the width the closed line's
+   ` · ` takes in its type, 10.3px measured at 12px, as the nearest spacing
+   tokens' sum, so a brief and a closed line space one form's figures alike.
+   In play's own tiles keep their spacing. */
+.sheetsmith-stat-block-brief-stats {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: var(--size-2-2) calc(var(--size-4-2) + var(--size-2-1));
+	min-width: 0;
+}
+
+.sheetsmith-stat-block-brief-stat {
+	display: flex;
+	flex-direction: column;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.sheetsmith-stat-block-brief-stat-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-stat-block-brief-stat-value {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-bold);
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+/* The ceiling run in after the number and muted, `22/34`, as the closed line
+   says it, rather than In play's spaced `22 / 34`. */
+.sheetsmith-stat-block-brief-ceiling {
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
+/* **The changes as one line in In play's wording, clamped to two**, muted at
+   the closed line's size: enough to tell a bear from a wolf, and the whole of
+   them under Every form or once the form is on.
+
+   **The prefixed clamp alone, which is the form Chromium draws an ellipsis
+   for**: `display: -webkit-box`, a vertical box orient, `-webkit-line-clamp`
+   and `overflow: hidden`, with no unprefixed `line-clamp` beside it, whose
+   handling has moved between Chromium releases; a line that stops at two with
+   no mark would hide that the list goes on. `text-overflow: ellipsis` is the
+   standard clamp's own switch for the mark, for an engine that reads the clamp
+   that way. Both engines compute
+   the display as `flow-root`; that is the engine's internal box, not a lost
+   declaration. */
+.sheetsmith-stat-block-brief-changes {
+	display: -webkit-box;
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-overflow: ellipsis;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
 /* Below the rules it overrides, since `@container` adds no specificity: under
    the block's 360px query an entry's name and usage stack, the delete staying
    on the name's line. */
 @container sheetsmith-stat-block (max-width: 360px) {
 	.sheetsmith-stat-block-entry-line {
 		flex-wrap: wrap;
+	}
+
+	/* One brief a row on a narrow block, its parts stacked as on a wide one. */
+	.sheetsmith-stat-block-briefs {
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {

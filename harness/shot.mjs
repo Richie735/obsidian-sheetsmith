@@ -3116,12 +3116,10 @@ export const DEFAULTS = [
 		query: 'surface=sheet&theme=light&state=forms&width=380',
 		size: '380,2600',
 	},
-	{
-		// No form active: the empty state, Choosing one spends a use, no Revert.
-		name: 'sheet-forms-none',
-		query: 'surface=sheet&theme=light&state=forms-none',
-		size: '1400,1500',
-	},
+	// No form active: the empty state, Choosing one spends a use, no Revert, and
+	// a brief of each form — and the rest of the In play polish's views
+	// (`docs/features/stat-block-in-play-polish.md`), each in four palettes.
+	...formsPolishViews(),
 	{
 		// Both on by hand: the picker's extra line, the report and both blocks.
 		name: 'sheet-forms-two-on',
@@ -3330,8 +3328,8 @@ export const DEFAULTS = [
 		media: { 'prefers-contrast': 'more' },
 	},
 	{
-		// Forced colors at green: the box, the row and the tag as before, and no
-		// swatch in the head.
+		// Forced colors at green: the box, the row and the tag as before, and the
+		// head's rule the mode's plain line, no hue.
 		name: 'sheet-forms-tint-forced-colors',
 		query: 'surface=sheet&theme=light&state=forms&tint=green',
 		size: '1400,1500',
@@ -3366,6 +3364,30 @@ export const DEFAULTS = [
 		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
 		size: '1400,1500',
 	},
+	/*
+	 * The two-on name rows' rules in the other three palettes
+	 * (`docs/features/stat-block-in-play-polish.md` §2): each row's own colour
+	 * in the dark theme, the 2px edge kept under more contrast, and the mode's
+	 * plain 1px line in forced colors. The one-form head rule already has its
+	 * four in the colour shots, their more-contrast pair and the forced one.
+	 */
+	{
+		name: 'sheet-forms-tint-two-on-dark',
+		query: 'surface=sheet&theme=dark&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-two-on-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-forms-tint-two-on-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
 	{
 		// Every form, Brown Bear open on its Tint section: the dropdown on Orange
 		// and its swatch.
@@ -3397,7 +3419,7 @@ export const DEFAULTS = [
 		size: '1400,1500',
 	},
 	{
-		// At a phone's width: the head swatch with the title as it wraps.
+		// At a phone's width: the head's green rule under the title as it wraps.
 		name: 'sheet-forms-tint-narrow',
 		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&width=380',
 		size: '380,3000',
@@ -3709,6 +3731,48 @@ function poolHeadlineViews() {
 			pad: 6,
 		},
 	];
+}
+
+/**
+ * **The Stat block's In play polish** (`docs/features/stat-block-in-play-polish.md`):
+ * every view it names, each in light, dark, more contrast and forced colors,
+ * since each changes an edge those modes repaint. The briefs with no form on
+ * (several, one, a green block with Brown Bear's own orange, none written), the
+ * head's pair at a phone's width, and Every form with one form open beside two
+ * closed, framed on the block so a scoped run draws what a full one draws.
+ */
+function formsPolishViews() {
+	const BLOCK = '.sheetsmith-stat-block';
+	const views = [
+		// Brown Bear, Wolf and the Thug as briefs, the bear's with its picture.
+		{ name: 'sheet-forms-none', query: 'surface=sheet&state=forms-none', size: '1400,1500' },
+		// One form: one brief at the grid's track width, not across the box.
+		{ name: 'sheet-forms-none-one', query: 'surface=sheet&state=forms-none-one', size: '1400,1500', frame: BLOCK },
+		// Each brief's rule previews its colour: the bear orange, the rest green.
+		{ name: 'sheet-forms-none-tint', query: 'surface=sheet&state=forms-none-tint&tint=green', size: '1400,1500', frame: BLOCK },
+		// No form written yet: No forms yet. and Add form, as before.
+		{ name: 'sheet-forms-empty', query: 'surface=sheet&state=forms-empty', size: '1400,1500', frame: BLOCK },
+		// The picker on its own line under the title, Revert beside it, one height.
+		{ name: 'sheet-forms-head-narrow', query: 'surface=sheet&state=forms&width=380', size: '380,3000', frame: BLOCK },
+		// Brown Bear open and the others closed: one title size on every line.
+		{
+			name: 'sheet-forms-library-mixed',
+			query: 'surface=sheet&state=forms&press=.sheetsmith-stat-block-switch',
+			size: '1400,2600',
+			frame: BLOCK,
+		},
+		// The Wolf's changes past two lines, so the clamp's ellipsis shows, and its
+		// blank Speed left out of its brief.
+		{ name: 'sheet-forms-none-long', query: 'surface=sheet&state=forms-none-long', size: '1400,1500', frame: BLOCK },
+		// The briefs one a row at a phone's width.
+		{ name: 'sheet-forms-none-narrow', query: 'surface=sheet&state=forms-none&width=380', size: '380,3000', frame: BLOCK },
+	];
+	return views.flatMap(({ name, query, ...view }) => [
+		{ ...view, name, query: `${query}&theme=light` },
+		{ ...view, name: `${name}-dark`, query: `${query}&theme=dark` },
+		{ ...view, name: `${name}-contrast-more`, query: `${query}&theme=light`, media: { 'prefers-contrast': 'more' } },
+		{ ...view, name: `${name}-forced-colors`, query: `${query}&theme=light`, flags: ['--force-high-contrast'] },
+	]);
 }
 
 const args = process.argv.slice(2);
