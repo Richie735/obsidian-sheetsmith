@@ -139,6 +139,14 @@ export interface PictureFrameOptions {
 	 */
 	readOnly?: boolean;
 	/**
+	 * Draw the frame as a `<span>` rather than a `<div>`: a thumbnail inside a
+	 * `<button>`, whose content must be phrasing content (a Stat block's brief).
+	 * Only a read-only frame takes it, since a field is never drawn inside a
+	 * button. The caller's stylesheet already gives the frame its `display`, so
+	 * the element's name changes nothing it draws.
+	 */
+	inline?: boolean;
+	/**
 	 * Hand a failure to the caller rather than drawing it in the frame: the
 	 * thumbnail, which is too small to hold a sentence and says it under its
 	 * head instead. The sentence is this module's either way, so a missing file
@@ -171,7 +179,7 @@ export function renderPictureFrame(
 	 * field stacked over it — which matters for the one failure that arrives
 	 * *after* render, when the `<img>` reports it cannot draw the file.
 	 */
-	const frame = box.createDiv();
+	const frame = options.inline === true ? box.createSpan() : box.createDiv();
 	frame.classList.add(options.classes.frame);
 
 	const showError = (message: string): void => {
