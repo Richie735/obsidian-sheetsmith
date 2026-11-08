@@ -1142,7 +1142,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			kind: 'select',
 			label: 'Sense',
 			description:
-				'Which end of a run is the bad end. XP and a countdown clock are the same widget pointed in opposite directions, and nothing in the data says which this is. Harm grades the run toward the boundary colour; it never stops a press, since whether a track may be pushed past its last segment is a rule of the game. Where there are rows this is what a row falls back to, as the segment count above is.',
+				'Which end of a run is the bad end. XP and a countdown clock are the same widget pointed in opposite directions, and nothing in the data says which this is. Harm grades the run toward the boundary color; it never stops a press, since whether a track may be pushed past its last segment is a rule of the game. Where there are rows this is what a row falls back to, as the segment count above is.',
 			options: ['progress', 'harm'],
 		},
 		{

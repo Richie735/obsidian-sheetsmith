@@ -206,12 +206,12 @@
 		{
 			"id": "armour",
 			"type": "track",
-			"label": "Armour",
+			"label": "Armor",
 			"count": 1,
 			"rows": [
 				{
 					"key": "armour",
-					"name": "Armour"
+					"name": "Armor"
 				},
 				{
 					"key": "heavy",

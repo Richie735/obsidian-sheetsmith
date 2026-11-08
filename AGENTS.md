@@ -149,6 +149,15 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 - Use **bold** to indicate literal UI labels. Prefer "select" for interactions.
 - Use arrow notation for navigation: **Settings → Community plugins**.
 - Keep in-app strings short, consistent, and free of jargon.
+- Spell in American English (color, labeled, centered, canceled), as the rest
+  of Obsidian does. This covers anything a user reads or hears: labels,
+  descriptions, notices, accessible names, live-region announcements, README
+  and release notes. Code identifiers, comments and internal docs are not held
+  to it, so `TintColour` stays as it is.
+- Starter layouts count as user-facing: a `label`, a row `name` or a
+  placeholder in `src/starters/` follows the rule above. An `id`, a row `key` or
+  any other name a formula or a note refers to keeps its spelling
+  (`armour_class`), since changing it breaks what refers to it.
 
 ## Performance
 

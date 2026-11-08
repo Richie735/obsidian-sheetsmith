@@ -2207,7 +2207,7 @@ describe('table with open rows', () => {
 				dagger?.classList.contains('sheetsmith-table-remove-armed'),
 			).toBe(false);
 			expect(el.querySelector('[aria-live]')?.textContent).toBe(
-				'Delete cancelled',
+				'Delete canceled',
 			);
 			// And the next press on the glyph arms it again rather than deleting.
 			dagger?.click();

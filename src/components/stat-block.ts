@@ -396,7 +396,7 @@ function tintWord(colour: TintColour): string {
  * play head, and the Every form dropdown. One phrase, so the editor and the
  * sheet name one fault one way.
  */
-const TINT_NOUN = 'tint colour';
+const TINT_NOUN = 'tint color';
 
 /** A stray colour word, said: `"brown" is not a tint colour`. */
 function notATint(stray: string): string {
@@ -839,7 +839,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			kind: 'select',
 			label: 'Tint',
 			description:
-				"The colour a record in play tints the values it changes, and the tag that names it: the theme's accent, or one of its named colours, which the theme sets for light and dark. Only a record in play tints, so this needs One at a time by. Changes nothing in the note.",
+				"The color a record in play tints the values it changes, and the tag that names it: the theme's accent, or one of its named colors, which the theme sets for light and dark. Only a record in play tints, so this needs One at a time by. Changes nothing in the note.",
 			options: TINT_COLOURS,
 			optionNoun: TINT_NOUN,
 		},

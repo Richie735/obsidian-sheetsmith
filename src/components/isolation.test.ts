@@ -392,7 +392,7 @@ describe('a refusal sentence is written in one place', () => {
 		/*
 		 * **The two an armed control says**, and the largest instance this scan was
 		 * blind to: `Select again to confirm.` was in three files and
-		 * `Delete cancelled` in two across four sites, all of them accessible names
+		 * `Delete canceled` in two across four sites, all of them accessible names
 		 * or announcements. The mark on an armed control deliberately does not
 		 * change — the column is as wide as its content, so relabelling in place
 		 * would move the table under the finger already resting on it — so these
@@ -401,7 +401,7 @@ describe('a refusal sentence is written in one place', () => {
 		 * saying the old thing. `interaction/arm-to-confirm.ts` holds both.
 		 */
 		'Select again to confirm.',
-		'Delete cancelled',
+		'Delete canceled',
 		/*
 		 * **The two a refused picture says.** `embed-rule.ts` exists because two
 		 * components ask the same question, and its header's claim is that "a

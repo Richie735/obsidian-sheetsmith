@@ -683,7 +683,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			kind: 'boolean',
 			label: 'Hide fill bar',
 			description:
-				'Leave off the bar showing how full the pool is. The numbers stay, and so does the colour at zero and above the max.',
+				'Leave off the bar showing how full the pool is. The numbers stay, and so does the color at zero and above the max.',
 			default: false,
 		},
 	],

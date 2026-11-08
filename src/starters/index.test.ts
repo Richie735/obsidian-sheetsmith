@@ -465,7 +465,7 @@ value: 1
 value: 2
 \`\`\`
 
-## Armour
+## Armor
 \`\`\`sheet
 armour: yes
 heavy: no
