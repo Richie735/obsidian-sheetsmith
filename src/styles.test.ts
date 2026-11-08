@@ -4825,6 +4825,13 @@ describe('the selected canvas block is ringed outside its box', () => {
 
 describe('the stat block under Every form (docs/features/character-forms.md)', () => {
 	const all = rules(CSS_WITHOUT_COMMENTS);
+	/** The tiles' clothes, written once and worn by every selector in its list. */
+	const clothes = all.find(
+		(rule) =>
+			rule.context.length === 0 &&
+			rule.selector.split(',').map((one) => one.trim()).includes('.sheetsmith-stat-block-vital') &&
+			/border-radius/.test(rule.body),
+	);
 
 	it('titles an open form\'s name at In play\'s title size, field and link layer alike', () => {
 		const open = all.find((rule) => rule.selector.includes("[aria-expanded='true']") && rule.selector.includes('stat-block-record'));
@@ -4839,7 +4846,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 	});
 
 	it('draws each vital as a tile in the Card\'s clothes, its number at the card value size', () => {
-		const tile = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital');
+		const tile = clothes;
 		expect(tile?.body).toMatch(/border:\s*1px solid var\(--background-modifier-border\)/);
 		expect(tile?.body).toMatch(/border-radius:\s*var\(--radius-m\)/);
 		expect(tile?.body).toMatch(/background-color:\s*var\(--background-secondary\)/);
@@ -4884,7 +4891,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		const box = all.find(
 			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions',
 		);
-		const tile = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital');
+		const tile = clothes;
 		// The body is exactly the tiles' fill, and lays nothing over it.
 		const fill = /background-color:\s*(var\(--[a-z-]+\))/;
 		expect(box?.body.match(fill)?.[1]).toBe('var(--background-secondary)');
@@ -5101,6 +5108,78 @@ describe('a stat block table cell\'s wrap (docs/features/stat-block-zones.md)', 
 describe('the stat block In play polish (docs/features/stat-block-in-play-polish.md)', () => {
 	const all = rules(CSS_WITHOUT_COMMENTS);
 	const base = all.filter((rule) => rule.context.length === 0);
+	const selectorsOf = (rule: Rule | undefined) => (rule?.selector ?? '').split(',').map((one) => one.trim().replace(/\s+/g, ' '));
+
+	it('clothes the picker and Revert as one pair of tiles at one height, both raised to 44px under a coarse pointer', () => {
+		// The tiles' clothes are one rule naming the tiles, the pair and a brief,
+		// and nothing else on the block restates them, so none can drift.
+		const clothes = base.filter((rule) => selectorsOf(rule).includes('.sheetsmith-stat-block-vital') && /border-radius/.test(rule.body));
+		expect(clothes).toHaveLength(1);
+		for (const selector of [
+			'.sheetsmith-view .sheetsmith-stat-block-select',
+			'.sheetsmith-view .sheetsmith-stat-block-revert',
+			'.sheetsmith-view .sheetsmith-stat-block-brief',
+		]) {
+			expect(selectorsOf(clothes[0]), selector).toContain(selector);
+		}
+		expect(declarations(clothes[0]?.body ?? '')).toEqual([
+			'border: 1px solid var(--background-modifier-border)',
+			'border-radius: var(--radius-m)',
+			'background-color: var(--background-secondary)',
+		]);
+		// The shared text-button rule keeps its hairline for **Back to play** and
+		// **Add action**, which are not tiles, so it is not a restatement.
+		for (const rule of base.filter(
+			(one) =>
+				one !== clothes[0] &&
+				!one.selector.includes('stat-block-action') &&
+				/stat-block-(?:vital|select|revert|brief)\b/.test(one.selector),
+		)) {
+			for (const said of declarations(rule.body)) {
+				expect(said, rule.selector).not.toMatch(/^(?:border|border-radius|background-color): (?:1px solid var\(--background-modifier-border\)|var\(--radius-m\)|var\(--background-secondary\))$/);
+			}
+		}
+		// After every rule whose fill or border it replaces for the pair.
+		const at = CSS_WITHOUT_COMMENTS.indexOf(clothes[0]?.selector ?? '');
+		for (const earlier of [
+			/\.sheetsmith-view \.sheetsmith-stat-block-revert,\s*\.sheetsmith-view \.sheetsmith-stat-block-action \{/,
+			/\.sheetsmith-view \.sheetsmith-record-select \{/,
+		]) {
+			const where = CSS_WITHOUT_COMMENTS.search(earlier);
+			expect(where).toBeGreaterThan(0);
+			expect(at).toBeGreaterThan(where);
+		}
+		const pair = base.find(
+			(rule) =>
+				selectorsOf(rule).includes('.sheetsmith-view .sheetsmith-stat-block-select') &&
+				selectorsOf(rule).includes('.sheetsmith-view .sheetsmith-stat-block-revert') &&
+				/min-height/.test(rule.body),
+		);
+		expect(pair?.body).toMatch(/min-height:\s*var\(--input-height\)/);
+		expect(pair?.body).toMatch(/align-self:\s*stretch/);
+		// After the shared text-button rule whose 24px floor and transparent fill it replaces.
+		const shared = CSS_WITHOUT_COMMENTS.search(/\.sheetsmith-view \.sheetsmith-stat-block-revert,\s*\.sheetsmith-view \.sheetsmith-stat-block-action \{/);
+		const height = CSS_WITHOUT_COMMENTS.search(/\.sheetsmith-view \.sheetsmith-stat-block-select,\s*\.sheetsmith-view \.sheetsmith-stat-block-revert \{/);
+		expect(height).toBeGreaterThan(shared);
+		const coarse = all.find(
+			(rule) => rule.context.includes('@media (pointer: coarse)') && rule.selector.includes('.sheetsmith-stat-block-revert'),
+		);
+		expect(selectorsOf(coarse)).toContain('.sheetsmith-view .sheetsmith-stat-block-select');
+		expect(coarse?.body).toMatch(/min-height:\s*44px/);
+		// The pick stretches both to one line's height.
+		const pick = base.find((rule) => rule.selector === '.sheetsmith-stat-block-play-head .sheetsmith-stat-block-pick');
+		expect(pick?.body).toMatch(/align-items:\s*stretch/);
+	});
+
+	it('focuses the picker with the accent outline, and lets nothing on the head or the rings read the tint', () => {
+		const focus = base.find((rule) => selectorsOf(rule).includes('.sheetsmith-view .sheetsmith-stat-block-select:focus-visible'));
+		expect(focus?.body).toMatch(/outline:\s*2px solid var\(--interactive-accent\)/);
+		const readers = all.filter((rule) => /var\(--sheetsmith-tint/.test(rule.body));
+		expect(readers.length).toBeGreaterThan(3);
+		for (const rule of readers) {
+			expect(rule.selector, rule.selector).not.toMatch(/level-ring|stat-block-use|stat-block-select|stat-block-revert|stat-block-menu/);
+		}
+	});
 
 	it('gives the first of two forms 4px more above its rule where it follows the report\'s box', () => {
 		const first = base.find(

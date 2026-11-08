@@ -9362,6 +9362,10 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-stat-block-select {
 	width: 100%;
+	/* The tile's own inline padding at the start; the end keeps the record
+	   select's chevron room, so the chevron sits where every record menu's
+	   does (`docs/UI.md` §9, one chevron). */
+	padding-inline-start: var(--size-4-2);
 }
 
 /* Two text buttons, **Revert** and the face's own **Back to play** and **Add
@@ -9385,12 +9389,15 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-stat-block-revert:hover,
-.sheetsmith-view .sheetsmith-stat-block-action:hover {
+.sheetsmith-view .sheetsmith-stat-block-action:hover,
+.sheetsmith-view .sheetsmith-stat-block-select:hover {
 	background-color: var(--background-modifier-hover);
 }
 
 .sheetsmith-view .sheetsmith-stat-block-revert:focus-visible,
 .sheetsmith-view .sheetsmith-stat-block-action:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-select:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-brief:focus-visible,
 .sheetsmith-view .sheetsmith-stat-block-disclosure:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 1px;
@@ -9407,11 +9414,27 @@ a.sheetsmith-notice-action {
 	height: var(--icon-s);
 }
 
+/* **The head's picker and Revert are one pair in the stat tile's clothes**
+   (`docs/features/stat-block-in-play-polish.md` §1): the tile's border, radius
+   and surface (the tiles' own rule, below, which names both), the hover every
+   card takes, and one height set once, `--input-height`, which both stretch to
+   on the pick's line. Below the shared text-button rule, so Revert's 24px floor
+   gives way here while **Back to play** and **Add action** keep theirs. Still a
+   native select and a button: how they look, not what they are. */
+.sheetsmith-view .sheetsmith-stat-block-select,
+.sheetsmith-view .sheetsmith-stat-block-revert {
+	box-sizing: border-box;
+	align-self: stretch;
+	min-height: var(--input-height);
+}
+
 /* A finger's target, on `docs/UI.md` §7: a text button holds 44px under a
-   coarse pointer, as the steppers it sits beside do. */
+   coarse pointer, as the steppers it sits beside do, and the picker beside
+   Revert holds it too, so the pair stays one height. */
 @media (pointer: coarse) {
 	.sheetsmith-view .sheetsmith-stat-block-revert,
-	.sheetsmith-view .sheetsmith-stat-block-action {
+	.sheetsmith-view .sheetsmith-stat-block-action,
+	.sheetsmith-view .sheetsmith-stat-block-select {
 		min-height: 44px;
 	}
 }
@@ -9789,7 +9812,6 @@ a.sheetsmith-notice-action {
 }
 
 @media (prefers-contrast: more) {
-	.sheetsmith-view .sheetsmith-stat-block-revert,
 	.sheetsmith-view .sheetsmith-stat-block-action {
 		border-color: var(--text-muted);
 	}
@@ -9823,6 +9845,9 @@ a.sheetsmith-notice-action {
 .sheetsmith-stat-block-play-head .sheetsmith-stat-block-pick {
 	flex: 0 1 auto;
 	flex-wrap: nowrap;
+	/* The picker and Revert stretch to one height, so a label that grows one
+	   grows both. */
+	align-items: stretch;
 }
 
 /* **The head is the block's title**, ruled off from the stat block under it as
@@ -9905,10 +9930,24 @@ a.sheetsmith-notice-action {
 	gap: var(--size-2-1);
 	min-width: 0;
 	padding: var(--size-4-2);
+	text-align: center;
+}
+
+/* **The stat tile's clothes, written once**: the tiles, the head's picker and
+   Revert, and a brief with no form on wear one border, one radius and one
+   surface (`docs/features/stat-block-in-play-polish.md` §1, §4), so the three
+   cannot drift apart (PATTERNS §1, share the application). Each selector keeps
+   its own weight: the pair's and the brief's (0,2,0) beat the app's button and
+   select rules and, by coming later, the shared text-button rule's transparent
+   fill and the record select's hairline. A brief's 2px bottom rule overrides
+   one side below, and every hover is (0,3,0) and wins. */
+.sheetsmith-stat-block-vital,
+.sheetsmith-view .sheetsmith-stat-block-select,
+.sheetsmith-view .sheetsmith-stat-block-revert,
+.sheetsmith-view .sheetsmith-stat-block-brief {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
-	text-align: center;
 }
 
 /* **The values sit on one baseline across the row.** Every tile stacks from
@@ -10303,8 +10342,17 @@ a.sheetsmith-notice-action {
 	.sheetsmith-stat-block-play-head,
 	.sheetsmith-stat-block-form-name,
 	.sheetsmith-stat-block-record > .sheetsmith-record-summary,
-	.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions {
+	.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions,
+	.sheetsmith-view .sheetsmith-stat-block-select,
+	.sheetsmith-view .sheetsmith-stat-block-revert {
 		border-color: var(--text-muted);
+	}
+
+	/* A brief's three plain sides, and not its bottom, which is its form's
+	   2px edge and clears 3:1 on its own. */
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		border-inline-color: var(--text-muted);
+		border-top-color: var(--text-muted);
 	}
 }
 
