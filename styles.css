@@ -10477,15 +10477,16 @@ a.sheetsmith-notice-action {
    (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over a
    control.
 
-   **A neutral chip with a coloured edge, never text on the colour**
-   (`docs/features/form-tint-colour.md`, "What it looks like"). It was white on
-   the accent, 3.43:1 in the default light theme, and no one text colour clears
-   4.5:1 on a solid fill of every named colour in both themes. So it is filled
-   with the colour mixed 20% into `--background-primary` and written in
-   `--text-normal`, which the theme defines against that page — UI.md §1's rule,
-   pick the text variable defined against what you mixed into: 7.22:1 at its
-   lowest, dark yellow. Its outline is the edge colour, which forced colors
-   repaints in the mode's own. */
+   **The form's colour at 85%, with no edge, written in black or white,
+   whichever reads better on it** (`docs/features/form-tint-colour.md`, "The
+   tag's text, picked at runtime"). No one text colour clears 4.5:1 on every
+   named colour in both themes, and a pick per colour written here would hold
+   for the default theme alone. So nothing here assumes what the colour is:
+   `placement-decorations.ts` reads the fill and both surfaces it straddles off
+   the computed style, composites, and writes `data-sheetsmith-tag-text`, again
+   on every `css-change`. Black and white are the one place a sheet names a
+   literal colour (UI.md §1): one of the two reaches 4.58:1 on any opaque
+   colour, which the theme's own text and page colours did not. */
 .sheetsmith-view .sheetsmith-in-play-marked:not(tr) {
 	position: relative;
 }
@@ -10504,14 +10505,14 @@ a.sheetsmith-notice-action {
 		calc(var(--size-2-2) + var(--size-2-1));
 	overflow: hidden;
 	border-radius: var(--radius-s);
-	/* An outline, unlike a border, adds nothing to its height. */
-	outline: 1px solid var(--sheetsmith-tint-edge);
-	outline-offset: -1px;
-	background-color: color-mix(
+	/* The edge more contrast and forced colors draw, mixed 60% rather than the
+	   box's 70%, so it clears 3:1 against the tag's own fill there too. */
+	--sheetsmith-tint-edge: color-mix(
 		in srgb,
-		var(--sheetsmith-tint) 20%,
-		var(--background-primary)
+		var(--sheetsmith-tint) 60%,
+		var(--text-normal)
 	);
+	background-color: color-mix(in srgb, var(--sheetsmith-tint) 85%, transparent);
 	color: var(--text-normal);
 	font-size: var(--font-ui-smaller);
 	line-height: 1;
@@ -10537,6 +10538,16 @@ a.sheetsmith-notice-action {
 .sheetsmith-view
 	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-several:not(.sheetsmith-in-play-mark-inline)[aria-hidden='true'] {
 	max-width: calc(100% - 2 * var(--size-4-2));
+}
+
+/* The text `placement-decorations.ts` measured reading better on the fill as
+   the theme drew it. Unmeasured, the tag keeps `--text-normal`. */
+.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text='black'] {
+	color: black;
+}
+
+.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text='white'] {
+	color: white;
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where
@@ -10577,8 +10588,26 @@ a.sheetsmith-notice-action {
 		--sheetsmith-in-play-edge: 2px;
 	}
 
-	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'] {
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'],
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text] {
+		outline: 2px solid var(--sheetsmith-tint-edge);
+		outline-offset: -2px;
 		background-color: var(--background-primary);
+		color: var(--text-normal);
+	}
+}
+
+/* **Forced colors keeps the tag's edge**, repainted in the mode's text colour,
+   on the mode's own background and text: the fill is the form's colour, which
+   the mode drops, so the edge is what still draws the chip. Below the pill's
+   own rule, which it overrides at the same selector. */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'],
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text] {
+		outline: 2px solid CanvasText;
+		outline-offset: -2px;
+		background-color: Canvas;
+		color: CanvasText;
 	}
 }
 
