@@ -65,6 +65,8 @@ import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
+import { applyDecorations, inPlayDecorations, pickTagText } from './placement-decorations';
+import { revealWhenTruncated } from '../ui/truncation';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -291,6 +293,10 @@ export class SheetView extends TextFileView {
 		// Every sheet offers this, so it is added once and goes with the view. The
 		// way back depends on the note, which is why it lives in `open-as-sheet.ts`.
 		this.addAction('file-text', TEXT.openAsMarkdown, () => this.openAsMarkdown());
+		// A form tag's text is picked against the fill the theme drew, so a theme
+		// or snippet change measures it again rather than waiting for a render
+		// (`placement-decorations.ts`, `pickTagText`).
+		this.registerEvent(this.app.workspace.on('css-change', () => pickTagText(this.contentEl)));
 	}
 
 	/**
@@ -646,7 +652,7 @@ export class SheetView extends TextFileView {
 		// cell still drew `zap`. `buildSheet` holds the sequence, the harness and
 		// the fixture test go through the same one, and `sheet.test.ts` scans all
 		// three for it.
-		const { env, modifiers } = buildSheet(
+		const { env, modifiers, marked } = buildSheet(
 			layout,
 			prepared,
 			library,
@@ -735,6 +741,15 @@ export class SheetView extends TextFileView {
 				this.collapsedGroups.set(config.id, held);
 			},
 		}));
+
+		// The form tint, after every component has drawn and stamped its values
+		// (`placement-decorations.ts`), read off the same breakdowns the numbers'
+		// own popovers open.
+		applyDecorations(
+			grid,
+			inPlayDecorations(marked, (name) => modifiers.breakdown(name)),
+			revealWhenTruncated,
+		);
 
 		// SPEC §10: sections the layout does not map are left alone — they stay
 		// in the note untouched and simply do not render.

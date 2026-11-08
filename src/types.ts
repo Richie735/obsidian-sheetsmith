@@ -428,7 +428,8 @@ export interface ConfigFieldSpec<
 		| 'entries'
 		| 'track-rows'
 		| 'rows'
-		| 'columns';
+		| 'columns'
+		| 'zones';
 	/**
 	 * Help text shown under the field. Required: a field the layout editor
 	 * renders with no explanation is a field the author has to guess at, and
@@ -462,6 +463,15 @@ export interface ConfigFieldSpec<
 	default?: boolean;
 	/** Choices for 'select' fields. The first is the default and is omitted. */
 	options?: readonly string[];
+	/**
+	 * What one of a 'select' field's `options` is called, where the field says
+	 * so in the sheet's own words: a stored value outside them is then reported
+	 * as `"brown" is not a tint colour` rather than the generic `is not one of
+	 * the choices`, so the editor and the sheet name one fault one way
+	 * (`docs/features/form-tint-colour.md`). Read by the editor's select branch
+	 * alone, which learns a noun and nothing about the component.
+	 */
+	optionNoun?: string;
 	/**
 	 * What a 'columns' list offers, where the component holds fewer than every
 	 * column type or refuses a flag the field would otherwise show.
@@ -552,6 +562,16 @@ export interface ConfigFieldSpec<
 	 * value into the vault-wide migration.
 	 */
 	addressesEntry?: EntryAddress;
+	/**
+	 * That each entry's `heading` in this `'zones'` field addresses a `####`
+	 * heading inside every `###` record of the section — a Stat block's zones
+	 * (`docs/features/stat-block-zones.md`). `addressesEntry`'s pattern one level
+	 * down: the component declares where its name lives, so the editor carries a
+	 * heading rename into the vault-wide migration without learning what a Stat
+	 * block is. A key rename carries nothing: the key is layout identity and
+	 * appears in no note.
+	 */
+	addressesHeading?: 'record';
 }
 
 /**
@@ -1002,19 +1022,25 @@ export interface RowValues {
 export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
 
 /**
- * The two things a modifier definition can do to a number (SPEC §5).
+ * The three things a modifier definition can do to a number (SPEC §5).
  *
- * Two named steps and no priority integer: **an override applies first and the
- * additions land on top of it.** That is the property the whole design rests on
- * — overrides reduce to one number (the highest) and additions reduce to one
- * number (typed stacking), so there is nothing to sequence *within* either step
- * and the result cannot depend on the order the enrolments are walked in.
+ * Named steps and no priority integer: **an override applies first, an at least
+ * (`upgrade`) floors what that came to, and the result-phase additions land on
+ * top.** An at least passes the test below the way an override does: several
+ * reduce to one number, the highest, so nothing has to be sequenced within the
+ * step (`docs/features/character-forms.md`).
+ *
+ * Each step reducing to one number is the property the whole design rests
+ * on — overrides reduce to one number (the highest), at leasts to one number
+ * (the highest floor) and additions to one number (typed stacking), so there is
+ * nothing to sequence *within* any step and the result cannot depend on the
+ * order the enrolments are walked in.
  *
  * **"Step" and not "phase", deliberately, because this file now holds both
  * senses.** `ModifierPhase` above is SPEC §5's word for *where a modifier lands*
  * — inside the formula or on what it came to — and that is the spec's own
  * vocabulary, so it keeps the word. This one is *when the engine resolves it*,
- * overrides then additions, and it is comment text with no type behind it. The
+ * overrides, then the floor, then additions, and it is comment text with no type behind it. The
  * two sat fifteen lines apart saying "phase" at each other until a review read
  * them together. "Step" is already this repository's word for it — the override
  * step is what `docs/features/modifier-definitions.md` calls this.
@@ -1028,7 +1054,14 @@ export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
  * what it implies, so naming the phase as well would be a second field saying
  * one thing — which is the priority integer arriving under a new name.
  */
-export type ModifierOperator = 'add' | 'override';
+export type ModifierOperator = 'add' | 'override' | 'upgrade';
+
+/**
+ * Every operator, in the order an author is offered them: the sheet's modifier
+ * form and the layout editor's definitions list both iterate this, and take the
+ * words from `src/en.ts`'s `OPERATOR_LABELS`.
+ */
+export const OPERATORS: readonly ModifierOperator[] = ['add', 'override', 'upgrade'];
 
 /**
  * Which part of a target's arithmetic an addition lands on (SPEC §5).
@@ -1110,7 +1143,25 @@ export function phaseOf(raw: { applies?: unknown }): ModifierPhase {
  * definition straight out of a layout file where every member is still free.
  */
 export function operatorOf(raw: { operator?: unknown }): ModifierOperator {
-	return raw.operator === 'override' ? 'override' : 'add';
+	return raw.operator === 'override' || raw.operator === 'upgrade'
+		? raw.operator
+		: 'add';
+}
+
+/**
+ * Whether an operator contests by value in the result phase, rather than adding
+ * in a phase of its own choosing and stacking by type.
+ *
+ * **Sets** and **At least** (`upgrade`, `docs/features/character-forms.md`) both
+ * name a number the published value becomes or is floored at, so neither carries
+ * a phase (it is the result phase by construction) nor a bonus type (the highest
+ * wins whatever either is called). One predicate rather than `=== 'override'` at
+ * every site that asks it, on `operatorOf`'s own argument: a third operator
+ * arriving found nine such comparisons, each of which would have read an at least
+ * as an addition.
+ */
+export function contestsByValue(operator: ModifierOperator): boolean {
+	return operator !== 'add';
 }
 
 /**
@@ -1401,6 +1452,52 @@ export interface PromotedField {
 }
 
 /**
+ * The colours a form in play may tint the sheet in
+ * (`docs/features/form-tint-colour.md`), accent first, which is the default.
+ *
+ * **One list with several readers** — a config field's options, a fence value's
+ * validation, the push's type, the decoration's attribute and the stylesheet's
+ * rules — so it is declared once, on `docs/PATTERNS.md` §1's one-step tier for
+ * a set. Here beside `ModifierPush` because the push is the contract that
+ * carries one. Each is a theme variable, never a literal: `accent` is
+ * `--interactive-accent` and every other is the theme's `--color-<name>`
+ * (`docs/UI.md` §1). There is no brown, because the theme has none.
+ * `styles.test.ts` holds every entry to a rule in `sheet.css`, and no rule to a
+ * colour outside it.
+ */
+export const TINT_COLOURS = [
+	'accent',
+	'red',
+	'orange',
+	'yellow',
+	'green',
+	'cyan',
+	'blue',
+	'purple',
+	'pink',
+] as const;
+
+export type TintColour = (typeof TINT_COLOURS)[number];
+
+/**
+ * The attribute naming one of `TINT_COLOURS` on an element, which the
+ * stylesheet maps to its theme variable one rule per word, so no element
+ * carries an inline colour. Beside the list it carries: the tint pass writes it
+ * on each box and tag it paints, and a Stat block on its swatch.
+ */
+export const TINT_ATTRIBUTE = 'data-sheetsmith-tint';
+
+/**
+ * A stored word as a tint, or null where it is none: trimmed and matched
+ * without case, so `Green` is green, which is the same word and not a guess.
+ * Anything outside the list is null, never its nearest neighbour.
+ */
+export function tintColourOf(word: string): TintColour | null {
+	const wanted = word.trim().toLowerCase();
+	return TINT_COLOURS.find((colour) => colour === wanted) ?? null;
+}
+
+/**
  * One part of one row's modifier cell (SPEC §5).
  *
  * **A push is one part, as raw text.** The row says what its cell says and hands
@@ -1455,6 +1552,26 @@ export interface ModifierPush {
 	 * definition it enrols in.
 	 */
 	row: RowValues;
+	/**
+	 * That the row belongs to a state the character is currently in — a form
+	 * that is on — so a value it changes is tinted on the sheet
+	 * (`docs/features/character-forms.md`, "The tint").
+	 *
+	 * **A fact about the row, never about the modifier**, which is what keeps
+	 * this interface's opening sentence true: the push still carries no target,
+	 * no bonus type, no amount and no reason. Absent is false, which is every
+	 * push written before this existed. Nothing here names the component that
+	 * sets it; a Table could flag a Conditions row tomorrow.
+	 */
+	inPlay?: boolean;
+	/**
+	 * The colour a row in play tints what it changes
+	 * (`docs/features/form-tint-colour.md`). **A fact about the row, as `inPlay`
+	 * is**, on the same argument. Meaningless without `inPlay`, and ignored there.
+	 * Absent is the accent, which is every push written before this; the accent
+	 * is written as absence.
+	 */
+	tint?: TintColour;
 }
 
 /**
@@ -1539,6 +1656,14 @@ export interface ModifierLine {
 	applies?: ModifierPhase;
 	/** Why this line contributes nothing, or null where it does. */
 	suppressed: string | null;
+	/**
+	 * That the row this line came from is in play (`ModifierPush.inPlay`), which
+	 * is what the sheet's tint reads: an applied line carrying it is a value a
+	 * form changed. Absent is false.
+	 */
+	inPlay?: boolean;
+	/** The push's own `tint`, carried only beside `inPlay`. Absent is the accent. */
+	tint?: TintColour;
 }
 
 /**
@@ -1589,6 +1714,16 @@ export interface ModifierBreakdown {
 	 * signed number there would invite the reader to add it to something.
 	 */
 	override: number | null;
+	/**
+	 * The winning at least, or absent or null where none was pushed.
+	 *
+	 * Whether it raised the number is not a second field: the winning line's
+	 * `suppressed` says so (`already higher` where it did not), and that line is
+	 * decided where the published evaluation compares the two
+	 * (`formula/resolve.ts`), so the total line, the tint and the breakdown read
+	 * one fact. Optional on `resultTotal`'s rule.
+	 */
+	atLeast?: number | null;
 	/** The value-phase total, which is what `mod.<name>` itself resolves to. */
 	total: number;
 	/**

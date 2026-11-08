@@ -18,7 +18,7 @@ import {
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
-import { modifierBreakdown } from './modifier-breakdown';
+import { modifierBreakdown, movesNumber } from './modifier-breakdown';
 import { sampleNumber, sampleSeed } from './sample-values';
 
 export interface CardSetEntry {
@@ -391,6 +391,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			const card = strip.createDiv();
 			renderCardFace(card, {
 				title: entry.name ?? entry.key,
+				publishes: `${config.id}.${entry.key}`,
 				abbreviation:
 					entry.name !== undefined && entry.name !== entry.key
 						? entry.key
@@ -419,11 +420,9 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 								// The entry's own number goes with it, so the total
 								// line under an override is the number on that card's
 								// face rather than a second answer to it.
-								modifiers: modifierBreakdown(
-									context.modifiers?.breakdown(
-										`${config.id}.${entry.key}`,
-									),
-									stored.value,
+								modifiers: ((pushed) =>
+									movesNumber(pushed) ? modifierBreakdown(pushed, stored.value) : null)(
+									context.modifiers?.breakdown(`${config.id}.${entry.key}`),
 								),
 							},
 			});

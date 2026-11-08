@@ -39,7 +39,13 @@ import {
 	Scope,
 	Value,
 } from './expression';
-import { ModifierLookup, modifierSlot, NO_MODIFIERS, SELF_SLOT } from './modifiers';
+import {
+	ALREADY_HIGHER,
+	ModifierLookup,
+	modifierSlot,
+	NO_MODIFIERS,
+	SELF_SLOT,
+} from './modifiers';
 import { NO_ROWS, RowLookup } from './rows';
 
 /**
@@ -72,6 +78,17 @@ export interface FormulaEnv {
 	 * evaluation.
 	 */
 	selfGuard: Set<string>;
+	/**
+	 * Why each published name's winning at least did not raise it, or null where
+	 * it did (`docs/features/character-forms.md`), keyed by the name.
+	 *
+	 * Written by the evaluation that becomes the published name, which is the one
+	 * place the floor and what the formula came to are both in hand, and read
+	 * through `withFloorVerdict` by the breakdown and the tint so the two cannot
+	 * disagree. Absent on an environment with no sheet around it, where nothing is
+	 * pushed and so nothing floors.
+	 */
+	floors?: Map<string, string | null>;
 }
 
 /**
@@ -455,8 +472,30 @@ function fieldReaders(
 		 * The override first, exactly as before: it replaces what the formula came
 		 * to and the value-phase total is re-added on top.
 		 */
-		const base =
+		const overridden =
 			pushed.override === null ? value : pushed.override + pushed.total;
+		/*
+		 * **Then the floor, on what that came to** (`docs/features/character-forms.md`):
+		 * `max(base, highest at least)`, so an override and the value-phase total
+		 * are what the floor compares against, and the result phase still lands on
+		 * top. Whether it raised the number is recorded here, the one place both
+		 * numbers exist, so the breakdown and the tint read a fact rather than
+		 * re-deriving it. Not a number: the formula's own value, and the floor is
+		 * listed as not applying, as a result-phase addition has nothing to add to
+		 * a string.
+		 */
+		let base = overridden;
+		const floor = pushed.atLeast ?? null;
+		if (floor !== null) {
+			if (typeof overridden !== 'number') {
+				env.floors?.set(asked, 'the value is not a number');
+			} else if (floor > overridden) {
+				env.floors?.set(asked, null);
+				base = floor;
+			} else {
+				env.floors?.set(asked, ALREADY_HIGHER);
+			}
+		}
 		/*
 		 * **Then the result phase, on top of either.** It is added rather than
 		 * folded into `mod.self` because that is what distinguishes it: a modifier

@@ -26,7 +26,7 @@
  * separator: *+1 Longsword*, *Ring of Protection +2* and *Bracers of Armor,
  * Greater* are canonical item names, and half of them carry a `+`. Tightened
  * enough to survive those names, the discriminator *is* one published-name token
- * then `+=` or `=`.
+ * then `+=`, `>=` or `=`.
  *
  * **There is no such thing as a malformed cell.** Every part is exactly one of
  * the two, so nothing here fails and nothing is ever corrected: a part naming
@@ -37,7 +37,12 @@
  * (below, `MODIFIER_SEPARATOR`, `storedParts` and `spellParts`) — nothing else.
  */
 
-import { ModifierOperator, ModifierPhase, TypedEffect } from '../types';
+import {
+	contestsByValue,
+	ModifierOperator,
+	ModifierPhase,
+	TypedEffect,
+} from '../types';
 import { joinParts, LIST_SEPARATOR, listParts } from './list-value';
 
 /**
@@ -64,6 +69,17 @@ export const ADDS_TO = '+=';
 export const SETS = '=';
 
 /**
+ * How a cell spells "at least" (`docs/features/character-forms.md`).
+ *
+ * Matched before a bare `=` and only at the start of the part, so a condition's
+ * own comparison — `skills.stealth >= 4 when abilities.DEX >= 14` — is still a
+ * comparison. The cost is recorded rather than handled: a part reading
+ * `x >= 3` today, which was a stray name, is now a typed at least, and a
+ * definition named in that shape can no longer be reached from a cell.
+ */
+export const AT_LEAST = '>=';
+
+/**
  * The one phase a cell ever spells.
  *
  * The value phase is the *absent* clause rather than the word `value`, so a cell
@@ -86,7 +102,7 @@ export const RESULT_PHASE = 'result';
  * so one character of lookahead is the whole of what it takes.
  */
 const ASSIGNMENT =
-	/^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(\+=|=(?!=))/;
+	/^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(\+=|>=|=(?!=))/;
 
 /**
  * Whether this text reads as an effect typed on a row rather than as a name.
@@ -378,7 +394,8 @@ export function parseModifierPart(part: string): ModifierPart {
 	const head = ASSIGNMENT.exec(text);
 	if (head === null) return { kind: 'named', name: text };
 	const target = head[1] as string;
-	const operator: ModifierOperator = head[2] === SETS ? 'override' : 'add';
+	const operator: ModifierOperator =
+		head[2] === SETS ? 'override' : head[2] === AT_LEAST ? 'upgrade' : 'add';
 	let rest = text.slice(head[0].length);
 
 	/*
@@ -452,16 +469,24 @@ export function parseModifierPart(part: string): ModifierPart {
  * exactly what parses back as an unfinished effect.
  */
 export function spellTypedEffect(effect: TypedEffect): string {
-	const said = [effect.target, effect.operator === 'override' ? SETS : ADDS_TO];
+	const said = [
+		effect.target,
+		effect.operator === 'override'
+			? SETS
+			: effect.operator === 'upgrade'
+				? AT_LEAST
+				: ADDS_TO,
+	];
 	const amount = effect.amount.trim();
 	if (amount !== '') said.push(amount);
 	/*
-	 * Spelled only for the result phase, and never on an override — which already
-	 * replaces the published number and so is in that phase by construction.
+	 * Spelled only for the result phase, and never on an override or an at least
+	 * — each already acts on the published number and so is in that phase by
+	 * construction, so the clause a hand-editor wrote on one is dropped here.
 	 * The value phase is the absent clause, so every cell written before phases
 	 * existed round-trips byte for byte (Constraint 3).
 	 */
-	if (effect.applies === 'result' && effect.operator !== 'override') {
+	if (effect.applies === 'result' && !contestsByValue(effect.operator)) {
 		said.push('to', RESULT_PHASE);
 	}
 	const bonusType = (effect.bonusType ?? '').trim();

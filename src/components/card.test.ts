@@ -1270,6 +1270,10 @@ describe('card and its modifier slot', () => {
 		});
 		const derived = el.querySelector('.sheetsmith-card-derived') as HTMLElement;
 		expect(derived.classList.contains('sheetsmith-modified')).toBe(true);
+		// Named beside the mark, so the sheet's form tint can find the number.
+		expect(derived.getAttribute('data-sheetsmith-name')).toBe(config.id);
+		// And its box is the card, which the tint fills.
+		expect(derived.closest('[data-sheetsmith-box]')).toBe(el.querySelector('.sheetsmith-card'));
 		derived.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		const bubble = document.querySelector('.sheetsmith-popover');
 		expect(bubble?.textContent).toContain('Ring of Protection — item +2');

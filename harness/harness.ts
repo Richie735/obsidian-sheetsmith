@@ -38,6 +38,8 @@ import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
+import { applyDecorations, inPlayDecorations } from '../src/view/placement-decorations';
+import { revealWhenTruncated } from '../src/ui/truncation';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
 import { App, Platform } from '../src/test/obsidian-stub';
@@ -59,6 +61,7 @@ import {
 	unmodifiedSamples,
 	pinnedAddSamples,
 	recordGroupSamples,
+	formsSamples,
 	textGroupSamples,
 	notesSamples,
 	NOTE_DEFINITIONS,
@@ -76,7 +79,26 @@ type StateName =
 	| 'record-groups'
 	| 'text-groups'
 	| 'notes'
-	| 'three-parts';
+	| 'three-parts'
+	| 'forms'
+	| 'forms-none'
+	| 'forms-none-one'
+	| 'forms-none-tint'
+	| 'forms-empty'
+	| 'forms-none-long'
+	| 'forms-two'
+	| 'forms-zero'
+	| 'forms-below'
+	| 'forms-mook'
+	| 'forms-expanded'
+	| 'forms-drift'
+	| 'forms-error'
+	| 'forms-missing'
+	| 'forms-tint'
+	| 'forms-tint-two'
+	| 'forms-tint-error'
+	| 'forms-tint-pool'
+	| 'forms-tint-track';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -117,8 +139,37 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'text-groups') return textGroupSamples();
 	if (name === 'notes') return notesSamples();
 	if (name === 'three-parts') return threePartSamples();
+	if (name === 'forms') return formsSamples('active');
+	if (name === 'forms-none') return formsSamples('none');
+	if (name === 'forms-none-one') return formsSamples('none-one');
+	if (name === 'forms-none-tint') return formsSamples('none-tint');
+	if (name === 'forms-empty') return formsSamples('empty');
+	if (name === 'forms-none-long') return formsSamples('none-long');
+	if (name === 'forms-two') return formsSamples('two');
+	if (name === 'forms-zero') return formsSamples('zero');
+	if (name === 'forms-below') return formsSamples('below');
+	if (name === 'forms-mook') return formsSamples('mook');
+	if (name === 'forms-expanded') return formsSamples('expanded');
+	if (name === 'forms-drift') return formsSamples('drift');
+	if (name === 'forms-error') return formsSamples('error');
+	if (name === 'forms-missing') return formsSamples('missing');
+	if (name === 'forms-tint') return formsSamples('tint');
+	if (name === 'forms-tint-two') return formsSamples('tint-two');
+	if (name === 'forms-tint-error') return formsSamples('tint-error');
+	if (name === 'forms-tint-pool') return formsSamples('tint-pool');
+	if (name === 'forms-tint-track') return formsSamples('tint-track');
 	return SAMPLES;
 }
+
+/**
+ * `&tint=<colour>` — Wild Shape's `tint` on the forms states, so one shot per
+ * colour needs no sample of its own (`docs/features/form-tint-colour.md`). Any
+ * word is taken, `brown` included, since a layout holding one outside the list
+ * is a state the sheet and the editor both report. Read into the layout a state
+ * draws rather than patched over the sheet's, because the editor pane builds its
+ * file from `layoutFor` and would otherwise show a Tint the sheet is not using.
+ */
+let formsTint: string | null = null;
 
 /**
  * The layout a state draws: the harness layout over its samples, with the
@@ -126,11 +177,22 @@ function samplesFor(name: StateName): Sample[] {
  * editor opens on them (`docs/features/modifier-notes.md`).
  */
 function layoutFor(name: StateName): Layout {
-	const built = harnessLayout(samplesFor(name));
+	const built = withTint(harnessLayout(samplesFor(name)), formsTint);
 	if (name !== 'notes') return built;
 	return {
 		...built,
 		modifiers: [...NOTE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+	};
+}
+
+/** The layout with Wild Shape's `tint` set, where the query asks for one. */
+function withTint(built: Layout, tint: string | null): Layout {
+	if (tint === null) return built;
+	return {
+		...built,
+		components: built.components.map((config) =>
+			config.id === 'wild_shape' ? ({ ...config, tint } as ComponentConfig) : config,
+		),
 	};
 }
 
@@ -223,6 +285,7 @@ function prepare(): void {
 function sheetEnv(entries: Live[]): {
 	env: FormulaEnv;
 	modifiers: ModifierContext;
+	marked: ReadonlySet<string>;
 } {
 	// **Through the view's own `buildSheet`, not a copy of its steps.** That is
 	// this function's whole reason, one layer up from `publishedComponent`: an
@@ -275,6 +338,47 @@ function applyEdit(entry: Live, edited: unknown): void {
 	entry.data = result.ok ? result.data : null;
 	entry.error = result.ok ? null : result.error;
 	draw();
+}
+
+/**
+ * A stand-in for Obsidian's markdown renderer, for a Stat block's zones only:
+ * a paragraph per blank-line block, a block of `- ` lines as a list, and
+ * `***…***`, `**…**` and `*…*` as their emphasis. Nothing else of markdown, and the plugin owns none of this — in the
+ * app the body goes through `MarkdownRenderer` (`view/markdown-pass.ts`).
+ *
+ * **Scoped to the one component whose look turns on it**, a trait's bold-italic
+ * name read as its heading (`docs/features/character-forms.md`). Rich text keeps
+ * the fallback the harness has always drawn for it, deliberately (`samples.ts`),
+ * so none of its shots move; widening this is a decision for those shots.
+ */
+function standInMarkdown(markdown: string, into: HTMLElement): void {
+	into.replaceChildren();
+	const inline = (text: string, into: HTMLElement): void => {
+		const pattern = /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+		let last = 0;
+		for (const match of text.matchAll(pattern)) {
+			const at = match.index ?? 0;
+			if (at > last) into.appendText(text.slice(last, at));
+			const token = match[0];
+			if (token.startsWith('***')) into.createEl('strong').createEl('em', { text: token.slice(3, -3) });
+			else if (token.startsWith('**')) into.createEl('strong', { text: token.slice(2, -2) });
+			else into.createEl('em', { text: token.slice(1, -1) });
+			last = at + token.length;
+		}
+		if (last < text.length) into.appendText(text.slice(last));
+	};
+	for (const block of markdown.split(/\n\s*\n/)) {
+		if (block.trim() === '') continue;
+		// A block of `- ` lines is a list, which a features entry's continuation
+		// holds (`docs/features/stat-block-zones.md`).
+		const lines = block.split('\n');
+		if (lines.every((line) => /^\s*[-*+] /.test(line))) {
+			const list = into.createEl('ul');
+			for (const line of lines) inline(line.replace(/^\s*[-*+] /, ''), list.createEl('li'));
+			continue;
+		}
+		inline(block, into.createEl('p'));
+	}
 }
 
 /** A note the sample links to that deliberately does not exist. */
@@ -390,6 +494,10 @@ const PICTURES: Record<string, string> = {
 	// asset, but binary content inline — which is a call about what this harness is
 	// willing to hold rather than a fix.
 	'Tiny sigil.png': portrait(48, 48, ''),
+	// A Stat block form's picture, drawn as a thumbnail beside its name in play
+	// (`docs/features/stat-block-zones.md`). Wider than tall, so the square's
+	// `contain` shows.
+	'Brown bear.png': portrait(320, 240, 'Bear'),
 	// Well-formed text that is not an image, which is what a note is.
 	'Notes.md': 'data:text/plain;charset=utf-8,not%20a%20picture',
 };
@@ -437,6 +545,9 @@ const openRecords = new Map<string, Set<number>>([
 	// Second Wind open, so its `Save DC` — which the list's bindings name `Uses`
 	// to leave alone — is on screen beside the counter the reset is for.
 	['rest_features', new Set([0])],
+	// Brown Bear open in **Every form**, so the library shot shows a record's
+	// whole stat block under its line (`docs/features/character-forms.md`).
+	['wild_shape', new Set([0])],
 ]);
 
 /**
@@ -452,7 +563,7 @@ function renderSheet(into: HTMLElement): void {
 	const grid = view.createDiv('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
 
-	const { env, modifiers } = sheetEnv(live);
+	const { env, modifiers, marked } = sheetEnv(live);
 
 	// The view's own walk and the view's own descent through it, so the harness
 	// cannot order or nest the sheet differently from the thing it is measuring.
@@ -478,6 +589,10 @@ function renderSheet(into: HTMLElement): void {
 				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
 				// fallback for prose and a real picture for an image.
 				resource,
+				// A stand-in for the app's renderer for a Stat block's traits alone,
+				// so a shot shows a trait's bold-italic name as the app draws it;
+				// every other prose block keeps the fallback (see `standInMarkdown`).
+				...(config.type === 'stat-block' ? { renderMarkdown: standInMarkdown } : {}),
 				// The note's own name, which the app takes from the file and this
 				// has none of — so it is supplied for one sample and left absent for
 				// the other, because both readings are worth a shot (see above).
@@ -506,6 +621,13 @@ function renderSheet(into: HTMLElement): void {
 		},
 	);
 
+
+	// The view's own pass after the grid, the form tint, from the same breakdowns.
+	applyDecorations(
+		grid,
+		inPlayDecorations(marked, (name) => modifiers.breakdown(name)),
+		revealWhenTruncated,
+	);
 
 	/*
 	 * The view's own last step: a modifier form the render before this one left
@@ -858,6 +980,8 @@ function applyQuery(): void {
 	setText(text);
 	press('text', text);
 
+	// Before the state loads, since the layout a state draws carries it.
+	formsTint = params.get('tint');
 	const wanted = params.get('state');
 	loadState(
 		wanted === 'empty' ||
@@ -868,7 +992,26 @@ function applyQuery(): void {
 			wanted === 'record-groups' ||
 			wanted === 'text-groups' ||
 			wanted === 'notes' ||
-			wanted === 'three-parts'
+			wanted === 'three-parts' ||
+			wanted === 'forms' ||
+			wanted === 'forms-none' ||
+			wanted === 'forms-none-one' ||
+			wanted === 'forms-none-tint' ||
+			wanted === 'forms-empty' ||
+			wanted === 'forms-none-long' ||
+			wanted === 'forms-two' ||
+			wanted === 'forms-zero' ||
+			wanted === 'forms-below' ||
+			wanted === 'forms-mook' ||
+			wanted === 'forms-expanded' ||
+			wanted === 'forms-drift' ||
+			wanted === 'forms-error' ||
+			wanted === 'forms-missing' ||
+			wanted === 'forms-tint' ||
+			wanted === 'forms-tint-two' ||
+			wanted === 'forms-tint-error' ||
+			wanted === 'forms-tint-pool' ||
+			wanted === 'forms-tint-track'
 			? wanted
 			: 'populated',
 	);
@@ -883,9 +1026,11 @@ function applyQuery(): void {
 
 	const focus = params.get('focus');
 	/** After the surface exists, or there is nothing matching to focus yet. */
-	const focusWanted = () => {
-		if (focus === null) return;
-		document.querySelector<HTMLElement>(focus)?.focus();
+	const focusWanted = (): boolean => {
+		if (focus === null) return true;
+		const target = document.querySelector<HTMLElement>(focus);
+		target?.focus();
+		return target !== null;
 	};
 
 	/*
@@ -1090,11 +1235,18 @@ function applyQuery(): void {
 		// sticky strip" is only photographable if the list is scrolled *first*:
 		// focused first, the scroll then moved the list out from under a control
 		// that had already been brought into view.
-		if (scrolled.length === 0) focusWanted();
+		const focusedEarly = scrolled.length === 0 && focusWanted();
 		pressWanted();
 		// After the presses, and before the scroll: a commit can draw a message,
 		// and a message is a thing worth scrolling to.
 		typeWanted();
+		// **A focus target only a press draws is focused after it**, and after
+		// the typing, so a field a view filled is focused holding that text: a
+		// Stat block zone's edit box exists only under Every form, and the shot
+		// of it growing types a paragraph in first. Tried before the presses
+		// first, so every view that focuses something already on screen keeps
+		// its order.
+		if (scrolled.length === 0 && !focusedEarly) focusWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
 		scrollSidewaysWanted();

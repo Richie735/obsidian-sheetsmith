@@ -4623,3 +4623,419 @@ export function notesSamples(): Sample[] {
 		},
 	];
 }
+
+/**
+ * Which variant of the forms sheet a state draws (`docs/features/character-forms.md`,
+ * `docs/features/stat-block-zones.md`).
+ *
+ * - `active`: Brown Bear in play, its body in zones: a picture, an Attacks table
+ *   with an aliased link, Actions features with a usage and a list, collapsed
+ *   Traits, and a Reactions block no zone owns; Wolf a 0.9.0 body; the mook empty;
+ * - `none`: no form active, so the empty state, *Choosing one spends a use* and
+ *   a brief of each form to press (`docs/features/stat-block-in-play-polish.md`);
+ * - `none-one`: the same with Brown Bear the only form, so one brief at the
+ *   grid's track width;
+ * - `none-tint`: the same as `none` with **Tint per record** on, Brown Bear
+ *   choosing orange, so each brief's rule previews its form's colour beside the
+ *   block's `&tint=`;
+ * - `empty`: no form written yet, so *No forms yet.* and **Add form**;
+ * - `none-long`: the same as `none` with the Wolf changing enough that its
+ *   brief's changes line runs past two lines, so its clamp's ellipsis shows,
+ *   and its Speed left blank, so the brief leaves the field out;
+ * - `two`: both on by hand, so the report and both stat blocks, each its picture;
+ * - `zero`: Brown Bear at 0 HP and still active;
+ * - `below`: Brown Bear at −3 HP, so the sentence names the stored number;
+ * - `mook`: the Fate-style mook in play, every zone empty, so nothing but its head;
+ * - `expanded`: the same as `active` with Traits' `collapsed` off;
+ * - `drift`: Brown Bear with a second Traits heading and a stray lead;
+ * - `error`: Brown Bear's Attacks holding prose rather than a table;
+ * - `missing`: Brown Bear's picture naming a file the vault does not hold.
+ */
+export type FormsVariant =
+	| 'active'
+	| 'none'
+	| 'none-one'
+	| 'none-tint'
+	| 'empty'
+	| 'none-long'
+	| 'two'
+	| 'zero'
+	| 'below'
+	| 'mook'
+	| 'expanded'
+	| 'drift'
+	| 'error'
+	| 'missing'
+	/** Brown Bear choosing orange and the Thug a word the list lacks (`docs/features/form-tint-colour.md`). */
+	| 'tint'
+	/** The same, with the Wolf on beside the bear and both adding to Initiative. */
+	| 'tint-two'
+	/** The same, with the Thug in play holding its stray word. */
+	| 'tint-error'
+	/** Brown Bear orange raising a Pool's ceiling, so a form's tag lands on a placed box. */
+	| 'tint-pool'
+	/** Brown Bear orange lengthening a Track's run, so a form's tag lands on a Track. */
+	| 'tint-track';
+
+export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
+	const tinting =
+		variant === 'tint' ||
+		variant === 'none-tint' ||
+		variant === 'tint-two' ||
+		variant === 'tint-error' ||
+		variant === 'tint-pool' ||
+		variant === 'tint-track';
+	const bear =
+		variant === 'none' ||
+		variant === 'none-one' ||
+		variant === 'none-tint' ||
+		variant === 'none-long' ||
+		variant === 'mook' ||
+		variant === 'tint-error'
+			? 'no'
+			: 'yes';
+	/** Brown Bear alone, or no form at all, for the briefs' one-form and empty states. */
+	const others = variant !== 'none-one' && variant !== 'empty';
+	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
+	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
+	/*
+	 * Two-on with a target both forms add to, so one card is reached by two
+	 * colours and is drawn in the accent (Design, "Two forms on by hand"), beside
+	 * the cards each form sets alone.
+	 */
+	const shared = variant === 'tint-two' ? '; initiative += 1' : '';
+	/*
+	 * A Pool the bear raises the ceiling of: a Pool stamps no host of its own,
+	 * so the tint lands on its placed box and so does the tag, which is the
+	 * placement case `measure-form-tag.mjs` measures beside the cards.
+	 */
+	const pooled = variant === 'tint-pool';
+	const poolPush = pooled ? '; hit_points.max += 10' : '';
+	/*
+	 * A Track the bear lengthens by one segment, its count a formula reading
+	 * `mod.self` as the Pool's ceiling is: Track stamps no host either,
+	 * so the tag lands on its placed box, which `measure-form-tag.mjs` measures
+	 * beside the cards and the Pool.
+	 */
+	const tracked = variant === 'tint-track';
+	const trackPush = tracked ? '; rage.count += 1' : '';
+	const bearHp = variant === 'zero' ? '0 / 34' : variant === 'below' ? '-3 / 34' : '22 / 34';
+	const picture = variant === 'missing' ? 'Brown bear (lost).png' : 'Brown bear.png';
+	const attacks =
+		variant === 'error'
+			? ['The bear bites, then claws.']
+			: [
+					'| Attack | Bonus | Damage |',
+					'|---|---|---|',
+					'| Bite | 6 | 1d8+4 piercing |',
+					'| [[Claws (Brown Bear)\\|Claws]] | 6 | 2d6+4 slashing |',
+				];
+	const drift =
+		variant === 'drift'
+			? ['#### traits:', '', 'A second heading for Traits, which only the first is read under.', '']
+			: [];
+	const lead = variant === 'drift' ? ['A line above the first heading.', ''] : [];
+	return [
+		{
+			config: {
+				id: 'abilities',
+				type: 'card-set',
+				label: 'Abilities',
+				position: { col: 1, row: 1, width: 12, height: 1 },
+				entries: [
+					{ key: 'STR', name: 'Strength' },
+					{ key: 'DEX', name: 'Dexterity' },
+					{ key: 'CON', name: 'Constitution' },
+					{ key: 'INT', name: 'Intelligence' },
+					{ key: 'WIS', name: 'Wisdom' },
+					{ key: 'CHA', name: 'Charisma' },
+				],
+				derived: 'mod(value + mod.self)',
+			} as ComponentConfig,
+			body: '```sheet\nSTR: 10\nDEX: 14\nCON: 13\nINT: 12\nWIS: 16\nCHA: 8\n```',
+		},
+		{
+			config: {
+				id: 'armour_class',
+				type: 'card',
+				label: 'Armour class',
+				position: { col: 1, row: 2, width: 2, height: 1 },
+				key: 'AC',
+				derived: '10 + abilities.DEX + mod.self',
+				signed: false,
+				hideNote: true,
+			} as ComponentConfig,
+			body: '```sheet\nAC: 12\n```',
+		},
+		{
+			// No `derived`, so no slot a form can push at: the druid's own 30 stays,
+			// and the form's speed is read off its stat block (the known limit).
+			config: {
+				id: 'speed',
+				type: 'card',
+				label: 'Speed',
+				position: { col: 3, row: 2, width: 2, height: 1 },
+				key: 'speed',
+				hideNote: true,
+			} as ComponentConfig,
+			body: '```sheet\nspeed: 30\n```',
+		},
+		{
+			config: {
+				id: 'initiative',
+				type: 'card',
+				label: 'Initiative',
+				position: { col: 5, row: 2, width: 2, height: 1 },
+				derived: 'abilities.DEX + mod.self',
+				hideValue: true,
+				hideNote: true,
+			} as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 7, row: 2, width: 6, height: 1 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				'| Sentinel amulet | initiative += 1 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 3, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [
+					{
+						key: 'Training',
+						hideHeading: true,
+						type: 'level',
+						levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+					},
+					{
+						key: 'Bonus',
+						type: 'computed',
+						formula: 'ability + Training * 3 + mod.self',
+						publish: true,
+					},
+				],
+				rows: [
+					{ label: 'Athletics', key: 'athletics', values: { ability: 'abilities.STR' } },
+					{ label: 'Perception', key: 'perception', values: { ability: 'abilities.WIS' } },
+					{ label: 'Stealth', key: 'stealth', values: { ability: 'abilities.DEX' } },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Skill | Training | Bonus |',
+				'| --- | --- | --- |',
+				'| Athletics | 0 | |',
+				'| Perception | 1 | |',
+				'| Stealth | 0 | |',
+			].join('\n'),
+		},
+		{
+			// The starter's saves in small: each total reads `+ mod.self`, so a
+			// form's push lands on its row, and the bear's Constitution save is
+			// tinted where the two it leaves alone are not.
+			config: {
+				id: 'saves',
+				type: 'table',
+				label: 'Saving throws',
+				position: { col: 1, row: 5, width: 6, height: 2 },
+				rowHeader: 'Save',
+				namePosition: 1,
+				columns: [
+					{
+						key: 'Prof',
+						hideHeading: true,
+						type: 'level',
+						levels: ['Untrained', 'Proficient:'],
+					},
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'ability + Prof * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: [
+					{ label: 'Strength', key: 'STR', values: { ability: 'abilities.STR' } },
+					{ label: 'Dexterity', key: 'DEX', values: { ability: 'abilities.DEX' } },
+					{ label: 'Constitution', key: 'CON', values: { ability: 'abilities.CON' } },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Save | Prof | Total |',
+				'| --- | --- | --- |',
+				'| Strength | 0 | |',
+				'| Dexterity | 0 | |',
+				'| Constitution | 1 | |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				// Sixteen rows, so an open record's whole block — its picture, its
+				// zones and the drift after them — is inside the box: the library and
+				// two-on shots show what their criteria name rather than a scroller cut
+				// under its first zones.
+				position: { col: 7, row: 3, width: 6, height: 16 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'HP', type: 'number', maxSource: 'record' },
+					{ key: 'Speed', type: 'text' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				uses: '2',
+				spendOnPick: true,
+				image: true,
+				// Each form may choose its own colour on the tint states alone, so the
+				// accent pair stays a layout that chooses no tint, its head's rule in
+				// the accent; the block's own `tint` comes from `&tint=`.
+				...(tinting ? { tintPerRecord: true } : {}),
+				zones: [
+					{ key: 'vitals' },
+					{ key: 'changes' },
+					{
+						key: 'attacks',
+						type: 'table',
+						heading: 'Attacks',
+						columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
+					},
+					{ key: 'actions', type: 'features', heading: 'Actions' },
+					{
+						key: 'traits',
+						type: 'text',
+						heading: 'Traits',
+						...(variant === 'expanded' ? {} : { collapsed: true }),
+					},
+				],
+			} as ComponentConfig,
+			body: [
+				'',
+				'```sheet',
+				'uses: 1',
+				'```',
+				'',
+				...(variant === 'empty'
+					? []
+					: [
+						'### Brown Bear',
+						'```sheet',
+						`Active: ${bear}`,
+						`HP: ${bearHp}`,
+						'Speed: 40 ft., climb 30 ft.',
+						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}${trackPush}`,
+						...(tinting ? ['Tint: orange'] : []),
+						'```',
+						'',
+						`![[${picture}]]`,
+						'',
+						...lead,
+						'#### Attacks',
+						'',
+						...attacks,
+						'',
+						'#### Actions',
+						'',
+						'**Multiattack.** The bear makes two attacks: one with its bite and one with its claws.',
+						'',
+						'**Roar (1/Day).** Each creature within 30 feet must succeed on a DC 12 Wisdom saving throw.',
+						'',
+						'- On a failure it is frightened until the end of its next turn.',
+						'',
+						// Not a zone in this layout, and after a features zone rather than
+						// the text zone, where it would read as that zone's own text.
+						'#### Reactions',
+						'',
+						'**Defensive Swat.** The bear swats at an attacker within 5 feet.',
+						'',
+						'#### Traits',
+						'',
+						'***Keen Smell.*** The bear has advantage on Wisdom (Perception) checks that rely on smell.',
+						'',
+						...drift,
+					]),
+				...(others
+					? [
+						'### Wolf',
+						'```sheet',
+						`Active: ${wolf}`,
+						'HP: 11 / 11',
+						variant === 'none-long' ? 'Speed:' : 'Speed: 40 ft.',
+						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${
+							variant === 'none-long'
+								? '; abilities.STR = 3; abilities.CON = 2; skills.perception >= 5; skills.athletics >= 4; saves.DEX = 4; saves.CON = 3'
+								: ''
+						}`,
+						'```',
+						'',
+						'| Attack | Bonus | Damage |',
+						'|---|---|---|',
+						'| Bite | 4 | 2d4+2 piercing |',
+						'',
+						'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
+						'',
+						// A Fate mook's shape: a whole stat block with nothing in its zones,
+						// which In play draws as its head and vitals alone.
+						'### Thug',
+						'```sheet',
+						`Active: ${mook}`,
+						'HP: 3 / 3',
+						'Speed: 30 ft.',
+						...(tinting ? ['Modifiers: armour_class = 10', 'Tint: brown'] : []),
+						'```',
+						'',
+					]
+					: []),
+			].join('\n'),
+		},
+		...(pooled
+			? [
+					{
+						config: {
+							id: 'hit_points',
+							type: 'pool',
+							label: 'Hit points',
+							position: { col: 1, row: 7, width: 3, height: 1 },
+							maxSource: 'calculated',
+							max: '8 + abilities.CON + mod.self',
+						} as ComponentConfig,
+						body: '```sheet\ncurrent: 6\n```',
+					},
+				]
+			: []),
+		...(tracked
+			? [
+					{
+						config: {
+							id: 'rage',
+							type: 'track',
+							label: 'Rage',
+							position: { col: 1, row: 7, width: 3, height: 1 },
+							// Its own formula asks for the push, as the Pool's
+							// ceiling does: a literal count takes no modifiers.
+							count: '3 + mod.self',
+						} as ComponentConfig,
+						body: '```sheet\nvalue: 1\n```',
+					},
+				]
+			: []),
+	];
+}

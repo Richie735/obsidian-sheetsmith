@@ -58,6 +58,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CHROME, checkPlatform, launch, stagePlatform, wait } from './cdp.mjs';
+import { TINT_COLOURS } from './tint-colours.mjs';
 
 /**
  * Whether this file is being run, or imported for its view list. Imported, it
@@ -3093,6 +3094,376 @@ export const DEFAULTS = [
 	},
 	{
 		/*
+		 * **Character forms** (`docs/features/character-forms.md`): a Moon druid's
+		 * sheet with Brown Bear in play, so the tint is on a Card set, a Table and
+		 * a Card at once, and beside it the three that must not tint — Perception,
+		 * where the druid's own number is higher; Speed, with no derived; and an
+		 * initiative an item raises, which keeps the shape-only mark alone.
+		 */
+		name: 'sheet-forms-light',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-dark',
+		query: 'surface=sheet&theme=dark&state=forms',
+		size: '1400,1500',
+	},
+	{
+		// The block's own reflow at a phone's width: the picker on a line of its
+		// own, each stat on its own line, the action table wrapping its cells.
+		name: 'sheet-forms-narrow',
+		query: 'surface=sheet&theme=light&state=forms&width=380',
+		size: '380,2600',
+	},
+	// No form active: the empty state, Choosing one spends a use, no Revert, and
+	// a brief of each form — and the rest of the In play polish's views
+	// (`docs/features/stat-block-in-play-polish.md`), each in four palettes.
+	...formsPolishViews(),
+	{
+		// Both on by hand: the picker's extra line, the report and both blocks.
+		name: 'sheet-forms-two-on',
+		query: 'surface=sheet&theme=light&state=forms-two',
+		size: '1400,1700',
+	},
+	{
+		// Every form, Brown Bear open under its line.
+		name: 'sheet-forms-library',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+	},
+	{
+		// A form at 0, still active: the number alone, no error colour and no sentence.
+		name: 'sheet-forms-zero-hp',
+		query: 'surface=sheet&theme=light&state=forms-zero',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'sheet-forms-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		// Every form under more contrast: the attack table's frame, the tiles'
+		// and the open form's rule at the darkened edge, on the edit face.
+		name: 'sheet-forms-library-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		// **Every form** in both palettes and at a phone's width, the edit form
+		// drawn through the same anatomy as In play: Brown Bear open, Wolf closed
+		// with its vitals on its line.
+		name: 'sheet-forms-library-dark',
+		query: 'surface=sheet&theme=dark&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+	},
+	{
+		name: 'sheet-forms-library-narrow',
+		query: 'surface=sheet&theme=light&state=forms&width=380&press=.sheetsmith-stat-block-switch',
+		size: '380,3000',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// Every form with every form closed, so each line's vitals summary shows.
+		name: 'sheet-forms-library-closed',
+		query:
+			'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch&press=.sheetsmith-record-disclosure',
+		size: '1400,1700',
+	},
+	{
+		// Traits open In play: the prose rendered, a trait's bold-italic name as its
+		// lead-in, and the indent under the disclosure.
+		name: 'sheet-forms-traits',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-disclosure',
+		size: '1400,1700',
+	},
+	{
+		/*
+		 * **Stat block zones** (`docs/features/stat-block-zones.md`): Brown Bear in
+		 * play with its picture, its Attacks table and the aliased Claws link, its
+		 * Actions features with a usage and a list, its collapsed Traits, and the
+		 * Reactions block no zone owns, drawn after the zones as not in this layout.
+		 */
+		name: 'sheet-forms-zones',
+		query: 'surface=sheet&theme=light&state=forms',
+		size: '1400,1700',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		name: 'sheet-forms-zones-dark',
+		query: 'surface=sheet&theme=dark&state=forms',
+		size: '1400,1700',
+	},
+	{
+		// At a phone's width: the thumbnail wraps with the title, the features
+		// read in their own markdown, the table wraps its cells.
+		name: 'sheet-forms-zones-narrow',
+		query: 'surface=sheet&theme=light&state=forms&width=380',
+		size: '380,3000',
+	},
+	{
+		// The Fate-style mook in play, every zone empty: its head and vitals and
+		// nothing else, no heading, no box, no None yet.
+		name: 'sheet-forms-zones-empty',
+		query: 'surface=sheet&theme=light&state=forms-mook',
+		size: '1400,2000',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// Every form, Brown Bear open: the Picture section, the editing table, each
+		// entry a line of name, usage and delete over its text, Traits drawn open,
+		// and the drift read-only.
+		name: 'sheet-forms-zones-library',
+		query: 'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,2600',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// A second Traits heading and a line above the first heading: each drift
+		// block under its own heading and its own sentence.
+		name: 'sheet-forms-zones-drift',
+		query: 'surface=sheet&theme=light&state=forms-drift',
+		size: '1400,1900',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// Attacks holding prose: the zone's error and the prose under it, and every
+		// other zone still drawn.
+		name: 'sheet-forms-zones-error',
+		query: 'surface=sheet&theme=light&state=forms-error',
+		size: '1400,1700',
+	},
+	{
+		// Two forms on, so each form's own name row carries its own picture.
+		name: 'sheet-forms-picture',
+		query: 'surface=sheet&theme=light&state=forms-two',
+		size: '1400,2400',
+	},
+	{
+		// A picture naming no file: no thumbnail, and the painter's sentence under
+		// the head.
+		name: 'sheet-forms-picture-missing',
+		query: 'surface=sheet&theme=light&state=forms-missing',
+		size: '1400,1700',
+	},
+	{
+		/*
+		 * **One shot per zone option, its editor label beside the sheet it
+		 * produces.** `collapsed` on: Traits closed in play, and **Collapsed in
+		 * play** ticked on its card in the pane beside.
+		 */
+		name: 'sheet-forms-zone-collapsed',
+		query: 'surface=both&theme=light&state=forms&open=wild_shape',
+		size: '1500,5200',
+	},
+	{
+		// `collapsed` off: Traits open in play with a plain heading, and the box
+		// unticked beside it.
+		name: 'sheet-forms-zone-expanded',
+		query: 'surface=both&theme=light&state=forms-expanded&open=wild_shape',
+		size: '1500,5200',
+	},
+	{
+		// The Zones field: each zone a stacked card, the built-ins marked Built in.
+		name: 'editor-stat-block-zones',
+		query: 'surface=editor&theme=light&state=forms&open=wild_shape',
+		size: '1400,4200',
+		frame: '.sheetsmith-list-zones',
+	},
+	{
+		name: 'editor-stat-block-zones-narrow',
+		query: 'surface=editor&theme=light&state=forms&open=wild_shape&width=380',
+		size: '380,8000',
+		frame: '.sheetsmith-list-zones',
+	},
+	{
+		// The form tag at the app's own 15px body (the first small fix): the pill
+		// on each tinted card's bottom inline-end corner, inside by its padding
+		// alone, checked by `measure-form-tag.mjs`.
+		name: 'sheet-forms-tag-text-15',
+		query: 'surface=sheet&theme=light&state=forms&text=15',
+		size: '1400,1700',
+		frame: '.sheetsmith-grid',
+	},
+	/*
+	 * **Form tint colour** (`docs/features/form-tint-colour.md`): Brown Bear in
+	 * play in each of the theme's named colours, in both palettes, through
+	 * `&tint=` on Wild Shape, every one at an explicit frame so a scoped run
+	 * draws what a full one draws. `sheet-forms-light` and `-dark` are the accent
+	 * pair. The tag is the neutral chip with a coloured edge in every one.
+	 */
+	...TINT_COLOURS.filter((colour) => colour !== 'accent').flatMap((colour) => [
+		{
+			name: `sheet-forms-tint-${colour}`,
+			query: `surface=sheet&theme=light&state=forms&tint=${colour}`,
+			size: '1400,1500',
+		},
+		{
+			name: `sheet-forms-tint-${colour}-dark`,
+			query: `surface=sheet&theme=dark&state=forms&tint=${colour}`,
+			size: '1400,1500',
+		},
+	]),
+	{
+		// More contrast at yellow, the tightest colour: no fill on the box or the
+		// tag, a 2px edge on the box, the tag's edge kept in colour.
+		name: 'sheet-forms-tint-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms&tint=yellow',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-forms-tint-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=forms&tint=yellow',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		// Forced colors at green: the box, the row and the tag as before, and the
+		// head's rule the mode's plain line, no hue.
+		name: 'sheet-forms-tint-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms&tint=green',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// Brown Bear orange raising Hit points' ceiling: a Pool stamps no host, so
+		// the tint and the tag land on its placed box, the case
+		// `measure-form-tag.mjs` measures beside the cards.
+		name: 'sheet-forms-tint-pool',
+		query: 'surface=sheet&theme=light&state=forms-tint-pool&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-pool-dark',
+		query: 'surface=sheet&theme=dark&state=forms-tint-pool&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		// Brown Bear orange lengthening Rage's run by one: a Track stamps no host,
+		// so the tag lands on its placed box, the case `measure-form-tag.mjs`
+		// measures beside the cards and the Pool.
+		name: 'sheet-forms-tint-track',
+		query: 'surface=sheet&theme=light&state=forms-tint-track&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
+		// to, in the accent; Strength and Constitution orange and Dexterity green
+		// in one Card set whose one tag names both, in the accent.
+		name: 'sheet-forms-tint-two-on',
+		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+	},
+	/*
+	 * The two-on name rows' rules in the other three palettes
+	 * (`docs/features/stat-block-in-play-polish.md` §2): each row's own colour
+	 * in the dark theme, the 2px edge kept under more contrast, and the mode's
+	 * plain 1px line in forced colors. The one-form head rule already has its
+	 * four in the colour shots, their more-contrast pair and the forced one.
+	 */
+	{
+		name: 'sheet-forms-tint-two-on-dark',
+		query: 'surface=sheet&theme=dark&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-two-on-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-forms-tint-two-on-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms-tint-two&tint=green',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// Every form, Brown Bear open on its Tint section: the dropdown on Orange
+		// and its swatch.
+		name: 'sheet-forms-tint-library',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&press=.sheetsmith-stat-block-switch',
+		size: '1400,1500',
+	},
+	{
+		// The Thug in play holding `Tint: brown`: tinted in the block's green, and
+		// the sentence under the head.
+		name: 'sheet-forms-tint-error',
+		query: 'surface=sheet&theme=light&state=forms-tint-error&tint=green',
+		size: '1400,1500',
+	},
+	{
+		// The same form under Every form, Brown Bear closed and the Thug opened: the
+		// disabled `"brown" (not a tint)` option selected, and the sentence under
+		// the dropdown.
+		name: 'sheet-forms-tint-error-library',
+		query:
+			'surface=sheet&theme=light&state=forms-tint-error&tint=green&press=.sheetsmith-stat-block-switch&press=.sheetsmith-stat-block-record:nth-child(1)%20.sheetsmith-record-disclosure&press=.sheetsmith-stat-block-record:nth-child(3)%20.sheetsmith-record-disclosure',
+		size: '1400,1500',
+	},
+	{
+		// The layout's own `tint` outside the list: the whole block drawn, Brown
+		// Bear in its own orange, and the one *Tint is "brown"* line under the head.
+		name: 'sheet-forms-tint-layout-error',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=brown',
+		size: '1400,1500',
+	},
+	{
+		// At a phone's width: the head's green rule under the title as it wraps.
+		name: 'sheet-forms-tint-narrow',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&width=380',
+		size: '380,3000',
+	},
+	{
+		// And the Tint section's dropdown and swatch at that width.
+		name: 'sheet-forms-tint-library-narrow',
+		query: 'surface=sheet&theme=light&state=forms-tint&tint=green&width=380&press=.sheetsmith-stat-block-switch',
+		size: '380,3000',
+		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// The two fields in the layout editor, Tint on green, Tint per record on.
+		name: 'editor-stat-block-tint',
+		query: 'surface=editor&theme=light&state=forms-tint&open=wild_shape&tint=green',
+		size: '1400,4200',
+		frame: '.sheetsmith-component-form',
+	},
+	{
+		// A hand-edited `brown`: the dropdown holding it disabled with the message
+		// under it, and the canvas still drawing the block.
+		name: 'editor-stat-block-tint-error',
+		query: 'surface=editor&theme=light&state=forms-tint&open=wild_shape&tint=brown',
+		size: '1400,4200',
+	},
+	{
+		// HP below 0 names the stored number (the fourth small fix).
+		name: 'sheet-forms-below-zero',
+		query: 'surface=sheet&theme=light&state=forms-below',
+		size: '1400,1700',
+	},
+	{
+		// A record body's edit box grown to its text (the second small fix):
+		// under Every form, a paragraph and a half typed into Traits and committed,
+		// then the box focused, so the field is on screen holding four lines past
+		// its two-line floor. Framed to the open form's Traits zone.
+		name: 'sheet-forms-body-grows',
+		query:
+			'surface=sheet&theme=light&state=forms&press=.sheetsmith-stat-block-switch&type=.sheetsmith-stat-block-detail%20.sheetsmith-stat-block-zone-text%20textarea|The%20bear%20has%20advantage%20on%20Wisdom%20(Perception)%20checks%20that%20rely%20on%20smell%2C%20and%20it%20tracks%20a%20wounded%20creature%20for%20miles%20through%20rain%2C%20snow%20and%20running%20water.%0A%0AIt%20forages%20at%20dusk%20and%20sleeps%20through%20the%20worst%20of%20winter.&focus=.sheetsmith-stat-block-detail%20.sheetsmith-stat-block-zone-text%20textarea',
+		size: '1400,2600',
+		frame: '.sheetsmith-stat-block-detail .sheetsmith-stat-block-zone-text',
+	},
+	{
+		/*
 		 * **Grouped Record sets** (`docs/features/record-set-groups.md`), on the
 		 * `record-groups` state's own sheet: lists with neighbours above, below and
 		 * beside them, so a collapse that moved anything would show. Every group
@@ -3360,6 +3731,48 @@ function poolHeadlineViews() {
 			pad: 6,
 		},
 	];
+}
+
+/**
+ * **The Stat block's In play polish** (`docs/features/stat-block-in-play-polish.md`):
+ * every view it names, each in light, dark, more contrast and forced colors,
+ * since each changes an edge those modes repaint. The briefs with no form on
+ * (several, one, a green block with Brown Bear's own orange, none written), the
+ * head's pair at a phone's width, and Every form with one form open beside two
+ * closed, framed on the block so a scoped run draws what a full one draws.
+ */
+function formsPolishViews() {
+	const BLOCK = '.sheetsmith-stat-block';
+	const views = [
+		// Brown Bear, Wolf and the Thug as briefs, the bear's with its picture.
+		{ name: 'sheet-forms-none', query: 'surface=sheet&state=forms-none', size: '1400,1500' },
+		// One form: one brief at the grid's track width, not across the box.
+		{ name: 'sheet-forms-none-one', query: 'surface=sheet&state=forms-none-one', size: '1400,1500', frame: BLOCK },
+		// Each brief's rule previews its colour: the bear orange, the rest green.
+		{ name: 'sheet-forms-none-tint', query: 'surface=sheet&state=forms-none-tint&tint=green', size: '1400,1500', frame: BLOCK },
+		// No form written yet: No forms yet. and Add form, as before.
+		{ name: 'sheet-forms-empty', query: 'surface=sheet&state=forms-empty', size: '1400,1500', frame: BLOCK },
+		// The picker on its own line under the title, Revert beside it, one height.
+		{ name: 'sheet-forms-head-narrow', query: 'surface=sheet&state=forms&width=380', size: '380,3000', frame: BLOCK },
+		// Brown Bear open and the others closed: one title size on every line.
+		{
+			name: 'sheet-forms-library-mixed',
+			query: 'surface=sheet&state=forms&press=.sheetsmith-stat-block-switch',
+			size: '1400,2600',
+			frame: BLOCK,
+		},
+		// The Wolf's changes past two lines, so the clamp's ellipsis shows, and its
+		// blank Speed left out of its brief.
+		{ name: 'sheet-forms-none-long', query: 'surface=sheet&state=forms-none-long', size: '1400,1500', frame: BLOCK },
+		// The briefs one a row at a phone's width.
+		{ name: 'sheet-forms-none-narrow', query: 'surface=sheet&state=forms-none&width=380', size: '380,3000', frame: BLOCK },
+	];
+	return views.flatMap(({ name, query, ...view }) => [
+		{ ...view, name, query: `${query}&theme=light` },
+		{ ...view, name: `${name}-dark`, query: `${query}&theme=dark` },
+		{ ...view, name: `${name}-contrast-more`, query: `${query}&theme=light`, media: { 'prefers-contrast': 'more' } },
+		{ ...view, name: `${name}-forced-colors`, query: `${query}&theme=light`, flags: ['--force-high-contrast'] },
+	]);
 }
 
 const args = process.argv.slice(2);

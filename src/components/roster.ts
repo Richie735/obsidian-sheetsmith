@@ -61,7 +61,7 @@ import { effectiveReading, sameNumber } from './effective-value';
 import { fencedLinkRefusal } from './fenced-link';
 import { levelCount, levelName, levelOf } from './level-ring';
 import { paintLinkedText } from './linked-text';
-import { MODIFIED_CLASS, modifierAccount } from './modifier-breakdown';
+import { modifierAccount, stampModifiedHost } from './modifier-breakdown';
 import { renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
@@ -1126,7 +1126,7 @@ function drawValueField(
 	 */
 	const bothNumbers = differs ? `${atRest} with modifiers, ${stored} stored` : null;
 	if (bothNumbers !== null) {
-		field.classList.add(MODIFIED_CLASS);
+		stampModifiedHost(field, published, field.closest<HTMLElement>('.sheetsmith-card, tr'));
 		field.setAttribute('title', bothNumbers);
 	}
 	field.setAttribute(
@@ -1239,7 +1239,7 @@ function drawDerivedReading(
 	// account, so where the stat also has a note mark the two open one text.
 	const pushed = account.arithmetic ? account.text : null;
 	if (pushed !== null) {
-		derivedEl.classList.add(MODIFIED_CLASS);
+		stampModifiedHost(derivedEl, published, derivedEl.closest<HTMLElement>('.sheetsmith-card, tr'));
 		derivedEl.addEventListener('click', () => showPopover(derivedEl, pushed));
 		derivedEl.createDiv({ cls: 'sheetsmith-sr-only', text: pushed });
 	}
@@ -1346,7 +1346,7 @@ function drawRow(
 			// their own mark after the number.
 			const pushed = account?.text ?? null;
 			if (account?.arithmetic === true && pushed !== null) {
-				cell.classList.add(MODIFIED_CLASS);
+				stampModifiedHost(cell, name, cell.closest('tr'));
 				cell.createSpan({ cls: 'sheetsmith-sr-only', text: pushed });
 			}
 			renderAccountNotes(td, account, 'sheetsmith-table-has-note');

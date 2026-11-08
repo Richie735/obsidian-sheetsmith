@@ -16,7 +16,7 @@ import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { sameNumber } from './effective-value';
-import { MODIFIED_CLASS, ModifierAccount } from './modifier-breakdown';
+import { ModifierAccount, stampModifiedHost } from './modifier-breakdown';
 import { renderAccountNotes } from './note-mark';
 
 /**
@@ -106,6 +106,12 @@ export interface CardFaceOptions {
 		options?: readonly { value: string; label?: string }[];
 		onCommit: (next: string) => void;
 	};
+	/**
+	 * The name this card's number publishes, written beside its modified mark so
+	 * the sheet's tint can find the number (`stampModifiedHost`). Absent where
+	 * the caller publishes none.
+	 */
+	publishes?: string;
 	/**
 	 * Derived display. When present it is the card's big number, and the
 	 * stored value drops into a small pill beneath it. `compute` re-derives
@@ -345,7 +351,7 @@ export function renderCardFace(
 			 * installs no `onclick` at all — and the routing below stands aside
 			 * for it rather than focusing the field underneath.
 			 */
-			derivedEl.classList.add(MODIFIED_CLASS);
+			stampModifiedHost(derivedEl, options.publishes, container);
 			const anchor = derivedEl;
 			anchor.addEventListener('click', () => showPopover(anchor, breakdown));
 			/*
@@ -500,7 +506,7 @@ export function renderCardFace(
 			 * breakdown through `aria-describedby`, and a click here means "put a
 			 * caret here", which the field's own focus swap already owns.
 			 */
-			input.classList.add(MODIFIED_CLASS);
+			stampModifiedHost(input, options.publishes, container);
 			input.setAttribute('title', bothNumbers);
 		}
 		// With a derived above it, the em dash would be the card's second

@@ -64,7 +64,7 @@ import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { levelCount, levelName, levelOf, parseLevel } from './level-ring';
 import { paintLinkedText } from './linked-text';
 import {
-	MODIFIED_CLASS,
+	stampModifiedHost,
 	applying,
 	modifierAccount,
 	modifierRowName,
@@ -2141,7 +2141,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 */
 					const pushed = account?.text ?? null;
 					if (account?.arithmetic === true && pushed !== null) {
-						cell.classList.add(MODIFIED_CLASS);
+						stampModifiedHost(cell, name, cell.closest('tr'));
 						/*
 						 * The same text where there is no pointer, in a span inside
 						 * the cell — which is this component's own idiom for it, the

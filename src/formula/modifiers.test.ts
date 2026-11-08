@@ -17,11 +17,13 @@ import {
 	buildSheetScope,
 	PublishedComponent,
 	sheetModifierInput,
+	sheetModifiers,
 } from './sheet';
 import {
 	ComponentConfig,
 	ModifierDefinition,
 	ModifierLine,
+	ModifierOperator,
 	ModifierPush,
 } from '../types';
 
@@ -31,7 +33,7 @@ function at(
 	amount: number,
 	type: string | null = null,
 	label = 'A row',
-	operator: 'add' | 'override' = 'add',
+	operator: ModifierOperator = 'add',
 	source = 'Magic items',
 ): Contributor {
 	// The row's own name, which is what a contributor's is where a row applies one
@@ -465,6 +467,39 @@ describe('the shuffle assertion, over both steps', () => {
 		],
 	];
 
+	it.each([
+		[
+			'two at leasts give the higher',
+			[at('x', 3, null, 'Wolf', 'upgrade'), at('x', 5, null, 'Bear', 'upgrade')],
+			5,
+		],
+		[
+			'an at least among an override and additions',
+			[
+				at('x', 18, null, 'Plate', 'override'),
+				at('x', 20, null, 'Bear', 'upgrade'),
+				at('x', 1, 'item', 'Ring'),
+				at('x', 4, null, 'Wolf', 'upgrade'),
+			],
+			20,
+		],
+	] as [string, readonly Contributor[], number][])(
+		'%s, in every rotation',
+		(_name, contributions, atLeast) => {
+			for (let from = 0; from < contributions.length; from++) {
+				const rotated = [
+					...contributions.slice(from),
+					...contributions.slice(0, from),
+				];
+				const result = stackModifiers(rotated);
+				expect('error' in result ? null : result.atLeast).toBe(atLeast);
+				// One floor applies, whichever came first; the rest say why not.
+				const floors = 'error' in result ? [] : result.lines.filter((line) => line.operator === 'upgrade');
+				expect(floors.filter((line) => line.suppressed === null)).toHaveLength(1);
+			}
+		},
+	);
+
 	it.each(cases)('%s', (_name, contributions, override, total) => {
 		for (let from = 0; from < Math.max(1, contributions.length); from++) {
 			const rotated = [
@@ -699,6 +734,32 @@ describe('buildModifierTable', () => {
 			['Wand', 3],
 			['Staff', 5],
 		]);
+	});
+});
+
+describe('a push in play, and its colour', () => {
+	/** One row's push at Strength, carrying whatever `extra` says about the row. */
+	const lines = (extra: Partial<ModifierPush>) => {
+		const table = buildModifierTable(
+			[{ id: 'forms', pushes: () => [{ ...enrol('Bear', 'Brown Bear'), ...extra }] }],
+			[define({ name: 'Bear', target: 'abilities.STR', amount: '4' })],
+		);
+		const result = table('abilities.STR');
+		return 'error' in result ? [] : result.lines;
+	};
+
+	it("carries a push's tint to its line, as it carries inPlay", () => {
+		expect(lines({ inPlay: true, tint: 'orange' }).map(({ inPlay, tint }) => ({ inPlay, tint }))).toEqual([
+			{ inPlay: true, tint: 'orange' },
+		]);
+	});
+
+	it('carries no tint where the push carried none, which is the accent', () => {
+		expect(lines({ inPlay: true }).map((line) => 'tint' in line)).toEqual([false]);
+	});
+
+	it('drops a tint the push carried without inPlay, which means nothing', () => {
+		expect(lines({ tint: 'orange' }).map((line) => [line.inPlay, line.tint])).toEqual([[undefined, undefined]]);
 	});
 });
 
@@ -2072,5 +2133,100 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 			[],
 		)('armour_class');
 		expect('notes' in result).toBe(false);
+	});
+});
+
+/*
+ * **At least** (`docs/features/character-forms.md`): `max(base, highest at
+ * least) + result-phase additions`, where `base` is the formula's own number or
+ * the override plus the value-phase total, exactly as before.
+ */
+describe('an at least where it lands', () => {
+	/** A sheet with its modifier context, so a breakdown can be read too. */
+	function both(
+		components: readonly PublishedComponent[],
+		definitions: readonly ModifierDefinition[] = [],
+	) {
+		const input = {
+			definitions: definitions.map(define),
+			targets: components.map((one) => ({ name: one.id, label: one.id })),
+			published: components.map((one) => ({ name: one.id, label: one.id })),
+			bonusTypes: [],
+			accepting: new Set(components.map((one) => one.id)),
+			marked: new Set(components.map((one) => one.id)),
+		};
+		const env = buildSheetEnv(components, undefined, input);
+		return { env, context: sheetModifiers(input, env) };
+	}
+
+	it('raises a number that came to less', () => {
+		const { env, context } = both([
+			computed('stealth', '2 + mod.self'),
+			enrolling('forms', [enrol('stealth >= 4', 'Wolf')]),
+		]);
+		expect(env.sheet('stealth')).toBe(4);
+		const lines = context.breakdown('stealth').lines;
+		expect(lines).toHaveLength(1);
+		expect(lines[0]?.suppressed).toBeNull();
+	});
+
+	it('leaves a higher number alone, and says the floor did nothing', () => {
+		const { env, context } = both([
+			computed('stealth', '6 + mod.self'),
+			enrolling('forms', [enrol('stealth >= 4', 'Wolf')]),
+		]);
+		expect(env.sheet('stealth')).toBe(6);
+		expect(context.breakdown('stealth').lines[0]?.suppressed).toBe('already higher');
+	});
+
+	it('says so even where the breakdown is asked before the number', () => {
+		// The verdict exists only once the number does, so a breakdown asked cold
+		// evaluates the name first rather than calling the floor applying.
+		const { context } = both([
+			computed('stealth', '6 + mod.self'),
+			enrolling('forms', [enrol('stealth >= 4', 'Wolf')]),
+		]);
+		expect(context.breakdown('stealth').lines[0]?.suppressed).toBe('already higher');
+	});
+
+	it('takes the higher of two, listing the other', () => {
+		const { env, context } = both([
+			computed('stealth', '1 + mod.self'),
+			enrolling('forms', [
+				enrol('stealth >= 3', 'Wolf'),
+				enrol('stealth >= 5', 'Bear'),
+			]),
+		]);
+		expect(env.sheet('stealth')).toBe(5);
+		const lines = context.breakdown('stealth').lines;
+		expect(lines.map((line) => [line.label, line.suppressed])).toEqual([
+			['Wolf', 'a higher at least applies'],
+			['Bear', null],
+		]);
+	});
+
+	it('floors an override plus the value total, and the result phase lands on top', () => {
+		// Override 18 plus value total 1 is 19, floored at 20, plus 2 after: 22.
+		const { env } = both([
+			computed('armour_class', '10 + mod.self'),
+			enrolling('items', [
+				enrol('armour_class = 18', 'Plate'),
+				enrol('armour_class += 1', 'Ring'),
+				enrol('armour_class >= 20', 'Bear'),
+				enrol('armour_class += 2 to result', 'Shield'),
+			]),
+		]);
+		expect(env.sheet('armour_class')).toBe(22);
+	});
+
+	it('agrees with the row outcome about whether it raised the number', () => {
+		const { env, context } = both([
+			computed('stealth', '6 + mod.self'),
+			enrolling('forms', [enrol('stealth >= 4', 'Wolf')]),
+		]);
+		env.sheet('stealth');
+		const [outcome] = context.outcomes('stealth >= 4', { label: 'Wolf', values: {} });
+		expect(outcome?.applies).toBe(false);
+		expect(outcome?.suppressed).toBe('already higher');
 	});
 });

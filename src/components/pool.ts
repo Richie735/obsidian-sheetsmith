@@ -21,7 +21,7 @@ import {
 	bindEditable,
 	EditableHandle,
 } from '../interaction/editable';
-import { GESTURE_COMMIT } from '../interaction/commit-window';
+import { commitWindow } from '../interaction/commit-window';
 import { stepButton } from '../interaction/hold-repeat';
 import { bindScrub } from '../interaction/scrub';
 import { readFenced, writeFenced } from '../parse/fenced';
@@ -1288,25 +1288,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * would be two saves and two rebuilds for one press, and the second
 		 * would race the first's re-render.
 		 */
-		let pending: number | undefined;
-
-		/** Write at the end of the run, unless something ends it sooner. */
-		const commitSoon = (): void => {
-			if (pending !== undefined) view?.clearTimeout(pending);
-			pending = view?.setTimeout(() => {
-				pending = undefined;
-				commitDraft();
-			}, GESTURE_COMMIT);
-		};
-
-		const commitDraft = (): void => {
-			if (pending !== undefined) {
-				view?.clearTimeout(pending);
-				pending = undefined;
-			}
-			// A rebuild replaces the card, and a commit arriving after that would
-			// be writing values read out of detached inputs.
-			if (!input.isConnected) return;
+		const writeDraft = (): void => {
 			const current = input.value.trim();
 			let temp = tempInput?.value.trim() ?? null;
 			// The floor holds however the value arrived. Stepping and absorbing
@@ -1363,6 +1345,13 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			context.onChange(delta);
 		};
 
+		/**
+		 * Write at the end of the run, unless something ends it sooner — every
+		 * path leaving the card flushes through `commitDraft` (`commit-window.ts`).
+		 */
+		const draftWindow = commitWindow(view, input, writeDraft);
+		const commitSoon = draftWindow.soon;
+		const commitDraft = draftWindow.now;
 
 		if (maxText !== null) {
 			const ceiling = reading.createSpan('sheetsmith-pool-ceiling');

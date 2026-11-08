@@ -606,12 +606,21 @@
 }
 
 .sheetsmith-card {
+	/* **Room for a form's tag at the bottom.** The tag straddles the card's
+	   bottom edge with exactly the bottom padding inside, so its height is that
+	   padding plus what hangs into the gap below. Its 2px edge needs 2px more
+	   than `--size-4-2` gives, and every card takes it, tagged or not: a lone
+	   card centres its value between its paddings, so padding only a tagged one
+	   would move the value when a form turns on, and a Card set's cards stay
+	   one even grid (`docs/features/form-tint-colour.md`). */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--size-2-1);
 	padding: var(--size-4-2);
+	padding-block-end: calc(var(--size-4-2) + var(--sheetsmith-in-play-mark-room));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
@@ -892,7 +901,10 @@
    Auto margins on the flex items rather than a wrapper, so the face stays one
    flat structure shared with Card set. The sr-only carriers are absolutely
    positioned, so they are not flex items and must be skipped when finding the
-   last one; and the note is skipped too, so the centred run ends above it. */
+   last one; and the note is skipped too, so the centred run ends above it. The
+   form tag is the same case as a carrier (`docs/features/form-tint-colour.md`):
+   absolutely positioned and appended last, so without it in the list the auto
+   margin went to the tag and a tinted lone card's number dropped about 26px. */
 .sheetsmith-card-single > .sheetsmith-card-label + *,
 .sheetsmith-card-single > :first-child:not(.sheetsmith-card-label) {
 	margin-top: auto;
@@ -900,7 +912,13 @@
 
 .sheetsmith-card-single
 	> :nth-last-child(
-		1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note, .sheetsmith-note-mark)
+		1 of
+			:not(
+				.sheetsmith-sr-only,
+				.sheetsmith-card-note,
+				.sheetsmith-note-mark,
+				.sheetsmith-in-play-mark
+			)
 	) {
 	margin-bottom: auto;
 }
@@ -2466,8 +2484,14 @@ body {
 	   at tile width and centre in the remainder; they now agree the other
 	   way, which is what keeps a pool and a stat side by side the same size
 	   when the layout gave them the same width. */
+	/* Room for a form's tag at the bottom, as every card makes it, and for
+	   the same reason: a Pool stamps no host, so a form's tag lands on this
+	   box, and padding it only while a form is on would move its contents
+	   (`docs/features/form-tint-colour.md`). */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	height: 100%;
 	padding: var(--size-4-2);
+	padding-block-end: calc(var(--size-4-2) + var(--sheetsmith-in-play-mark-room));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
@@ -3315,7 +3339,8 @@ body {
 	   between the row and the bar: on the card's own 4px gap alone, a 32px
 	   button sat practically on the hairline. The bleed to either side and
 	   below is exactly the card's padding, so the two move together. */
-	margin: var(--size-4-2) calc(-1 * var(--size-4-2)) calc(-1 * var(--size-4-2));
+	margin: var(--size-4-2) calc(-1 * var(--size-4-2))
+		calc(-1 * (var(--size-4-2) + var(--sheetsmith-in-play-mark-room, 0px)));
 	background-color: var(--background-modifier-border);
 	/* The positioning context the pending-amount bar is laid against. */
 	position: relative;
@@ -3586,10 +3611,16 @@ a.sheetsmith-notice-action {
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--size-2-2);
+	/* Room for a form's tag at the bottom, as every card makes it, and for
+	   the same reason: a Track stamps no host, so a form's tag lands on this
+	   box, and padding it only while a form is on would move its contents
+	   (`docs/features/form-tint-colour.md`). */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	/* Fills the cell it was placed in, the rule every card on the sheet
 	   follows: a track spanning three columns is three columns of card. */
 	height: 100%;
 	padding: var(--size-4-2);
+	padding-block-end: calc(var(--size-4-2) + var(--sheetsmith-in-play-mark-room));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
@@ -6509,6 +6540,14 @@ a.sheetsmith-notice-action {
 	outline-offset: 2px;
 }
 
+/* A disclosure a pointer focused draws no ring: the ring is for the keyboard,
+   and a chevron pressed with a mouse would otherwise keep one until the next
+   click elsewhere (`record-controls.ts`, `bindDisclosure`). */
+.sheetsmith-view .sheetsmith-record-disclosure.sheetsmith-pointer-focus:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-disclosure.sheetsmith-pointer-focus:focus-visible {
+	outline: none;
+}
+
 /* The name's own track is capped above (`--sheetsmith-record-name`), so all this
    owes is the shrink: without it a long link inside the stack would push the
    track past its cap. */
@@ -7096,6 +7135,13 @@ a.sheetsmith-notice-action {
 	/* The grid cell is the sizing control, so the browser's own corner handle
 	   would be a second one disagreeing with it. */
 	resize: none;
+	/* **It grows with its text, from a two-line floor**
+	   (`docs/features/stat-block-zones.md`, the second small fix): a fixed box
+	   scrolled a paragraph through two lines while it was typed. Up to the
+	   component's box, which scrolls past that. A Record set's body and every
+	   Stat block zone's text box share it. */
+	field-sizing: content;
+	min-height: calc(2lh + 2 * var(--size-2-1) + 2px);
 }
 
 /* Unfocused, the field is the thing underneath the rendered prose: its text
@@ -8443,4 +8489,1702 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-trigger.sheetsmith-trigger {
 	padding: var(--size-2-1) var(--size-4-2);
+}
+
+/* ---------------------------------------------------------------------------
+   Stat block — records drawn as stat blocks, one in play at a time under a
+   picker (`docs/features/character-forms.md`).
+
+   Record set's box, sized by its placement with the content scrolling inside,
+   so it sits beside the sheet's other blocks as one of them rather than a
+   fourth kind of panel (`docs/UI.md` §9). Its controls wear the record's own
+   clothes — the name field, the number field and its ceiling, the modifier
+   glyph, the prose — because they are the same controls (`record-controls.ts`).
+   What is new here is only the arrangement: a header line, a picker line, the
+   stat lines, the action table, and the foot.
+
+   **Its own reflow context**, Passport's precedent: whether the picker and its
+   **Revert** fit on one line is a question about this block's width and not
+   the sheet's, so the block is a named container and breaks at 360px of it.
+   --------------------------------------------------------------------------- */
+.sheetsmith-stat-block {
+	container-type: inline-size;
+	container-name: sheetsmith-stat-block;
+}
+
+/* The label and the uses counter on one line, the rings wrapping under the
+   label first where the line will not hold both — and the panel's own head in
+   play, the title, the uses, the picker and **Revert**, on the same rule. */
+.sheetsmith-stat-block-head,
+.sheetsmith-stat-block-play-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-2-2) var(--size-4-3);
+}
+
+.sheetsmith-stat-block-uses {
+	display: inline-flex;
+	align-items: center;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+/* One focusable control holding every ring, Track's run model: the arrows step
+   and a press on a ring sets the count there. */
+.sheetsmith-stat-block-uses-run {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	border-radius: var(--radius-s);
+}
+
+.sheetsmith-stat-block-uses-run:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-use {
+	cursor: pointer;
+}
+
+/* A count past its ceiling, or past six rings: Pool's reading, the value at
+   full contrast and the ceiling muted. */
+.sheetsmith-stat-block-uses-count {
+	font-variant-numeric: tabular-nums;
+}
+
+.sheetsmith-stat-block-uses-value {
+	color: var(--text-normal);
+}
+
+/* The box and its scroll area, Record set's pair: nothing inside contributes
+   height to the box, and the foot stays outside the scroll. */
+.sheetsmith-stat-block-box {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.sheetsmith-stat-block-scroll {
+	position: relative;
+	flex: 1 1 0;
+	min-height: 0;
+}
+
+.sheetsmith-stat-block-content {
+	position: absolute;
+	inset: 0;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2);
+	border-radius: inherit;
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-stat-block-foot {
+	display: flex;
+}
+
+/* Two ways out of the library side by side, each in the add control's clothes,
+   with a hairline between them where they meet. */
+.sheetsmith-view .sheetsmith-stat-block-foot > .sheetsmith-record-add {
+	flex: 1 1 0;
+	width: auto;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-foot > .sheetsmith-record-add + .sheetsmith-record-add {
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+/* The active form's quiet word follows its name in the name's own track. */
+.sheetsmith-stat-block-named {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	min-width: 0;
+}
+
+/* The name field as wide as the name, so the word sits right after it rather
+   than at the far end of the name's track. At (0,4,0), past the field's own
+   width and its doubled phone rule. */
+.sheetsmith-view .sheetsmith-stat-block-named .sheetsmith-record-name-input.sheetsmith-record-name-input {
+	flex: 0 1 auto;
+	width: auto;
+	min-width: 4ch;
+	field-sizing: content;
+}
+
+/* **A form's name takes In play's title size, open or closed**
+   (`docs/features/stat-block-in-play-polish.md` §3), so the form being edited is
+   titled at the rank its stat block is read under, and pressing the chevron
+   does not resize the name: open and closed differ by the chevron, the open
+   line's rule and the closed line's summary, never by type size. It was the
+   open line's alone, and a name that jumped a step on every press read as a
+   second control. Still the name field: the field and its link layer both,
+   which sit exactly over each other. */
+.sheetsmith-view
+	.sheetsmith-stat-block-record
+	> .sheetsmith-record-summary
+	:is(.sheetsmith-record-name-input, .sheetsmith-record-name-layer) {
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+}
+
+/* The picker takes the line's room and **Revert** follows it, wrapping under
+   it only where both will not fit. */
+.sheetsmith-stat-block-pick {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-2-2) var(--size-4-2);
+}
+
+.sheetsmith-stat-block-menu {
+	position: relative;
+	flex: 0 1 12em;
+	min-width: 0;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-select {
+	width: 100%;
+	/* The tile's own inline padding at the start; the end keeps the record
+	   select's chevron room, so the chevron sits where every record menu's
+	   does (`docs/UI.md` §9, one chevron). */
+	padding-inline-start: var(--size-4-2);
+}
+
+/* Two text buttons, **Revert** and the face's own **Back to play** and **Add
+   action**: the hover surface every control on the sheet takes, and a hairline
+   so a word reads as a control rather than as a label. Padding: the tablet
+   block below. */
+.sheetsmith-view .sheetsmith-stat-block-revert,
+.sheetsmith-view .sheetsmith-stat-block-action {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	align-self: flex-start;
+	min-height: var(--size-4-6);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-revert:hover,
+.sheetsmith-view .sheetsmith-stat-block-action:hover,
+.sheetsmith-view .sheetsmith-stat-block-select:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-revert:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-action:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-select:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-brief:focus-visible,
+.sheetsmith-view .sheetsmith-stat-block-disclosure:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+	box-shadow: none;
+}
+
+.sheetsmith-stat-block-revert-glyph {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+
+.sheetsmith-stat-block-revert-glyph svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* **The head's picker and Revert are one pair in the stat tile's clothes**
+   (`docs/features/stat-block-in-play-polish.md` §1): the tile's border, radius
+   and surface (the tiles' own rule, below, which names both), the hover every
+   card takes, and one height set once, `--input-height`, which both stretch to
+   on the pick's line. Below the shared text-button rule, so Revert's 24px floor
+   gives way here while **Back to play** and **Add action** keep theirs. Still a
+   native select and a button: how they look, not what they are. */
+.sheetsmith-view .sheetsmith-stat-block-select,
+.sheetsmith-view .sheetsmith-stat-block-revert {
+	box-sizing: border-box;
+	align-self: stretch;
+	min-height: var(--input-height);
+}
+
+/* A finger's target, on `docs/UI.md` §7: a text button holds 44px under a
+   coarse pointer, as the steppers it sits beside do, and the picker beside
+   Revert holds it too, so the pair stays one height. */
+@media (pointer: coarse) {
+	.sheetsmith-view .sheetsmith-stat-block-revert,
+	.sheetsmith-view .sheetsmith-stat-block-action,
+	.sheetsmith-view .sheetsmith-stat-block-select {
+		min-height: 44px;
+	}
+}
+
+.sheetsmith-stat-block-empty {
+	margin: 0;
+	color: var(--text-muted);
+}
+
+/* Two forms stacked under one report: each named over its own stats. */
+.sheetsmith-stat-block-form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+/* **Two forms on are told apart by a rule above each one's name**, the head's
+   own rule at the section rhythm, and the name at the title's medium step so
+   it heads its form without competing with the block's title. */
+.sheetsmith-stat-block-form-name {
+	padding-top: var(--size-4-3);
+	border-top: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+}
+
+.sheetsmith-stat-block-stats {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-3);
+}
+
+/* One stat per line: its name in the secondary rank, then its value. The
+   line's floor is the pointer minimum, so lines with and without a field keep
+   one pitch (`docs/UI.md` §7). */
+.sheetsmith-stat-block-line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-2-2) var(--size-4-2);
+	min-height: var(--size-4-5);
+}
+
+.sheetsmith-stat-block-name {
+	flex: 0 0 auto;
+	min-width: 6em;
+}
+
+.sheetsmith-stat-block-number {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-variant-numeric: tabular-nums;
+}
+
+.sheetsmith-stat-block-steps {
+	display: inline-flex;
+	gap: var(--size-2-1);
+}
+
+/* Pool's stepper, scoped past the app's bare button rule at (0,1,1), and
+   transparent like **Revert** beside it. An opaque fill on a button is one forced
+   colors repaints `ButtonFace`, keeping only its alpha, while the glyph sits on
+   the mode's `Canvas` plate — a black box inside a grey button. Transparent,
+   the button is the panel's surface and the glyph takes one colour with it. */
+.sheetsmith-view .sheetsmith-stat-block-step {
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-step:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* A form below 0: the number says it in the error colour, and the
+   sentence under it is the second channel, since a colour alone is never one. */
+.sheetsmith-view .sheetsmith-stat-block-down .sheetsmith-stat-block-number > .sheetsmith-record-input {
+	color: var(--text-error);
+}
+
+.sheetsmith-stat-block-down-note {
+	color: var(--text-error);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The changes as words, one line per part, then the glyph that edits them. */
+.sheetsmith-stat-block-changes {
+	display: flex;
+	flex: 1 1 100%;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.sheetsmith-stat-block-change-none {
+	color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   **The action list is the sheet's own Table**, one table on both faces:
+   `.sheetsmith-table` in `.sheetsmith-table-box` gives it the Table's header
+   clothes, its row rules, its row hover, its framed surface and, under Every
+   form, its add row as the box's foot. What is added here is only what an
+   action list needs that a Table of numbers does not: one `<colgroup>` holding
+   the widths — the name about 30%, a number about five characters, a text
+   column the rest — cells that read from their start and wrap rather than
+   staying on one line, and a number read from its end in tabular figures.
+   --------------------------------------------------------------------------- */
+/* **The attack table wears the tiles' surface, its header a gentle step off
+   it**, so the table reads as one of the stat block's own surfaces beside the
+   HP, Speed and Armour class tiles rather than as lines on the panel. The body
+   is the tiles' fill exactly, `--background-secondary`. The header lays half
+   of `--background-modifier-hover` over it — a translucent black in light and
+   white in dark, so the step goes the same way the theme does (246 to 238
+   light, 40 to 47 dark) — which keeps it under the Table's row hover, a whole
+   `--background-modifier-hover` on the row (to 230 and 54), so a hovered row
+   never reads as the header. Scoped to the stat block: a placed Table keeps
+   its surface. */
+.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions {
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-table thead th {
+	background-image: linear-gradient(
+		color-mix(in srgb, var(--background-modifier-hover) 50%, transparent),
+		color-mix(in srgb, var(--background-modifier-hover) 50%, transparent)
+	);
+}
+
+.sheetsmith-view .sheetsmith-table.sheetsmith-stat-block-table {
+	table-layout: fixed;
+	white-space: normal;
+	line-height: var(--line-height-tight, 1.4);
+}
+
+/* **`break-word`, not `anywhere`**: a cell breaks a word only where nothing
+   else fits, so `[[Claws (Brown Bear)|Claws]]` breaks at its spaces rather
+   than mid-word. `anywhere` was the min-content answer, and a fixed table
+   layout sets these widths from the `<colgroup>`, never from the content, so
+   it buys nothing here and costs every long name its word breaks. */
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-name,
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-text {
+	text-align: start;
+	overflow-wrap: break-word;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-action-number {
+	text-align: end;
+	font-variant-numeric: tabular-nums;
+}
+
+/* A row's name is its row header, read as the Table's name column reads: the
+   body's own weight and colour, the name itself in bold inside it. */
+.sheetsmith-view .sheetsmith-stat-block-table tbody .sheetsmith-stat-block-action-name {
+	font-weight: var(--font-normal);
+	color: var(--text-normal);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-table tbody .sheetsmith-stat-block-action-name > strong {
+	font-weight: var(--font-semibold);
+}
+
+/* **Under Every form the same table holds fields**, each with a hairline at
+   rest drawn inside the cell's padding — the cell's padding is the Table's
+   less the field's padding and border — so a field's text sits exactly where
+   In play's text sits and the two faces read as one table, while a cell still
+   reads as a field to type in. Speed's field takes the same treatment. */
+.sheetsmith-view .sheetsmith-stat-block-actions-editing .sheetsmith-stat-block-table td {
+	padding: calc(var(--size-2-2) - var(--size-2-1) - 1px) calc(var(--size-4-2) - var(--size-2-2) - 1px);
+}
+
+/* The delete column is drawn on both faces so the two tables share one width;
+   in play its cells are empty and take no padding. */
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-remove-cell:empty {
+	padding: 0;
+}
+
+/* At (0,4,0), past the record field's own doubled width rule, which a cell
+   has to fill rather than keep, and with the hairline at rest. **A features
+   entry's name and usage take the same rule by selector list**, so the edit
+   face has one field treatment from the attack table down through the
+   entries (`docs/features/stat-block-zones.md`). */
+.sheetsmith-view .sheetsmith-stat-block-table .sheetsmith-stat-block-cell.sheetsmith-record-input,
+.sheetsmith-view .sheetsmith-stat-block-entry-line .sheetsmith-stat-block-cell.sheetsmith-record-input {
+	width: 100%;
+	min-width: 3ch;
+	border-color: var(--background-modifier-border);
+	text-align: start;
+}
+
+.sheetsmith-view
+	.sheetsmith-stat-block-table
+	.sheetsmith-stat-block-action-number
+	.sheetsmith-stat-block-cell.sheetsmith-record-input {
+	text-align: end;
+	font-variant-numeric: tabular-nums;
+}
+
+/* A one-line field that wraps: one row tall, growing with its text, so a cell
+   shows the whole of "1d8+4 piercing" at a phone's width rather than clipping
+   it, and the table never scrolls sideways. One control height, padding and
+   weight for every cell, the name included, which is a field like its
+   neighbours and so not bold. */
+.sheetsmith-view textarea.sheetsmith-stat-block-cell.sheetsmith-record-input {
+	display: block;
+	min-height: calc(var(--font-ui-small) * 1.4 + 2 * var(--size-2-1) + 2px);
+	height: auto;
+	padding: var(--size-2-1) var(--size-2-2);
+	overflow: hidden;
+	resize: none;
+	field-sizing: content;
+	font-family: inherit;
+	font-size: inherit;
+	font-weight: var(--font-normal);
+	line-height: var(--line-height-tight, 1.4);
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+.sheetsmith-stat-block-col-name {
+	width: 30%;
+}
+
+.sheetsmith-stat-block-col-number {
+	width: calc(5ch + 2 * var(--size-4-2));
+}
+
+.sheetsmith-stat-block-col-remove {
+	width: calc(var(--sheetsmith-inline-control, 1.6em) + 2 * var(--size-2-2));
+}
+
+/* **A text stat takes the room its row has, down to about 8em**, so at a
+   phone's width it keeps its row beside a ceilinged number's reading and
+   steppers rather than dropping under them — Speed beside HP, on both faces —
+   and grows up to about 20em where there is more. The vital is what the strip
+   wraps, so the floor and the growth are its; the field fills it. Counted in
+   the field's own size, `--font-ui-small`, since the vital itself is not set
+   in it. The record field's 14ch cap is a group name's, and a beast's speed is
+   a phrase, so the field's own rule is at (0,5,0), past that cap. */
+.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text) {
+	min-width: calc(8 * var(--font-ui-small));
+}
+
+.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text) > .sheetsmith-stat-block-vital-value {
+	align-self: stretch;
+}
+
+.sheetsmith-view
+	.sheetsmith-record-input.sheetsmith-record-input.sheetsmith-record-input-text.sheetsmith-stat-block-text {
+	flex: 1 1 auto;
+	width: 100%;
+	min-width: 0;
+	max-width: none;
+	/* A hairline at rest, the action cells' own, so the face has one field
+	   treatment and a text vital reads as a field rather than as printed words
+	   in its tile. */
+	border-color: var(--background-modifier-border);
+}
+
+.sheetsmith-stat-block-remove-cell {
+	width: var(--sheetsmith-inline-control);
+}
+
+/* The prose behind its disclosure, Record set's body without the indent its
+   summary line gives it there. */
+.sheetsmith-stat-block-prose {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-disclosure {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	align-self: flex-start;
+	border: none;
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+
+.sheetsmith-stat-block-disclosure-glyph {
+	display: inline-flex;
+}
+
+.sheetsmith-stat-block-disclosure-glyph svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-record-body.sheetsmith-stat-block-body {
+	margin: 0;
+}
+
+/* Every form, the library: one line each, its stat block under it when open. */
+.sheetsmith-stat-block-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-stat-block-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-2-2) var(--size-2-2) var(--size-4-2)
+		calc(var(--size-2-2) + var(--sheetsmith-record-indent, 1.6em));
+}
+
+/* A quiet word after the active form's name, in the secondary rank. */
+.sheetsmith-stat-block-tag {
+	flex: 0 0 auto;
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+
+@container sheetsmith-stat-block (max-width: 360px) {
+	/* **An open form takes the whole width on a phone**
+	   (`docs/features/stat-block-zones.md`, the third small fix): the record
+	   indent that lines the detail up under the name squeezes the tiles and the
+	   tables here, so the detail starts at the box's own padding. The chevron
+	   stays on the summary line. */
+	.sheetsmith-stat-block-detail {
+		padding-inline-start: 0;
+	}
+
+	/* The picker takes a line of its own under the title; **Revert** follows on
+	   it where both fit. */
+	/* Past the head's own rule, (0,2,0) and later in the file, or its
+	   `flex: 0 1 auto` keeps the picker on the title's line below 360px. */
+	.sheetsmith-stat-block .sheetsmith-stat-block-play-head .sheetsmith-stat-block-pick {
+		flex-basis: 100%;
+	}
+
+	.sheetsmith-stat-block-menu {
+		flex: 1 1 auto;
+	}
+
+	/* Each stat on its own line: the name over its value. */
+	.sheetsmith-stat-block-name {
+		flex-basis: 100%;
+	}
+
+	.sheetsmith-stat-block-table {
+		table-layout: fixed;
+	}
+
+	.sheetsmith-stat-block-table td,
+	.sheetsmith-stat-block-table th {
+		overflow-wrap: break-word;
+	}
+}
+
+/* A use left is a filled ring, and forced colors repaints an author fill to
+   the page, so every ring read hollow and the counter said none were left. A
+   system fill, as a lit Track segment takes: `SelectedItem` is a keyword the
+   mode honours, and the ring holds no text, so there is no backplate to fight
+   and no `forced-color-adjust` is needed (`docs/UI.md` §6). */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-stat-block-use.sheetsmith-level-ring-on {
+		border-color: SelectedItem;
+		background-color: SelectedItem;
+	}
+}
+
+@media (prefers-contrast: more) {
+	.sheetsmith-view .sheetsmith-stat-block-action {
+		border-color: var(--text-muted);
+	}
+}
+
+/* ---------------------------------------------------------------------------
+   **In play is drawn for reading, as a small character sheet**
+   (`docs/features/character-forms.md`, The panel): a head ruled off as the
+   block's title, the vitals as Card-look tiles, and the changes, the actions
+   and the prose each the sheet's label-over-box pair — a heading at the
+   component label's rank over a box, no divider. One rhythm between sections,
+   `--size-4-3`, and the type scale's steps: the title at `--font-ui-large`
+   bold, a vital's number at the card value's size, a text vital at
+   `--font-ui-medium`, the body at `--font-ui-small`, a heading at the
+   component label's rank.
+   --------------------------------------------------------------------------- */
+.sheetsmith-stat-block-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	color: var(--text-normal);
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+	line-height: var(--line-height-tight, 1.3);
+}
+
+.sheetsmith-stat-block-title-none {
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
+.sheetsmith-stat-block-play-head .sheetsmith-stat-block-pick {
+	flex: 0 1 auto;
+	flex-wrap: nowrap;
+	/* The picker and Revert stretch to one height, so a label that grows one
+	   grows both. */
+	align-items: stretch;
+}
+
+/* **The head is the block's title**, ruled off from the stat block under it as
+   a stat block's name is, with the rule the Table's rows use and the section
+   rhythm on both sides of it: `--size-4-3` above the rule, and below it the
+   content's own gap opened to the same `--size-4-3`, so the rule sits in the
+   rhythm rather than crowding the first tile. Under Every form an open form's
+   line is its head, ruled the same. */
+.sheetsmith-stat-block-play-head,
+.sheetsmith-stat-block-record > .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true']) {
+	padding-bottom: var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.sheetsmith-stat-block-play-head {
+	margin-bottom: calc(var(--size-4-3) - var(--size-4-2));
+}
+
+.sheetsmith-stat-block-record > .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true']) {
+	margin-bottom: var(--size-4-3);
+}
+
+/* **The form's colour is the head's rule** (`docs/features/stat-block-in-play-polish.md`
+   §2): with one form on, the head carries its word and its rule is 2px in the
+   form's edge, the 70% mix that outlines every box the form changed, so the
+   line under its name and those outlines are one colour — the accent's too,
+   where the layout chose none. **A rule rather than the block's edge**,
+   because an outline round a box says a form changed that box. With two on,
+   each name row's rule above it takes its own form's colour and the head's
+   stays the plain hairline, since it names both. The extra pixel comes out of
+   the padding beside it, so nothing under the rule moves when a form turns on.
+   (0,2,0), past the more-contrast block's `--text-muted`, which the edge
+   already clears at 3:1 in every colour. */
+.sheetsmith-stat-block-play-head[data-sheetsmith-tint] {
+	padding-bottom: calc(var(--size-4-3) - 1px);
+	border-bottom: 2px solid var(--sheetsmith-tint-edge);
+}
+
+.sheetsmith-stat-block-form-name[data-sheetsmith-tint] {
+	padding-top: calc(var(--size-4-3) - 1px);
+	border-top: 2px solid var(--sheetsmith-tint-edge);
+}
+
+/* **With two on, the first form's rule sits under the report's box**, whose
+   own edge 8px above it read as a double rule, where the second's sits under
+   text whose line keeps air below its letters. So the first takes
+   `--size-4-1` more above it and the two read as the same gap. */
+.sheetsmith-stat-block-report + .sheetsmith-stat-block-form:has(> .sheetsmith-stat-block-form-name) {
+	margin-top: var(--size-4-1);
+}
+
+/* Every form in play starts under the head on the same rhythm as its sections. */
+.sheetsmith-stat-block-form {
+	gap: var(--size-4-3);
+}
+
+/* **The vitals are stat tiles in the Card's look**: each a box with the
+   card's border, radius, surface and padding, its label above at the card
+   label's rank and its number at the card value's size, bold, in tabular
+   figures. The tiles share a row and wrap, at the gap a Card set keeps between
+   its cards, and stretch to one height. A text vital is a phrase rather than a
+   number, so it reads at the title's medium size rather than the headline's. */
+.sheetsmith-stat-block-vitals {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--size-4-2);
+}
+
+.sheetsmith-stat-block-vital {
+	display: flex;
+	/* The tiles share the row and a wrapped tile takes the whole of its own.
+	   The floor is what a tile's label needs whole — "ARMOUR CLASS" at the
+	   label's tracking, about 117px with the padding — so a third tile that
+	   cannot keep its label wraps to a line of its own rather than clipping. */
+	flex: 1 1 calc(9 * var(--font-ui-small));
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-2-1);
+	min-width: 0;
+	padding: var(--size-4-2);
+	text-align: center;
+}
+
+/* **The stat tile's clothes, written once**: the tiles, the head's picker and
+   Revert, and a brief with no form on wear one border, one radius and one
+   surface (`docs/features/stat-block-in-play-polish.md` §1, §4), so the three
+   cannot drift apart (PATTERNS §1, share the application). Each selector keeps
+   its own weight: the pair's and the brief's (0,2,0) beat the app's button and
+   select rules and, by coming later, the shared text-button rule's transparent
+   fill and the record select's hairline. A brief's 2px bottom rule overrides
+   one side below, and every hover is (0,3,0) and wins. */
+.sheetsmith-stat-block-vital,
+.sheetsmith-view .sheetsmith-stat-block-select,
+.sheetsmith-view .sheetsmith-stat-block-revert,
+.sheetsmith-view .sheetsmith-stat-block-brief {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* **The values sit on one baseline across the row.** Every tile stacks from
+   its top — the label, the same gap, then the value line — and the value line
+   is one block at the card value's size, so its first baseline falls at the
+   same height in every tile whatever the value is: a number, a ceilinged
+   number whose steppers hang below the line, or a phrase set smaller inside
+   it, which sits on the bigger line's baseline rather than being centred. */
+.sheetsmith-stat-block-vital-value {
+	display: block;
+	flex: none;
+	color: var(--text-normal);
+	font-size: var(--sheetsmith-card-value-size);
+	font-weight: var(--font-bold);
+	/* `normal`, which a field cannot go below, so a number in a field and a
+	   number in text make the same line. */
+	line-height: normal;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.sheetsmith-stat-block-vital.sheetsmith-stat-block-vital-text
+	> .sheetsmith-stat-block-vital-value
+	> :is(span.sheetsmith-stat-block-vital-text, .sheetsmith-stat-block-text) {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	line-height: var(--line-height-tight, 1.3);
+}
+
+/* A number field in a tile takes the tile's value type: the record field's
+   own chrome and gestures, at the headline's size, centred; its ceiling, `/ 34`,
+   muted at the title's size, Pool's reading; the steppers on a line of their
+   own under it, so the tile wraps rather than widening at a phone's width. */
+.sheetsmith-stat-block-vital .sheetsmith-stat-block-number {
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: center;
+	gap: var(--size-2-1) var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-vital .sheetsmith-stat-block-number > .sheetsmith-record-input {
+	width: auto;
+	min-width: 2ch;
+	/* No block padding, so the digits sit on the value line's baseline as a
+	   read-only number does rather than a field's padding lower. */
+	padding-block: 0;
+	/* Its transparent border, which hover and focus colour, is pulled back out
+	   of the line so it does not push the digits a pixel lower. */
+	margin-block: -1px;
+	field-sizing: content;
+	font-size: inherit;
+	font-weight: inherit;
+	line-height: inherit;
+	text-align: center;
+}
+
+.sheetsmith-stat-block-vital .sheetsmith-pool-ceiling {
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-normal);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-vital .sheetsmith-pool-ceiling .sheetsmith-record-input {
+	width: auto;
+	min-width: 2ch;
+	field-sizing: content;
+	font-size: inherit;
+	color: inherit;
+}
+
+.sheetsmith-stat-block-vital .sheetsmith-stat-block-steps {
+	flex-basis: 100%;
+	justify-content: center;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-normal);
+}
+
+
+
+.sheetsmith-stat-block-vital-text {
+	color: var(--text-normal);
+	overflow-wrap: anywhere;
+}
+
+/* **A section reads as a placed component on a small sheet**: its heading at
+   the component label's rank, then its body, the sheet's own label-over-box
+   pair at the gap a placed component keeps between them. No divider: the
+   boxes tell the sections apart. */
+.sheetsmith-stat-block-section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+/* **A section whose body is text is a box in the card's clothes** — its
+   border, its radius, its surface and its padding — so the changes and the
+   traits sit on the panel as a card sits on the sheet. Empty, it draws nothing,
+   as when every change is a vital. */
+.sheetsmith-stat-block-panel {
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-stat-block-panel:empty {
+	display: none;
+}
+
+/* A closed disclosure's region is `hidden="until-found"`, which the browser
+   draws as an empty box of its padding and border so find-in-page can still
+   open it: closed, the box gives both up and takes no room. */
+.sheetsmith-stat-block-panel[hidden] {
+	padding: 0;
+	border-width: 0;
+}
+
+.sheetsmith-stat-block-section-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-stat-block-section-heading.sheetsmith-component-label {
+	margin: 0;
+}
+
+/* Changes as compact items, one line per component they reach. */
+.sheetsmith-stat-block-section .sheetsmith-stat-block-changes {
+	flex: none;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-stat-block-change-separator {
+	color: var(--text-muted);
+}
+
+.sheetsmith-stat-block-change-item {
+	/* An item is one reading, so the list breaks only at its separators. */
+	white-space: nowrap;
+}
+
+.sheetsmith-stat-block-change-idle {
+	color: var(--text-muted);
+}
+
+/* **Edit changes**, the edit glyph's visible label under Every form: the glyph
+   and its words as one text button, at the glyph's own height. */
+.sheetsmith-view .sheetsmith-record-modifier.sheetsmith-stat-block-edit-changes {
+	width: auto;
+	gap: var(--size-2-1);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-view .sheetsmith-record-modifier.sheetsmith-stat-block-edit-changes:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* A closed form's vitals on its own line in the library: quiet, one line. */
+.sheetsmith-stat-block-summary {
+	min-width: 0;
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The prose in its box, which is what makes it the disclosure's own now; no
+   indent beside it. */
+.sheetsmith-stat-block-section > .sheetsmith-record-body.sheetsmith-stat-block-body {
+	margin-inline-start: 0;
+}
+
+.sheetsmith-stat-block-section > .sheetsmith-stat-block-disclosure {
+	color: var(--text-muted);
+}
+
+/* The stat block's text buttons take their padding here, past the tablet rule,
+   on the block above's doubled-class shape — and **Edit changes**, which is the
+   modifier glyph with words, at (0,3,0) past the glyph's own zero padding. */
+.sheetsmith-view .sheetsmith-record-modifier.sheetsmith-stat-block-edit-changes {
+	padding: 0 var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-revert.sheetsmith-stat-block-revert,
+.sheetsmith-view .sheetsmith-stat-block-action.sheetsmith-stat-block-action {
+	padding: var(--size-2-1) var(--size-4-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-disclosure.sheetsmith-stat-block-disclosure {
+	padding: var(--size-2-1) 0;
+}
+
+/* ---------------------------------------------------------------------------
+   A form's body zones (`docs/features/stat-block-zones.md`), drawn by
+   `components/stat-block-zones.ts`. Every zone is the label-over-content pair
+   the sections already are; what is new is a features zone's entries, the
+   drift, and the picture.
+   --------------------------------------------------------------------------- */
+
+/* **One entry per block, a short step apart**, each its own markdown as the
+   note writes it, so the name runs in as a printed stat block reads. */
+.sheetsmith-stat-block-zone-features > .sheetsmith-stat-block-section-body,
+.sheetsmith-stat-block-entries {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-stat-block-entry,
+.sheetsmith-stat-block-zone-markdown {
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight, 1.4);
+}
+
+.sheetsmith-stat-block-entry p,
+.sheetsmith-stat-block-zone-markdown p {
+	margin: 0 0 var(--size-2-1);
+}
+
+.sheetsmith-stat-block-entry p:last-child,
+.sheetsmith-stat-block-zone-markdown p:last-child {
+	margin-bottom: 0;
+}
+
+.sheetsmith-stat-block-entry ul,
+.sheetsmith-stat-block-zone-markdown ul {
+	margin: 0 0 var(--size-2-1);
+	padding-inline-start: 1.4em;
+}
+
+/* Under Every form, an entry is a line of name, usage and delete, its text in
+   the card's clothes under it. */
+.sheetsmith-stat-block-entry-editing {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-stat-block-entry-line {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name,
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+	text-align: start;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-weight: var(--font-semibold);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+	flex: 0 1 7em;
+	min-width: 4em;
+}
+
+/* **Add entry** in the Table's add-row clothes, its own foot rather than a
+   table's, so it takes the rule above it and nothing else. */
+.sheetsmith-view .sheetsmith-table-add-button.sheetsmith-stat-block-add-entry {
+	margin-top: 0;
+}
+
+/* **Not in this layout**, beside a drift block's heading, as a muted pill of
+   its own rather than in the heading's rank: in that rank's capitals and
+   tracking it read as more of the heading (*REACTIONS NOT IN THIS LAYOUT*).
+   Sentence case, the UI's own size, a border so forced colors keeps its edge,
+   and theme variables only (`docs/UI.md` §1). The one sentence under the block
+   follows. */
+.sheetsmith-stat-block-drift-tag {
+	flex: 0 0 auto;
+	padding: 0 var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+	letter-spacing: normal;
+	line-height: 1.5;
+	text-transform: none;
+}
+
+.sheetsmith-stat-block-drift-note {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* **A form's picture in play**: a square three times the title's size at the
+   title row's inline start, on the tile surface, the picture contained so it is
+   never cropped and never distorted. Read-only here; it is set under Every form. */
+.sheetsmith-stat-block-thumb {
+	position: relative;
+	flex: 0 0 auto;
+	width: calc(3 * var(--font-ui-large));
+	aspect-ratio: 1;
+	overflow: hidden;
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-stat-block-thumb > .sheetsmith-image-frame {
+	padding: 0;
+	cursor: default;
+}
+
+/* A name row with two forms on, and the Tint section's line under Every form:
+   each a row of small marks and words that wraps where a narrow sheet will not
+   hold it. */
+.sheetsmith-stat-block-form-name,
+.sheetsmith-stat-block-tint-line {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+/* The block's problem line under the head, muted: a picture reference that
+   does not draw (no thumbnail, and the painter's own sentence), or a stray tint
+   word (the layout's or a form's sentence naming where to fix it). */
+.sheetsmith-stat-block-problem {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-stat-block-problems:empty {
+	display: none;
+}
+
+/* Under Every form, the whole frame and its field, at a size a picture reads at. */
+.sheetsmith-stat-block-picture-box {
+	position: relative;
+	width: min(100%, 12em);
+	aspect-ratio: 1;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* **The swatch a form's tint is keyed by** (`docs/features/form-tint-colour.md`,
+   question 4): a square of the small UI size, filled solid in the tint's edge
+   colour, which clears 3:1 on every colour (the form tint's block below). Beside
+   a form's name in the In play head and beside the Tint dropdown under Every
+   form; it takes no pointer and no focus, and forced colors hides it, since a
+   square repainted in a system colour says nothing. */
+.sheetsmith-stat-block-tint-swatch {
+	flex: 0 0 auto;
+	width: var(--font-ui-small);
+	height: var(--font-ui-small);
+	border-radius: var(--radius-s);
+	background-color: var(--sheetsmith-tint-edge);
+	pointer-events: none;
+}
+
+/* **With no form on, In play offers each form as a brief**
+   (`docs/features/stat-block-in-play-polish.md` §4; `components/stat-block-briefs.ts`):
+   a wrapping grid of buttons at the tiles' gap, each at least 240px (or the
+   whole row where the row is narrower), so one form draws one brief at the
+   track's width rather than a bar across the box, and many fill the row, wrap
+   and scroll with the face. px, since what has to fit is a row of tiles in
+   fixed-px type (`docs/UI.md` §5). A list, so its markers go. */
+.sheetsmith-stat-block-briefs {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+	gap: var(--size-4-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.sheetsmith-stat-block-brief-item {
+	display: flex;
+	min-width: 0;
+}
+
+/* **A brief wears the stat tile's clothes**, its parts stacked from the inline
+   start — the picture and name, the tiles, the changes — and **its bottom edge is a 2px rule in its form's edge colour**: the
+   rule the head draws once that form is on, so the choice previews it. A rule
+   only: a fill and an outline say a box a form *changed*. (0,2,0), past the
+   app's `button:not(.clickable-icon)`, whose height and padding would hold a
+   two-line brief to one input's height; the padding again past the tablet's
+   (0,2,1) below. */
+.sheetsmith-view .sheetsmith-stat-block-brief {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	align-items: stretch;
+	/* From the top, past the app button's centring, so briefs of different
+	   lengths in one row start their names on one line. */
+	justify-content: flex-start;
+	gap: var(--size-4-2);
+	min-width: 0;
+	height: auto;
+	margin: 0;
+	/* The tile's border, radius and surface are the tiles' own rule's; this
+	   is the one side it overrides. */
+	border-bottom: 2px solid var(--sheetsmith-tint-edge);
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-normal);
+	text-align: start;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-brief.sheetsmith-stat-block-brief {
+	padding: var(--size-4-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-block-brief:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* A finger's target, on `docs/UI.md` §7: a brief with no picture, no tiles and
+   no changes is one line, about 43px, so it holds 44px under a coarse pointer. */
+@media (pointer: coarse) {
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		min-height: 44px;
+	}
+}
+
+/* The picture beside the name on one line. */
+.sheetsmith-stat-block-brief-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+/* About 64px: large enough to tell one beast from another, smaller than the
+   head's portrait. */
+.sheetsmith-stat-block-thumb.sheetsmith-stat-block-brief-thumb {
+	width: 64px;
+}
+
+/* The press is the brief's, so the picture in it takes the brief's pointer
+   rather than the head thumbnail's plain arrow. */
+.sheetsmith-stat-block-brief-thumb > .sheetsmith-image-frame {
+	cursor: inherit;
+}
+
+/* The name at the head's title size, so a brief is titled as the form will be
+   once it is on. */
+.sheetsmith-stat-block-brief-name {
+	min-width: 0;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+	line-height: var(--line-height-tight, 1.3);
+	overflow-wrap: anywhere;
+}
+
+/* **The fields as pairs, not tiles** (`docs/features/stat-block-in-play-polish.md`
+   §4): a small muted label over its value at the brief's body size, bold, in a
+   row that wraps. No box, no fill and no columns — a tile inside a tile was
+   noise — and each pair is as wide as what it says, so nothing truncates: a
+   long value wraps inside its pair. Between pairs the width the closed line's
+   ` · ` takes in its type, 10.3px measured at 12px, as the nearest spacing
+   tokens' sum, so a brief and a closed line space one form's figures alike.
+   In play's own tiles keep their spacing. */
+.sheetsmith-stat-block-brief-stats {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: var(--size-2-2) calc(var(--size-4-2) + var(--size-2-1));
+	min-width: 0;
+}
+
+.sheetsmith-stat-block-brief-stat {
+	display: flex;
+	flex-direction: column;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.sheetsmith-stat-block-brief-stat-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-stat-block-brief-stat-value {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-bold);
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+/* The ceiling run in after the number and muted, `22/34`, as the closed line
+   says it, rather than In play's spaced `22 / 34`. */
+.sheetsmith-stat-block-brief-ceiling {
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
+/* **The changes as one line in In play's wording, clamped to two**, muted at
+   the closed line's size: enough to tell a bear from a wolf, and the whole of
+   them under Every form or once the form is on.
+
+   **The prefixed clamp alone, which is the form Chromium draws an ellipsis
+   for**: `display: -webkit-box`, a vertical box orient, `-webkit-line-clamp`
+   and `overflow: hidden`, with no unprefixed `line-clamp` beside it, whose
+   handling has moved between Chromium releases; a line that stops at two with
+   no mark would hide that the list goes on. `text-overflow: ellipsis` is the
+   standard clamp's own switch for the mark, for an engine that reads the clamp
+   that way. Both engines compute
+   the display as `flow-root`; that is the engine's internal box, not a lost
+   declaration. */
+.sheetsmith-stat-block-brief-changes {
+	display: -webkit-box;
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-overflow: ellipsis;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
+/* Below the rules it overrides, since `@container` adds no specificity: under
+   the block's 360px query an entry's name and usage stack, the delete staying
+   on the name's line. */
+@container sheetsmith-stat-block (max-width: 360px) {
+	.sheetsmith-stat-block-entry-line {
+		flex-wrap: wrap;
+	}
+
+	/* One brief a row on a narrow block, its parts stacked as on a wide one. */
+	.sheetsmith-stat-block-briefs {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-name {
+		flex-basis: calc(100% - var(--sheetsmith-inline-control) - var(--size-2-2));
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-entry-line > .sheetsmith-stat-block-entry-usage {
+		order: 1;
+		flex: 1 1 100%;
+	}
+
+}
+
+/* **The mini sheet's edges under more contrast**, as the sheet's own cards
+   take them: every tile, every text section's box, the head's rule and an open
+   form's rule at `--text-muted`. Here, after every base rule it overrides and
+   at their weight, so source order is what wins — the block above the base
+   rules lost to them, which is the regression `styles.test.ts` now holds. */
+@media (prefers-contrast: more) {
+	.sheetsmith-stat-block-vital,
+	.sheetsmith-stat-block-panel,
+	.sheetsmith-stat-block-play-head,
+	.sheetsmith-stat-block-form-name,
+	.sheetsmith-stat-block-record > .sheetsmith-record-summary,
+	.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions,
+	.sheetsmith-view .sheetsmith-stat-block-select,
+	.sheetsmith-view .sheetsmith-stat-block-revert {
+		border-color: var(--text-muted);
+	}
+
+	/* A brief's three plain sides, and not its bottom, which is its form's
+	   2px edge and clears 3:1 on its own. */
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		border-inline-color: var(--text-muted);
+		border-top-color: var(--text-muted);
+	}
+}
+
+/* ---------------------------------------------------------------------------
+   The form tint (`docs/features/character-forms.md`, "The tint";
+   `view/placement-decorations.ts`).
+
+   **The box a form changed takes it, not the number**: a Card's card, each card
+   of a Card set or a Roster whose value the form set, a Table's or a Roster's
+   row, and the placement itself where the component names no box — a Pool, a
+   Track. The number keeps its modified underline, so a reader still sees which
+   value in the box moved. **Only a value a form that is on changed directly**:
+   an item, a condition or a typed one-off draws the underline and nothing else,
+   an at least the number was already past draws nothing, and a value that moved
+   only through its own formula is not tinted. Never the colour alone: the
+   outline is a shape, the pill is words, and the underline says the number
+   moved (WCAG 1.4.1).
+
+   **The fill is laid over the surface the box already wears**, as an image over
+   its own background colour, so a card and a placed box each take the colour
+   into their own surface with one rule. An outline at -1px rather than a border
+   or a shadow, so the box model is untouched and forced colors keeps it.
+   --------------------------------------------------------------------------- */
+
+/* **The colour a form tints in** (`docs/features/form-tint-colour.md`):
+   `TINT_COLOURS` in `types.ts`, one rule per word, each naming a theme
+   variable and never a literal (`docs/UI.md` §1). The pass stamps the word on
+   each box and pill (`data-sheetsmith-tint`), a Stat block on its swatch, and
+   every rule below reads `--sheetsmith-tint`. **The accent behind it is written
+   once**, on the view at no specificity (`:where`), and inherited: an element
+   carrying no word draws exactly what the accent draws, and any word, on the
+   element or an ancestor, wins. `accent` still has its own rule, so a tag in
+   the accent inside a box in a colour is not handed the box's.
+   `styles.test.ts` holds the list and these rules to each other. */
+:where(.sheetsmith-view) {
+	--sheetsmith-tint: var(--interactive-accent);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='accent'] {
+	--sheetsmith-tint: var(--interactive-accent);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='red'] {
+	--sheetsmith-tint: var(--color-red);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='orange'] {
+	--sheetsmith-tint: var(--color-orange);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='yellow'] {
+	--sheetsmith-tint: var(--color-yellow);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='green'] {
+	--sheetsmith-tint: var(--color-green);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='cyan'] {
+	--sheetsmith-tint: var(--color-cyan);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='blue'] {
+	--sheetsmith-tint: var(--color-blue);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='purple'] {
+	--sheetsmith-tint: var(--color-purple);
+}
+
+.sheetsmith-view [data-sheetsmith-tint='pink'] {
+	--sheetsmith-tint: var(--color-pink);
+}
+
+/* **The edge: the colour mixed 70% toward `--text-normal`**, which is the
+   box's outline, a row's inset shadows, the tag's outline and the swatch.
+   Mixing toward the theme's text moves the colour away from the surface in
+   either theme, because the theme defines `--text-normal` against that
+   surface: a light colour darkens in a light theme and lightens in a dark one,
+   and the hue survives at 70%. Raw, yellow outlined a light card at 1.93:1;
+   mixed, the lowest edge is 3.04:1, light yellow against its own tinted card.
+   70% is the lightest mix that clears 3:1 everywhere
+   (`harness/measure-form-tint.mjs` prints the table). Declared on every element
+   that reads it, never on the view: a custom property holding a `var()` is
+   worked out where it is declared, so one declared above the box would mix
+   the view's colour rather than the box's. A row's cells inherit it worked
+   out on the row, which carries the word. */
+.sheetsmith-view .sheetsmith-in-play,
+.sheetsmith-view .sheetsmith-in-play-mark,
+.sheetsmith-view [data-sheetsmith-tint] {
+	--sheetsmith-tint-edge: color-mix(
+		in srgb,
+		var(--sheetsmith-tint) 70%,
+		var(--text-normal)
+	);
+}
+
+.sheetsmith-view .sheetsmith-in-play:not(tr) {
+	background-image: linear-gradient(
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent),
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent)
+	);
+	outline: 1px solid var(--sheetsmith-tint-edge);
+	outline-offset: -1px;
+}
+
+/* **A row is filled and outlined through its cells, once each, the name cell
+   included.** A row's cells paint their own background — the pinned name above
+   all, which sits on its own layer — so a fill or an outline on the row itself
+   showed through some cells and not others: the value cells took the row's
+   layer and their own, the name cell neither the row's layer nor its outline.
+   So the row draws nothing, and every cell takes one fill layer and its share
+   of one outline, as inset shadows — top and bottom on every cell, the start
+   edge on the first and the end edge on the last — which move nothing. */
+.sheetsmith-view tr.sheetsmith-in-play > th,
+.sheetsmith-view tr.sheetsmith-in-play > td {
+	--sheetsmith-in-play-edge: 1px;
+	background-image: linear-gradient(
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent),
+		color-mix(in srgb, var(--sheetsmith-tint) 12%, transparent)
+	);
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge);
+}
+
+.sheetsmith-view tr.sheetsmith-in-play > :first-child {
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge),
+		inset var(--sheetsmith-in-play-edge) 0 0 var(--sheetsmith-tint-edge);
+}
+
+.sheetsmith-view tr.sheetsmith-in-play > :last-child {
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge),
+		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--sheetsmith-tint-edge);
+}
+
+/* Forced colors drops a shadow, so there the row's outline is its rules: its
+   own bottom rule and the one above it, which is the previous row's bottom, in
+   the mode's highlight across every cell, the name cell included, and a rule
+   at each end. **The form's colour goes with the mode**, as it intends: two
+   forms in two colours look the same here, and the tag's words tell them apart.
+   The swatch, a square the mode would repaint in one system colour, says
+   nothing there, so it is not drawn. */
+@media (forced-colors: active) {
+	.sheetsmith-view tr.sheetsmith-in-play > th,
+	.sheetsmith-view tr.sheetsmith-in-play > td,
+	.sheetsmith-view tr:has(+ tr.sheetsmith-in-play) > th,
+	.sheetsmith-view tr:has(+ tr.sheetsmith-in-play) > td {
+		border-bottom-color: Highlight;
+	}
+
+	/* A last row drops its rule against the box's own edge; a tinted one keeps
+	   it, past that rule's weight, so the row is closed top and bottom. */
+	.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-in-play:last-child > th,
+	.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-in-play:last-child > td {
+		border-bottom: 1px solid Highlight;
+	}
+
+	/* And its two ends, which the shadows drew: the start edge on the first
+	   cell and the end edge on the last, so the row is closed on all four sides
+	   as the outline closes a card. A border, since forced colors keeps one. */
+	.sheetsmith-view tr.sheetsmith-in-play > :first-child {
+		border-inline-start: 1px solid Highlight;
+	}
+
+	.sheetsmith-view tr.sheetsmith-in-play > :last-child {
+		border-inline-end: 1px solid Highlight;
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-tint-swatch {
+		display: none;
+	}
+
+	/* The head's rule, a two-on name row's and a brief's bottom edge go back
+	   to the plain 1px line the mode repaints, the pixel returned to the
+	   padding: the colour is gone, and the title's words say which form is on. */
+	.sheetsmith-stat-block-play-head[data-sheetsmith-tint] {
+		padding-bottom: var(--size-4-3);
+		border-bottom-width: 1px;
+	}
+
+	.sheetsmith-stat-block-form-name[data-sheetsmith-tint] {
+		padding-top: var(--size-4-3);
+		border-top-width: 1px;
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		border-bottom-width: 1px;
+	}
+
+	/* No fill on the two buttons in the tile's clothes: the mode repaints an
+	   author fill on a button as `ButtonFace`, a grey box beside the picker's
+	   `Canvas` with every label on a black backplate. Transparent keeps its
+	   alpha there, so both sit on the page as the picker does, their border
+	   the mode's. */
+	.sheetsmith-view .sheetsmith-stat-block-revert,
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		background-color: transparent;
+	}
+}
+
+/* **The pill sits on the first tinted box's bottom edge at its inline-end
+   corner, taking no room**: no line is reserved, so a box is the same size
+   with the form on as off and a Card set's row does not grow.
+
+   **Its inside part is exactly the box's bottom padding, whatever the font**
+   (`docs/features/stat-block-zones.md`, the first small fix): moved down by its
+   own height less `--size-4-2`, it puts `--size-4-2` inside the box, the
+   padding every host keeps, and the rest — about 5px — into the 8px gap below,
+   so it can touch no content box and leaves about 3px of the gap. It used to sit
+   on the top edge at the inline-start corner, a third of its height out, and
+   there its clearance was a few pixels of slack against the label's *ink*: 2.1px
+   in the harness, and touching *Armour class* in the app, whose interface font
+   sets capitals higher in the line. A clearance that depends on where a font
+   draws its capitals is not one, so the pill moved to where nothing is drawn: the
+   bottom inline-end corner, clear of the centred value, a card's score pill and
+   the note mark or a Pool's door in the top corner.
+
+   **Sized in the card label's own fixed-pixel token, `--font-ui-smaller`**, not
+   `--font-smallest`, which grows with the sheet's text size while the padding it
+   sits in does not. One line (`line-height: 1`) with 2px of block padding on a
+   box that makes room for it. It takes the pointer, so a clipped name's reveal
+   (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over a
+   control.
+
+   **The form's colour at 85%, with no edge, written in black or white,
+   whichever reads better on it** (`docs/features/form-tint-colour.md`, "The
+   tag's text, picked at runtime"). No one text colour clears 4.5:1 on every
+   named colour in both themes, and a pick per colour written here would hold
+   for the default theme alone. So nothing here assumes what the colour is:
+   `placement-decorations.ts` reads the fill and both surfaces it straddles off
+   the computed style, composites, and writes `data-sheetsmith-tag-text`, again
+   on every `css-change`. Black and white are the one place a sheet names a
+   literal colour (UI.md §1): one of the two reaches 4.58:1 on any opaque
+   colour, which the theme's own text and page colours did not. */
+.sheetsmith-view .sheetsmith-in-play-marked:not(tr) {
+	position: relative;
+}
+
+.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'] {
+	position: absolute;
+	inset-block-end: 0;
+	inset-inline-end: var(--size-4-2);
+	z-index: 1;
+	max-width: min(12ch, calc(100% - 2 * var(--size-4-2)));
+	margin: 0;
+	/* Block: 1px, plus half the room its box makes for the tag on either side.
+	   Inline: `--size-2-2` and 2px more, so the letters stand 4px clear of
+	   the 2px inset edge at either side, as they do 1.5px above and below. */
+	padding: calc(1px + var(--sheetsmith-in-play-mark-room, 0px) / 2)
+		calc(var(--size-2-2) + var(--size-2-1));
+	overflow: hidden;
+	border-radius: var(--radius-s);
+	/* The edge more contrast and forced colors draw, mixed 60% rather than the
+	   box's 70%, so it clears 3:1 against the tag's own fill there too. */
+	--sheetsmith-tint-edge: color-mix(
+		in srgb,
+		var(--sheetsmith-tint) 60%,
+		var(--text-normal)
+	);
+	background-color: color-mix(in srgb, var(--sheetsmith-tint) 85%, transparent);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+	line-height: 1;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	/* Down by its own height less the box's bottom padding: that padding
+	   inside, the rest out. Geometry only, so no font moves it onto content.
+	   A card's padding is `--size-4-2` and the room it makes; a placed box
+	   makes none. */
+	transform: translateY(
+		calc(100% - var(--size-4-2) - var(--sheetsmith-in-play-mark-room, 0px))
+	);
+}
+
+/* **A tag naming several forms takes its box's width**, less the padding it
+   is inset by at either end, rather than one name's 12ch
+   (`docs/features/form-tint-colour.md`, "Two forms on by hand"): drawn in the
+   accent, its words are the only thing saying which forms it means, and at
+   12ch *Brown Bear, Wolf* read *Brown Bear, …*. It stays clear of content by
+   geometry whatever its width, since only the bottom padding is inside the box.
+   Not on a row, where it is laid over the name cell and a wider tag would cover
+   the name the row is read by; the reveal answers a clipped one there. */
+.sheetsmith-view
+	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-several:not(.sheetsmith-in-play-mark-inline)[aria-hidden='true'] {
+	max-width: calc(100% - 2 * var(--size-4-2));
+}
+
+/* The text `placement-decorations.ts` measured reading better on the fill as
+   the theme drew it. Unmeasured, the tag keeps `--text-normal`. */
+.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text='black'] {
+	color: black;
+}
+
+.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text='white'] {
+	color: white;
+}
+
+/* **On a Pool the tag sits in the top inline-start corner, inside the box.**
+   A Pool clips its overflow, so the bar's ends follow its corners, and its
+   bottom padding is where the bar runs, so the bottom corner would cut the tag
+   in half and cover the bar's end. The top inline-end corner holds the
+   ceiling's door; the inline-start one holds nothing, and the label is centred. */
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-in-play-mark[aria-hidden='true'] {
+	inset-block-start: var(--size-2-2);
+	inset-block-end: auto;
+	inset-inline-start: var(--size-2-2);
+	inset-inline-end: auto;
+	transform: none;
+}
+
+/* **A row has no free corner**: its start holds the name (and a ring, where
+   the table has one), its end the value. So on a row the pill rides the name
+   cell's inline end, centred on the row, in the slack between the name and the
+   numbers that the name cell takes by design — over the cell, still taking no
+   room. The pinned name cell is `position: sticky`, so it is the pill's
+   containing block already. */
+.sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
+	/* A row's tag is centred over its name cell, so it hangs into no gap and
+	   takes the same room for its 2px edge a card's makes. */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
+	inset-block-start: 50%;
+	inset-block-end: auto;
+	inset-inline-end: var(--size-2-2);
+	transform: translateY(-50%);
+}
+
+/* **Under more contrast the colour survives as the edge alone**: the fills go,
+   the box's outline is 2px in the edge colour (a row's shadows at 2px), and the
+   tag sits on the plain page in `--text-normal`, its 1px edge kept in colour.
+   The edge measures at least 3.30:1 against a card and 3.56:1 against the page
+   in every colour and theme, so it needs no fallback to `--text-muted`. */
+@media (prefers-contrast: more) {
+	.sheetsmith-view .sheetsmith-in-play:not(tr),
+	.sheetsmith-view tr.sheetsmith-in-play > th,
+	.sheetsmith-view tr.sheetsmith-in-play > td {
+		background-image: none;
+	}
+
+	.sheetsmith-view .sheetsmith-in-play:not(tr) {
+		outline-width: 2px;
+		outline-offset: -2px;
+	}
+
+	.sheetsmith-view tr.sheetsmith-in-play > th,
+	.sheetsmith-view tr.sheetsmith-in-play > td {
+		--sheetsmith-in-play-edge: 2px;
+	}
+
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'],
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text] {
+		outline: 2px solid var(--sheetsmith-tint-edge);
+		outline-offset: -2px;
+		background-color: var(--background-primary);
+		color: var(--text-normal);
+	}
+}
+
+/* **Forced colors keeps the tag's edge**, repainted in the mode's text colour,
+   on the mode's own background and text: the fill is the form's colour, which
+   the mode drops, so the edge is what still draws the chip. Below the pill's
+   own rule, which it overrides at the same selector. */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'],
+	.sheetsmith-view .sheetsmith-in-play-mark[aria-hidden='true'][data-sheetsmith-tag-text] {
+		outline: 2px solid CanvasText;
+		outline-offset: -2px;
+		background-color: Canvas;
+		color: CanvasText;
+	}
 }

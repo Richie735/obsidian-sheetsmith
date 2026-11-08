@@ -67,7 +67,9 @@ import {
 	buildModifierTable,
 	enrolmentOutcome,
 	ModifierComponent,
+	ModifierResult,
 	modifierSlot,
+	withFloorVerdict,
 } from './modifiers';
 import {
 	callsFrom,
@@ -225,6 +227,7 @@ export function buildSheetEnv(
 		// comment: the ring it catches crosses several separate `resolveField`
 		// calls, so it must not be reset per evaluation.
 		selfGuard: new Set(),
+		floors: new Map(),
 	};
 	const names = buildSheetScope(components, env);
 	const rows = buildRowTable(
@@ -497,7 +500,16 @@ export function buildSheet(
 	 * the surface depends on which host drew it.
 	 */
 	promote?: (name: string, effect: TypedEffect) => Promise<PromoteResult>,
-): { env: FormulaEnv; modifiers: ModifierContext } {
+): {
+	env: FormulaEnv;
+	modifiers: ModifierContext;
+	/**
+	 * The names whose own formula reads a modifier (`SheetModifiers.marked`),
+	 * which is every name a breakdown can list a line at — so every name the
+	 * sheet's in-play tint can land on (`view/placement-decorations.ts`).
+	 */
+	marked: ReadonlySet<string>;
+} {
 	/*
 	 * The sources come from the *configuration* and never from a note, which is
 	 * SPEC §7's decision: which names accept a modifier, and which changes the
@@ -524,6 +536,7 @@ export function buildSheet(
 	let candidates: ReadonlySet<string> | null = null;
 	return {
 		env,
+		marked: input.marked,
 		modifiers: sheetModifiers(
 			input,
 			env,
@@ -592,6 +605,19 @@ export function sheetModifiers(
 	for (const target of modifiers.published) labels.set(target.name, target.label);
 	for (const target of modifiers.targets) labels.set(target.name, target.label);
 	const label = (name: string): string => labels.get(name) ?? name;
+	/**
+	 * What has been pushed at a name, with its floor's verdict on the line
+	 * (`withFloorVerdict`). A name holding an at least that nothing has evaluated
+	 * yet is evaluated first, through the sheet's own memoised name, because the
+	 * verdict exists only once the number does — and a breakdown or a glyph saying
+	 * a floor applies before anybody knew is the disagreement the record is for.
+	 */
+	const settled = (name: string): ModifierResult => {
+		const result = env.modifiers(name);
+		if ('error' in result || (result.atLeast ?? null) === null) return result;
+		if (env.floors !== undefined && !env.floors.has(name)) env.sheet(name);
+		return withFloorVerdict(result, env.floors?.get(name));
+	};
 	/**
 	 * Why a note aimed at this name will not be shown, or null where it will.
 	 *
@@ -681,7 +707,7 @@ export function sheetModifiers(
 						: noteRefusal(found.fields.target);
 				const withRefusal = refused === null ? {} : { noteLine: refused };
 				if (found.kind === 'noted') {
-					const outcome = enrolmentOutcome(found, (target) => env.modifiers(target), label);
+					const outcome = enrolmentOutcome(found, settled, label);
 					return refused === null
 						? outcome
 						: { ...outcome, applies: false, suppressed: refused };
@@ -706,7 +732,7 @@ export function sheetModifiers(
 					};
 				}
 				return {
-					...enrolmentOutcome(found, (target) => env.modifiers(target), label),
+					...enrolmentOutcome(found, settled, label),
 					...withRefusal,
 				};
 			}),
@@ -730,7 +756,7 @@ export function sheetModifiers(
 			if (!accepts && !(notesHere && candidates().has(name))) {
 				return { lines: [], override: null, total: 0, resultTotal: 0 };
 			}
-			const result = env.modifiers(name);
+			const result = accepts ? settled(name) : env.modifiers(name);
 			const notes =
 				notesHere && result.notes !== undefined && result.notes.length > 0
 					? { notes: result.notes }
@@ -740,6 +766,7 @@ export function sheetModifiers(
 				: {
 						lines: result.lines,
 						override: result.override,
+						...((result.atLeast ?? null) === null ? {} : { atLeast: result.atLeast }),
 						total: result.total,
 						resultTotal: result.resultTotal,
 						...notes,

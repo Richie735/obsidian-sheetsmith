@@ -83,6 +83,7 @@
 import { Setting } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
 import { keyRename, RenameIntent } from '../component-rename-migration';
+import { renderZonesField } from './zones-field';
 import { refusedRename } from './rename-refusal';
 import { getComponent } from '../components';
 import { placedComponentName } from './component-name';
@@ -1001,7 +1002,8 @@ export class ConfigPanel {
 				field.kind === 'entries' ||
 				field.kind === 'track-rows' ||
 				field.kind === 'rows' ||
-				field.kind === 'columns'
+				field.kind === 'columns' ||
+				field.kind === 'zones'
 			) {
 				// List fields are a table of their own, not a Setting row.
 				// Falling through to the text input below would bind a string
@@ -1049,6 +1051,17 @@ export class ConfigPanel {
 							field.addressesEntry,
 						);
 					}
+				} else if (field.kind === 'zones') {
+					renderZonesField(
+						listEl,
+						record,
+						field.key,
+						config.id,
+						this.host.listContext(),
+						// Where a heading lives in a note, declared by the component
+						// rather than known here (`types.ts`, `addressesHeading`).
+						field.addressesHeading,
+					);
 				} else if (field.kind === 'rows') {
 					renderRowsEditor(
 						listEl,
@@ -1160,13 +1173,43 @@ export class ConfigPanel {
 				setting.addDropdown((dropdown) => {
 					for (const option of options) dropdown.addOption(option, option);
 					const current = record[field.key];
-					dropdown.setValue(
-						typeof current === 'string' && options.includes(current)
-							? current
-							: fallback,
-					);
-					dropdown.selectEl.dataset.sheetsmithFocus = configToken(config.id, field.key);
+					const select = dropdown.selectEl;
+					select.dataset.sheetsmithFocus = configToken(config.id, field.key);
+					/*
+					 * **A stored value outside the choices is shown and reported,
+					 * never snapped to the first** (`docs/features/form-tint-colour.md`,
+					 * Errors). A hand-edited layout can hold one, and showing the
+					 * first choice in its place said the layout held something it
+					 * did not — and made choosing that first choice fire nothing,
+					 * since the select already read it. So the stored word is one
+					 * more option, disabled and selected, which makes any choice a
+					 * change, and the message under the field says what to do. It
+					 * is worked out again on every draw, so it survives a rebuild
+					 * by being recomputed, and nothing is written until the author
+					 * chooses: SPEC §4.2's Card rule for a value no longer among its
+					 * options, render it and never snap it, applied to the editor.
+					 */
+					const stray =
+						current === undefined || (typeof current === 'string' && options.includes(current))
+							? null
+							: typeof current === 'string'
+								? current
+								: JSON.stringify(current);
+					if (stray === null) {
+						dropdown.setValue(typeof current === 'string' ? current : fallback);
+					} else {
+						dropdown.addOption(stray, stray);
+						const held = Array.from(select.options).find((option) => option.value === stray);
+						if (held !== undefined) held.disabled = true;
+						dropdown.setValue(stray);
+						showFieldError(
+							select,
+							`"${stray}" is not ${field.optionNoun === undefined ? 'one of the choices' : `a ${field.optionNoun}`}. Choose one to replace it.`,
+							this.host.errors,
+						);
+					}
 					dropdown.onChange((value) => {
+						showFieldError(select, null, this.host.errors);
 						if (value === fallback) {
 							delete record[field.key];
 						} else {

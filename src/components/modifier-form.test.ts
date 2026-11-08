@@ -164,3 +164,52 @@ describe('a note-only effect typed on a row', () => {
 		body.remove();
 	});
 });
+
+describe('the operator a typed effect offers', () => {
+	function form(part: string, operator: 'add' | 'upgrade'): HTMLElement {
+		const body = document.createElement('div');
+		document.body.appendChild(body);
+		const state = modifierFormState([part]);
+		state.open = 0;
+		const effect = { target: 'armour_class', operator, amount: '4' };
+		renderModifierForm(body, state, {
+			label: 'Bear',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({ typed: effect, target: 'armour_class', targetLabel: 'Armour class', applies: true }),
+			],
+			definitions: [],
+			targets: ACCEPTING,
+			published: NOTABLE,
+			noteTargets: NOTABLE,
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: () => undefined,
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: () => undefined,
+			onResize: () => undefined,
+		});
+		return body;
+	}
+	const field = (body: HTMLElement, key: string) =>
+		body.querySelector<HTMLSelectElement>(`[data-sheetsmith-panel-field="${key}"]`);
+
+	it('offers At least beside Adds to and Sets', () => {
+		const body = form('armour_class += 4', 'add');
+		const operator = field(body, 'operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual([
+			'Adds to',
+			'Sets',
+			'At least',
+		]);
+		body.remove();
+	});
+
+	it('takes the phase and the bonus type away on At least, as on Sets', () => {
+		const body = form('armour_class >= 4', 'upgrade');
+		expect((field(body, 'operator') as HTMLSelectElement).value).toBe('upgrade');
+		expect(field(body, 'applies')).toBeNull();
+		expect(field(body, 'bonus-type')).toBeNull();
+		body.remove();
+	});
+});

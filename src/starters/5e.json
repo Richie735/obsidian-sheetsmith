@@ -55,7 +55,7 @@
 		{
 			"name": "Bark Skin",
 			"target": "armour_class",
-			"operator": "override",
+			"operator": "upgrade",
 			"amount": "16",
 			"when": "Active"
 		}
@@ -192,7 +192,7 @@
 					"name": "Charisma"
 				}
 			],
-			"derived": "mod(value)",
+			"derived": "mod(value + mod.self)",
 			"position": {
 				"col": 1,
 				"row": 3,
@@ -263,7 +263,7 @@
 				{
 					"key": "Total",
 					"type": "computed",
-					"formula": "ability + Prof * prof",
+					"formula": "ability + Prof * prof + mod.self",
 					"signed": true,
 					"publish": true
 				}
@@ -499,7 +499,7 @@
 				{
 					"key": "Total",
 					"type": "computed",
-					"formula": "ability + Training * prof",
+					"formula": "ability + Training * prof + mod.self",
 					"signed": true,
 					"publish": true
 				}
@@ -1040,6 +1040,81 @@
 								"width": 5,
 								"height": 5
 							}
+						}
+					]
+				},
+				{
+					"id": "forms",
+					"type": "stat-block",
+					"label": "Forms",
+					"recordName": "Form",
+					"fields": [
+						{
+							"key": "Active",
+							"type": "toggle"
+						},
+						{
+							"key": "HP",
+							"type": "number",
+							"maxSource": "record"
+						},
+						{
+							"key": "Speed",
+							"type": "text"
+						},
+						{
+							"key": "Modifiers",
+							"type": "modifier"
+						}
+					],
+					"exclusive": "Active",
+					"zones": [
+						{
+							"key": "vitals"
+						},
+						{
+							"key": "changes"
+						},
+						{
+							"key": "attacks",
+							"type": "table",
+							"heading": "Attacks",
+							"columns": [
+								{
+									"key": "Attack"
+								},
+								{
+									"key": "Bonus",
+									"type": "number"
+								},
+								{
+									"key": "Damage"
+								}
+							]
+						},
+						{
+							"key": "traits",
+							"type": "text",
+							"heading": "Traits",
+							"collapsed": true
+						}
+					],
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 10
+					},
+					"reset": [
+						{
+							"trigger": "Long rest",
+							"column": "Active",
+							"action": "empty"
+						},
+						{
+							"trigger": "Long rest",
+							"column": "HP",
+							"action": "full"
 						}
 					]
 				}

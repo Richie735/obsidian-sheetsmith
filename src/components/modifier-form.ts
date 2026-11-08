@@ -76,10 +76,13 @@
  */
 
 import {
+	contestsByValue,
 	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierOutcome,
 	ModifierTarget,
+	operatorOf,
+	OPERATORS,
 	phaseOf,
 	PromoteResult,
 	TypedEffect,
@@ -105,6 +108,7 @@ import {
 	modifierPartName,
 } from './modifier-breakdown';
 import { element } from '../ui/element';
+import { OPERATOR_LABELS } from '../en';
 
 /** The one option that is not a definition: the row spells its own effect. */
 const TYPED_OPTION = 'sheetsmith-typed';
@@ -112,11 +116,6 @@ const TYPED_OPTION = 'sheetsmith-typed';
 /** The option carrying a stored name the layout declares nothing for. */
 const STRAY_OPTION = 'sheetsmith-stray';
 
-/** What the two operators are called, which is what an author picks. */
-const OPERATOR_LABELS: Record<'add' | 'override', string> = {
-	add: 'Adds to',
-	override: 'Sets',
-};
 
 /** What a fresh typed part starts as: a target to choose, and nothing else. */
 function blankEffect(): TypedEffect {
@@ -713,10 +712,10 @@ function renderFields(
 		 */
 		const base = stored === null ? state.draft : shown;
 		const effect: TypedEffect = { ...base, ...next };
-		if (effect.operator === 'override') {
+		if (contestsByValue(effect.operator)) {
 			delete effect.bonusType;
-			// An override is in the result phase by construction, so a phase stored
-			// beside it would be a second answer to a settled question.
+			// An override or an at least is in the result phase by construction, so
+			// a phase stored beside it would be a second answer to a settled question.
 			delete effect.applies;
 		}
 		// The value phase is the absent key, so choosing it clears rather than
@@ -974,7 +973,7 @@ function renderFields(
 	});
 
 	const operator = select('Operator', 'operator');
-	for (const id of ['add', 'override'] as const) {
+	for (const id of OPERATORS) {
 		option(operator, id, OPERATOR_LABELS[id]);
 	}
 	operator.value = shown.operator;
@@ -988,7 +987,7 @@ function renderFields(
 		isNoteOnly({ amount: draftAmount, note: shown.note ?? '' });
 	operator.disabled = !editable || noteOnlyNow(shown.amount);
 	operator.addEventListener('change', () => {
-		put({ operator: operator.value === 'override' ? 'override' : 'add' });
+		put({ operator: operatorOf({ operator: operator.value }) });
 	});
 
 	/*
@@ -1026,7 +1025,7 @@ function renderFields(
 	 * are what a layout file stores, and neither is a thing a player has ever seen
 	 * on their sheet. What they have seen is a score with a modifier over it.
 	 */
-	if (shown.operator !== 'override') {
+	if (!contestsByValue(shown.operator)) {
 		const phase = select('Applies to', 'applies');
 		option(phase, 'value', 'The value');
 		option(phase, 'result', 'The derived number');
@@ -1046,7 +1045,7 @@ function renderFields(
 	 * contested by type, so a select there would offer a choice with no arithmetic
 	 * behind it.
 	 */
-	if (shown.operator !== 'override') {
+	if (!contestsByValue(shown.operator)) {
 		const bonus = select('Bonus type', 'bonus-type');
 		option(bonus, '', 'Untyped');
 		for (const name of options.bonusTypes) option(bonus, name, name);
