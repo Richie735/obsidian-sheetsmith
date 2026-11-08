@@ -1774,34 +1774,54 @@ describe('the colour a form tints in', () => {
 		});
 	});
 
-	describe('the swatch in the In play head', () => {
-		const swatches = (el: HTMLElement) =>
-			Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-play-head .sheetsmith-stat-block-tint-swatch, .sheetsmith-stat-block-form-name .sheetsmith-stat-block-tint-swatch'));
+	describe('the colour on the In play head\'s rule', () => {
+		const headSwatches = (el: HTMLElement) =>
+			el.querySelectorAll(
+				'.sheetsmith-stat-block-play-head .sheetsmith-stat-block-tint-swatch, .sheetsmith-stat-block-form-name .sheetsmith-stat-block-tint-swatch',
+			);
+		const head = (el: HTMLElement) => el.querySelector('.sheetsmith-stat-block-play-head') as HTMLElement;
+		const word = (el: Element | null) => el?.getAttribute('data-sheetsmith-tint') ?? null;
 
-		it('is drawn before the form name where the layout chose a tint, and hidden from assistive tech', () => {
-			const { el } = render(ORANGE_BEAR, TINTED);
-			const found = swatches(el);
-			expect(found.map((one) => one.getAttribute('data-sheetsmith-tint'))).toEqual(['orange']);
-			expect(found[0]?.getAttribute('aria-hidden')).toBe('true');
-			expect(found[0]?.nextElementSibling?.classList.contains('sheetsmith-stat-block-title')).toBe(true);
-		});
-
-		it('is drawn for a block colour alone, or the switch alone', () => {
-			expect(swatches(render(BODY, { tint: 'red' }).el).length).toBe(1);
-			document.body.replaceChildren();
-			expect(swatches(render(BODY, { tintPerRecord: true }).el).length).toBe(1);
-		});
-
-		it('is not drawn where the layout chose nothing', () => {
-			expect(swatches(render(BODY).el)).toEqual([]);
-		});
-
-		it('is one per form row with two on, each its own colour', () => {
+		it('draws no swatch in the head or a name row, in any state', () => {
 			const two = ORANGE_BEAR.replace('Active: no', 'Active: yes');
-			const found = swatches(render(two, TINTED).el);
-			expect(found.map((one) => one.getAttribute('data-sheetsmith-tint'))).toEqual(['orange', 'green']);
-			for (const one of found) {
-				expect(one.nextElementSibling?.classList.contains('sheetsmith-stat-block-form-title')).toBe(true);
+			const none = BODY.replace('Active: yes', 'Active: no');
+			for (const [body, over] of [
+				[ORANGE_BEAR, TINTED],
+				[BODY, { tint: 'red' }],
+				[BODY, {}],
+				[two, TINTED],
+				[none, TINTED],
+			] as const) {
+				expect(headSwatches(render(body, over).el)).toHaveLength(0);
+				document.body.replaceChildren();
+			}
+		});
+
+		it('stamps the one form\'s colour on the head, its own Tint, else the block\'s, else the accent', () => {
+			expect(word(head(render(ORANGE_BEAR, TINTED).el))).toBe('orange');
+			expect(word(head(render(BODY, TINTED).el))).toBe('green');
+			// The accent too, where the layout chose nothing: the boxes tint in it.
+			expect(word(head(render(BODY).el))).toBe('accent');
+		});
+
+		it('stamps each form row with its own colour with two on, and leaves the head plain', () => {
+			const two = ORANGE_BEAR.replace('Active: no', 'Active: yes');
+			const { el } = render(two, TINTED);
+			expect(word(head(el))).toBeNull();
+			expect(Array.from(el.querySelectorAll('.sheetsmith-stat-block-form-name')).map(word)).toEqual([
+				'orange',
+				'green',
+			]);
+		});
+
+		it('leaves the head plain with no form on', () => {
+			expect(word(head(render(BODY.replace('Active: yes', 'Active: no'), TINTED).el))).toBeNull();
+		});
+
+		it('stamps nothing on the uses rings or the picker, which stay the accent', () => {
+			const { el } = render(ORANGE_BEAR, TINTED);
+			for (const inside of Array.from(head(el).querySelectorAll('*'))) {
+				expect(inside.hasAttribute('data-sheetsmith-tint'), inside.className).toBe(false);
 			}
 		});
 	});

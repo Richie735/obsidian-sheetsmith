@@ -5097,3 +5097,25 @@ describe('a stat block table cell\'s wrap (docs/features/stat-block-zones.md)', 
 		for (const rule of cells) expect(rule.body, rule.selector).toMatch(/overflow-wrap:\s*break-word/);
 	});
 });
+
+describe('the stat block In play polish (docs/features/stat-block-in-play-polish.md)', () => {
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const base = all.filter((rule) => rule.context.length === 0);
+
+	it('gives the first of two forms 4px more above its rule where it follows the report\'s box', () => {
+		const first = base.find(
+			(rule) => rule.selector === '.sheetsmith-stat-block-report + .sheetsmith-stat-block-form:has(> .sheetsmith-stat-block-form-name)',
+		);
+		expect(declarations(first?.body ?? '')).toEqual(['margin-top: var(--size-4-1)']);
+	});
+
+	it('draws the head\'s and a two-on name row\'s rule 2px in the edge, plain again in forced colors', () => {
+		const head = base.find((rule) => rule.selector === '.sheetsmith-stat-block-play-head[data-sheetsmith-tint]');
+		const row = base.find((rule) => rule.selector === '.sheetsmith-stat-block-form-name[data-sheetsmith-tint]');
+		expect(head?.body).toMatch(/border-bottom:\s*2px solid var\(--sheetsmith-tint-edge\)/);
+		expect(row?.body).toMatch(/border-top:\s*2px solid var\(--sheetsmith-tint-edge\)/);
+		const forced = all.filter((rule) => rule.context.includes('@media (forced-colors: active)'));
+		expect(forced.find((rule) => rule.selector === head?.selector)?.body).toMatch(/border-bottom-width:\s*1px/);
+		expect(forced.find((rule) => rule.selector === row?.selector)?.body).toMatch(/border-top-width:\s*1px/);
+	});
+});

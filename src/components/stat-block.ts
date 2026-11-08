@@ -375,15 +375,6 @@ function tintOf(config: StatBlockConfig, record: RecordEntry): TintColour {
 	return own !== null && 'colour' in own ? own.colour : blockTint(config);
 }
 
-/**
- * Whether the layout has chosen a tint at all, which is what draws a swatch in
- * the In play head: a block colour other than the accent, or the switch on. A
- * layout choosing nothing draws nothing new there.
- */
-function choosesTint(config: StatBlockConfig): boolean {
-	return blockTint(config) !== 'accent' || hasTintPerRecord(config);
-}
-
 /** `accent` reads **Accent**: a colour's word as a choice in the dropdown. */
 function tintWord(colour: TintColour): string {
 	return colour.charAt(0).toUpperCase() + colour.slice(1);
@@ -1400,7 +1391,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			if (only !== undefined) {
 				const named = recordLabel(only.record.name, noun);
 				drawThumb(playHead, only.record, named, failures, false);
-				drawHeadSwatch(playHead, only.record);
+				// The head's rule takes the form's colour, the accent included, so
+				// the line under its name and the outline round each box it changed
+				// are one colour (`docs/features/stat-block-in-play-polish.md` §2).
+				playHead.setAttribute(TINT_ATTRIBUTE, tintOf(config, only.record));
 				reportStrayTint(only.record, named, failures, false);
 			}
 			element(
@@ -1474,7 +1468,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (active.length > 1) {
 					const row = element('div', 'sheetsmith-stat-block-form-name', panel);
 					drawThumb(row, record, named, failures, true);
-					drawHeadSwatch(row, record);
+					// Each form's own rule takes its colour; the head names both, so
+					// no one colour is its own and its rule stays plain.
+					row.setAttribute(TINT_ATTRIBUTE, tintOf(config, record));
 					reportStrayTint(record, named, failures, true);
 					element('span', 'sheetsmith-stat-block-form-title', row, named);
 				}
@@ -1687,18 +1683,6 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				...(context.resource === undefined ? {} : { resource: context.resource }),
 				onCommit: () => undefined,
 			});
-		}
-
-		/**
-		 * The swatch keying a form's name in the In play head to the boxes it is
-		 * tinting, drawn after its thumbnail and before its name, and only where
-		 * the layout has chosen a tint: a layout choosing nothing draws nothing
-		 * new in the head. With two on, each name row carries its own, which is
-		 * what says which colour is which form.
-		 */
-		function drawHeadSwatch(row: HTMLElement, record: StatBlockEntry): void {
-			if (!choosesTint(config)) return;
-			tintSwatch(row, tintOf(config, record));
 		}
 
 		/**
@@ -2252,9 +2236,10 @@ function vitalsSummary(
 }
 
 /**
- * A square in a colour's edge, taking no pointer and no focus, and hidden from
- * assistive tech because the words beside it already say the colour or the
- * form. The stylesheet draws it from the attribute, so no inline colour is set.
+ * A square in a colour's edge, previewing the Tint dropdown's choice under Every
+ * form, taking no pointer and no focus, and hidden from assistive tech because
+ * the dropdown beside it already says the colour. The stylesheet draws it from
+ * the attribute, so no inline colour is set.
  */
 function tintSwatch(into: HTMLElement, colour: TintColour): HTMLElement {
 	const swatch = element('span', 'sheetsmith-stat-block-tint-swatch', into);

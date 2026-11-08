@@ -167,8 +167,8 @@ export function applyDecorations(
 	reveal?: (el: HTMLElement) => void,
 ): void {
 	// The colour first, off the boxes the last pass tinted, which the class
-	// still names: a Stat block's swatch carries the attribute too, and is not
-	// this pass's to clear.
+	// still names: a Stat block's head, its name rows, its briefs and its Tint
+	// swatch carry the attribute too, and are not this pass's to clear.
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_BOX}`))) el.removeAttribute(TINT_ATTRIBUTE);
 	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED]) {
 		for (const el of Array.from(root.querySelectorAll(`.${cls}`))) el.classList.remove(cls);

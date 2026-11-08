@@ -9129,6 +9129,35 @@ a.sheetsmith-notice-action {
 	margin-bottom: var(--size-4-3);
 }
 
+/* **The form's colour is the head's rule** (`docs/features/stat-block-in-play-polish.md`
+   §2): with one form on, the head carries its word and its rule is 2px in the
+   form's edge, the 70% mix that outlines every box the form changed, so the
+   line under its name and those outlines are one colour — the accent's too,
+   where the layout chose none. **A rule rather than the block's edge**,
+   because an outline round a box says a form changed that box. With two on,
+   each name row's rule above it takes its own form's colour and the head's
+   stays the plain hairline, since it names both. The extra pixel comes out of
+   the padding beside it, so nothing under the rule moves when a form turns on.
+   (0,2,0), past the more-contrast block's `--text-muted`, which the edge
+   already clears at 3:1 in every colour. */
+.sheetsmith-stat-block-play-head[data-sheetsmith-tint] {
+	padding-bottom: calc(var(--size-4-3) - 1px);
+	border-bottom: 2px solid var(--sheetsmith-tint-edge);
+}
+
+.sheetsmith-stat-block-form-name[data-sheetsmith-tint] {
+	padding-top: calc(var(--size-4-3) - 1px);
+	border-top: 2px solid var(--sheetsmith-tint-edge);
+}
+
+/* **With two on, the first form's rule sits under the report's box**, whose
+   own edge 8px above it read as a double rule, where the second's sits under
+   text whose line keeps air below its letters. So the first takes
+   `--size-4-1` more above it and the two read as the same gap. */
+.sheetsmith-stat-block-report + .sheetsmith-stat-block-form:has(> .sheetsmith-stat-block-form-name) {
+	margin-top: var(--size-4-1);
+}
+
 /* Every form in play starts under the head on the same rhythm as its sections. */
 .sheetsmith-stat-block-form {
 	gap: var(--size-4-3);
@@ -9735,6 +9764,33 @@ a.sheetsmith-notice-action {
 
 	.sheetsmith-view .sheetsmith-stat-block-tint-swatch {
 		display: none;
+	}
+
+	/* The head's rule, a two-on name row's and a brief's bottom edge go back
+	   to the plain 1px line the mode repaints, the pixel returned to the
+	   padding: the colour is gone, and the title's words say which form is on. */
+	.sheetsmith-stat-block-play-head[data-sheetsmith-tint] {
+		padding-bottom: var(--size-4-3);
+		border-bottom-width: 1px;
+	}
+
+	.sheetsmith-stat-block-form-name[data-sheetsmith-tint] {
+		padding-top: var(--size-4-3);
+		border-top-width: 1px;
+	}
+
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		border-bottom-width: 1px;
+	}
+
+	/* No fill on the two buttons in the tile's clothes: the mode repaints an
+	   author fill on a button as `ButtonFace`, a grey box beside the picker's
+	   `Canvas` with every label on a black backplate. Transparent keeps its
+	   alpha there, so both sit on the page as the picker does, their border
+	   the mode's. */
+	.sheetsmith-view .sheetsmith-stat-block-revert,
+	.sheetsmith-view .sheetsmith-stat-block-brief {
+		background-color: transparent;
 	}
 }
 
