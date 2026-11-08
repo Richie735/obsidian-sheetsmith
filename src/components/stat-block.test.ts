@@ -1274,7 +1274,7 @@ describe('the record picture', () => {
 	it('says the painter\'s sentence under the head for a missing file, with no thumbnail', () => {
 		const { el } = zoned(BEAR, {}, { resource: () => null });
 		expect(el.querySelector('.sheetsmith-stat-block-thumb')).toBeNull();
-		expect(el.querySelector('.sheetsmith-stat-block-picture-problem')?.textContent).toBe(
+		expect(el.querySelector('.sheetsmith-stat-block-problem')?.textContent).toBe(
 			'No file in this vault is called "Brown bear.png". Set it under Every form, in Picture.',
 		);
 	});
@@ -1282,7 +1282,7 @@ describe('the record picture', () => {
 	it('names each form before its sentence where two are on', () => {
 		const two = BEAR.replace('Active: no\nHP: 1', 'Active: yes\nHP: 1').replace('HP: 1 / 1\n```\n', 'HP: 1 / 1\n```\n\n![[Mook.png]]\n');
 		const { el } = zoned(two, {}, { resource: () => null });
-		expect(Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent)).toEqual([
+		expect(Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent)).toEqual([
 			'Brown Bear: No file in this vault is called "Brown bear.png". Set it under Every form, in Picture.',
 			'Mook: No file in this vault is called "Mook.png". Set it under Every form, in Picture.',
 		]);
@@ -1583,7 +1583,7 @@ describe('the colour a form tints in', () => {
 			expect(picker(el)).not.toBeNull();
 			expect(el.querySelector('.sheetsmith-stat-block-revert')).not.toBeNull();
 			expect(el.querySelector('.sheetsmith-stat-block-form')).not.toBeNull();
-			const lines = Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map(
+			const lines = Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map(
 				(one) => one.textContent,
 			);
 			expect(lines).toEqual([SENTENCE]);
@@ -1592,7 +1592,7 @@ describe('the colour a form tints in', () => {
 
 			const none = render(BODY.replace('Active: yes', 'Active: no'), BROWN);
 			expect(
-				Array.from(none.el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+				Array.from(none.el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
 			).toEqual([SENTENCE]);
 			expect(none.edits).toEqual([]);
 		});
@@ -1602,7 +1602,7 @@ describe('the colour a form tints in', () => {
 			// (`config-panel.test.ts`, the same `Green`), held together by this pair.
 			const { el } = render(BODY, { tint: 'Green' });
 			expect(
-				Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
 			).toEqual(['"Green" is not a tint colour. Choose one under Tint in the layout editor.']);
 			expect(tints(pushes(BODY, { tint: 'Green' }))).toEqual([undefined]);
 		});
@@ -1738,7 +1738,7 @@ describe('the colour a form tints in', () => {
 			expect(tints(pushes(BROWN_BEAR, TINTED))).toEqual(['green']);
 			const { el, edits } = render(BROWN_BEAR, TINTED);
 			expect(
-				Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
 			).toEqual(['"brown" is not a tint colour. Choose one under Every form, in Tint.']);
 			expect(edits).toEqual([]);
 		});
@@ -1747,7 +1747,7 @@ describe('the colour a form tints in', () => {
 			const two = BROWN_BEAR.replace('Active: no', 'Active: yes');
 			const { el } = render(two, TINTED);
 			expect(
-				Array.from(el.querySelectorAll('.sheetsmith-stat-block-picture-problem')).map((one) => one.textContent),
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
 			).toEqual(['Brown Bear: "brown" is not a tint colour. Choose one under Every form, in Tint.']);
 		});
 

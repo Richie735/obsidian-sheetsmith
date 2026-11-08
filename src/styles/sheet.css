@@ -9491,14 +9491,15 @@ a.sheetsmith-notice-action {
 	gap: var(--size-4-2);
 }
 
-/* A reference that does not draw: no thumbnail, and the painter's own sentence
-   under the head, muted. */
-.sheetsmith-stat-block-picture-problem {
+/* The block's problem line under the head, muted: a picture reference that
+   does not draw (no thumbnail, and the painter's own sentence), or a stray tint
+   word (the layout's or a form's sentence naming where to fix it). */
+.sheetsmith-stat-block-problem {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
 
-.sheetsmith-stat-block-picture-problems:empty {
+.sheetsmith-stat-block-problems:empty {
 	display: none;
 }
 
