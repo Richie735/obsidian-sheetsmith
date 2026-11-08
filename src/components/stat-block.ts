@@ -27,8 +27,10 @@
  * omission from applying all twelve. A note hand-edited to hold two on is
  * reported and left alone: both push, both apply, and the picker says so.
  *
- * **It never corrects a form at 0**: the number says it, in the error colour,
- * and one sentence says what the reader does next. Reverting is the reader's.
+ * **It never corrects a form below 0**: the number says it, in the error
+ * colour, and one sentence says what the reader does next. Reverting is the
+ * reader's. At 0 the number alone says it, since 0 may be a field's normal
+ * state (a Fate NPC's Stress), matching a Pool past its boundary.
  *
  * **The colour a form tints in is the block's `tint`, or the form's own `Tint`
  * entry where the layout turns that on** (`docs/features/form-tint-colour.md`),
@@ -1909,11 +1911,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const number = drawRecordNumber(cell, row, controls, { field, raw, name, accessible, body: true, scope }, commit);
 			if (!(recordsOwnMax(field) || field.max !== undefined)) return;
 			const stored = splitBounded(raw).value;
-			if (stored.trim() !== '' && Number.isFinite(Number(stored)) && Number(stored) <= 0) {
+			if (stored.trim() !== '' && Number.isFinite(Number(stored)) && Number(stored) < 0) {
 				item.classList.add('sheetsmith-stat-block-down');
 				// The stored value as the tile draws it, with a true minus sign.
-				const shown = Number(stored.trim());
-				const said = shown < 0 ? `\u2212${String(-shown)}` : String(shown);
+				const said = `\u2212${String(-Number(stored.trim()))}`;
 				element('div', 'sheetsmith-stat-block-down-note', row, `At ${said}. Carry any leftover damage over by hand.`);
 			}
 			drawSteppers(cell, number.input, accessible, field, (next) => number.set(next), number.ceiling);
