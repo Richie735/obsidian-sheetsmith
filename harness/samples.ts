@@ -4657,10 +4657,12 @@ export type FormsVariant =
 	/** The same, with the Wolf on beside the bear and both adding to Initiative. */
 	| 'tint-two'
 	/** The same, with the Thug in play holding its stray word. */
-	| 'tint-error';
+	| 'tint-error'
+	/** Brown Bear orange raising a Pool's ceiling, so a form's tag lands on a placed box. */
+	| 'tint-pool';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
-	const tinting = variant === 'tint' || variant === 'tint-two' || variant === 'tint-error';
+	const tinting = variant === 'tint' || variant === 'tint-two' || variant === 'tint-error' || variant === 'tint-pool';
 	const bear = variant === 'none' || variant === 'mook' || variant === 'tint-error' ? 'no' : 'yes';
 	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
@@ -4670,6 +4672,13 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	 * the cards each form sets alone.
 	 */
 	const shared = variant === 'tint-two' ? '; initiative += 1' : '';
+	/*
+	 * A Pool the bear raises the ceiling of: a Pool stamps no host of its own,
+	 * so the tint lands on its placed box and so does the tag, which is the
+	 * placement case `measure-form-tag.mjs` measures beside the cards.
+	 */
+	const pooled = variant === 'tint-pool';
+	const poolPush = pooled ? '; hit_points.max += 10' : '';
 	const bearHp = variant === 'zero' ? '0 / 34' : variant === 'below' ? '-3 / 34' : '22 / 34';
 	const picture = variant === 'missing' ? 'Brown bear (lost).png' : 'Brown bear.png';
 	const attacks =
@@ -4889,7 +4898,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				`Active: ${bear}`,
 				`HP: ${bearHp}`,
 				'Speed: 40 ft., climb 30 ft.',
-				`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}`,
+				`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}`,
 				...(tinting ? ['Tint: orange'] : []),
 				'```',
 				'',
@@ -4945,5 +4954,20 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				'',
 			].join('\n'),
 		},
+		...(pooled
+			? [
+					{
+						config: {
+							id: 'hit_points',
+							type: 'pool',
+							label: 'Hit points',
+							position: { col: 1, row: 7, width: 3, height: 1 },
+							maxSource: 'calculated',
+							max: '8 + abilities.CON + mod.self',
+						} as ComponentConfig,
+						body: '```sheet\ncurrent: 6\n```',
+					},
+				]
+			: []),
 	];
 }

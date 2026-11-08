@@ -3338,6 +3338,19 @@ export const DEFAULTS = [
 		flags: ['--force-high-contrast'],
 	},
 	{
+		// Brown Bear orange raising Hit points' ceiling: a Pool stamps no host, so
+		// the tint and the tag land on its placed box, the case
+		// `measure-form-tag.mjs` measures beside the cards.
+		name: 'sheet-forms-tint-pool',
+		query: 'surface=sheet&theme=light&state=forms-tint-pool&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-pool-dark',
+		query: 'surface=sheet&theme=dark&state=forms-tint-pool&tint=orange',
+		size: '1400,1500',
+	},
+	{
 		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
 		// to, in the accent; Strength and Constitution orange and Dexterity green
 		// in one Card set whose one tag names both, in the accent.
