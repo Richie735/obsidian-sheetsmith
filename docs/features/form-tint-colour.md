@@ -211,6 +211,64 @@ keeps the tag legible by construction, through its own `--text-normal` on its
 own `--background-primary`. Its edges are theme-relative, but no theme is
 measured besides the default.
 
+### The tag's text, picked at runtime (amended after landing)
+
+**The neutral chip above is superseded on the owner's direction.** The tag is
+now the form's colour at 85% (`color-mix(in srgb, var(--sheetsmith-tint) 85%,
+transparent)`; the accent at 85% where it falls back, including a tag naming
+two forms that disagree), with no edge outside more contrast and forced colors,
+16px tall on a box that makes 2px of room for it, and `--size-2-2` plus 2px of
+inline padding.
+
+**Its text is black or white, picked at runtime, not written per colour.**
+`view/placement-decorations.ts`'s `pickTagText` reads off computed styles what
+the theme actually drew: the tag's translucent fill, the surface of the box it
+rides and the box's own tint layer, and the first opaque surface outside the
+box. The tag straddles the box's edge, so it composites the fill over both the
+tinted box and that outer surface (`ui/contrast.ts`'s `over`), measures black
+and white against each, and keeps the one whose worse contrast of the two is
+higher. The choice is an attribute word (`data-sheetsmith-tag-text="black"` or
+`"white"`) the stylesheet maps, so nothing is set inline. It runs after every
+decoration pass and again on the workspace's `css-change`, which fires when
+the theme, the light or dark mode, or a snippet changes.
+
+**Why black and white, and not the theme's own pair.** The first runtime pick
+chose between `--text-normal` and `--background-primary`, and in the default
+theme four pairs could not reach 4.5:1 that way (light red 4.20, light pink
+4.42, dark accent 4.00, dark blue 4.24): on a mid-luminance fill neither of a
+theme's near-black and near-white reaches it. Pure black or pure white always
+does: one of the two reaches at least 4.58:1 on any opaque colour, since the
+luminance at which black's contrast falls and white's rises cross at 4.58. The
+composited fill is opaque, so the guarantee holds whatever the theme draws.
+This is the one place the stylesheet names a literal colour (UI.md §1), held
+to its two rules by `styles.test.ts`.
+
+**Why it is still theme-safe where the per-colour pick above was not.** That
+pick was rejected because it encoded the default theme's colours: a table
+saying "yellow takes dark text" goes stale without a word once a community
+theme redefines `--color-yellow`. Nothing here encodes a colour. The inputs are
+what the theme computes for the fill and the surfaces under it, measured on the
+reader's screen, so a theme that redefines any of them is measured as it stands.
+
+**Measured** in both default themes (`harness/measure-form-tint.mjs`, which
+asserts 4.5:1 on the fill over the tinted card and over the page): all 18 pass.
+The lowest is 4.78:1, twice: black on dark red over the page, and white on
+dark blue over the card.
+
+**More contrast and forced colors are unchanged in effect**: under more
+contrast the tag sits on `--background-primary` in `--text-normal` with its
+2px edge in the edge colour; under forced colors it is `Canvas` and
+`CanvasText` with a 2px `CanvasText` edge. Both rules override whatever text
+the runtime picked.
+
+**On a Pool the tag sits in the top inline-start corner, inside the box.** A
+Pool clips its overflow so the bar follows its corners, and its bottom padding
+is where the bar runs: at the bottom corner the tag was cut in half and covered
+the bar's end. The top inline-end corner holds the ceiling's door; the
+inline-start one holds nothing. `harness/measure-form-tag.mjs` measures it
+through the `forms-tint-pool` state, with `overlap` (not `content` and `gap`,
+which describe a tag hanging below its box) keeping it off the label.
+
 ### Two forms on by hand (question 2)
 
 Two forms on is already the reported error state ("two forms on", the picker's
@@ -694,10 +752,10 @@ re-derived:
   that choose no colour.
   - It was white on the accent, which measured 3.43:1 in the default light
     theme, under the 4.5:1 text needs.
-  - It is now a chip tinted from the form's colour, written in the theme's
-    text colour, at 12.81:1 for the accent in light.
-  - It has a coloured edge, and the box outline darkens slightly, so both
-    clear 3:1 on every colour.
+  - It is now the form's colour at 85%, written in black or white, whichever
+    the sheet measures reading better on it, at 4.78:1 or more in the default
+    themes.
+  - The box outline darkens slightly, so it clears 3:1 on every colour.
 - **New:** a Stat block can tint its forms in one of the theme's named colours,
   and each form can choose its own (`tint`, `tintPerRecord`).
 - **The layout editor now reports a dropdown whose stored value is not one of
