@@ -9834,6 +9834,19 @@ a.sheetsmith-notice-action {
 	color: white;
 }
 
+/* **On a Pool the tag sits in the top inline-start corner, inside the box.**
+   A Pool clips its overflow, so the bar's ends follow its corners, and its
+   bottom padding is where the bar runs, so the bottom corner would cut the tag
+   in half and cover the bar's end. The top inline-end corner holds the
+   ceiling's door; the inline-start one holds nothing, and the label is centred. */
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-in-play-mark[aria-hidden='true'] {
+	inset-block-start: var(--size-2-2);
+	inset-block-end: auto;
+	inset-inline-start: var(--size-2-2);
+	inset-inline-end: auto;
+	transform: none;
+}
+
 /* **A row has no free corner**: its start holds the name (and a ring, where
    the table has one), its end the value. So on a row the pill rides the name
    cell's inline end, centred on the row, in the slack between the name and the
