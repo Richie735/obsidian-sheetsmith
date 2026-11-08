@@ -8617,13 +8617,17 @@ a.sheetsmith-notice-action {
 	field-sizing: content;
 }
 
-/* **An open form's name takes In play's title size**, so the form being edited
-   is titled at the rank its stat block is read under, and a closed one stays a
-   line of the list. Still the name field: the field and its link layer both,
+/* **A form's name takes In play's title size, open or closed**
+   (`docs/features/stat-block-in-play-polish.md` §3), so the form being edited is
+   titled at the rank its stat block is read under, and pressing the chevron
+   does not resize the name: open and closed differ by the chevron, the open
+   line's rule and the closed line's summary, never by type size. It was the
+   open line's alone, and a name that jumped a step on every press read as a
+   second control. Still the name field: the field and its link layer both,
    which sit exactly over each other. */
 .sheetsmith-view
 	.sheetsmith-stat-block-record
-	> .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true'])
+	> .sheetsmith-record-summary
 	:is(.sheetsmith-record-name-input, .sheetsmith-record-name-layer) {
 	font-size: var(--font-ui-large);
 	font-weight: var(--font-bold);

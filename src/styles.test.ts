@@ -4833,8 +4833,19 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 			/border-radius/.test(rule.body),
 	);
 
-	it('titles an open form\'s name at In play\'s title size, field and link layer alike', () => {
-		const open = all.find((rule) => rule.selector.includes("[aria-expanded='true']") && rule.selector.includes('stat-block-record'));
+	it('titles a form\'s name at In play\'s title size open or closed, field and link layer alike', () => {
+		// One rule, with no condition on the chevron's state, so pressing it never
+		// resizes the name (`docs/features/stat-block-in-play-polish.md` §3).
+		const named = all.filter(
+			(rule) =>
+				rule.context.length === 0 &&
+				rule.selector.includes('stat-block-record') &&
+				rule.selector.includes('.sheetsmith-record-name-input') &&
+				/font-size:/.test(rule.body),
+		);
+		expect(named).toHaveLength(1);
+		const open = named[0];
+		expect(open?.selector).not.toContain('aria-expanded');
 		expect(open?.selector).toContain('.sheetsmith-record-name-input');
 		expect(open?.selector).toContain('.sheetsmith-record-name-layer');
 		expect(open?.body).toMatch(/font-size:\s*var\(--font-ui-large\)/);
