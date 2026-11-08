@@ -8,7 +8,8 @@
  * It loads the forms sheet with Brown Bear in play at `text=15` (the app's own
  * body size), `text=16` (the harness's default) and `text=24`, and the
  * `forms-tint-pool` sheet, where the bear raises a Pool's ceiling so a tag lands
- * on a placed box rather than a card. **A corner pill sits on its box's bottom
+ * on a placed box rather than a card, and the `forms-tint-track` sheet, where
+ * the bear lengthens a Track's run so a tag lands on a Track. **A corner pill sits on its box's bottom
  * inline-end corner, its inside part exactly the box's bottom padding**, so
  * most of what is checked is geometry rather than a font's ink. For every
  * corner pill it prints:
@@ -161,6 +162,7 @@ let measured = 0;
 const runs = [
 	...[15, 16, 24].map((text) => ({ state: 'forms', text })),
 	{ state: 'forms-tint-pool', text: 16, tint: 'orange' },
+	{ state: 'forms-tint-track', text: 16, tint: 'orange' },
 ];
 for (const { state, text, tint } of runs) {
 	const { unstage } = await loadStaged(

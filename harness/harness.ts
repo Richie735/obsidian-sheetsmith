@@ -93,7 +93,8 @@ type StateName =
 	| 'forms-tint'
 	| 'forms-tint-two'
 	| 'forms-tint-error'
-	| 'forms-tint-pool';
+	| 'forms-tint-pool'
+	| 'forms-tint-track';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -148,6 +149,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-tint-two') return formsSamples('tint-two');
 	if (name === 'forms-tint-error') return formsSamples('tint-error');
 	if (name === 'forms-tint-pool') return formsSamples('tint-pool');
+	if (name === 'forms-tint-track') return formsSamples('tint-track');
 	return SAMPLES;
 }
 
@@ -996,7 +998,8 @@ function applyQuery(): void {
 			wanted === 'forms-tint' ||
 			wanted === 'forms-tint-two' ||
 			wanted === 'forms-tint-error' ||
-			wanted === 'forms-tint-pool'
+			wanted === 'forms-tint-pool' ||
+			wanted === 'forms-tint-track'
 			? wanted
 			: 'populated',
 	);

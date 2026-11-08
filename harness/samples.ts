@@ -4659,10 +4659,17 @@ export type FormsVariant =
 	/** The same, with the Thug in play holding its stray word. */
 	| 'tint-error'
 	/** Brown Bear orange raising a Pool's ceiling, so a form's tag lands on a placed box. */
-	| 'tint-pool';
+	| 'tint-pool'
+	/** Brown Bear orange lengthening a Track's run, so a form's tag lands on a Track. */
+	| 'tint-track';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
-	const tinting = variant === 'tint' || variant === 'tint-two' || variant === 'tint-error' || variant === 'tint-pool';
+	const tinting =
+		variant === 'tint' ||
+		variant === 'tint-two' ||
+		variant === 'tint-error' ||
+		variant === 'tint-pool' ||
+		variant === 'tint-track';
 	const bear = variant === 'none' || variant === 'mook' || variant === 'tint-error' ? 'no' : 'yes';
 	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
@@ -4679,6 +4686,14 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	 */
 	const pooled = variant === 'tint-pool';
 	const poolPush = pooled ? '; hit_points.max += 10' : '';
+	/*
+	 * A Track the bear lengthens by one segment, its count a formula reading
+	 * `mod.self` as the Pool's ceiling is: Track stamps no host either,
+	 * so the tag lands on its placed box, which `measure-form-tag.mjs` measures
+	 * beside the cards and the Pool.
+	 */
+	const tracked = variant === 'tint-track';
+	const trackPush = tracked ? '; rage.count += 1' : '';
 	const bearHp = variant === 'zero' ? '0 / 34' : variant === 'below' ? '-3 / 34' : '22 / 34';
 	const picture = variant === 'missing' ? 'Brown bear (lost).png' : 'Brown bear.png';
 	const attacks =
@@ -4898,7 +4913,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				`Active: ${bear}`,
 				`HP: ${bearHp}`,
 				'Speed: 40 ft., climb 30 ft.',
-				`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}`,
+				`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}${trackPush}`,
 				...(tinting ? ['Tint: orange'] : []),
 				'```',
 				'',
@@ -4966,6 +4981,22 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 							max: '8 + abilities.CON + mod.self',
 						} as ComponentConfig,
 						body: '```sheet\ncurrent: 6\n```',
+					},
+				]
+			: []),
+		...(tracked
+			? [
+					{
+						config: {
+							id: 'rage',
+							type: 'track',
+							label: 'Rage',
+							position: { col: 1, row: 7, width: 3, height: 1 },
+							// Its own formula asks for the push, as the Pool's
+							// ceiling does: a literal count takes no modifiers.
+							count: '3 + mod.self',
+						} as ComponentConfig,
+						body: '```sheet\nvalue: 1\n```',
 					},
 				]
 			: []),
