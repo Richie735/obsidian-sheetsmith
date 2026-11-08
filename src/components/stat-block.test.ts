@@ -1211,6 +1211,30 @@ describe('the commit guards', () => {
 		expect(zone.textContent).toContain('would start a heading this layout has no zone for');
 	});
 
+	it('advises a text zone\'s record heading toward ####, which it takes', () => {
+		const { el, edits } = zoned();
+		const box = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(box, 'Smell.\n\n### Senses');
+		expect(edits).toHaveLength(0);
+		expect(el.textContent).toMatch(/Not saved\. "### Senses" would start a new \S+ in this list — use "#### " instead\./);
+		typeInto(box, 'Smell.\n\n#### Senses');
+		expect(edits).toHaveLength(1);
+	});
+
+	it('advises a feature\'s record heading toward #####, which it takes, never ####, which it refuses', () => {
+		const { el, edits } = zoned();
+		const zone = detail(el).querySelector('.sheetsmith-stat-block-zone-features') as HTMLElement;
+		const [lead, text] = Array.from(zone.querySelectorAll<HTMLTextAreaElement>('.sheetsmith-record-body-input'));
+		typeInto(lead as HTMLTextAreaElement, '## Senses');
+		expect(zone.textContent).toContain('Not saved. "## Senses" would start a new section in this note — use "##### " instead.');
+		typeInto(text as HTMLTextAreaElement, 'x\n\n### Senses');
+		expect(zone.textContent).toMatch(/Not saved\. "### Senses" would start a new \S+ in this list — use "##### " instead\./);
+		expect(zone.textContent).not.toContain('use "#### " instead');
+		expect(edits).toHaveLength(0);
+		typeInto(text as HTMLTextAreaElement, 'x\n\n##### Senses');
+		expect(edits).toHaveLength(1);
+	});
+
 	it('refuses a table cell opening with a heading', () => {
 		const { el, edits } = zoned();
 		const cell = detail(el).querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-table textarea') as HTMLTextAreaElement;
