@@ -1857,11 +1857,28 @@ describe('every colour on the sheet comes from the theme', () => {
 			// comes from whatever theme variable is behind the mask. The
 			// colour word is part of the image, not part of the palette.
 			if (value.includes('url("data:')) continue;
+			// The form tag's text, black or white as the sheet measured them on the
+			// fill the theme drew (`docs/features/form-tint-colour.md`, UI.md §1's
+			// one exception); held to its two rules below.
+			if (property === 'color' && (value === 'black' || value === 'white')) continue;
 			if (LITERAL.test(value.replace(TRANSPARENT_STOP, '').replace(THEME_NAMED_COLOUR, ''))) {
 				literals.push(`${property}: ${value.replace(/\s+/g, ' ')}`);
 			}
 		}
 		expect(literals).toEqual([]);
+	});
+
+	it('names black and white only for the form tag text the sheet picks', () => {
+		const words = all.filter(
+			({ property, value }) => property === 'color' && (value === 'black' || value === 'white'),
+		);
+		expect(words.map(({ value }) => value).sort()).toEqual(['black', 'white']);
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		for (const word of ['black', 'white']) {
+			expect(withoutComments).toMatch(
+				new RegExp(`\\[data-sheetsmith-tag-text='${word}'\\]\\s*\\{\\s*color:\\s*${word};\\s*\\}`),
+			);
+		}
 	});
 });
 
@@ -4941,10 +4958,13 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		// A row's cells thicken their share of the outline the same way.
 		const edge = more.find((rule) => /--sheetsmith-in-play-edge:\s*2px/.test(rule.body));
 		expect(edge?.selector).toContain('tr.sheetsmith-in-play > th');
-		// The tag sits on the plain page, its coloured edge kept.
+		// The tag sits on the plain page in the theme's text, drawing the 2px
+		// coloured edge it has nowhere else, whatever text the sheet picked.
 		const tag = more.find((rule) => rule.selector.includes('.sheetsmith-in-play-mark'));
 		expect(tag?.body).toMatch(/background-color:\s*var\(--background-primary\)/);
-		expect(tag?.body).not.toMatch(/outline/);
+		expect(tag?.body).toMatch(/color:\s*var\(--text-normal\)/);
+		expect(tag?.body).toMatch(/outline:\s*2px solid var\(--sheetsmith-tint-edge\)/);
+		expect(tag?.selector).toMatch(/\[data-sheetsmith-tag-text\]/);
 	});
 
 	it('hides the swatch in forced colors, where a repainted square says nothing', () => {
@@ -4998,10 +5018,17 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		// A neutral chip in the theme's own text with a coloured edge, never
 		// text on the colour (`docs/features/form-tint-colour.md`).
 		expect(pill?.body).toMatch(/color:\s*var\(--text-normal\)/);
-		expect(pill?.body).toMatch(/outline:\s*1px solid var\(--sheetsmith-tint-edge\)/);
+		// The form's colour at full strength, with no edge outside more
+		// contrast and forced colors; the text is picked at runtime.
+		expect(pill?.body).not.toMatch(/outline:/);
 		expect(pill?.body.replace(/\s+/g, ' ')).toMatch(
-			/background-color: color-mix\( in srgb, var\(--sheetsmith-tint\) 20%, var\(--background-primary\) \)/,
+			/background-color: color-mix\(in srgb, var\(--sheetsmith-tint\) 85%, transparent\);/,
 		);
+		// Black or white, as the runtime measured them, mapped from the word.
+		const word = (w: string) =>
+			tint.find((rule) => rule.context.length === 0 && rule.selector.includes(`[data-sheetsmith-tag-text='${w}']`));
+		expect(word('black')?.body).toMatch(/color:\s*black/);
+		expect(word('white')?.body).toMatch(/color:\s*white/);
 		expect(pill?.body).not.toMatch(/--text-on-accent/);
 		// On the bottom edge at the inline-end corner, clear of the label, the
 		// centred value and the note mark (the form tag fix).
@@ -5010,7 +5037,16 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(pill?.body).not.toMatch(/inset-block-start|inset-inline-start/);
 		// Inside by exactly the bottom padding, by geometry and not by a font's
 		// ink: down by its own height less `--size-4-2`.
-		expect(pill?.body).toMatch(/transform:\s*translateY\(calc\(100% - var\(--size-4-2\)\)\)/);
+		expect(pill?.body.replace(/\s+/g, ' ')).toMatch(
+			/transform: translateY\( calc\(100% - var\(--size-4-2\) - var\(--sheetsmith-in-play-mark-room, 0px\)\) \)/,
+		);
+		// A card makes room for the tag's 2px edge, every card alike, so the
+		// value does not move when a form turns on.
+		const card = rules(CSS_WITHOUT_COMMENTS).find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-card');
+		expect(card?.body).toMatch(/--sheetsmith-in-play-mark-room:\s*var\(--size-2-1\)/);
+		expect(card?.body.replace(/\s+/g, ' ')).toMatch(
+			/padding-block-end: calc\(var\(--size-4-2\) \+ var\(--sheetsmith-in-play-mark-room\)\)/,
+		);
 		expect(pill?.body).not.toMatch(/display:\s*block/);
 		// In a fixed-pixel size, so its overhang fits the fixed padding at any
 		// text size, and hit-testable, so a clipped name's reveal answers it.

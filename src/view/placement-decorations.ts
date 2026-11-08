@@ -23,6 +23,7 @@
  */
 
 import { ModifierBreakdown, TINT_ATTRIBUTE, TintColour } from '../types';
+import { contrast, over, readColour, Rgb } from '../ui/contrast';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
 import { BOX_ATTRIBUTE, NAME_ATTRIBUTE } from '../components/modifier-breakdown';
 
@@ -51,6 +52,13 @@ export const IN_PLAY_MARK_INLINE = 'sheetsmith-in-play-mark-inline';
  * rather than the one form's 12ch.
  */
 export const IN_PLAY_MARK_SEVERAL = 'sheetsmith-in-play-mark-several';
+
+/**
+ * The attribute on a drawn pill saying which text it is written in, `black` or
+ * `white`; absent where nothing could be measured. The stylesheet maps the
+ * word; `pickTagText` writes it.
+ */
+export const TAG_TEXT_ATTRIBUTE = 'data-sheetsmith-tag-text';
 
 /** The attribute a cell carries naming the component drawn into it. */
 export const COMPONENT_ATTRIBUTE = 'data-sheetsmith-component';
@@ -223,4 +231,55 @@ export function applyDecorations(
 		reveal?.(pill);
 		cell.createSpan({ cls: `sheetsmith-sr-only ${IN_PLAY_MARK}`, text: `Changed by ${said}` });
 	}
+	pickTagText(root);
+}
+
+/** The two text colours a tag may be written in, as the stylesheet's words map them. */
+const TAG_TEXTS = { black: [0, 0, 0], white: [1, 1, 1] } as const satisfies Record<string, Rgb>;
+
+/**
+ * **Write each drawn pill in black or white, whichever reads better on the fill
+ * the theme actually drew**, and measure again whenever the theme or a snippet
+ * changes, which is the view's `css-change` (`docs/features/form-tint-colour.md`,
+ * "The tag's text, picked at runtime").
+ *
+ * The pill is the form's colour at 85%, so what a reader sees is that colour
+ * laid over what is under it, and the pill straddles its box's edge: part of it
+ * sits on the tinted box, part on the surface around the box. Both are read off
+ * computed styles — the box's own surface and its tint layer, and the first
+ * opaque surface outside it — and the pick takes the candidate whose worse
+ * contrast of the two is higher. Black or white reaches at least 4.58:1 on any
+ * opaque colour, which the theme's own text and page colours did not. Nothing
+ * here assumes what a colour is, so a theme that redefines `--color-*` or the
+ * accent is measured as it stands. A fill or a surface that does not read — no
+ * layout engine — leaves the stylesheet's default.
+ */
+export function pickTagText(root: HTMLElement): void {
+	const pills = Array.from(root.querySelectorAll<HTMLElement>(`.${IN_PLAY_MARK}[aria-hidden="true"]`));
+	for (const pill of pills) {
+		const box = pill.parentElement;
+		const view = pill.ownerDocument.defaultView;
+		const fill = view === null ? null : readColour(view.getComputedStyle(pill).backgroundColor);
+		const surface = view === null || box === null ? null : surfaceOf(view, box);
+		const around = view === null || box?.parentElement == null ? null : surfaceOf(view, box.parentElement);
+		if (view === null || box === null || fill === null || surface === null || around === null) {
+			pill.removeAttribute(TAG_TEXT_ATTRIBUTE);
+			continue;
+		}
+		// The box's tint is a layer over its surface, not a colour of its own.
+		const layer = readColour(view.getComputedStyle(box).backgroundImage);
+		const tinted = layer === null ? surface : over(layer.rgb, layer.alpha, surface);
+		const grounds = [over(fill.rgb, fill.alpha, tinted), over(fill.rgb, fill.alpha, around)];
+		const worst = (text: Rgb) => Math.min(...grounds.map((ground) => contrast(text, ground)));
+		pill.setAttribute(TAG_TEXT_ATTRIBUTE, worst(TAG_TEXTS.white) > worst(TAG_TEXTS.black) ? 'white' : 'black');
+	}
+}
+
+/** The first opaque background at or above `el`: what a translucent layer on it is seen against. */
+function surfaceOf(view: Window, el: HTMLElement): Rgb | null {
+	for (let at: HTMLElement | null = el; at !== null; at = at.parentElement) {
+		const paint = readColour(view.getComputedStyle(at).backgroundColor);
+		if (paint !== null && paint.alpha >= 1) return paint.rgb;
+	}
+	return null;
 }

@@ -13,9 +13,12 @@
  * is a layer the browser composites rather than a colour it computes, and the
  * WCAG contrast ratio. It prints the spec's table and checks:
  *
- *  - tag text on the tag fill at least 4.5:1;
- *  - the edge at least 3:1 against the card, the tinted card, the tag fill and
- *    the page (WCAG 1.4.11).
+ *  - tag text at least 4.5:1 on the tag's fill, the form's colour at 85%,
+ *    composited over the tinted card and over the page, since the tag
+ *    straddles the box's edge; the text black or white as the sheet picked it
+ *    at runtime (`picked`);
+ *  - the box's edge at least 3:1 against the card, the tinted card and the
+ *    page (WCAG 1.4.11). The tag draws no edge outside more contrast.
  *
  * Exits non-zero on any failure, and on measuring no tag at all. **It holds for
  * the theme the harness carries only**: a community theme redefines the named
@@ -51,14 +54,14 @@ const measure = `(() => {
 	return {
 		attribute: pill.getAttribute('data-sheetsmith-tint'),
 		colour: probe('var(--sheetsmith-tint)'),
-		onAccent: probe('var(--text-on-accent)'),
 		card: probe('var(--background-secondary)'),
 		page: probe('var(--background-primary)'),
 		normal: probe('var(--text-normal)'),
 		muted: probe('var(--text-muted)'),
 		tagText: style.color,
 		tagFill: style.backgroundColor,
-		edge: style.outlineColor,
+		edge: getComputedStyle(box).outlineColor,
+		picked: pill.getAttribute('data-sheetsmith-tag-text') ?? 'normal',
 	};
 })()`;
 
@@ -69,6 +72,14 @@ function parse(css) {
 	const rgb = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(css);
 	if (rgb) return [Number(rgb[1]) / 255, Number(rgb[2]) / 255, Number(rgb[3]) / 255];
 	throw new Error(`cannot read the colour ${css}`);
+}
+
+/** A colour's alpha, 1 where it states none. */
+function alphaOf(css) {
+	const stated = /\/\s*([\d.]+)(%?)\s*\)|rgba\([^)]*,\s*([\d.]+)\s*\)/.exec(css);
+	if (stated === null) return 1;
+	if (stated[1] !== undefined) return stated[2] === '%' ? Number(stated[1]) / 100 : Number(stated[1]);
+	return Number(stated[3]);
 }
 
 const hex = (c) => `#${c.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`;
@@ -92,7 +103,7 @@ const browser = await launch(['--window-size=1400,1500']);
 let failed = 0;
 let measured = 0;
 console.log(
-	'| Theme | Colour | Value | Today: white on colour | Tag text on tag fill | Edge vs card | Edge vs tinted card | Edge vs tag fill | Edge vs page | Value text on tinted card | Muted text on tinted card |',
+	'| Theme | Colour | Value | Tag text | Tag text on fill over card | Tag text on fill over page | Edge vs card | Edge vs tinted card | Edge vs page | Value text on tinted card | Muted text on tinted card |',
 );
 console.log('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
 for (const theme of ['light', 'dark']) {
@@ -114,13 +125,20 @@ for (const theme of ['light', 'dark']) {
 		const card = parse(read.card);
 		const tinted = over(tint, card);
 		const edge = parse(read.edge);
-		const tagFill = parse(read.tagFill);
-		const tag = contrast(parse(read.tagText), tagFill);
-		const edges = [contrast(edge, card), contrast(edge, tinted), contrast(edge, tagFill), contrast(edge, parse(read.page))];
+		// The tag's fill is translucent and straddles the box's edge: what a
+		// reader sees is that fill over the tinted card and over the page, and
+		// the text has to read on both.
+		const fillAlpha = alphaOf(read.tagFill);
+		const fill = parse(read.tagFill);
+		const text = parse(read.tagText);
+		const onCard = contrast(text, over(fill, tinted, fillAlpha));
+		const onPage = contrast(text, over(fill, parse(read.page), fillAlpha));
+		const tag = Math.min(onCard, onPage);
+		const edges = [contrast(edge, card), contrast(edge, tinted), contrast(edge, parse(read.page))];
 		const ok = tag >= 4.5 && edges.every((ratio) => ratio >= 3);
 		if (!ok) failed++;
 		console.log(
-			`| ${theme} | ${colour} | \`${hex(tint)}\` | ${two(contrast(parse(read.onAccent), tint))} | ${two(tag)} | ${edges.map(two).join(' | ')} | ${two(contrast(parse(read.normal), tinted))} | ${two(contrast(parse(read.muted), tinted))} |${ok ? '' : ' FAIL'}`,
+			`| ${theme} | ${colour} | \`${hex(tint)}\` | ${read.picked} | ${two(onCard)} | ${two(onPage)} | ${edges.map(two).join(' | ')} | ${two(contrast(parse(read.normal), tinted))} | ${two(contrast(parse(read.muted), tinted))} |${ok ? '' : ' FAIL'}`,
 		);
 	}
 }

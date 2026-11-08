@@ -65,7 +65,7 @@ import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
-import { applyDecorations, inPlayDecorations } from './placement-decorations';
+import { applyDecorations, inPlayDecorations, pickTagText } from './placement-decorations';
 import { revealWhenTruncated } from '../ui/truncation';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
@@ -293,6 +293,10 @@ export class SheetView extends TextFileView {
 		// Every sheet offers this, so it is added once and goes with the view. The
 		// way back depends on the note, which is why it lives in `open-as-sheet.ts`.
 		this.addAction('file-text', TEXT.openAsMarkdown, () => this.openAsMarkdown());
+		// A form tag's text is picked against the fill the theme drew, so a theme
+		// or snippet change measures it again rather than waiting for a render
+		// (`placement-decorations.ts`, `pickTagText`).
+		this.registerEvent(this.app.workspace.on('css-change', () => pickTagText(this.contentEl)));
 	}
 
 	/**

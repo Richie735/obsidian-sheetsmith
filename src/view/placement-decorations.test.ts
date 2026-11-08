@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
 import { formulaContext } from '../formula/resolve';
@@ -16,8 +16,11 @@ import {
 	IN_PLAY_MARK_SEVERAL,
 	IN_PLAY_PLACEMENT,
 	inPlayDecorations,
+	TAG_TEXT_ATTRIBUTE,
+	pickTagText,
 } from './placement-decorations';
 import { modifierBreakdown } from '../components/modifier-breakdown';
+import { contrast } from '../ui/contrast';
 
 /*
  * The form tint, through the view's own sheet assembly (`buildSheet`, `renderGrid`)
@@ -444,5 +447,87 @@ describe('the colour a form tints in', () => {
 	it('reads a line with no tint as the accent', () => {
 		const decorations = draw(NOTE('yes')).decorations;
 		expect(decorations.map((one) => one.tint)).toEqual(['accent']);
+	});
+});
+
+/*
+ * The tag's text is measured, not assumed (`docs/features/form-tint-colour.md`,
+ * "The tag's text, picked at runtime"). A stubbed computed style stands in for
+ * the theme, and a test swaps what it says a colour is, as a community theme
+ * would.
+ */
+describe('the tag text picked against the fill', () => {
+	/** A theme in miniature: the pill's fill, the box's surface and tint layer, the page. */
+	let theme = { fill: '', box: '', layer: 'none', page: '' };
+	const pillIn = () => {
+		const page = document.createElement('div');
+		document.body.appendChild(page);
+		const box = page.createDiv();
+		const pill = box.createSpan({ cls: IN_PLAY_MARK, text: 'Brown Bear' });
+		pill.setAttribute('aria-hidden', 'true');
+		vi.spyOn(window, 'getComputedStyle').mockImplementation(
+			(el) =>
+				({
+					backgroundColor:
+						el === pill ? theme.fill : el === box ? theme.box : el === page ? theme.page : 'rgba(0, 0, 0, 0)',
+					backgroundImage: el === box ? theme.layer : 'none',
+				}) as CSSStyleDeclaration,
+		);
+		return { root: page, pill };
+	};
+	afterEach(() => {
+		vi.restoreAllMocks();
+		document.body.empty();
+	});
+
+	it('writes white where it reads better on the fill over both grounds', () => {
+		// Dark accent at 75% over a dark card and page.
+		theme = {
+			fill: 'color(srgb 0.54 0.36 0.96 / 0.75)',
+			box: 'rgb(40, 40, 40)',
+			layer: 'linear-gradient(color(srgb 0.54 0.36 0.96 / 0.12), color(srgb 0.54 0.36 0.96 / 0.12))',
+			page: 'rgb(28, 28, 28)',
+		};
+		const { root, pill } = pillIn();
+		pickTagText(root);
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('white');
+	});
+
+	it('writes black where that reads better', () => {
+		// Light yellow at 75% over a light card and page.
+		theme = { fill: 'color(srgb 0.88 0.67 0 / 0.75)', box: 'rgb(246, 246, 246)', layer: 'none', page: 'rgb(255, 255, 255)' };
+		const { root, pill } = pillIn();
+		pickTagText(root);
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('black');
+	});
+
+	it('follows a theme that redefines the colour, measuring again', () => {
+		theme = { fill: 'color(srgb 0.88 0.67 0 / 0.75)', box: 'rgb(246, 246, 246)', layer: 'none', page: 'rgb(255, 255, 255)' };
+		const { root, pill } = pillIn();
+		pickTagText(root);
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('black');
+		// The same word, a dark colour under another theme.
+		theme = { ...theme, fill: 'color(srgb 0.15 0.08 0.35 / 0.75)' };
+		pickTagText(root);
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('white');
+	});
+
+	it('judges by the worse of the two grounds the tag straddles', () => {
+		// A mid fill, translucent enough that the dark page under its hanging
+		// half pulls that half down: black would read on the light box alone.
+		theme = { fill: 'color(srgb 1 0.4 0.4 / 0.75)', box: 'rgb(255, 255, 255)', layer: 'none', page: 'rgb(0, 0, 0)' };
+		const { root, pill } = pillIn();
+		pickTagText(root);
+		const onBox = [1 * 0.75 + 0.25, 0.4 * 0.75 + 0.25, 0.4 * 0.75 + 0.25] as const;
+		const onPage = [0.75, 0.3, 0.3] as const;
+		const worst = (text: readonly [number, number, number]) => Math.min(contrast(text, onBox), contrast(text, onPage));
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe(worst([1, 1, 1]) > worst([0, 0, 0]) ? 'white' : 'black');
+	});
+
+	it('leaves the default where nothing under the tag reads', () => {
+		theme = { fill: 'color(srgb 1 0 0 / 0.75)', box: 'rgba(0, 0, 0, 0)', layer: 'none', page: 'rgba(0, 0, 0, 0)' };
+		const { root, pill } = pillIn();
+		pickTagText(root);
+		expect(pill.hasAttribute(TAG_TEXT_ATTRIBUTE)).toBe(false);
 	});
 });
