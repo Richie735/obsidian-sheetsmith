@@ -798,7 +798,7 @@ describe('a select holding a value outside its choices', () => {
 
 	// The tint field names its options, so it says so in the sheet's own phrase;
 	// a select that names none keeps the generic one (Card set's, below).
-	const MESSAGE = '"brown" is not a tint colour. Choose one to replace it.';
+	const MESSAGE = '"brown" is not a tint color. Choose one to replace it.';
 
 	it('shows the stored word as a disabled, selected option, with the message under it', async () => {
 		harness = await open(strayLayout('brown'));
@@ -867,7 +867,7 @@ describe('a select holding a value outside its choices', () => {
 		const select = control<HTMLSelectElement>(harness, 'cfg-forms-tint');
 		expect(select.value).toBe('Green');
 		expect(select.parentElement?.textContent).toContain(
-			'"Green" is not a tint colour. Choose one to replace it.',
+			'"Green" is not a tint color. Choose one to replace it.',
 		);
 	});
 

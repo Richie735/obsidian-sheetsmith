@@ -1728,7 +1728,7 @@ describe('passport.render — a list field\'s parts', () => {
 		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
 			false,
 		);
-		expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete cancelled');
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete canceled');
 	});
 
 	it('stands an armed delete down when focus leaves its part entirely', () => {
@@ -1756,7 +1756,7 @@ describe('passport.render — a list field\'s parts', () => {
 		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
 			false,
 		);
-		expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete cancelled');
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete canceled');
 	});
 
 	it('does not stand an armed delete down when focus moves to its own delete button', () => {

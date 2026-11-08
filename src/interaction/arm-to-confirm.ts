@@ -67,7 +67,7 @@ export function armedPrompt(named: string): string {
 }
 
 /** What a control that stood down without firing says. */
-export const STOOD_DOWN = 'Delete cancelled';
+export const STOOD_DOWN = 'Delete canceled';
 
 /**
  * Which control on one component is armed, as the function that disarms it.

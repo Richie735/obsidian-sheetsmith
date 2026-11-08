@@ -143,7 +143,7 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 			kind: 'select',
 			label: 'Fit',
 			description:
-				'How the picture fills its frame. Fitted draws the whole picture with nothing cropped, which may leave empty space on two sides. Cropped fills the frame and cuts off whatever does not fit, centred. Stretched fills the frame exactly, distorting the picture where its shape does not match.',
+				'How the picture fills its frame. Fitted draws the whole picture with nothing cropped, which may leave empty space on two sides. Cropped fills the frame and cuts off whatever does not fit, centered. Stretched fills the frame exactly, distorting the picture where its shape does not match.',
 			options: ['contain', 'cover', 'stretch'],
 		},
 	],

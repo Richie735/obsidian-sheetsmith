@@ -1570,7 +1570,7 @@ describe('the colour a form tints in', () => {
 
 	describe('a layout tint outside the list', () => {
 		const BROWN: Partial<StatBlockConfig> = { tint: 'brown', tintPerRecord: true };
-		const SENTENCE = '"brown" is not a tint colour. Choose one under Tint in the layout editor.';
+		const SENTENCE = '"brown" is not a tint color. Choose one under Tint in the layout editor.';
 
 		it('reads, and tints in the accent except where a form chose its own', () => {
 			expect(statBlock.read(BODY, { ...config, ...BROWN }).ok).toBe(true);
@@ -1603,7 +1603,7 @@ describe('the colour a form tints in', () => {
 			const { el } = render(BODY, { tint: 'Green' });
 			expect(
 				Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
-			).toEqual(['"Green" is not a tint colour. Choose one under Tint in the layout editor.']);
+			).toEqual(['"Green" is not a tint color. Choose one under Tint in the layout editor.']);
 			expect(tints(pushes(BODY, { tint: 'Green' }))).toEqual([undefined]);
 		});
 
@@ -1739,7 +1739,7 @@ describe('the colour a form tints in', () => {
 			const { el, edits } = render(BROWN_BEAR, TINTED);
 			expect(
 				Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
-			).toEqual(['"brown" is not a tint colour. Choose one under Every form, in Tint.']);
+			).toEqual(['"brown" is not a tint color. Choose one under Every form, in Tint.']);
 			expect(edits).toEqual([]);
 		});
 
@@ -1748,7 +1748,7 @@ describe('the colour a form tints in', () => {
 			const { el } = render(two, TINTED);
 			expect(
 				Array.from(el.querySelectorAll('.sheetsmith-stat-block-problem')).map((one) => one.textContent),
-			).toEqual(['Brown Bear: "brown" is not a tint colour. Choose one under Every form, in Tint.']);
+			).toEqual(['Brown Bear: "brown" is not a tint color. Choose one under Every form, in Tint.']);
 		});
 
 		it('holds the word as a disabled, selected first option under Every form, writing nothing', () => {
@@ -1757,15 +1757,15 @@ describe('the colour a form tints in', () => {
 			const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
 			const select = detail.querySelector<HTMLSelectElement>('.sheetsmith-stat-block-tint-choice') as HTMLSelectElement;
 			const first = select.options[0];
-			expect(first?.textContent).toBe('"brown" (not a tint colour)');
+			expect(first?.textContent).toBe('"brown" (not a tint color)');
 			expect(first?.disabled).toBe(true);
 			expect(first?.selected).toBe(true);
 			expect(detail.querySelector('.sheetsmith-stat-block-tint')?.textContent).toContain(
-				'"brown" is not a tint colour. Choose one.',
+				'"brown" is not a tint color. Choose one.',
 			);
 			expect(select.getAttribute('aria-invalid')).toBe('true');
 			const described = el.ownerDocument.getElementById(select.getAttribute('aria-describedby') ?? '');
-			expect(described?.textContent).toBe('"brown" is not a tint colour. Choose one.');
+			expect(described?.textContent).toBe('"brown" is not a tint color. Choose one.');
 			expect(edits).toEqual([]);
 			choose(select, 'yellow');
 			expect(applied(edits[0] as StatBlockData, BROWN_BEAR, { ...config, ...TINTED })).toBe(

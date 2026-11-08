@@ -185,7 +185,7 @@ function valueShown(config: CardConfig): boolean {
 
 export const card: ComponentDefinition<CardConfig, CardData> = {
 	type: 'card',
-	description: 'One labelled value on a card, with an optional derived number and a note line.',
+	description: 'One labeled value on a card, with an optional derived number and a note line.',
 	storage: 'fenced',
 	formulaFields: ['derived', 'effective'],
 	configFields: [
@@ -211,7 +211,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 				{ key: 'label', heading: 'Label' },
 			],
 			description:
-				'Turns the value into a dropdown over these choices. The value is what the character note stores and what a formula reads; the label is what the card shows, and an option with no label shows its value. A formula cannot read a label, so a choice worth arithmetic stores the number and shows the word — 2 labelled "Expertise". Nothing is chosen until the reader chooses it, and a stored value you later remove from this list is kept and still shown.',
+				'Turns the value into a dropdown over these choices. The value is what the character note stores and what a formula reads; the label is what the card shows, and an option with no label shows its value. A formula cannot read a label, so a choice worth arithmetic stores the number and shows the word — 2 labeled "Expertise". Nothing is chosen until the reader chooses it, and a stored value you later remove from this list is kept and still shown.',
 		},
 		{
 			key: 'derived',
