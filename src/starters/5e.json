@@ -612,11 +612,11 @@
 						{
 							"id": "armour_class",
 							"type": "card",
-							"label": "Armour class",
+							"label": "Armor class",
 							"derived": "10 + abilities.DEX + mod.self",
 							"signed": false,
 							"hideValue": true,
-							"notePlaceholder": "armour worn",
+							"notePlaceholder": "armor worn",
 							"position": {
 								"col": 3,
 								"row": 1,
@@ -627,7 +627,7 @@
 						{
 							"id": "defences",
 							"type": "rich-text",
-							"label": "Defences",
+							"label": "Defenses",
 							"position": {
 								"col": 1,
 								"row": 2,
@@ -1319,7 +1319,7 @@
 						{
 							"id": "organisations",
 							"type": "rich-text",
-							"label": "Organisations",
+							"label": "Organizations",
 							"position": {
 								"col": 7,
 								"row": 1,
