@@ -286,14 +286,37 @@ describe('a record whose fence will not read', () => {
 });
 
 describe('a form at 0', () => {
-	it('says so in the error colour and the sentence, and stays active', () => {
+	it('draws the number alone, with no error colour or sentence, and stays active', () => {
 		const body = BODY.replace('HP: 22 / 34', 'HP: 0 / 34');
 		const { el, edits } = render(body);
-		const line = el.querySelector('.sheetsmith-stat-block-down');
-		expect(line).not.toBeNull();
-		expect(el.textContent).toContain('At 0. Carry any leftover damage over by hand.');
+		// The capped vital is on screen at 0, so the absences below are not vacuous.
+		const number = el.querySelector('.sheetsmith-stat-block-number');
+		expect(number?.querySelector<HTMLInputElement>('.sheetsmith-record-input:not(.sheetsmith-pool-max)')?.value).toBe('0');
+		expect(number?.querySelector<HTMLInputElement>('input.sheetsmith-pool-max')?.value).toBe('34');
+		expect(el.querySelector('.sheetsmith-stat-block-down')).toBeNull();
+		expect(el.querySelector('.sheetsmith-stat-block-down-note')).toBeNull();
 		expect(edits).toHaveLength(0);
 		expect(read(body).records[0]?.fields?.Active).toBe('yes');
+	});
+
+	// A capped field where 0 is the normal state: a Fate NPC's Stress, unhurt.
+	it('leaves a Fate NPC\'s Stress of 0 / 1 reading as unhurt', () => {
+		const body = ['', '### Thug', '```sheet', 'Active: yes', 'Stress: 0 / 1', '```', ''].join('\n');
+		const { el } = render(body, {
+			fields: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Stress', type: 'number', maxSource: 'record' },
+			],
+			uses: '',
+			spendOnPick: false,
+			zones: [{ key: 'vitals' }],
+		});
+		// Stress is drawn as a capped number, 0 over a ceiling of 1, so it took the capped branch.
+		const number = el.querySelector('.sheetsmith-stat-block-number');
+		expect(number?.querySelector<HTMLInputElement>('.sheetsmith-record-input:not(.sheetsmith-pool-max)')?.value).toBe('0');
+		expect(number?.querySelector<HTMLInputElement>('input.sheetsmith-pool-max')?.value).toBe('1');
+		expect(el.querySelector('.sheetsmith-stat-block-down')).toBeNull();
+		expect(el.querySelector('.sheetsmith-stat-block-down-note')).toBeNull();
 	});
 
 	it('leaves a form\'s HP byte-identical across a switch away and back', () => {
@@ -1309,9 +1332,10 @@ describe('the configuration zones refuse', () => {
 });
 
 describe('a form below 0', () => {
-	it('says the stored value, with a true minus sign', () => {
+	it('says the stored value in the error colour, with a true minus sign', () => {
 		const below = render(BODY.replace('HP: 22 / 34', 'HP: -3 / 34'));
-		expect(below.el.textContent).toContain('At −3. Carry any leftover damage over by hand.');
+		expect(below.el.querySelector('.sheetsmith-stat-block-down')).not.toBeNull();
+		expect(below.el.querySelector('.sheetsmith-stat-block-down-note')?.textContent).toBe('At −3. Carry any leftover damage over by hand.');
 	});
 });
 

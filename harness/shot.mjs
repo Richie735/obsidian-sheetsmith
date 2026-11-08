@@ -3135,7 +3135,7 @@ export const DEFAULTS = [
 		size: '1400,1700',
 	},
 	{
-		// A form at 0, still active: the number in the error colour and its sentence.
+		// A form at 0, still active: the number alone, no error colour and no sentence.
 		name: 'sheet-forms-zero-hp',
 		query: 'surface=sheet&theme=light&state=forms-zero',
 		size: '1400,1500',

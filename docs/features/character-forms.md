@@ -219,9 +219,11 @@ Items 3 to 6 are the default order; a layout reorders and re-heads them with
      step presses on a line of their own under it, on `interaction/hold-repeat.ts` (shift steps ten,
      held presses repeat), a run of presses written once. The value and the
      record's own ceiling are Record set's number fields exactly, on the same
-     commit path and the same rules. **At 0 or below** the value takes
-     `--text-error` and one sentence sits under the tiles: *At 0. Carry any
-     leftover damage over by hand.* Nothing unticks the form.
+     commit path and the same rules. **At 0** the number alone says it,
+     since 0 may be a field's normal state (a Fate NPC's `Stress: 0 / 1`).
+     **Below 0** the value takes `--text-error` and one sentence sits under
+     the tiles: *At −3. Carry any leftover damage over by hand.*, matching a
+     Pool past its boundary. Nothing unticks the form.
    - a `number` field without one is a plain number field; a `toggle` draws the
      ring; a `text` field is **read**, its words as written — edited under
      **Every form**, where it is **the action cells' one-row field that wraps**

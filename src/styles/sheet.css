@@ -8773,7 +8773,7 @@ a.sheetsmith-notice-action {
 	color: var(--text-normal);
 }
 
-/* A form at 0 or below: the number says it in the error colour, and the
+/* A form below 0: the number says it in the error colour, and the
    sentence under it is the second channel, since a colour alone is never one. */
 .sheetsmith-view .sheetsmith-stat-block-down .sheetsmith-stat-block-number > .sheetsmith-record-input {
 	color: var(--text-error);

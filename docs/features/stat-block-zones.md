@@ -398,7 +398,10 @@ differently next time — and each refused in place with the draft kept:
 4. **At HP below 0 the sentence reads "At 0."** The sentence names the stored
    value as the tile draws it: *At 0. Carry any leftover damage over by hand.*
    at 0, and *At −3. Carry any leftover damage over by hand.* at −3. The value
-   keeps `--text-error` and the form stays on, as before.
+   keeps `--text-error` and the form stays on, as before. *Superseded in
+   0.9.0: at 0 the number alone, with no error colour and no sentence, since 0
+   may be a capped field's normal state; the sentence and colour start below 0
+   (`docs/SPEC.md` §13).*
 
 ### Interactions, against `docs/UI.md` §6 and §7
 
@@ -827,7 +830,8 @@ edit all leave bytes where they are. The worst case is drift, which is drawn.
 - [x] At 380px an open form's vitals start at the box's padding, not the
       record indent.
 - [x] At `HP: -3 / 34` the sentence reads *At −3. Carry any leftover damage
-      over by hand.*, and at 0 it reads *At 0. …*.
+      over by hand.*, and at 0 it read *At 0. …* (superseded in 0.9.0: at 0
+      the number alone, no sentence).
 
 **The starter**
 
