@@ -5010,7 +5010,16 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(pill?.body).not.toMatch(/inset-block-start|inset-inline-start/);
 		// Inside by exactly the bottom padding, by geometry and not by a font's
 		// ink: down by its own height less `--size-4-2`.
-		expect(pill?.body).toMatch(/transform:\s*translateY\(calc\(100% - var\(--size-4-2\)\)\)/);
+		expect(pill?.body.replace(/\s+/g, ' ')).toMatch(
+			/transform: translateY\( calc\(100% - var\(--size-4-2\) - var\(--sheetsmith-in-play-mark-room, 0px\)\) \)/,
+		);
+		// A card makes room for the tag's 2px edge, every card alike, so the
+		// value does not move when a form turns on.
+		const card = rules(CSS_WITHOUT_COMMENTS).find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-card');
+		expect(card?.body).toMatch(/--sheetsmith-in-play-mark-room:\s*var\(--size-2-1\)/);
+		expect(card?.body.replace(/\s+/g, ' ')).toMatch(
+			/padding-block-end: calc\(var\(--size-4-2\) \+ var\(--sheetsmith-in-play-mark-room\)\)/,
+		);
 		expect(pill?.body).not.toMatch(/display:\s*block/);
 		// In a fixed-pixel size, so its overhang fits the fixed padding at any
 		// text size, and hit-testable, so a clipped name's reveal answers it.

@@ -606,12 +606,21 @@
 }
 
 .sheetsmith-card {
+	/* **Room for a form's tag at the bottom.** The tag straddles the card's
+	   bottom edge with exactly the bottom padding inside, so its height is that
+	   padding plus what hangs into the gap below. Its 2px edge needs 2px more
+	   than `--size-4-2` gives, and every card takes it, tagged or not: a lone
+	   card centres its value between its paddings, so padding only a tagged one
+	   would move the value when a form turns on, and a Card set's cards stay
+	   one even grid (`docs/features/form-tint-colour.md`). */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--size-2-1);
 	padding: var(--size-4-2);
+	padding-block-end: calc(var(--size-4-2) + var(--sheetsmith-in-play-mark-room));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
@@ -2475,8 +2484,14 @@ body {
 	   at tile width and centre in the remainder; they now agree the other
 	   way, which is what keeps a pool and a stat side by side the same size
 	   when the layout gave them the same width. */
+	/* Room for a form's tag at the bottom, as every card makes it, and for
+	   the same reason: a Pool stamps no host, so a form's tag lands on this
+	   box, and padding it only while a form is on would move its contents
+	   (`docs/features/form-tint-colour.md`). */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	height: 100%;
 	padding: var(--size-4-2);
+	padding-block-end: calc(var(--size-4-2) + var(--sheetsmith-in-play-mark-room));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
@@ -3324,7 +3339,8 @@ body {
 	   between the row and the bar: on the card's own 4px gap alone, a 32px
 	   button sat practically on the hairline. The bleed to either side and
 	   below is exactly the card's padding, so the two move together. */
-	margin: var(--size-4-2) calc(-1 * var(--size-4-2)) calc(-1 * var(--size-4-2));
+	margin: var(--size-4-2) calc(-1 * var(--size-4-2))
+		calc(-1 * (var(--size-4-2) + var(--sheetsmith-in-play-mark-room, 0px)));
 	background-color: var(--background-modifier-border);
 	/* The positioning context the pending-amount bar is laid against. */
 	position: relative;
@@ -3595,10 +3611,16 @@ a.sheetsmith-notice-action {
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--size-2-2);
+	/* Room for a form's tag at the bottom, as every card makes it, and for
+	   the same reason: a Track stamps no host, so a form's tag lands on this
+	   box, and padding it only while a form is on would move its contents
+	   (`docs/features/form-tint-colour.md`). */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	/* Fills the cell it was placed in, the rule every card on the sheet
 	   follows: a track spanning three columns is three columns of card. */
 	height: 100%;
 	padding: var(--size-4-2);
+	padding-block-end: calc(var(--size-4-2) + var(--sheetsmith-in-play-mark-room));
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
@@ -9734,8 +9756,8 @@ a.sheetsmith-notice-action {
 
    **Sized in the card label's own fixed-pixel token, `--font-ui-smaller`**, not
    `--font-smallest`, which grows with the sheet's text size while the padding it
-   sits in does not. One tight line (`line-height: 1.1`) with its edge an outline
-   rather than a border. It takes the pointer, so a clipped name's reveal
+   sits in does not. One line (`line-height: 1`) with 2px of block padding on a
+   box that makes room for it. It takes the pointer, so a clipped name's reveal
    (`ui/truncation.ts`) answers it; it sits over padding and a gap, never over a
    control.
 
@@ -9759,7 +9781,11 @@ a.sheetsmith-notice-action {
 	z-index: 1;
 	max-width: min(12ch, calc(100% - 2 * var(--size-4-2)));
 	margin: 0;
-	padding: 0 var(--size-2-2);
+	/* Block: 1px, plus half the room its box makes for the tag on either side.
+	   Inline: `--size-2-2` and 2px more, so the letters stand 4px clear of
+	   the 2px inset edge at either side, as they do 1.5px above and below. */
+	padding: calc(1px + var(--sheetsmith-in-play-mark-room, 0px) / 2)
+		calc(var(--size-2-2) + var(--size-2-1));
 	overflow: hidden;
 	border-radius: var(--radius-s);
 	/* An outline, unlike a border, adds nothing to its height. */
@@ -9772,12 +9798,16 @@ a.sheetsmith-notice-action {
 	);
 	color: var(--text-normal);
 	font-size: var(--font-ui-smaller);
-	line-height: 1.1;
+	line-height: 1;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	/* Down by its own height less the padding: `--size-4-2` inside, the rest
-	   out. Geometry only, so no font moves it onto content. */
-	transform: translateY(calc(100% - var(--size-4-2)));
+	/* Down by its own height less the box's bottom padding: that padding
+	   inside, the rest out. Geometry only, so no font moves it onto content.
+	   A card's padding is `--size-4-2` and the room it makes; a placed box
+	   makes none. */
+	transform: translateY(
+		calc(100% - var(--size-4-2) - var(--sheetsmith-in-play-mark-room, 0px))
+	);
 }
 
 /* **A tag naming several forms takes its box's width**, less the padding it
@@ -9800,6 +9830,9 @@ a.sheetsmith-notice-action {
    room. The pinned name cell is `position: sticky`, so it is the pill's
    containing block already. */
 .sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
+	/* A row's tag is centred over its name cell, so it hangs into no gap and
+	   takes the same room for its 2px edge a card's makes. */
+	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	inset-block-start: 50%;
 	inset-block-end: auto;
 	inset-inline-end: var(--size-2-2);
