@@ -86,6 +86,7 @@ import { boundedText } from './typed-value';
 import { embedRefusal } from './embed-rule';
 import { renderPictureFrame } from './picture-frame';
 import { columnKeyFault, zoneHeadingFault, zoneKeyFault } from './zone-rules';
+import { drawBriefs, FormBrief } from './stat-block-briefs';
 import {
 	BodyZone,
 	ZoneHost,
@@ -203,6 +204,15 @@ const SEVERAL_VALUE = 'sheetsmith-several';
  * a write. Cleared only where it matches, so another block cannot consume it.
  */
 let awaitingAdd: { id: string; held: number } | null = null;
+
+/**
+ * The render that follows a press on a brief, so it lands focus on the picker:
+ * the brief pressed is gone in the rebuild, and the picker is the control that
+ * now says which form is on (`docs/features/stat-block-in-play-polish.md` §4).
+ * `awaitingAdd`'s module state for its reason, and cleared only where it
+ * matches, so another block cannot consume it.
+ */
+let awaitingPick: string | null = null;
 
 export type { StatBlockColumn, StatBlockZone } from './stat-block-zones';
 
@@ -373,15 +383,6 @@ function recordTint(
 function tintOf(config: StatBlockConfig, record: RecordEntry): TintColour {
 	const own = recordTint(config, record);
 	return own !== null && 'colour' in own ? own.colour : blockTint(config);
-}
-
-/**
- * Whether the layout has chosen a tint at all, which is what draws a swatch in
- * the In play head: a block colour other than the accent, or the switch on. A
- * layout choosing nothing draws nothing new there.
- */
-function choosesTint(config: StatBlockConfig): boolean {
-	return blockTint(config) !== 'accent' || hasTintPerRecord(config);
 }
 
 /** `accent` reads **Accent**: a colour's word as a choice in the dropdown. */
@@ -1206,8 +1207,11 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		const content = element('div', 'sheetsmith-stat-block-content', scroll);
 		const foot = element('div', 'sheetsmith-stat-block-foot', box);
 
+		const picking = awaitingPick === config.id;
+		if (picking) awaitingPick = null;
 		paint();
 		if (landedAt >= 0) nameFields.get(landedAt)?.focus();
+		else if (picking) content.querySelector<HTMLSelectElement>('.sheetsmith-stat-block-select')?.focus();
 
 		/** Redraw the face the reader is on; nothing here reaches the note. */
 		function paint(): void {
@@ -1400,7 +1404,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			if (only !== undefined) {
 				const named = recordLabel(only.record.name, noun);
 				drawThumb(playHead, only.record, named, failures, false);
-				drawHeadSwatch(playHead, only.record);
+				// The head's rule takes the form's colour, the accent included, so
+				// the line under its name and the outline round each box it changed
+				// are one colour (`docs/features/stat-block-in-play-polish.md` §2).
+				playHead.setAttribute(TINT_ATTRIBUTE, tintOf(config, only.record));
 				reportStrayTint(only.record, named, failures, false);
 			}
 			element(
@@ -1467,6 +1474,22 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 						? `No ${lower} is active. Choosing one spends a use.`
 						: `No ${lower} is active.`,
 				);
+				if (readable.length > 0) {
+					drawBriefs(
+						content,
+						readable.map(({ record, at }) => brief(record, at)),
+						{
+							id: config.id,
+							listName: `${config.label}: choose a ${lower}`,
+							thumb: (into, source, named, onError) => paintThumb(into, source, named, onError, true),
+							tiles: (into, at) => briefTiles(into, at),
+							choose: (at) => {
+								awaitingPick = config.id;
+								choose(at);
+							},
+						},
+					);
+				}
 			}
 			for (const { record, at } of active) {
 				const named = recordLabel(record.name, noun);
@@ -1474,7 +1497,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (active.length > 1) {
 					const row = element('div', 'sheetsmith-stat-block-form-name', panel);
 					drawThumb(row, record, named, failures, true);
-					drawHeadSwatch(row, record);
+					// Each form's own rule takes its colour; the head names both, so
+					// no one colour is its own and its rule stays plain.
+					row.setAttribute(TINT_ATTRIBUTE, tintOf(config, record));
 					reportStrayTint(record, named, failures, true);
 					element('span', 'sheetsmith-stat-block-form-title', row, named);
 				}
@@ -1552,16 +1577,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				 * scanned without opening each form; open, the stat block under it says
 				 * them, and the line goes.
 				 */
-				const vitals =
-					record.error === null
-						? vitalsSummary(
-								config.fields ?? [],
-								record,
-								(config.fields ?? [])
-									.filter((field) => fieldType(field) === 'modifier')
-									.flatMap((field) => formChanges(field, record)),
-							)
-						: '';
+				const vitals = record.error === null ? closedLine(record) : '';
 				summaryLine = vitals === '' ? null : element('span', 'sheetsmith-stat-block-summary', summary, vitals);
 				summaryLine?.toggleAttribute('hidden', startsOpen);
 				const remove = element('button', 'sheetsmith-record-remove', summary);
@@ -1601,6 +1617,76 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			add.type = 'button';
 			element('span', 'sheetsmith-record-add-label', add, `Add ${lower}`);
 			add.addEventListener('click', () => addRecord());
+		}
+
+		/** A readable form's vitals on one line, as a closed form says them under Every form. */
+		function closedLine(record: StatBlockEntry): string {
+			return vitalsSummary(config.fields ?? [], record, allChanges(record));
+		}
+
+		/**
+		 * A readable form as its brief on In play draws it: the same name the
+		 * picker lists, the same line a closed form says under Every form, the
+		 * colour the head's rule takes once it is on, and its picture where the
+		 * head would draw one.
+		 */
+		function brief(record: StatBlockEntry, at: number): FormBrief {
+			const picture = pictureOf(record);
+			return {
+				at,
+				named: recordLabel(record.name, noun),
+				// What the form changes, in In play's words and without In play's
+				// reasons: a form that is off pushes nothing, so every change would
+				// read as not applying, which says nothing about choosing it.
+				changes: allChanges(record)
+					.filter((change) => !change.vital)
+					.map((change) => change.text)
+					.join(' · '),
+				tint: tintOf(config, record),
+				...(picture === undefined ? {} : { picture }),
+			};
+		}
+
+		/**
+		 * A brief's pairs: the fields In play draws as tiles and every number a
+		 * form's `=` sets, through In play's own painters on their brief face,
+		 * read-only. Returns what they say, ` · ` between.
+		 *
+		 * **A field with no value is left out**, where In play keeps its tile and
+		 * a dash: In play is the form's whole sheet, where a blank Speed is a slot
+		 * to see, and a brief is what tells one form from another, where `Speed —`
+		 * says nothing. A toggle always has a value, since unset is off.
+		 */
+		function briefTiles(into: HTMLElement, at: number): string {
+			const record = records[at];
+			if (record === undefined || record.error !== null) return '';
+			const named = recordLabel(record.name, noun);
+			const scope = storedLayer(config.fields, record);
+			const said = formFields()
+				.filter((field) => fieldType(field) !== 'modifier' && holdsValue(field, record))
+				.map((field) => drawVital(into, into, field, record, at, named, scope, 'brief'));
+			for (const change of allChanges(record).filter((one) => one.vital)) said.push(drawSetVital(into, change, 'brief'));
+			return said.join(' · ');
+		}
+
+		/** Whether a record holds a value for a field: a toggle always, a number or text where it is not blank. */
+		function holdsValue(field: RecordField, record: StatBlockEntry): boolean {
+			const raw = record.fields[field.key] ?? '';
+			const type = fieldType(field);
+			if (type === 'toggle') return true;
+			return type === 'number' ? numberReading(field, raw).value !== '' : raw.trim() !== '';
+		}
+
+		/** The fields a form draws: every one but the toggle the picker owns. */
+		function formFields(): RecordField[] {
+			return (config.fields ?? []).filter((field) => !(toggle !== null && field.key === toggle.key));
+		}
+
+		/** Every change a form's modifier fields make, in field order. */
+		function allChanges(record: StatBlockEntry): FormChange[] {
+			return formFields()
+				.filter((field) => fieldType(field) === 'modifier')
+				.flatMap((field) => formChanges(field, record));
 		}
 
 		/** Whether a record's stat block is open where the view's set does not hold it. */
@@ -1663,42 +1749,53 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			 */
 			prefixed: boolean,
 		): void {
-			if (!hasPicture(config) || record.picture === undefined) return;
+			const picture = pictureOf(record);
+			if (picture === undefined) return;
 			const thumb = element('div', 'sheetsmith-stat-block-thumb', row);
 			row.insertBefore(thumb, row.firstChild);
+			paintThumb(thumb, picture, named, (message) => {
+				thumb.remove();
+				// The painter's sentence names the fault; the fix is this
+				// component's, since in play the thumbnail has no field to press
+				// (`docs/UI.md` §10). Image and Passport keep theirs, whose frame
+				// is the field.
+				const said = `${message} Set it under Every form, in Picture.`;
+				element('div', 'sheetsmith-stat-block-problem', failures, prefixed ? `${named}: ${said}` : said);
+			});
+		}
+
+		/** A form's picture line where the layout draws pictures and the form holds one. */
+		function pictureOf(record: StatBlockEntry): string | undefined {
+			return hasPicture(config) ? record.picture : undefined;
+		}
+
+		/**
+		 * A form's picture, read-only, into a thumbnail box: the head's and a
+		 * brief's alike, so the painter's classes and options are spelled once and
+		 * only what a failure does differs. `alt` is empty because the form's name
+		 * is beside it in either place.
+		 */
+		function paintThumb(
+			thumb: HTMLElement,
+			source: string,
+			named: string,
+			onError: (message: string) => void,
+			/** A brief's, inside a button, so its frame is phrasing content. */
+			inline = false,
+		): void {
 			renderPictureFrame(thumb, {
+				...(inline ? { inline: true } : {}),
 				classes: { frame: 'sheetsmith-image-frame', picture: 'sheetsmith-image-picture', field: 'sheetsmith-image-input' },
-				source: record.picture,
+				source,
 				name: `${named} picture`,
-				// The form's name is beside it in the title's type.
 				alt: '',
 				prefix: null,
 				status,
 				readOnly: true,
-				onError: (message) => {
-					thumb.remove();
-					// The painter's sentence names the fault; the fix is this
-					// component's, since in play the thumbnail has no field to press
-					// (`docs/UI.md` §10). Image and Passport keep theirs, whose frame
-					// is the field.
-					const said = `${message} Set it under Every form, in Picture.`;
-					element('div', 'sheetsmith-stat-block-problem', failures, prefixed ? `${named}: ${said}` : said);
-				},
+				onError,
 				...(context.resource === undefined ? {} : { resource: context.resource }),
 				onCommit: () => undefined,
 			});
-		}
-
-		/**
-		 * The swatch keying a form's name in the In play head to the boxes it is
-		 * tinting, drawn after its thumbnail and before its name, and only where
-		 * the layout has chosen a tint: a layout choosing nothing draws nothing
-		 * new in the head. With two on, each name row carries its own, which is
-		 * what says which colour is which form.
-		 */
-		function drawHeadSwatch(row: HTMLElement, record: StatBlockEntry): void {
-			if (!choosesTint(config)) return;
-			tintSwatch(row, tintOf(config, record));
 		}
 
 		/**
@@ -1795,9 +1892,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				return;
 			}
 			const scope = storedLayer(config.fields, record);
-			const fields = (config.fields ?? []).filter(
-				(field) => !(toggle !== null && field.key === toggle.key),
-			);
+			const fields = formFields();
 			const changes = new Map<string, FormChange[]>();
 			for (const field of fields) {
 				if (fieldType(field) === 'modifier') changes.set(field.key, formChanges(field, record));
@@ -1829,8 +1924,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					if (vitals.length === 0 && set.length === 0) continue;
 					const host = heading === '' ? into : section(into, heading).body;
 					const strip = element('div', 'sheetsmith-stat-block-vitals', host);
-					for (const field of vitals) drawVital(strip, into, field, record, at, named, scope, editing);
-					for (const change of set) drawSetVital(strip, change);
+					for (const field of vitals) drawVital(strip, into, field, record, at, named, scope, editing ? 'edit' : 'play');
+					for (const change of set) drawSetVital(strip, change, 'play');
 				} else if (key === 'changes') {
 					for (const field of fields) {
 						if (fieldType(field) === 'modifier') {
@@ -1863,6 +1958,14 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		}
 
 		/** One vital: its name over its value, the value a control where it is stepped. */
+		/**
+		 * One record field as a tile, on the face it is drawn for: **Every form**
+		 * edits it, **In play** reads a text field and keeps a toggle's ring and a
+		 * number's field and steppers as controls, and **a brief** reads every one
+		 * of them — a painted ring, the number as text — inside a button, so in
+		 * spans, and nothing in it takes a press. Returns what the tile says, as
+		 * words, which a brief speaks as its description.
+		 */
 		function drawVital(
 			strip: HTMLElement,
 			row: HTMLElement,
@@ -1871,23 +1974,24 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			at: number,
 			named: string,
 			scope: Record<string, FieldValue>,
-			editing: boolean,
-		): void {
+			face: VitalFace,
+		): string {
 			const type = fieldType(field);
 			const name = fieldLabel(field);
 			const raw = record.fields[field.key] ?? '';
-			const item = element('div', `sheetsmith-stat-block-vital sheetsmith-stat-block-vital-${type}`, strip);
-			element('div', 'sheetsmith-component-label sheetsmith-stat-block-vital-label', item, name);
-			const value = element('div', 'sheetsmith-stat-block-vital-value', item);
+			const { item, value } = vitalTile(strip, `sheetsmith-stat-block-vital-${type}`, name, face);
 			const commit = (next: string): void => {
 				context.onChange({ records: { [at]: { fields: { [field.key]: next } } } });
 			};
 			if (type === 'text') {
-				// Read in play; a field under **Every form**, which is the form's editor.
-				if (editing) drawText(value, row, raw, `${named} ${name}`, commit);
-				else element('span', 'sheetsmith-stat-block-vital-text', value, raw.trim() === '' ? '—' : raw);
-				return;
+				// Read in play and on a brief; a field under **Every form**, which is
+				// the form's editor.
+				const said = raw.trim() === '' ? '—' : raw;
+				if (face === 'edit') drawText(value, row, raw, `${named} ${name}`, commit);
+				else element('span', 'sheetsmith-stat-block-vital-text', value, said);
+				return `${name} ${said}`;
 			}
+			if (face === 'brief') return `${name} ${readVital(value, type, field, raw)}`;
 			if (type === 'toggle') {
 				const button = element('button', 'sheetsmith-level-ring sheetsmith-stat-block-ring', value);
 				button.type = 'button';
@@ -1904,12 +2008,12 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 						commit(flagText(level > 0));
 					},
 				});
-				return;
+				return name;
 			}
 			const accessible = `${named} ${name}`;
 			const cell = element('div', 'sheetsmith-stat-block-number', value);
 			const number = drawRecordNumber(cell, row, controls, { field, raw, name, accessible, body: true, scope }, commit);
-			if (!(recordsOwnMax(field) || field.max !== undefined)) return;
+			if (!(recordsOwnMax(field) || field.max !== undefined)) return name;
 			const stored = splitBounded(raw).value;
 			if (stored.trim() !== '' && Number.isFinite(Number(stored)) && Number(stored) < 0) {
 				item.classList.add('sheetsmith-stat-block-down');
@@ -1918,6 +2022,54 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				element('div', 'sheetsmith-stat-block-down-note', row, `At ${said}. Carry any leftover damage over by hand.`);
 			}
 			drawSteppers(cell, number.input, accessible, field, (next) => number.set(next), number.ceiling);
+			return name;
+		}
+
+		/**
+		 * A tile's frame — the box, its label at the component label's rank, and
+		 * the value line under it — for a field and for a set number alike. **On a
+		 * brief it is no tile**: a pair of a small muted label over its value, in
+		 * spans since the button holds phrasing content only, with none of the
+		 * tile's box, columns or truncating label, so a pair is as wide as what it
+		 * says (`docs/features/stat-block-in-play-polish.md` §4).
+		 */
+		function vitalTile(
+			strip: HTMLElement,
+			kind: string,
+			label: string,
+			face: VitalFace,
+		): { item: HTMLElement; value: HTMLElement } {
+			if (face === 'brief') {
+				const item = element('span', `sheetsmith-stat-block-brief-stat ${kind}`, strip);
+				element('span', 'sheetsmith-stat-block-brief-stat-label', item, label);
+				return { item, value: element('span', 'sheetsmith-stat-block-brief-stat-value', item) };
+			}
+			const item = element('div', `sheetsmith-stat-block-vital ${kind}`, strip);
+			element('div', 'sheetsmith-component-label sheetsmith-stat-block-vital-label', item, label);
+			return { item, value: element('div', 'sheetsmith-stat-block-vital-value', item) };
+		}
+
+		/**
+		 * A toggle or a number read rather than controlled, for a brief: the
+		 * level ring painted on a span, and the number as text, compact where it
+		 * has a ceiling (`22/34`, the ceiling muted), as the closed line says it.
+		 * Returns the reading in words.
+		 */
+		function readVital(value: HTMLElement, type: string, field: RecordField, raw: string): string {
+			if (type === 'toggle') {
+				const on = isFlagSet(raw);
+				const mark = element('span', 'sheetsmith-level-ring sheetsmith-stat-block-ring', value);
+				mark.setAttribute('aria-hidden', 'true');
+				paintLevelRing(mark, {}, on ? 1 : 0, false);
+				return on ? 'on' : 'off';
+			}
+			const { value: stored, ceiling } = numberReading(field, raw);
+			const shown = stored === '' ? '—' : stored;
+			element('span', 'sheetsmith-stat-block-reading', value, shown);
+			if (ceiling === '') return shown;
+			// The ceiling muted and run in, with no gap, as the closed line has it.
+			element('span', 'sheetsmith-stat-block-brief-ceiling', value, `/${ceiling}`);
+			return `${shown}/${ceiling}`;
 		}
 
 		/**
@@ -1926,16 +2078,19 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 * modifier glyph is where it is edited. One that is not applying says why
 		 * in words beside its muted number, as the list would.
 		 */
-		function drawSetVital(strip: HTMLElement, change: FormChange): void {
-			const item = element('div', 'sheetsmith-stat-block-vital sheetsmith-stat-block-vital-set', strip);
-			element('div', 'sheetsmith-component-label sheetsmith-stat-block-vital-label', item, change.label);
-			const value = element('div', 'sheetsmith-stat-block-vital-value', item);
+		function drawSetVital(strip: HTMLElement, change: FormChange, face: VitalFace): string {
+			const { value } = vitalTile(strip, 'sheetsmith-stat-block-vital-set', change.label, face);
+			// A brief is a form that is not on, so whether it applies *now* is not
+			// its question: it says what the form sets, as `briefChanges` does.
+			const idle = face !== 'brief' && !change.applies;
+			const said = face === 'brief' ? change.text : changeText(change);
 			element(
 				'span',
-				change.applies ? 'sheetsmith-stat-block-vital-text' : 'sheetsmith-stat-block-vital-text sheetsmith-stat-block-change-idle',
+				idle ? 'sheetsmith-stat-block-vital-text sheetsmith-stat-block-change-idle' : 'sheetsmith-stat-block-vital-text',
 				value,
-				change.why === null ? change.text : `${change.text} (${change.why})`,
+				said,
 			);
+			return `${change.label} ${said}`;
 		}
 
 		/**
@@ -2035,7 +2190,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			for (const change of changes) {
 				if (change.vital) continue;
 				const list = groups.get(change.group) ?? [];
-				list.push({ text: change.why === null ? change.text : `${change.text} (${change.why})`, applies: change.applies });
+				list.push({ text: changeText(change), applies: change.applies });
 				groups.set(change.group, list);
 			}
 			if (groups.size === 0) {
@@ -2176,6 +2331,12 @@ function compactChange(
 }
 
 /** One change a form's modifier field makes, as the form reads it. */
+/**
+ * The face a tile is drawn for: **Every form** edits it, **In play** reads it
+ * with its controls live, and a brief reads it with none.
+ */
+type VitalFace = 'edit' | 'play' | 'brief';
+
 interface FormChange {
 	/** The component it is grouped under in the list. */
 	group: string;
@@ -2238,11 +2399,8 @@ function vitalsSummary(
 	const said: string[] = [];
 	for (const field of fields) {
 		if (fieldType(field) !== 'number') continue;
-		const raw = record.fields[field.key] ?? '';
-		const entry = splitBounded(raw);
-		const value = entry.value.trim();
+		const { value, ceiling } = numberReading(field, record.fields[field.key] ?? '');
 		if (value === '') continue;
-		const ceiling = recordsOwnMax(field) ? (entry.ceiling ?? '').trim() : field.max !== undefined ? String(field.max) : '';
 		said.push(`${fieldLabel(field)} ${ceiling === '' ? value : `${value}/${ceiling}`}`);
 	}
 	for (const change of changes) {
@@ -2252,9 +2410,27 @@ function vitalsSummary(
 }
 
 /**
- * A square in a colour's edge, taking no pointer and no focus, and hidden from
- * assistive tech because the words beside it already say the colour or the
- * form. The stylesheet draws it from the attribute, so no inline colour is set.
+ * A number field's stored value and the ceiling it reads against — the
+ * record's own where the layout says so, else the layout's `max`, else none —
+ * as text, trimmed. One reading for the closed line and a brief's tile, so the
+ * two say the same figures for one form.
+ */
+function numberReading(field: RecordField, raw: string): { value: string; ceiling: string } {
+	const entry = splitBounded(raw);
+	const ceiling = recordsOwnMax(field) ? (entry.ceiling ?? '').trim() : field.max !== undefined ? String(field.max) : '';
+	return { value: entry.value.trim(), ceiling };
+}
+
+/** What a change says, with why it is not applying where it is not: `STR +4`, `CON +3 (already higher)`. */
+function changeText(change: FormChange): string {
+	return change.why === null ? change.text : `${change.text} (${change.why})`;
+}
+
+/**
+ * A square in a colour's edge, previewing the Tint dropdown's choice under Every
+ * form, taking no pointer and no focus, and hidden from assistive tech because
+ * the dropdown beside it already says the colour. The stylesheet draws it from
+ * the attribute, so no inline colour is set.
  */
 function tintSwatch(into: HTMLElement, colour: TintColour): HTMLElement {
 	const swatch = element('span', 'sheetsmith-stat-block-tint-swatch', into);

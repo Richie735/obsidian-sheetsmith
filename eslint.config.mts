@@ -373,6 +373,17 @@ export default defineConfig(
 								 */
 								'!./stat-block-zones',
 								/*
+								 * **A Stat block's briefs**: one pressable card per form on
+								 * In play while no form is on
+								 * (`docs/features/stat-block-in-play-polish.md` §4). On
+								 * `stat-block-zones.ts`'s terms, for atomicity at one
+								 * consumer: drawing the brief list, its names and its colour
+								 * rules is a second job in `stat-block.ts`. In no registry,
+								 * declaring no `ComponentDefinition`, importing nothing from
+								 * `obsidian` and touching no file.
+								 */
+								'!./stat-block-briefs',
+								/*
 								 * **What a Stat block zone's key, heading and columns may be**,
 								 * shared by the component's configuration check and the zone
 								 * editor, each phrasing its own sentence around one predicate
@@ -401,6 +412,7 @@ export default defineConfig(
 								'!../components/record-fields',
 								'!../components/record-controls',
 								'!../components/stat-block-zones',
+								'!../components/stat-block-briefs',
 								'!../components/zone-rules',
 							],
 							message:

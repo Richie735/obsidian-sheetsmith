@@ -82,6 +82,10 @@ type StateName =
 	| 'three-parts'
 	| 'forms'
 	| 'forms-none'
+	| 'forms-none-one'
+	| 'forms-none-tint'
+	| 'forms-empty'
+	| 'forms-none-long'
 	| 'forms-two'
 	| 'forms-zero'
 	| 'forms-below'
@@ -137,6 +141,10 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'three-parts') return threePartSamples();
 	if (name === 'forms') return formsSamples('active');
 	if (name === 'forms-none') return formsSamples('none');
+	if (name === 'forms-none-one') return formsSamples('none-one');
+	if (name === 'forms-none-tint') return formsSamples('none-tint');
+	if (name === 'forms-empty') return formsSamples('empty');
+	if (name === 'forms-none-long') return formsSamples('none-long');
 	if (name === 'forms-two') return formsSamples('two');
 	if (name === 'forms-zero') return formsSamples('zero');
 	if (name === 'forms-below') return formsSamples('below');
@@ -987,6 +995,10 @@ function applyQuery(): void {
 			wanted === 'three-parts' ||
 			wanted === 'forms' ||
 			wanted === 'forms-none' ||
+			wanted === 'forms-none-one' ||
+			wanted === 'forms-none-tint' ||
+			wanted === 'forms-empty' ||
+			wanted === 'forms-none-long' ||
 			wanted === 'forms-two' ||
 			wanted === 'forms-zero' ||
 			wanted === 'forms-below' ||

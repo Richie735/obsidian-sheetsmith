@@ -4631,7 +4631,17 @@ export function notesSamples(): Sample[] {
  * - `active`: Brown Bear in play, its body in zones: a picture, an Attacks table
  *   with an aliased link, Actions features with a usage and a list, collapsed
  *   Traits, and a Reactions block no zone owns; Wolf a 0.9.0 body; the mook empty;
- * - `none`: no form active, so the empty state and *Choosing one spends a use*;
+ * - `none`: no form active, so the empty state, *Choosing one spends a use* and
+ *   a brief of each form to press (`docs/features/stat-block-in-play-polish.md`);
+ * - `none-one`: the same with Brown Bear the only form, so one brief at the
+ *   grid's track width;
+ * - `none-tint`: the same as `none` with **Tint per record** on, Brown Bear
+ *   choosing orange, so each brief's rule previews its form's colour beside the
+ *   block's `&tint=`;
+ * - `empty`: no form written yet, so *No forms yet.* and **Add form**;
+ * - `none-long`: the same as `none` with the Wolf changing enough that its
+ *   brief's changes line runs past two lines, so its clamp's ellipsis shows,
+ *   and its Speed left blank, so the brief leaves the field out;
  * - `two`: both on by hand, so the report and both stat blocks, each its picture;
  * - `zero`: Brown Bear at 0 HP and still active;
  * - `below`: Brown Bear at −3 HP, so the sentence names the stored number;
@@ -4644,6 +4654,10 @@ export function notesSamples(): Sample[] {
 export type FormsVariant =
 	| 'active'
 	| 'none'
+	| 'none-one'
+	| 'none-tint'
+	| 'empty'
+	| 'none-long'
 	| 'two'
 	| 'zero'
 	| 'below'
@@ -4666,11 +4680,22 @@ export type FormsVariant =
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	const tinting =
 		variant === 'tint' ||
+		variant === 'none-tint' ||
 		variant === 'tint-two' ||
 		variant === 'tint-error' ||
 		variant === 'tint-pool' ||
 		variant === 'tint-track';
-	const bear = variant === 'none' || variant === 'mook' || variant === 'tint-error' ? 'no' : 'yes';
+	const bear =
+		variant === 'none' ||
+		variant === 'none-one' ||
+		variant === 'none-tint' ||
+		variant === 'none-long' ||
+		variant === 'mook' ||
+		variant === 'tint-error'
+			? 'no'
+			: 'yes';
+	/** Brown Bear alone, or no form at all, for the briefs' one-form and empty states. */
+	const others = variant !== 'none-one' && variant !== 'empty';
 	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
 	/*
@@ -4881,8 +4906,8 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				spendOnPick: true,
 				image: true,
 				// Each form may choose its own colour on the tint states alone, so the
-				// accent pair stays a layout that chooses no tint and draws nothing new
-				// in its head; the block's own `tint` comes from `&tint=`.
+				// accent pair stays a layout that chooses no tint, its head's rule in
+				// the accent; the block's own `tint` comes from `&tint=`.
 				...(tinting ? { tintPerRecord: true } : {}),
 				zones: [
 					{ key: 'vitals' },
@@ -4908,65 +4933,77 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				'uses: 1',
 				'```',
 				'',
-				'### Brown Bear',
-				'```sheet',
-				`Active: ${bear}`,
-				`HP: ${bearHp}`,
-				'Speed: 40 ft., climb 30 ft.',
-				`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}${trackPush}`,
-				...(tinting ? ['Tint: orange'] : []),
-				'```',
-				'',
-				`![[${picture}]]`,
-				'',
-				...lead,
-				'#### Attacks',
-				'',
-				...attacks,
-				'',
-				'#### Actions',
-				'',
-				'**Multiattack.** The bear makes two attacks: one with its bite and one with its claws.',
-				'',
-				'**Roar (1/Day).** Each creature within 30 feet must succeed on a DC 12 Wisdom saving throw.',
-				'',
-				'- On a failure it is frightened until the end of its next turn.',
-				'',
-				// Not a zone in this layout, and after a features zone rather than
-				// the text zone, where it would read as that zone's own text.
-				'#### Reactions',
-				'',
-				'**Defensive Swat.** The bear swats at an attacker within 5 feet.',
-				'',
-				'#### Traits',
-				'',
-				'***Keen Smell.*** The bear has advantage on Wisdom (Perception) checks that rely on smell.',
-				'',
-				...drift,
-				'### Wolf',
-				'```sheet',
-				`Active: ${wolf}`,
-				'HP: 11 / 11',
-				'Speed: 40 ft.',
-				`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}`,
-				'```',
-				'',
-				'| Attack | Bonus | Damage |',
-				'|---|---|---|',
-				'| Bite | 4 | 2d4+2 piercing |',
-				'',
-				'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
-				'',
-				// A Fate mook's shape: a whole stat block with nothing in its zones,
-				// which In play draws as its head and vitals alone.
-				'### Thug',
-				'```sheet',
-				`Active: ${mook}`,
-				'HP: 3 / 3',
-				'Speed: 30 ft.',
-				...(tinting ? ['Modifiers: armour_class = 10', 'Tint: brown'] : []),
-				'```',
-				'',
+				...(variant === 'empty'
+					? []
+					: [
+						'### Brown Bear',
+						'```sheet',
+						`Active: ${bear}`,
+						`HP: ${bearHp}`,
+						'Speed: 40 ft., climb 30 ft.',
+						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}${trackPush}`,
+						...(tinting ? ['Tint: orange'] : []),
+						'```',
+						'',
+						`![[${picture}]]`,
+						'',
+						...lead,
+						'#### Attacks',
+						'',
+						...attacks,
+						'',
+						'#### Actions',
+						'',
+						'**Multiattack.** The bear makes two attacks: one with its bite and one with its claws.',
+						'',
+						'**Roar (1/Day).** Each creature within 30 feet must succeed on a DC 12 Wisdom saving throw.',
+						'',
+						'- On a failure it is frightened until the end of its next turn.',
+						'',
+						// Not a zone in this layout, and after a features zone rather than
+						// the text zone, where it would read as that zone's own text.
+						'#### Reactions',
+						'',
+						'**Defensive Swat.** The bear swats at an attacker within 5 feet.',
+						'',
+						'#### Traits',
+						'',
+						'***Keen Smell.*** The bear has advantage on Wisdom (Perception) checks that rely on smell.',
+						'',
+						...drift,
+					]),
+				...(others
+					? [
+						'### Wolf',
+						'```sheet',
+						`Active: ${wolf}`,
+						'HP: 11 / 11',
+						variant === 'none-long' ? 'Speed:' : 'Speed: 40 ft.',
+						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${
+							variant === 'none-long'
+								? '; abilities.STR = 3; abilities.CON = 2; skills.perception >= 5; skills.athletics >= 4; saves.DEX = 4; saves.CON = 3'
+								: ''
+						}`,
+						'```',
+						'',
+						'| Attack | Bonus | Damage |',
+						'|---|---|---|',
+						'| Bite | 4 | 2d4+2 piercing |',
+						'',
+						'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
+						'',
+						// A Fate mook's shape: a whole stat block with nothing in its zones,
+						// which In play draws as its head and vitals alone.
+						'### Thug',
+						'```sheet',
+						`Active: ${mook}`,
+						'HP: 3 / 3',
+						'Speed: 30 ft.',
+						...(tinting ? ['Modifiers: armour_class = 10', 'Tint: brown'] : []),
+						'```',
+						'',
+					]
+					: []),
 			].join('\n'),
 		},
 		...(pooled
