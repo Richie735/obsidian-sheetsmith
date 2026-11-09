@@ -1220,12 +1220,16 @@ describe('render', () => {
 			const hidden: RosterConfig = { ...cardConfig, hideColumnHeadings: true };
 			const { el: el2 } = renderedCards(hidden);
 			expect(cardFor(el2, 'Dexterity')?.querySelector('thead')).toBeNull();
+			// Said on the table itself, which the tint's top-corner rule reads.
+			expect(cardFor(el, 'Dexterity')?.querySelector('table.sheetsmith-table-headless')).toBeNull();
+			expect(cardFor(el2, 'Dexterity')?.querySelector('table.sheetsmith-table-headless')).not.toBeNull();
 		});
 
 		it('hides the shared table\'s own heading row too, on the identical setting', () => {
 			const shared: RosterConfig = { ...cardConfig, cardLayout: false, hideColumnHeadings: true };
 			const { el } = renderedCards(shared);
 			expect(el.querySelector('thead')).toBeNull();
+			expect(el.querySelector('table.sheetsmith-table-headless')).not.toBeNull();
 		});
 
 		it('marks a row\'s divider, suppressed on the last row of its own card', () => {
