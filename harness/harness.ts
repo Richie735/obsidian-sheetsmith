@@ -98,7 +98,8 @@ type StateName =
 	| 'forms-tint-two'
 	| 'forms-tint-error'
 	| 'forms-tint-pool'
-	| 'forms-tint-track';
+	| 'forms-tint-track'
+	| 'forms-roster-score';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -158,6 +159,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-tint-error') return formsSamples('tint-error');
 	if (name === 'forms-tint-pool') return formsSamples('tint-pool');
 	if (name === 'forms-tint-track') return formsSamples('tint-track');
+	if (name === 'forms-roster-score') return formsSamples('roster-score');
 	return SAMPLES;
 }
 
@@ -1011,7 +1013,8 @@ function applyQuery(): void {
 			wanted === 'forms-tint-two' ||
 			wanted === 'forms-tint-error' ||
 			wanted === 'forms-tint-pool' ||
-			wanted === 'forms-tint-track'
+			wanted === 'forms-tint-track' ||
+			wanted === 'forms-roster-score'
 			? wanted
 			: 'populated',
 	);

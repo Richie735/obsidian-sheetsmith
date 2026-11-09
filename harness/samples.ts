@@ -4675,7 +4675,15 @@ export type FormsVariant =
 	/** Brown Bear orange raising a Pool's ceiling, so a form's tag lands on a placed box. */
 	| 'tint-pool'
 	/** Brown Bear orange lengthening a Track's run, so a form's tag lands on a Track. */
-	| 'tint-track';
+	| 'tint-track'
+	/**
+	 * The Wolf alone, adding to the Constitution score in the `checks` Roster and
+	 * to none of its rows: a score-only push, so the card's tag sits flush under
+	 * Concentration, a last row the form left alone. Not Wisdom: its one row is
+	 * stretched to its neighbour's height, so a tag there sits clear of it
+	 * (`docs/features/character-forms.md`).
+	 */
+	| 'roster-score';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	const tinting =
@@ -4691,12 +4699,13 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 		variant === 'none-tint' ||
 		variant === 'none-long' ||
 		variant === 'mook' ||
-		variant === 'tint-error'
+		variant === 'tint-error' ||
+		variant === 'roster-score'
 			? 'no'
 			: 'yes';
 	/** Brown Bear alone, or no form at all, for the briefs' one-form and empty states. */
 	const others = variant !== 'none-one' && variant !== 'empty';
-	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
+	const wolf = variant === 'two' || variant === 'tint-two' || variant === 'roster-score' ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
 	/*
 	 * Two-on with a target both forms add to, so one card is reached by two
@@ -4941,7 +4950,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${bear}`,
 						`HP: ${bearHp}`,
 						'Speed: 40 ft., climb 30 ft.',
-						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5; checks.concentration += 2; checks.insight += 1${shared}${poolPush}${trackPush}`,
+						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5; checks.concentration += 2; checks.insight += 1; checks.CON += 2${shared}${poolPush}${trackPush}`,
 						...(tinting ? ['Tint: orange'] : []),
 						'```',
 						'',
@@ -4979,7 +4988,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${wolf}`,
 						'HP: 11 / 11',
 						variant === 'none-long' ? 'Speed:' : 'Speed: 40 ft.',
-						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${
+						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${variant === 'roster-score' ? '; checks.CON += 2' : ''}${
 							variant === 'none-long'
 								? '; abilities.STR = 3; abilities.CON = 2; skills.perception >= 5; skills.athletics >= 4; saves.DEX = 4; saves.CON = 3'
 								: ''
@@ -5012,6 +5021,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 			// inside a card's mini table at the scroller's corners: the bear's
 			// Concentration is the Constitution card's last row, at its bottom
 			// corners, and its Insight the Wisdom card's only row, at all four.
+			// The bear also adds to the Constitution score, which `effective`
+			// reads, so that card shows a tinted pill beside its tinted row and
+			// no fill of its own, and carries the tag; Wisdom's pill stays plain.
 			config: {
 				id: 'checks',
 				type: 'roster',
@@ -5024,7 +5036,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					{ key: 'CON', name: 'Constitution' },
 					{ key: 'WIS', name: 'Wisdom' },
 				],
-				derived: 'mod(value)',
+				effective: 'value + mod.self',
+				derived: 'mod(value + mod.self)',
+				signed: true,
 				columns: [
 					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
 					{
