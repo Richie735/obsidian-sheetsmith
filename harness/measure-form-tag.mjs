@@ -9,7 +9,11 @@
  * body size), `text=16` (the harness's default) and `text=24`, and the
  * `forms-tint-pool` sheet, where the bear raises a Pool's ceiling so a tag lands
  * on a placed box rather than a card, and the `forms-tint-track` sheet, where
- * the bear lengthens a Track's run so a tag lands on a Track. **A corner pill sits on its box's bottom
+ * the bear lengthens a Track's run so a tag lands on a Track, and the
+ * `forms-roster-score` sheet, where the Wolf adds to a Roster card's score and
+ * to none of its rows, so the card carries its pill's tag at its corner; and
+ * the forms sheet at a phone's 380, where a Roster's cards stack full width.
+ * **A corner pill sits on its box's bottom
  * inline-end corner, its inside part exactly the box's bottom padding**, so
  * most of what is checked is geometry rather than a font's ink. For every
  * corner pill it prints:
@@ -131,10 +135,13 @@ const measure = `(() => {
 			clipped = Math.max(clipped, Math.max(0, p.bottom - r.bottom), Math.max(0, r.top - p.top));
 		}
 		const height = b.height;
-		box.classList.remove('sheetsmith-in-play', 'sheetsmith-in-play-marked');
+		// Only the classes the box carries: a Roster card carries the tag for
+		// its score's pill and takes no tint, so it has the second alone.
+		const held = ['sheetsmith-in-play', 'sheetsmith-in-play-marked'].filter((cls) => box.classList.contains(cls));
+		box.classList.remove(...held);
 		pill.hidden = true;
 		const plain = box.getBoundingClientRect().height;
-		box.classList.add('sheetsmith-in-play', 'sheetsmith-in-play-marked');
+		box.classList.add(...held);
 		pill.hidden = false;
 		out.push({
 			label: pill.textContent,
@@ -161,16 +168,19 @@ let failed = 0;
 let measured = 0;
 const runs = [
 	...[15, 16, 24].map((text) => ({ state: 'forms', text })),
+	// A score-only push on a Roster card, and the cards stacked at a phone's.
+	...[15, 16, 24].map((text) => ({ state: 'forms-roster-score', text })),
+	...[15, 16, 24].map((text) => ({ state: 'forms', text, width: 380 })),
 	{ state: 'forms-tint-pool', text: 16, tint: 'orange' },
 	{ state: 'forms-tint-track', text: 16, tint: 'orange' },
 ];
-for (const { state, text, tint } of runs) {
+for (const { state, text, tint, width } of runs) {
 	const { unstage } = await loadStaged(
 		browser,
-		`file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${text}${tint ? `&tint=${tint}` : ''}`,
-		{ width: 1400, height: 1500 },
+		`file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${text}${tint ? `&tint=${tint}` : ''}${width ? `&width=${width}` : ''}`,
+		{ width: width ?? 1400, height: width ? 3800 : 1500 },
 	);
-	console.log(`\n-- state=${state} text=${text}`);
+	console.log(`\n-- state=${state} text=${text}${width ? ` width=${width}` : ''}`);
 	for (const one of await browser.evaluate(measure)) {
 		measured++;
 		const inked = one.ink >= 1 && one.side >= 3;

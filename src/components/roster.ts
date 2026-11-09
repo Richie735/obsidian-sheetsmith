@@ -1055,6 +1055,16 @@ function drawBandHead(
 	const name = (stat.name ?? '').trim() || key;
 	const published = `${config.id}.${key}`;
 
+	/*
+	 * The score at rest, worked out once for both its field and the reading:
+	 * whether the field carries the stat's name decides whether the reading
+	 * may (`docs/features/character-forms.md`, "Where a decoration lands",
+	 * Roster), and a card draws the reading first, `card-face.ts`'s order, so
+	 * the answer has to exist before either is drawn. Null where no field is.
+	 */
+	const score = config.hideValue === true ? null : scoreAtRest(config, stored, published, context);
+	const scoreNamed = score?.differs === true;
+
 	if (cardLayout) {
 		parent.classList.add('sheetsmith-card');
 		parent.classList.toggle('sheetsmith-card-has-derived', config.derived !== undefined);
@@ -1066,10 +1076,13 @@ function drawBandHead(
 		const reading =
 			config.derived === undefined
 				? null
-				: drawDerivedReading(parent, config, stored, published, signed, context, rowsOf);
-		if (config.hideValue !== true) {
+				: drawDerivedReading(parent, config, stored, published, signed, context, rowsOf, {
+						scoreNamed,
+						card: parent,
+					});
+		if (score !== null) {
 			const value = parent.createDiv('sheetsmith-card-value');
-			drawValueField(value, parent, config, key, name, stored, published, context, status);
+			drawValueField(value, parent, config, key, name, stored, published, context, status, score, parent);
 		}
 		// On the stat card's label line, in the corner a Card's own mark takes:
 		// this is the card's own DOM shape, so it takes the card's own placement.
@@ -1090,18 +1103,41 @@ function drawBandHead(
 	// ordinary Card and false here, where the score and the reading are
 	// `flex: 0 0 auto` so they can sit beside the name.
 	const valueGroup = inner.createDiv('sheetsmith-roster-band-value');
-	if (config.hideValue !== true) {
-		drawValueField(valueGroup, inner, config, key, name, stored, published, context, status);
+	if (score !== null) {
+		drawValueField(valueGroup, inner, config, key, name, stored, published, context, status, score, null);
 	}
 	const reading =
 		config.derived === undefined
 			? null
-			: drawDerivedReading(valueGroup, config, stored, published, signed, context, rowsOf);
+			: drawDerivedReading(valueGroup, config, stored, published, signed, context, rowsOf, {
+					scoreNamed,
+					card: null,
+				});
 	// At the band head's inline end, after the reading.
 	renderNotesAt(inner, context.modifiers, published, 'sheetsmith-roster-band-has-note', {
 		shown: reading,
 		inRows: false,
 	});
+}
+
+/**
+ * The score as its field shows it at rest, and whether that is not what the
+ * note stores, which is when the field is marked modified.
+ *
+ * Folds a reading that is only a respelling ("15.0" against "15") onto
+ * `stored` itself, exactly as a Card's own value field does
+ * (`effective-value.ts`'s `sameNumber`) — so a stat whose modifiers push
+ * nothing does not read as modified over its own spelling.
+ */
+function scoreAtRest(
+	config: RosterConfig,
+	stored: string,
+	published: string,
+	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
+): { atRest: string; differs: boolean } {
+	const shown = effectiveReading(config.effective, stored, published, context.resolveField);
+	const atRest = shown !== undefined && !sameNumber(shown, stored) ? shown : stored;
+	return { atRest, differs: atRest !== stored };
 }
 
 /** The score's own field, wherever the band head's two layouts put it. */
@@ -1115,19 +1151,17 @@ function drawValueField(
 	published: string,
 	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
 	status: HTMLElement,
+	/** `scoreAtRest`'s answer, which the band head also hands the reading. */
+	score: { atRest: string; differs: boolean },
+	/** The stat's card in the card layout, which carries the tag for its pill; null in the table. */
+	card: HTMLElement | null,
 ): void {
 	const field = valueGroup.createEl('input', { cls: 'sheetsmith-card-input' });
 	field.type = 'text';
 	// The full keyboard: a stat holds a number of any sign or a word, and iOS's
 	// `numeric` keypad has digits alone (`docs/UI.md` §7).
 	field.inputMode = 'text';
-	const shown = effectiveReading(config.effective, stored, published, context.resolveField);
-	// Folds a reading that is only a respelling ("15.0" against "15") onto
-	// `stored` itself, exactly as a Card's own value field does
-	// (`effective-value.ts`'s `sameNumber`) — so a stat whose modifiers
-	// push nothing does not read as modified over its own spelling.
-	const atRest = shown !== undefined && !sameNumber(shown, stored) ? shown : stored;
-	const differs = atRest !== stored;
+	const { atRest, differs } = score;
 	field.value = atRest;
 
 	/*
@@ -1138,7 +1172,18 @@ function drawValueField(
 	 */
 	const bothNumbers = differs ? `${atRest} with modifiers, ${stored} stored` : null;
 	if (bothNumbers !== null) {
-		stampModifiedHost(field, published, field.closest<HTMLElement>('.sheetsmith-card, tr'));
+		/*
+		 * **In the card layout the score's box is its pill, never the card**: a
+		 * Roster card holds a score, a reading and rows that each move on their
+		 * own, so a form tinting the whole card hid a tinted row inside it. The
+		 * pill is `.sheetsmith-card-value`, the field's own wrapper; in the
+		 * table layout the same lookup finds the band's `tr`. **The card carries
+		 * the tag** (`TAG_BOX_ATTRIBUTE`): the pill is about 4em of score with
+		 * 2px of bottom padding, narrower than the tag's 12ch and without the
+		 * room every card keeps under its last row, so on the pill the tag
+		 * would cover the score and, hanging below, the card's first row.
+		 */
+		stampModifiedHost(field, published, field.closest<HTMLElement>('.sheetsmith-card-value, tr'), card);
 		field.setAttribute('title', bothNumbers);
 	}
 	field.setAttribute(
@@ -1223,6 +1268,12 @@ function drawDerivedReading(
 	signed: boolean,
 	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
 	rowsOf: () => RowsSource,
+	beside: {
+		/** Whether the score's field carries the stat's published name: it moved off the note. */
+		scoreNamed: boolean;
+		/** The stat's card in the card layout, null in the table. */
+		card: HTMLElement | null;
+	},
 ): number | null {
 	const derivedEl = parent.createDiv('sheetsmith-card-derived');
 	// An empty value is a blank, not a broken formula (`card.ts`'s own
@@ -1251,7 +1302,25 @@ function drawDerivedReading(
 	// account, so where the stat also has a note mark the two open one text.
 	const pushed = account.arithmetic ? account.text : null;
 	if (pushed !== null) {
-		stampModifiedHost(derivedEl, published, derivedEl.closest<HTMLElement>('.sheetsmith-card, tr'));
+		/*
+		 * **Where the score carries the stat's name the reading is marked and
+		 * named nowhere**, so the tint finds the score's pill and never this:
+		 * the reading moved through its formula over the score, which is what
+		 * a form set ("The tint marks what a form sets"). Where the score
+		 * carries no name — a layout with no `effective`, or a hidden score —
+		 * the reading is all that moved and names the card, which the tint
+		 * then takes whole. Deliberately so: a box for the reading alone would
+		 * have to hold it and the pill, and no element does (the smallest
+		 * version, `docs/features/character-forms.md`).
+		 */
+		if (beside.scoreNamed) stampModifiedHost(derivedEl, undefined);
+		else
+			stampModifiedHost(
+				derivedEl,
+				published,
+				derivedEl.closest<HTMLElement>('.sheetsmith-card, tr'),
+				beside.card,
+			);
 		derivedEl.addEventListener('click', () => showPopover(derivedEl, pushed));
 		derivedEl.createDiv({ cls: 'sheetsmith-sr-only', text: pushed });
 	}

@@ -700,16 +700,19 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		'| Belt of Giant Strength | abilities.STR += 2 as item |',
 	].join('\n');
 
-	function sheetOf() {
+	/** The sheet with `config` as the roster and the belt pushing `push` instead, where given. */
+	function sheetOf(config: RosterConfig = abilities, push?: string) {
 		const abilitiesBody = '```sheet\nSTR: 16\n```';
-		const abilitiesRead = roster.read(abilitiesBody, abilities);
-		const gearRead = table.read(gearBody, gear);
+		const abilitiesRead = roster.read(abilitiesBody, config);
+		const gearText =
+			push === undefined ? gearBody : gearBody.replace('abilities.STR += 2 as item', push);
+		const gearRead = table.read(gearText, gear);
 		expect(abilitiesRead.ok).toBe(true);
 		expect(gearRead.ok).toBe(true);
 		if (!abilitiesRead.ok || !gearRead.ok) throw new Error('read failed');
-		const layout: Layout = { name: 'Test', components: [abilities, gear] };
+		const layout: Layout = { name: 'Test', components: [config, gear] };
 		const prepared: ReadComponent[] = [
-			{ config: abilities, component: roster, data: abilitiesRead.data, error: null },
+			{ config, component: roster, data: abilitiesRead.data, error: null },
 			{ config: gear, component: table, data: gearRead.data, error: null },
 		];
 		const { env, modifiers } = buildSheet(layout, prepared);
@@ -723,22 +726,102 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		expect(env.sheet('abilities.STR')).toBe(16);
 	});
 
-	it('names its card as the box in the card layout, so the tint fills the card', () => {
-		const { env, modifiers, data } = sheetOf();
-		const carded = { ...abilities, cardLayout: true };
+	/** Draw `abilities` reshaped by `shape`, through the real sheet, with the belt pushing `push`. */
+	function drawn(shape: (base: RosterConfig) => RosterConfig, push?: string) {
+		const config = shape(abilities);
+		const { env, modifiers, data } = sheetOf(config, push);
 		const el = document.createElement('div');
-		roster.render(el, carded, data, {
+		roster.render(el, config, data, {
 			resolved: {},
-			resolveField: makeFieldResolver(roster, carded, data, env),
-			explainField: makeFieldExplainer(roster, carded, data, env),
+			resolveField: makeFieldResolver(roster, config, data, env),
+			explainField: makeFieldExplainer(roster, config, data, env),
 			onChange: () => undefined,
 			modifiers,
 		});
+		return el;
+	}
+
+	it('names its score pill as the box in the card layout, and the card as what carries the tag', () => {
+		const el = drawn((base) => ({ ...base, cardLayout: true, derived: 'mod(value + mod.self)' }));
+		const card = el.querySelector<HTMLElement>('.sheetsmith-card');
 		const field = el.querySelector<HTMLElement>('[data-sheetsmith-name="abilities.STR"]');
-		expect(field).not.toBeNull();
+		expect(field?.classList.contains('sheetsmith-card-input')).toBe(true);
 		const box = field?.closest('[data-sheetsmith-box]');
-		expect(box?.classList.contains('sheetsmith-card')).toBe(true);
-		expect(box).toBe(field?.closest('.sheetsmith-card'));
+		expect(box?.classList.contains('sheetsmith-card-value')).toBe(true);
+		expect(box).toBe(field?.closest('.sheetsmith-card-value'));
+		// The card holds the tag and is never a box itself.
+		expect(card?.hasAttribute('data-sheetsmith-tag-box')).toBe(true);
+		expect(card?.hasAttribute('data-sheetsmith-box')).toBe(false);
+		// The reading moved through its formula over the score: marked, and
+		// named nowhere, so nothing the tint looks for leads to it.
+		const reading = el.querySelector<HTMLElement>('.sheetsmith-card-derived');
+		expect(reading?.classList.contains('sheetsmith-modified')).toBe(true);
+		expect(reading?.hasAttribute('data-sheetsmith-name')).toBe(false);
+		expect(el.querySelectorAll('[data-sheetsmith-name="abilities.STR"]')).toHaveLength(1);
+		expect(el.querySelectorAll('[data-sheetsmith-box]')).toHaveLength(1);
+	});
+
+	it('keeps the reading naming its card where the score did not move', () => {
+		// No `effective`: the score reads what the note stores, so the reading
+		// is all a push moves, and it names the card as it always did — the
+		// case the smallest version leaves as it was.
+		const el = drawn(({ effective: _effective, ...base }) => ({
+			...base,
+			cardLayout: true,
+			derived: 'mod(value + mod.self)',
+		}));
+		const reading = el.querySelector<HTMLElement>('.sheetsmith-card-derived');
+		expect(reading?.getAttribute('data-sheetsmith-name')).toBe('abilities.STR');
+		expect(reading?.closest('[data-sheetsmith-box]')).toBe(el.querySelector('.sheetsmith-card'));
+		const field = el.querySelector<HTMLElement>('.sheetsmith-card-input');
+		expect(field?.classList.contains('sheetsmith-modified')).toBe(false);
+	});
+
+	it('names the band row as the score\'s box in the table layout, and no tag carrier', () => {
+		const el = drawn((base) => ({ ...base, derived: 'mod(value + mod.self)' }));
+		const field = el.querySelector<HTMLElement>('[data-sheetsmith-name="abilities.STR"]');
+		expect(field?.closest('[data-sheetsmith-box]')?.tagName).toBe('TR');
+		expect(el.querySelector('[data-sheetsmith-tag-box]')).toBeNull();
+	});
+
+	it('moves the reading and not the score for an `=` push, so the reading names the card', () => {
+		// An `=` sets the published value, which is the reading, and leaves
+		// `mod.self` alone, so `effective` reads the stored score unmoved. The
+		// score's field carries no name and the card stays the box: the case
+		// `docs/features/character-forms.md` records as not done.
+		const el = drawn(
+			// No function library in this sheet, so the reading is plain arithmetic.
+			(base) => ({ ...base, cardLayout: true, derived: 'value + mod.self' }),
+			'abilities.STR = 20',
+		);
+		const field = el.querySelector<HTMLInputElement>('.sheetsmith-card-input');
+		expect(field?.value).toBe('16');
+		expect(field?.classList.contains('sheetsmith-modified')).toBe(false);
+		const reading = el.querySelector<HTMLElement>('.sheetsmith-card-derived');
+		expect(reading?.firstChild?.textContent).toBe('20');
+		expect(reading?.getAttribute('data-sheetsmith-name')).toBe('abilities.STR');
+		expect(reading?.closest('[data-sheetsmith-box]')).toBe(el.querySelector('.sheetsmith-card'));
+	});
+
+	it('names a pushed computed row as its own box in the card layout, inside the card', () => {
+		const el = drawn(
+			(base) => ({
+				...base,
+				cardLayout: true,
+				derived: 'mod(value + mod.self)',
+				columns: [{ key: 'Total', type: 'computed', formula: 'stat + mod.self', publish: true }],
+				rows: [{ label: 'Athletics', stat: 'STR', key: 'athletics' }],
+			}),
+			'abilities.athletics += 1',
+		);
+		const cell = el.querySelector<HTMLElement>('[data-sheetsmith-name="abilities.athletics"]');
+		expect(cell?.classList.contains('sheetsmith-modified')).toBe(true);
+		const row = cell?.closest('[data-sheetsmith-box]');
+		expect(row?.tagName).toBe('TR');
+		expect(row).toBe(cell?.closest('tr'));
+		// Nothing pushed at the score, so the row is the only box on the card.
+		expect(el.querySelectorAll('[data-sheetsmith-box]')).toHaveLength(1);
+		expect(row?.closest('.sheetsmith-card')).not.toBeNull();
 	});
 
 	it('marks the value field and names the row and the component in the breakdown', () => {
@@ -759,7 +842,7 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		expect(field?.classList.contains('sheetsmith-modified')).toBe(true);
 		expect(field?.getAttribute('data-sheetsmith-name')).toBe('abilities.STR');
 		// And its box is its row, the roster's band in this table layout, which
-		// the tint fills through its cells (a card layout's box is the card).
+		// the tint fills through its cells (a card layout's box is the score's pill).
 		const box = field?.closest('[data-sheetsmith-box]');
 		expect(box?.tagName).toBe('TR');
 		expect(box).toBe(field?.closest('tr'));

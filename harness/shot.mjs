@@ -3112,9 +3112,11 @@ export const DEFAULTS = [
 	{
 		// The block's own reflow at a phone's width: the picker on a line of its
 		// own, each stat on its own line, the action table wrapping its cells.
+		// Measured off `document.body` with the harness built: 3009 at 380, the
+		// `checks` Roster's tag ending at 2646, past the 2600 this was. 3200.
 		name: 'sheet-forms-narrow',
 		query: 'surface=sheet&theme=light&state=forms&width=380',
-		size: '380,2600',
+		size: '380,3200',
 	},
 	// No form active: the empty state, Choosing one spends a use, no Revert, and
 	// a brief of each form — and the rest of the In play polish's views
@@ -3354,6 +3356,20 @@ export const DEFAULTS = [
 		// measures beside the cards and the Pool.
 		name: 'sheet-forms-tint-track',
 		query: 'surface=sheet&theme=light&state=forms-tint-track&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		// The Wolf adding to the Constitution score of the `checks` Roster and to
+		// none of its rows: the pill tinted, the Concentration row not, and the
+		// card's tag flush under that untinted last row — the score-only case Cat Form's
+		// Strength is (`docs/features/character-forms.md`).
+		name: 'sheet-forms-roster-score',
+		query: 'surface=sheet&theme=light&state=forms-roster-score',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-roster-score-dark',
+		query: 'surface=sheet&theme=dark&state=forms-roster-score',
 		size: '1400,1500',
 	},
 	{
