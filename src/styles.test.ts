@@ -5019,6 +5019,83 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(end?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :last-child');
 	});
 
+	it("rounds a row at its scroller's corner to the scroller's inner radius", () => {
+		// The scroller clips to `--radius-m`; square corner cells had their fill
+		// cut along that curve and their inset outline cut off where it met it.
+		const scroller = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-table-wrapper',
+		);
+		expect(scroller?.body).toMatch(/border-radius:\s*var\(--radius-m\)/);
+		expect(scroller?.body).toMatch(/border:\s*1px solid/);
+		const corner = (property: string) =>
+			tint
+				.filter((rule) => rule.context.length === 0 && rule.body.includes(property))
+				.map((rule) => ({ ...rule, selector: rule.selector.replace(/\s+/g, ' ') }));
+		const cases: [string, RegExp][] = [
+			['border-end-start-radius', /\.sheetsmith-table:not\(\.sheetsmith-table-has-totals\) > tbody > tr\.sheetsmith-in-play:last-child > :first-child$/],
+			['border-end-end-radius', /\.sheetsmith-table:not\(\.sheetsmith-table-has-totals\) > tbody > tr\.sheetsmith-in-play:last-child > :last-child$/],
+			['border-start-start-radius', /\.sheetsmith-table\.sheetsmith-table-headless > tbody > tr\.sheetsmith-in-play:first-child > :first-child$/],
+			['border-start-end-radius', /\.sheetsmith-table\.sheetsmith-table-headless > tbody > tr\.sheetsmith-in-play:first-child > :last-child$/],
+		];
+		for (const [property, selector] of cases) {
+			const found = corner(property);
+			expect(found, property).toHaveLength(1);
+			expect(found[0]?.selector).toMatch(/^\.sheetsmith-view \.sheetsmith-table-wrapper/);
+			expect(found[0]?.selector).toMatch(selector);
+			expect(found[0]?.body).toMatch(
+				new RegExp(`${property}:\\s*calc\\(var\\(--radius-m\\) - 1px\\)`),
+			);
+		}
+		// An open table's scroller has the add control under it, so its last row
+		// is not at a corner.
+		for (const property of ['border-end-start-radius', 'border-end-end-radius']) {
+			expect(corner(property)[0]?.selector).toContain(':not(.sheetsmith-table-wrapper-boxed)');
+		}
+		// The corners are read from the classes that say why, never from `:has()`.
+		for (const rule of tint) expect(rule.selector, rule.selector).not.toMatch(/:has\(\s*>?\s*t(?:head|foot)\s*\)/);
+	});
+
+	it('bends the forced-colors rules at the corner on a layer that takes the radius', () => {
+		// A collapsed border takes no radius, so at a corner row the outer rules
+		// move to each cell's ::before (not ::after, a noted column's mark slot), which inherits the cell's radius.
+		const forced = tint
+			.filter((rule) => rule.context.includes('@media (forced-colors: active)'))
+			.map((rule) => ({ ...rule, selector: rule.selector.replace(/\s+/g, ' ') }));
+		const bottom = 'tbody > tr.sheetsmith-in-play:last-child > ';
+		const top = 'tbody > tr.sheetsmith-in-play:first-child > ';
+		const find = (body: RegExp, ...parts: string[]) =>
+			forced.find((rule) => body.test(rule.body) && parts.every((part) => rule.selector.includes(part)));
+		const layer = find(/border-radius:\s*inherit/, `${bottom}*::before`, `${top}*::before`);
+		expect(layer?.body).toMatch(/position:\s*absolute/);
+		expect(layer?.body).toMatch(/inset:\s*0/);
+		expect(layer?.body).toMatch(/pointer-events:\s*none/);
+		// The anchor never unpins the name cell.
+		expect(find(/position:\s*relative/, `${bottom}:not(.sheetsmith-table-name)`)).toBeDefined();
+		// Each side moves: the cell drops its own rule and the layer draws it.
+		expect(find(/border-bottom:\s*none/, `${bottom}*`)).toBeDefined();
+		expect(find(/border-bottom:\s*1px solid Highlight/, `${bottom}*::before`)).toBeDefined();
+		expect(find(/border-inline-start:\s*none/, `${bottom}:first-child`, `${top}:first-child`)).toBeDefined();
+		expect(
+			find(/border-inline-start:\s*1px solid Highlight/, `${bottom}:first-child::before`, `${top}:first-child::before`),
+		).toBeDefined();
+		expect(find(/border-inline-end:\s*none/, `${bottom}:last-child`, `${top}:last-child`)).toBeDefined();
+		expect(
+			find(/border-inline-end:\s*1px solid Highlight/, `${bottom}:last-child::before`, `${top}:last-child::before`),
+		).toBeDefined();
+		// A first row under no heading row has no rule above it, so draws its top.
+		expect(find(/border-top:\s*1px solid Highlight/, `.sheetsmith-table-headless > ${top}*::before`)).toBeDefined();
+		// And never on `::after`, the in-flow mark slot a noted column's cell
+		// keeps (`docs/features/modifier-notes.md`): an absolute layer there took
+		// the slot out of flow and shifted the cell's value off its column.
+		const slot = rules(CSS_WITHOUT_COMMENTS).find((rule) =>
+			rule.selector.includes('td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after'),
+		);
+		expect(slot).toBeDefined();
+		for (const rule of forced) {
+			if (/tr\.sheetsmith-in-play/.test(rule.selector)) expect(rule.selector).not.toMatch(/::after/);
+		}
+	});
+
 	it("leaves a lone card's centring to the value, never to the tag laid over it", () => {
 		// The tag is appended last and taken out of flow, so a lone card's
 		// "last item" rule has to skip it, or the auto margin centring the number

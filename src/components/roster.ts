@@ -857,6 +857,17 @@ function columnOrder(config: RosterConfig): (number | null)[] {
 	return order;
 }
 
+/**
+ * A table drawn with no heading row says so on itself, from the setting that
+ * left the row out: its first body row is then at the scroller's top corners,
+ * which the form tint rounds to (`styles/sheet.css`). A class rather than
+ * `:has(> thead)`, as Table's `sheetsmith-table-has-totals` is, so the rule
+ * reads the reason rather than the drawn element.
+ */
+function markHeadless(grid: HTMLTableElement): void {
+	grid.classList.add('sheetsmith-table-headless');
+}
+
 /** The header row for a roster's table, shared by the one shared table and
  * every per-stat card's own small table alike. */
 function drawHead(
@@ -903,6 +914,7 @@ function renderShared(
 	const width = columns.length + 1;
 
 	if (config.hideColumnHeadings !== true) drawHead(grid, config, order);
+	else markHeadless(grid);
 
 	const stats = statList(config);
 	const noteNames = rowNames(data);
@@ -1587,6 +1599,7 @@ function renderCards(
 		keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 		const grid = wrapper.createEl('table', { cls: 'sheetsmith-table sheetsmith-roster' });
 		if (config.hideColumnHeadings !== true) drawHead(grid, config, order);
+		else markHeadless(grid);
 		const body = grid.createEl('tbody');
 		rowsOfStat.forEach((view, index) => {
 			const tr = drawRow(body, config, data, view, order, context, status, statReading);

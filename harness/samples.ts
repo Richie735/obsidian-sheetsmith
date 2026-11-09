@@ -4941,7 +4941,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${bear}`,
 						`HP: ${bearHp}`,
 						'Speed: 40 ft., climb 30 ft.',
-						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}${trackPush}`,
+						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5; checks.concentration += 2; checks.insight += 1${shared}${poolPush}${trackPush}`,
 						...(tinting ? ['Tint: orange'] : []),
 						'```',
 						'',
@@ -5005,6 +5005,43 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					]
 					: []),
 			].join('\n'),
+		},
+		{
+			// The druid's own checks drawn as stat cards with no heading row, as
+			// the 5e Caster layout draws them, so a form's push lands on a row
+			// inside a card's mini table at the scroller's corners: the bear's
+			// Concentration is the Constitution card's last row, at its bottom
+			// corners, and its Insight the Wisdom card's only row, at all four.
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 1, row: 8, width: 6, height: 3 },
+				rowHeader: 'Check',
+				hideColumnHeadings: true,
+				cardLayout: true,
+				stats: [
+					{ key: 'CON', name: 'Constitution' },
+					{ key: 'WIS', name: 'Wisdom' },
+				],
+				derived: 'mod(value)',
+				columns: [
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'stat + Prof * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: [
+					{ label: 'Endurance', stat: 'CON', key: 'endurance' },
+					{ label: 'Concentration', stat: 'CON', key: 'concentration' },
+					{ label: 'Insight', stat: 'WIS', key: 'insight' },
+				],
+			} as ComponentConfig,
+			body: '```sheet\nCON: 13\nWIS: 16\n```\n\n| Check | Prof |\n| --- | --- |\n| Endurance | 0 |\n| Concentration | 1 |\n| Insight | 1 |\n',
 		},
 		...(pooled
 			? [

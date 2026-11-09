@@ -9953,6 +9953,40 @@ a.sheetsmith-notice-action {
 		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--sheetsmith-tint-edge);
 }
 
+/* **A row at a corner of its scroller takes the scroller's corner.** The
+   scroller rounds at `--radius-m` and clips what it holds to that curve, so
+   square corner cells had their fill cut along it and their outline cut off
+   where it met the curve: the row read as a square box laid over the table's
+   rounded end rather than as a row of it. The corner cells take the scroller's
+   inner radius, its own less its 1px border, and the fill and the inset shadows
+   follow it. A table's last body row is at the bottom corners unless a foot
+   follows it (`sheetsmith-table-has-totals`, Table's flag for the foot) or the
+   scroller sits in an open table's box with the add control under it; the
+   first body row is at the top corners when no heading row is drawn
+   (`sheetsmith-table-headless`, which Roster stamps from `hideColumnHeadings`).
+   Classes rather than `:has()`, so each rule reads why the row is at a corner
+   rather than the elements drawn around it. The same in a plain Table and in a
+   Roster, shared or a card's mini table. */
+.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+	> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :first-child {
+	border-end-start-radius: calc(var(--radius-m) - 1px);
+}
+
+.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+	> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :last-child {
+	border-end-end-radius: calc(var(--radius-m) - 1px);
+}
+
+.sheetsmith-view .sheetsmith-table-wrapper
+	> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :first-child {
+	border-start-start-radius: calc(var(--radius-m) - 1px);
+}
+
+.sheetsmith-view .sheetsmith-table-wrapper
+	> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :last-child {
+	border-start-end-radius: calc(var(--radius-m) - 1px);
+}
+
 /* Forced colors drops a shadow, so there the row's outline is its rules: its
    own bottom rule and the one above it, which is the previous row's bottom, in
    the mode's highlight across every cell, the name cell included, and a rule
@@ -9984,6 +10018,82 @@ a.sheetsmith-notice-action {
 
 	.sheetsmith-view tr.sheetsmith-in-play > :last-child {
 		border-inline-end: 1px solid Highlight;
+	}
+
+	/* **At a corner of the scroller the row's outer rules move to a layer over
+	   each cell**, which can bend: a collapsed table border takes no radius, so
+	   the corner cells' rules ran square into the scroller's curve and were cut
+	   there. Every cell of the row moves, not only the two at the corners, or
+	   the rule along the scroller's edge lands a pixel off between them: a
+	   collapsed border on the table's outer edge sits half outside the cells.
+	   The pinned name cell is already positioned and keeps its `sticky`; any
+	   other cell is made its layer's anchor. The layer takes the cell's own
+	   radius, so it follows the curve at the corners and is square elsewhere.
+	   `::before`, because a noted column's cell already holds `::after` as its
+	   in-flow mark slot (`docs/features/modifier-notes.md`), which an absolute
+	   layer would take out of flow and shift the value off its column. */
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :not(.sheetsmith-table-name),
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :not(.sheetsmith-table-name) {
+		position: relative;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > *::before,
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > *::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		box-sizing: border-box;
+		border-radius: inherit;
+		pointer-events: none;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :first-child,
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :first-child {
+		border-inline-start: none;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :first-child::before,
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :first-child::before {
+		border-inline-start: 1px solid Highlight;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :last-child,
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :last-child {
+		border-inline-end: none;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :last-child::before,
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > :last-child::before {
+		border-inline-end: 1px solid Highlight;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > * {
+		border-bottom: none;
+	}
+
+	.sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
+		> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > *::before {
+		border-bottom: 1px solid Highlight;
+	}
+
+	/* With no heading row there is no rule above a first row to repaint, so the
+	   row draws its own top, on the same layer. */
+	.sheetsmith-view .sheetsmith-table-wrapper
+		> .sheetsmith-table.sheetsmith-table-headless > tbody > tr.sheetsmith-in-play:first-child > *::before {
+		border-top: 1px solid Highlight;
 	}
 
 	.sheetsmith-view .sheetsmith-stat-block-tint-swatch {
