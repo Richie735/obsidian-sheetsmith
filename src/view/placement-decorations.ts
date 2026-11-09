@@ -25,18 +25,21 @@
 import { ModifierBreakdown, TINT_ATTRIBUTE, TintColour } from '../types';
 import { contrast, over, readColour, Rgb } from '../ui/contrast';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
-import { BOX_ATTRIBUTE, NAME_ATTRIBUTE } from '../components/modifier-breakdown';
+import { BOX_ATTRIBUTE, NAME_ATTRIBUTE, TAG_BOX_ATTRIBUTE } from '../components/modifier-breakdown';
 
 /**
- * The class on the box a form changed — a card, a table row, or the placement
- * where the component names no box. The fill and the outline are drawn on it.
+ * The class on the box a form changed — a card, a table row, a Roster card's
+ * score pill, or the placement where the component names no box. The fill and the outline are drawn on it.
  */
 export const IN_PLAY_BOX = 'sheetsmith-in-play';
 
 /** The class on a placement a form changed where its component stamped no host. */
 export const IN_PLAY_PLACEMENT = 'sheetsmith-in-play-placement';
 
-/** The class on the box that carries the pill: the first one tinted. */
+/**
+ * The class on what carries the pill: the first box tinted, or the element its
+ * component named to carry the tag for it, which takes no fill or outline.
+ */
 export const IN_PLAY_MARKED = 'sheetsmith-in-play-marked';
 
 /** The pill naming the form, and its spoken twin. */
@@ -146,18 +149,20 @@ function boxOf(host: HTMLElement): HTMLElement {
  * **Where it lands**: the owning component is the segment of the name before its
  * first `.`, which is SPEC §5's naming rule. Inside that component's cell, each
  * value stamped with the name leads to the **box it belongs to** — a Card's card,
- * each card of a Card set or Roster the form changed, a Table's or a Roster's
- * row — and the box takes the fill and the outline, so the form reads as having
- * changed that thing rather than one number in it. Where the component stamped
+ * each card of a Card set the form changed, a Roster card's score pill, a
+ * Table's or a Roster's row — and the box takes the fill and the outline, so
+ * the form reads as having changed that thing rather than one number in it. Where the component stamped
  * nothing — a Pool, a Track — the placement's own box does. The underline stays
  * on the number, which the component drew.
  *
  * **The pill is once per placement, on the first box tinted**, so it never sits
- * over a card the form left alone. It is laid over the box and takes no room:
- * on a card-like box in its bottom inline-end corner, inside by exactly the
- * box's bottom padding so it can reach no content in any font, where no note
- * mark, door, score or value sits; on a table row over the name cell's inline end, since
- * a row's two ends hold its name and its value. The CSS places it; this only
+ * over a card the form left alone — or on what its component named to carry the
+ * tag for that box (`TAG_BOX_ATTRIBUTE`), a Roster card for its score's pill,
+ * which holds the box and takes no tint of its own. It is laid over the box and
+ * takes no room: on a card-like box in its bottom inline-end corner, inside by
+ * exactly the box's bottom padding so it can reach no content in any font,
+ * where no note mark, door, score or value sits; on a table row over the name
+ * cell's inline end, since a row's two ends hold its name and its value. The CSS places it; this only
  * says which box and which cell carry it.
  */
 export function applyDecorations(
@@ -216,8 +221,13 @@ export function applyDecorations(
 		if (first === undefined) continue;
 		const rowName =
 			first.tagName === 'TR' ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
-		const host = rowName ?? first;
-		if (rowName === null) first.classList.add(IN_PLAY_MARKED);
+		// A box too small for the tag — a Roster card's score pill — has its
+		// component name what carries it instead: the card holding it, which
+		// takes the tag and no fill or outline. A row keeps its name cell.
+		const carrier =
+			rowName === null ? (first.closest<HTMLElement>(`[${TAG_BOX_ATTRIBUTE}]`) ?? first) : null;
+		const host = rowName ?? carrier ?? first;
+		carrier?.classList.add(IN_PLAY_MARKED);
 		const pill = host.createSpan({
 			cls: [
 				IN_PLAY_MARK,

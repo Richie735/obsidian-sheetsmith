@@ -14,6 +14,7 @@ import {
 	IN_PLAY_MARK_INLINE,
 	IN_PLAY_MARK,
 	IN_PLAY_MARK_SEVERAL,
+	IN_PLAY_MARKED,
 	IN_PLAY_PLACEMENT,
 	inPlayDecorations,
 	TAG_TEXT_ATTRIBUTE,
@@ -529,5 +530,203 @@ describe('the tag text picked against the fill', () => {
 		const { root, pill } = pillIn();
 		pickTagText(root);
 		expect(pill.hasAttribute(TAG_TEXT_ATTRIBUTE)).toBe(false);
+	});
+});
+
+/*
+ * A Roster drawn as stat cards, whose rows each move on their own: a form
+ * tints a stat's score pill and each row it changed, never the card, and the
+ * card carries the tag for its pill where a score comes first; where only a
+ * row moved, the tag is in that row's name cell
+ * (`docs/features/character-forms.md`, "Where a decoration lands" and "The
+ * text mark", Roster). Cat adds to its scores, as the owner's
+ * druid's Cat Form does, so `mod.self` moves the score where `effective` reads
+ * it; an `=` sets the published reading and leaves the score alone.
+ */
+const ROSTER = (effective: boolean) => ({
+	name: 'Forms fixture',
+	columns: 12,
+	functions: ['mod(score) = floor((score - 10) / 2)'],
+	components: [
+		{
+			id: 'checks',
+			type: 'roster',
+			label: 'Checks',
+			position: { col: 1, row: 1, width: 12, height: 3 },
+			rowHeader: 'Check',
+			hideColumnHeadings: true,
+			cardLayout: true,
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+				{ key: 'WIS', name: 'Wisdom' },
+			],
+			...(effective ? { effective: 'value + mod.self' } : {}),
+			derived: 'mod(value + mod.self)',
+			columns: [
+				{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+				{
+					key: 'Total',
+					type: 'computed',
+					formula: 'stat + Prof * 2 + mod.self',
+					signed: true,
+					publish: true,
+				},
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Acrobatics', stat: 'DEX', key: 'acrobatics' },
+				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+				{ label: 'Insight', stat: 'WIS', key: 'insight' },
+			],
+		},
+		{
+			id: 'forms',
+			type: 'stat-block',
+			label: 'Wild Shape',
+			position: { col: 1, row: 4, width: 12, height: 4 },
+			recordName: 'Form',
+			fields: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+			exclusive: 'Active',
+		},
+	],
+});
+
+const ROSTER_NOTE = (cat: 'yes' | 'no', owl: 'yes' | 'no' = 'no', ox: 'yes' | 'no' = 'no') => `---
+sheet-layout: Forms fixture
+---
+
+## Checks
+\`\`\`sheet
+STR: 10
+DEX: 14
+WIS: 16
+\`\`\`
+
+| Check | Prof |
+| --- | --- |
+| Athletics | 0 |
+| Acrobatics | 0 |
+| Stealth | 0 |
+| Insight | 1 |
+
+## Wild Shape
+
+### Cat
+\`\`\`sheet
+Active: ${cat}
+Modifiers: checks.STR += 6; checks.DEX += 4; checks.stealth >= 9
+\`\`\`
+
+### Owl
+\`\`\`sheet
+Active: ${owl}
+Modifiers: checks.insight += 1
+\`\`\`
+
+### Ox
+\`\`\`sheet
+Active: ${ox}
+Modifiers: checks.WIS += 2
+\`\`\`
+`;
+
+describe('the in-play tint on a Roster card', () => {
+	const cardsOf = (root: HTMLElement) =>
+		Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('.sheetsmith-card'));
+	const tagsIn = (el: HTMLElement) => el.querySelectorAll(`.${IN_PLAY_MARK}[aria-hidden="true"]`);
+
+	it('tints the score pills and the row a form changed, never a card or a reading', () => {
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(true));
+		const [strength, dexterity, wisdom] = cardsOf(root);
+		const pill = (card: HTMLElement | undefined) => card?.querySelector<HTMLElement>('.sheetsmith-card-value');
+		expect(pill(strength)?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(pill(dexterity)?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(pill(wisdom)?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		for (const box of [pill(strength), pill(dexterity)]) {
+			expect(box?.getAttribute('data-sheetsmith-tint')).toBe('accent');
+		}
+		const rows = Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr'));
+		// Stealth's floor raised it; Athletics and Acrobatics move through their
+		// scores, which nothing pushed at them, and Insight is untouched.
+		expect(rows.map((row) => row.classList.contains(IN_PLAY_BOX))).toEqual([false, false, true, false]);
+		expect(rows[2]?.getAttribute('data-sheetsmith-tint')).toBe('accent');
+		for (const card of cardsOf(root)) {
+			expect(card.classList.contains(IN_PLAY_BOX)).toBe(false);
+			expect(card.hasAttribute('data-sheetsmith-tint')).toBe(false);
+		}
+		for (const reading of Array.from(root.querySelectorAll<HTMLElement>('.sheetsmith-card-derived'))) {
+			expect(reading.classList.contains(IN_PLAY_BOX)).toBe(false);
+			expect(reading.hasAttribute('data-sheetsmith-tint')).toBe(false);
+		}
+		// The readings keep their underline: they moved, through the score.
+		expect(strength?.querySelector('.sheetsmith-card-derived.sheetsmith-modified')).not.toBeNull();
+	});
+
+	const pillOf = (card: HTMLElement | undefined) =>
+		card?.querySelector<HTMLElement>('.sheetsmith-card-value') ?? null;
+
+	it('puts the one tag on the first card in reading order, which takes no tint', () => {
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(true));
+		const [strength, dexterity, wisdom] = cardsOf(root);
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+		expect(strength?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		const tag = tagsIn(strength as HTMLElement)[0];
+		expect(tag?.parentElement).toBe(strength);
+		expect(tag?.textContent).toBe('Cat');
+		for (const card of [dexterity, wisdom]) {
+			expect(card?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+			expect(tagsIn(card as HTMLElement)).toHaveLength(0);
+		}
+		// The pill is the box, not the carrier.
+		expect(pillOf(strength)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+	});
+
+	it('tags the card where a form pushed only at a score', () => {
+		const { root } = draw(ROSTER_NOTE('no', 'no', 'yes'), ROSTER(true));
+		const wisdom = cardsOf(root)[2];
+		expect(pillOf(wisdom)?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(tagsIn(wisdom as HTMLElement)[0]?.parentElement).toBe(wisdom);
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+		const insight = wisdom?.querySelector<HTMLElement>('tbody tr');
+		expect(insight?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(insight?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
+	});
+
+	it('tags a row\'s name cell where a form pushed only at that row', () => {
+		const { root } = draw(ROSTER_NOTE('no', 'yes'), ROSTER(true));
+		const insight = Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr'))[3];
+		expect(insight?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		const tag = insight?.querySelector(`th[scope="row"] .${IN_PLAY_MARK_INLINE}`);
+		expect(tag?.textContent).toBe('Owl');
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+		for (const card of cardsOf(root)) expect(card.classList.contains(IN_PLAY_MARKED)).toBe(false);
+	});
+
+	it('tints the card whole where only the reading moved, with no effective', () => {
+		// The case the smallest version leaves as it was: the score reads the
+		// note, so the reading names the card.
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(false));
+		const [strength, dexterity, wisdom] = cardsOf(root);
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(strength?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+	});
+
+	it('clears the carrier on the next pass', () => {
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(true));
+		expect(cardsOf(root)[0]?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(root.querySelector(`.${IN_PLAY_MARK}`)).not.toBeNull();
+		applyDecorations(root, []);
+		expect(root.querySelector(`.${IN_PLAY_MARKED}`)).toBeNull();
+		expect(root.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
 	});
 });
