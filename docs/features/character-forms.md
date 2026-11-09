@@ -463,10 +463,46 @@ box it belongs to**:
   add `MODIFIED_CLASS` and so already know which element is which value and which
   box holds it.
 - **Card**: the card, which is the placement's box.
-- **Card set** and **Roster**: each card whose value the form changed — a form
+- **Card set**: each card whose value the form changed — a form
   setting Strength and Constitution tints those two cards and leaves Dexterity,
-  Intelligence, Wisdom and Charisma alone. A Roster's band head in its table
-  layout is a row, and takes the row's rule.
+  Intelligence, Wisdom and Charisma alone.
+- **Roster**: in its table layout, the band head is a row and takes the row's
+  rule, and a row takes the row's rule; both unchanged by the amendment below.
+  In its card layout, **the stat's score pill, and each row the form changed —
+  never the card** (amended after the owner's 5e druid test). The rule above
+  had a Roster card be the box, as a Card set's is,
+  which is right for a card holding one number and wrong for a Roster card,
+  which holds a score, a reading and a table of rows that each move on their
+  own. Cat form raised Dexterity's score and floored Stealth, and the whole
+  Dexterity card took the fill and the outline — label, pill, reading and every
+  row — so the floored Stealth row, already its own box, could not be seen
+  against it. Narrowed, Cat form tints Dexterity's score pill and its Stealth
+  row and Strength's score pill alone, and neither card takes a fill or an
+  outline:
+  - **A pushed score's box is its pill**, `.sheetsmith-card-value`, the field's
+    own wrapper, which the card already draws as a bordered pill
+    (`.sheetsmith-card-has-derived .sheetsmith-card-value`). The score names it
+    as `closest('.sheetsmith-card-value, tr')`, which in the table layout is
+    still the band's `tr`. The pill alone, not the pill and the reading as one
+    region: the card draws its label, its reading and its pill as siblings in
+    `card-face.ts`'s order, so no element holds the two, and a wrapper round
+    them would move the Card set clothes Roster borrows by building the same
+    DOM shape (`roster.ts`, `drawBandHead`).
+  - **The reading keeps its modified underline and takes no box**: it publishes
+    the same name as the score, and it moved through its formula over the stat,
+    which is "The tint marks what a form sets" below. Wherever the score field
+    carries the stat's name, the reading is stamped modified with no name, so
+    the pass never finds it; Roster works out the field's `differs` before it
+    draws the reading, which comes first in the card's order.
+  - **A pushed row's box is its row**, the Table rule and its corner rounding,
+    a card's mini table included, as today.
+  - **The pass's box lookup is unchanged** (`closest('[data-sheetsmith-box]') ??
+    host`). Where the field carries no name — a layout with no `effective`, so
+    a push moves only the reading — the reading keeps its name and the card as
+    its box, so that card is tinted whole, as today. Deliberately not done.
+  - **A card with `hideValue` keeps the card as its box**: it draws no pill,
+    and its reading has no chrome of its own to fill, so giving it a box would
+    be a new surface. Deliberately not done.
 - **Table**: the row the changed value sits in.
 - **Pool**, **Track**, and any later component that stamps nothing: the
   placement's own box, with no code in the component — **a component that stamps
@@ -525,11 +561,56 @@ line is reserved for it — a box is the same size with the form on as off:
   size with its edge an outline, so the part inside fits the padding above the
   label at any text size, and it takes the pointer so a clipped name's reveal works. In a Card set the pill is on the
   first tinted card, not the set's edge.
+  *This bullet records the placement this section first settled.
+  `docs/features/stat-block-zones.md` later moved the tag to the box's
+  **bottom edge at its inline-end corner**, inside by exactly the box's bottom
+  padding and the room every card reserves for it, because on the top edge its
+  clearance was slack against a font's ink. That is what the code,
+  `docs/UI.md` §9 and `SPEC` say, and what the Roster bullet below builds on.*
+- **A Roster card** (amended after the owner's 5e druid test, and again after
+  the owner's review of the build): **where the first tinted box is a score
+  pill, the tag rides the card that holds it**, at the corner a card's tag
+  takes — the bottom edge at its inline-end corner, inside by the card's bottom
+  padding and the room every `.sheetsmith-card` reserves, tagged or not — and
+  the card takes `sheetsmith-in-play-marked` and never `sheetsmith-in-play` or
+  the tint attribute, so it carries the tag but no fill and no outline.
+  - **The tinted pill is what marks the moved value; the tag only names the
+    form**, so it keeps the card's corner even where that corner sits by an
+    untinted row — a Strength card's Athletics, with only the score pushed.
+    A land-stop review ruled the opposite (a tag never next to an untinted row)
+    and moved the tag beside the pill. The owner reverted that after seeing it
+    built (see "Deliberately not doing").
+  - **A score pushed with a row of the same card is one tag, at the card's
+    corner**: the pill comes first in reading order, and the row carries only
+    its tint.
+  - **Row first** — a form that pushes a row and no score before it — **the tag
+    stays in that row's name cell**, the Table rule, as today (the owner's
+    decision: on the card's corner a row-only change would put the tag beside
+    an untinted score, and read as the score having moved).
+  - **Not on the pill**: the pill is about 4em of score and its padding,
+    narrower than the tag's 12ch, and its bottom padding is 2px where the tag's
+    geometry puts a card's 10px inside, so the tag would cover the score and,
+    hanging below, the card's first row.
+  - **The carrier is stamped, not inferred and not `:has()`**:
+    `stampModifiedHost` takes a fourth argument, `tagBox`, written as
+    `data-sheetsmith-tag-box` and declared beside `data-sheetsmith-box` in
+    `modifier-breakdown.ts`, so the one route to the mark stays one. Roster
+    passes the card for its score and its reading. The pass puts the tag on a
+    first box that is a row in its name cell, and otherwise on
+    `first.closest('[data-sheetsmith-tag-box]') ?? first`.
+  - **No stylesheet rule is added**, `container-type` included: the tag takes a
+    card's existing placement, its room already reserved; `pickTagText` reads
+    the card's own surface, which wears no tint layer; the pill takes
+    `.sheetsmith-in-play:not(tr)`'s fill and outline, which follow its
+    `--radius-l`; and a focused pill shows the card's focus ring over its
+    outline, the focus rule being the more specific, and keeps its fill.
 - **Table, and a Roster's row**: a row has no free corner — its start holds the
   name (and a ring, where the table has one) and its end the value — so the pill
   is laid over the name cell's inline end, centred on the row, in the slack
   between the name and the numbers that the name cell takes by design. A name
-  long enough to fill its cell runs under it.
+  long enough to fill its cell runs under it. A Roster's table layout, its band
+  head included, keeps whatever placement it has today: the amendment above
+  reaches the card layout alone.
 
 The colour is never the only channel (WCAG 1.4.1): the outline is a shape, the
 pill is words, and the underline marks the number. Under `prefers-contrast: more`
@@ -928,6 +1009,54 @@ label that a Record set wrote reads as records with no preamble fence, which is
 - [x] A breakdown line from a form names the form, and an unraised at least reads
       *Brown Bear — at least +3 (not applied: already higher)*.
 
+**The tint on a Roster card** (amended after the owner's 5e druid test, and its
+tag after the owner's review of the build)
+
+- [ ] `roster.test.ts`: in the card layout, a stat whose `effective` moved
+      stamps its field with its pill (`.sheetsmith-card-value`) as the box, not
+      the card, which replaces *names its card as the box in the card layout*;
+      the card carries no `data-sheetsmith-box`; the reading is marked modified
+      and carries no `data-sheetsmith-name`, and with no `effective` it keeps
+      its name and the card as its box; a computed row's box is still its `tr`;
+      in the table layout the score's box is still the band's `tr` (*marks the
+      value field and names the row*, unchanged). The card carries
+      `data-sheetsmith-tag-box`, written through `stampModifiedHost`'s `tagBox`
+      and no other path (the `isolation.test.ts` scan).
+- [ ] `view/placement-decorations.test.ts`, on a card-layout Roster with a
+      form pushing at one stat's score and at that card's last row, and at a
+      second stat's score alone: the two pills and the row carry
+      `sheetsmith-in-play` and the tint attribute; neither card nor reading
+      carries either; **the first card carries `sheetsmith-in-play-marked` and
+      the one tag** (one tag, at the card's corner, with the row tinted and
+      untagged), and neither pill nor the second card a tag. A form pushing only
+      at a score tags that score's card; a form pushing only at a row tags that
+      row's name cell. A Roster with no `effective`, whose push moves only the
+      reading, tints the card, as today.
+- [ ] A test pins the `=` claim under "Deliberately not doing": an `=` push on
+      a Roster stat with `effective` declared moves the reading and not the
+      score, so the score field carries no name and the card is tinted whole.
+- [ ] `styles.test.ts` passes with no rule added; the tint stays within the
+      colour list.
+- [ ] Harness: the forms sample's card-layout Roster `checks` gains
+      `effective: 'value + mod.self'` and `derived: 'mod(value + mod.self)'`
+      with `signed: true`, so its reading reads *+2*, not *2*,
+      and Brown Bear adds `checks.CON += 2`. With the bear on, the Constitution
+      card shows a tinted pill, a tinted Concentration row (its last row, so its
+      bottom corners are rounded as before) with no tag of its own, its reading
+      underlined and untinted, no fill or outline on the card, and the tag at the
+      card's bottom inline-end corner; the Wisdom card shows its Insight
+      row tinted (its only row, all four corners) and its pill untinted. In
+      `sheet-forms-light`, `-dark`, `-narrow` (380, the cards stacked full
+      width), `-forced-colors` and `-contrast-more`.
+- [ ] Harness: `sheet-forms-roster-score` and `sheet-forms-roster-score-dark`
+      (the Wolf adding to the Constitution score alone) show the tinted pill,
+      Endurance and Concentration untinted, and the tag at the card's bottom
+      inline-end corner under Concentration, as the owner's rule allows.
+- [ ] `node harness/measure-form-tag.mjs`, on `forms` and `forms-roster-score`,
+      reports the Roster card's tag at `content` 0 or less, `overlap` 0 and
+      `clipped` 0 at `text=15`, `16` and `24`, so the tag hangs into the gap
+      below the card without the placement cutting it or reaching the last row.
+
 **The starter**
 
 - [x] `src/starters/5e.json` carries the formula changes, the `forms` tab with no
@@ -1000,6 +1129,19 @@ repository by `AGENTS.md`'s rule, so the recipe is here:
       **Every form**, add a form, name it `[[Giant Spider]]`, delete it; switch
       Werewolf to Crinos and see the additive tint; press **Long rest** on a
       layout installed from the 5e starter and see no form active.
+- [ ] The Roster-card amendment's fixture is the owner's own druid, already in
+      the vault: layout `Sheetsmith layouts/5e Druid.sheetsmith`, whose
+      `abilities` Roster draws its stats as cards (`cardLayout: true`, `derived:
+      mod(value + mod.self)`, `effective: value + mod.self`, rows under each
+      stat with a published `Total`), and note `Characters/Thorne - Character
+      Sheet.md`, whose Stat block holds **Cat Form**. What to press: put Cat Form
+      in play (a library modifier: STR and DEX raised to the Wisdom score, Stealth
+      floored at Wisdom's modifier plus proficiency, armour class floored) and see
+      Dexterity's pill and its Stealth row (where the floor raised it) tinted, Strength's
+      pill alone tinted, both readings underlined and untinted, no card filled
+      or outlined, and Cat Form's tag beside the first tinted pill in reading
+      order, nothing tagged by Strength's Athletics or any other untinted row;
+      revert and see every tint go.
 
 ## Commit boundaries
 
@@ -1032,6 +1174,20 @@ build and every round of findings; one branch, one land.
    bullet's amendment is scoped: an ordinary modifier keeps the shape-only
    mark, and only a value changed by the active form adds the tint on top of
    its text mark. The release-note lines are the next section's.
+
+The Roster-card amendment, on its own branch:
+
+1. `fix: Tint a Roster card's score and rows rather than the whole card`.
+   Roster's score boxed to its pill and its reading stamped without a name
+   where the score carries it, the pass's box lookup unchanged;
+   `stampModifiedHost`'s `tagBox` argument and `data-sheetsmith-tag-box`, and
+   the pass's tag carrier, so the card carries its pill's tag; and their tests.
+2. `test: Show a form raising a Roster card's score in the harness`. The `checks`
+   sample and the bear's push, the `forms-roster-score` state and its two
+   shots, and `measure-form-tag.mjs` reading the card that carries a tag.
+3. `docs: Record that a Roster card is not a form's box`. `SPEC` §8's tint
+   sentence ("each changed card of a Card set or Roster") and `docs/UI.md` §9's
+   tint row narrowed to match, by `/land-it`.
 
 ## Release notes
 
@@ -1075,3 +1231,33 @@ Items for `/release` to carry, recorded here so they are not re-derived:
   component is `dimWhen`'s neighbour.
 - **Spending another component's resource on a switch** (Daggerheart's Stress):
   `spendOnPick` reaches this component's own counter only.
+- **From the Roster-card amendment**:
+  - **A box round a Roster card's pill and reading together.** No element holds
+    the two, and a wrapper would move the Card set clothes the card borrows.
+  - **A box for a `hideValue` card's reading.** That card keeps the card as its
+    box, as today; its reading has no chrome to fill, and giving it some is a
+    new surface.
+  - **Moving a tinted row's tag on a Roster card to the card's corner**, so a
+    card had one place for its tag whatever was tinted. The owner's decision:
+    a row's tag stays in its name cell, as a Table's does, because on the
+    card's corner a row-only change would put the tag beside an untinted score
+    and read as the score having moved.
+  - **A card-layout Roster with no `effective`, where a push moves only the
+    reading**: the card is still tinted whole. Fixing it needs a box that does
+    not contain its value, which means changing the shared box lookup Card,
+    Card set and Table use; the reported layout and the 5e starter (whose
+    `abilities` Roster is not card layout) do not reach the case.
+  - **The tag beside the pill, at its inline-end side** (amended after the
+    owner's review of the build): it crowds the value and the card's edge
+    (owner review of the Dexterity card at the default size). Built once
+    after a land-stop review, and reverted.
+  - **The tag at the card's top inline-start corner**: it brings back the
+    clearance against a font's capitals that `stat-block-zones.md` abandoned,
+    and covers a centred label at the Roster card's 192px floor.
+  - **An `=` push on a Roster stat** (amended after the owner's land-stop
+    review): it sets the published reading and never moves the score, so the
+    card is still tinted whole even with `effective` declared. The same reason
+    as the line above: the reading would need a box that does not contain it.
+  - **Any change to Card, Card set, Table, Pool or Track boxing, to the colour
+    words or per-form tint, to the corner rounding of tinted rows, or to a
+    Roster's table layout.**
