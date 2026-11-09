@@ -484,7 +484,19 @@ and its share of one outline, as inset shadows top and bottom with the start
 edge on the first cell and the end edge on the last; forced colors, which drops
 a shadow, draws the row's top and bottom rules in `Highlight` instead, and a
 `Highlight` rule at each end — the first cell's start, the last cell's end — so
-the row is closed on all four sides as a card's outline is. **The number
+the row is closed on all four sides as a card's outline is. **A row at a
+corner of its scroller takes the scroller's corner**: the scroller rounds at
+`--radius-m` and clips to that curve, so the corner cells of a last body row
+(no foot after it, no add control under it) and of a first body row under no
+heading row take its inner radius, `--radius-m` less its 1px border, and the
+fill and the inset outline follow the curve rather than being cut by it — in a
+plain Table and a Roster alike, a card's mini table included. A foot is read
+from Table's `sheetsmith-table-has-totals` and a missing heading row from
+Roster's `sheetsmith-table-headless`, not from `:has()`. Forced colors, whose
+collapsed table borders take no radius, draws that row's outer rules on a layer
+over each of its cells instead, which takes the cell's radius, so the
+`Highlight` rules follow the curve too; a first row under no heading row draws
+its own top there, having no rule above it to repaint. **The number
 keeps its modified underline**, which is the component's, so a reader still sees
 which value in the box moved.
 
