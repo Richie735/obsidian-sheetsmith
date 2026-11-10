@@ -230,6 +230,55 @@ function columnLabel(column: StatBlockColumn): string {
 	return (column.name ?? '').trim() || column.key;
 }
 
+/** One column of a table zone as In play shows it. */
+interface ShownColumn {
+	label: string;
+	number: boolean;
+	/**
+	 * Whether its label says what the zone's heading says, under the zone's own
+	 * tolerant match, so it is hidden from sight and kept for a screen reader:
+	 * *Attack* over *Attack* says one word twice. The 5e starter heads its zone
+	 * **Attacks** over a column **Attack**, which do not match, and that is the
+	 * owner's call: the column is shown.
+	 */
+	repeats: boolean;
+}
+
+/** A table zone as In play shows it: its columns, and the rows that survive. */
+interface ShownTable {
+	columns: ShownColumn[];
+	/**
+	 * Each surviving row's cells in column order, as their source text: the
+	 * placeholder row left out, every cell but the name trimmed, and a number
+	 * column signed. The links are still in it, for each face to draw its way.
+	 */
+	rows: string[][];
+}
+
+/**
+ * **One reading of a table zone in play**, separate from its drawing, so a
+ * second face can draw the same rows without a second reading of which rows
+ * survive, what a column is called or how a number is signed.
+ */
+function shownTable(zone: BodyZone, read: Extract<ZoneRead, { type: 'table' }>): ShownTable {
+	const repeats = (text: string): boolean => zoneHeadingKey(text) === zoneHeadingKey(zone.heading);
+	const columns = zone.columns.map((column) => {
+		const label = columnLabel(column);
+		return { label, number: column.type === 'number', repeats: repeats(label) };
+	});
+	const firstKey = zone.columns[0]?.key ?? '';
+	const rows = read.rows
+		.filter((cells) => !isPlaceholder(cells, firstKey))
+		.map((cells) =>
+			zone.columns.map((column, at) => {
+				if (at === 0) return cells[0] ?? '';
+				const text = (cells[at] ?? '').trim();
+				return column.type === 'number' ? signedText(text) : text;
+			}),
+		);
+	return { columns, rows };
+}
+
 /** Markdown drawn read-only: the app's renderer where there is one. */
 type MarkdownContext = Pick<RenderContext, 'renderMarkdown' | 'link'>;
 
@@ -401,9 +450,7 @@ function drawTableZone(into: HTMLElement, zone: BodyZone, read: Extract<ZoneRead
 	const [first, ...columns] = zone.columns;
 	const firstKey = first?.key ?? '';
 	const all = read.rows;
-	const shown = all
-		.map((cells, index) => ({ cells, index }))
-		.filter(({ cells }) => editing || !isPlaceholder(cells, firstKey));
+	const shown = shownTable(zone, read);
 	const wrap = element(
 		'div',
 		`sheetsmith-table-box sheetsmith-stat-block-actions${editing ? ' sheetsmith-stat-block-actions-editing' : ''}`,
@@ -418,36 +465,28 @@ function drawTableZone(into: HTMLElement, zone: BodyZone, read: Extract<ZoneRead
 	// resolve against one width and no column moves on a face switch.
 	element('col', 'sheetsmith-stat-block-col-remove', widths);
 	const headRow = element('tr', '', element('thead', '', table));
-	/*
-	 * **A column heading that says what its zone's heading says is hidden from
-	 * sight and kept for a screen reader**, under the zone's own tolerant match:
-	 * *Attack* over *Attack* says one word twice. The 5e starter heads its zone
-	 * **Attacks** over a column **Attack**, which do not match, and that is the
-	 * owner's call: the column is shown.
-	 */
-	const repeats = (text: string): boolean => zoneHeadingKey(text) === zoneHeadingKey(zone.heading);
-	const headCell = (cls: string, text: string): void => {
-		const th = element('th', cls, headRow);
+	// A heading that repeats the zone's is hidden from sight and kept for a
+	// screen reader (`ShownColumn.repeats`).
+	shown.columns.forEach((column, at) => {
+		const type = zone.columns[at]?.type ?? 'text';
+		const th = element('th', at === 0 ? 'sheetsmith-stat-block-action-name' : `sheetsmith-stat-block-action-${type}`, headRow);
 		th.setAttribute('scope', 'col');
-		if (repeats(text)) element('span', 'sheetsmith-sr-only', th, text);
-		else th.textContent = text;
-	};
-	headCell('sheetsmith-stat-block-action-name', first === undefined ? '' : columnLabel(first));
-	for (const column of columns) headCell(`sheetsmith-stat-block-action-${column.type ?? 'text'}`, columnLabel(column));
+		if (column.repeats) element('span', 'sheetsmith-sr-only', th, column.label);
+		else th.textContent = column.label;
+	});
 	const removeHead = element('th', 'sheetsmith-stat-block-remove-cell', headRow);
 	if (editing) element('span', 'sheetsmith-sr-only', removeHead, 'Delete');
 	else removeHead.setAttribute('aria-hidden', 'true');
 	const body = element('tbody', '', table);
 	if (!editing) {
-		for (const { cells } of shown) {
+		for (const cells of shown.rows) {
 			const tr = element('tr', 'sheetsmith-stat-block-action-row', body);
 			const name = element('th', 'sheetsmith-stat-block-action-name', tr);
 			name.setAttribute('scope', 'row');
 			paintLinkedText(element('strong', '', name), cells[0] ?? '', { link: context.link });
 			columns.forEach((column, offset) => {
 				const td = element('td', `sheetsmith-stat-block-action-${column.type ?? 'text'}`, tr);
-				const text = (cells[offset + 1] ?? '').trim();
-				paintLinkedText(td, column.type === 'number' ? signedText(text) : text, { link: context.link });
+				paintLinkedText(td, cells[offset + 1] ?? '', { link: context.link });
 			});
 			element('td', 'sheetsmith-stat-block-remove-cell', tr).setAttribute('aria-hidden', 'true');
 		}
