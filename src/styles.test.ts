@@ -5392,3 +5392,43 @@ describe('the stat block In play polish (docs/features/stat-block-in-play-polish
 		expect(narrow?.body).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
 	});
 });
+
+describe('the stat block brief zone (docs/features/stat-block-brief-zone.md)', () => {
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const zoneRules = all.filter((rule) => /stat-block-brief-zone/.test(rule.selector));
+
+	it('is a grid of spans that starts at the inline start, sized by its custom property', () => {
+		const grid = zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone');
+		expect(grid?.body).toMatch(/display:\s*grid/);
+		expect(grid?.body).toMatch(/grid-template-columns:\s*repeat\(var\(--sheetsmith-brief-zone-columns, 1\), minmax\(0, auto\)\)/);
+		expect(grid?.body).toMatch(/justify-content:\s*start/);
+		// No row gap, so a label sits on its cell as a pair's does; a later row
+		// takes the fields row's wrapped-line gap instead.
+		expect(grid?.body).toMatch(/gap:\s*0 calc\(var\(--size-4-2\) \+ var\(--size-2-1\)\)/);
+		expect(zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-next')?.body).toMatch(
+			/margin-block-start:\s*var\(--size-2-2\)/,
+		);
+	});
+
+	it('truncates nothing, wraps a cell inside its column, and uses only theme variables', () => {
+		expect(zoneRules.length).toBeGreaterThanOrEqual(5);
+		for (const rule of zoneRules) {
+			expect(rule.body, rule.selector).not.toMatch(/text-overflow|ellipsis|white-space:\s*nowrap|line-clamp|overflow:\s*hidden/);
+			expect(rule.body, rule.selector).not.toMatch(/(?:^|;|\s)(?:border|background(?:-color)?|outline|box-shadow)\s*:/);
+			expect(rule.body, rule.selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
+			expect(rule.selector).not.toMatch(/:has\(/);
+		}
+		const label = zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-label');
+		expect(label?.body).toMatch(/color:\s*var\(--text-muted\)/);
+		expect(label?.body).toMatch(/font-size:\s*var\(--font-ui-smaller\)/);
+		const cell = zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-cell');
+		expect(cell?.body).toMatch(/overflow-wrap:\s*anywhere/);
+		expect(cell?.body).toMatch(/font-size:\s*var\(--font-ui-small\)/);
+		expect(zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-name')?.body).toMatch(
+			/font-weight:\s*var\(--font-bold\)/,
+		);
+		expect(zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-number')?.body).toMatch(
+			/font-variant-numeric:\s*tabular-nums/,
+		);
+	});
+});

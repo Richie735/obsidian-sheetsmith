@@ -3613,6 +3613,63 @@ describe('undo and redo', () => {
 			expect(await harness.raw()).toBe(before);
 		});
 
+		/*
+		 * A zone re-key or removal carries into Brief zone in the same write
+		 * (`docs/features/stat-block-brief-zone.md`, `types.ts` `keyReferences`),
+		 * so one undo takes both back together.
+		 */
+		const briefed = (): Layout =>
+			({
+				name: 'Brief zone sheet',
+				columns: 12,
+				components: [
+					{
+						id: 'forms',
+						type: 'stat-block',
+						label: 'Wild Shape',
+						position: { col: 1, row: 1, width: 6, height: 4 },
+						fields: [{ key: 'Active', type: 'toggle' }],
+						exclusive: 'Active',
+						zones: [
+							{ key: 'vitals' },
+							{ key: 'scores', type: 'table', heading: 'Ability Scores', columns: [{ key: 'Str' }] },
+						],
+						briefZone: 'scores',
+					},
+				],
+				triggers: [],
+			}) as unknown as Layout;
+		const forms = async () => (await harness.stored()).components[0] as unknown as Record<string, unknown>;
+
+		it('undoes a zone re-key and the Brief zone it carried into, in one step', async () => {
+			harness = await open(briefed());
+			const before = await harness.raw();
+			control(harness, 'edit-forms').click();
+			await settle(harness.pane);
+			type(control<HTMLInputElement>(harness, 'forms-zone-1-key'), 'abilities');
+			await settle(harness.pane);
+			expect(await forms()).toMatchObject({ briefZone: 'abilities', zones: [{ key: 'vitals' }, { key: 'abilities' }] });
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes removing the zone Brief zone names, and Brief zone with it, in one step', async () => {
+			harness = await open(briefed());
+			const before = await harness.raw();
+			control(harness, 'edit-forms').click();
+			await settle(harness.pane);
+			control(harness, 'forms-zone-scores-remove').click();
+			(document.body.querySelector('.modal-container .mod-warning') as HTMLButtonElement).click();
+			await settle(harness.pane);
+			const removed = await forms();
+			expect(removed.zones).toEqual([{ key: 'vitals' }]);
+			expect('briefZone' in removed).toBe(false);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
 		it('undoes adding a component', async () => {
 			harness = await open();
 			const before = await harness.raw();

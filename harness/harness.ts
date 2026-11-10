@@ -84,6 +84,7 @@ type StateName =
 	| 'forms-none'
 	| 'forms-none-one'
 	| 'forms-none-tint'
+	| 'forms-none-zone'
 	| 'forms-empty'
 	| 'forms-none-long'
 	| 'forms-two'
@@ -144,6 +145,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-none') return formsSamples('none');
 	if (name === 'forms-none-one') return formsSamples('none-one');
 	if (name === 'forms-none-tint') return formsSamples('none-tint');
+	if (name === 'forms-none-zone') return formsSamples('none-zone');
 	if (name === 'forms-empty') return formsSamples('empty');
 	if (name === 'forms-none-long') return formsSamples('none-long');
 	if (name === 'forms-two') return formsSamples('two');
@@ -999,6 +1001,7 @@ function applyQuery(): void {
 			wanted === 'forms-none' ||
 			wanted === 'forms-none-one' ||
 			wanted === 'forms-none-tint' ||
+			wanted === 'forms-none-zone' ||
 			wanted === 'forms-empty' ||
 			wanted === 'forms-none-long' ||
 			wanted === 'forms-two' ||

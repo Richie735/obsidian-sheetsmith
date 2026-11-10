@@ -9767,6 +9767,57 @@ a.sheetsmith-notice-action {
 	-webkit-line-clamp: 2;
 }
 
+/* **The zone the layout names for briefs, in the changes line's place**
+   (`docs/features/stat-block-brief-zone.md`; `drawZoneBrief`): a small
+   read-only grid of spans in the brief's own type, the fields row's sibling
+   rather than a second Table, so no border, fill or row rule. One track per
+   column, its count from `--sheetsmith-brief-zone-columns`, each as wide as
+   what it says, and the grid starting at the inline start rather than
+   stretching its tracks across the button, at the fields row's column gap so
+   a pair and a column are spaced alike. **No row gap**: the label row sits on
+   its first row of cells as a pair's label sits on its value, with nothing
+   between, and a later row takes the fields row's wrapped-line gap above it
+   (`-brief-zone-next`), since a grid's one row gap cannot tell the two
+   apart. **Nothing truncates and every row is drawn**:
+   a cell wraps inside its column and breaks a word that would not fit, so the
+   grid never exceeds the brief's box, and a long table makes a tall brief,
+   which is the author's choice and the field's description says so. */
+.sheetsmith-stat-block-brief-zone {
+	display: grid;
+	grid-template-columns: repeat(var(--sheetsmith-brief-zone-columns, 1), minmax(0, auto));
+	justify-content: start;
+	gap: 0 calc(var(--size-4-2) + var(--size-2-1));
+	min-width: 0;
+}
+
+.sheetsmith-stat-block-brief-zone-next {
+	margin-block-start: var(--size-2-2);
+}
+
+/* The pairs' label: label over value, as the fields row above it reads. */
+.sheetsmith-stat-block-brief-zone-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
+}
+
+.sheetsmith-stat-block-brief-zone-cell {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
+}
+
+/* The first column names each row, bold, as In play's row heading is. */
+.sheetsmith-stat-block-brief-zone-name {
+	font-weight: var(--font-bold);
+}
+
+/* A number column end-aligned on tabular figures, as In play's is. */
+.sheetsmith-stat-block-brief-zone-number {
+	font-variant-numeric: tabular-nums;
+	text-align: end;
+}
+
 /* Below the rules it overrides, since `@container` adds no specificity: under
    the block's 360px query an entry's name and usage stack, the delete staying
    on the name's line. */

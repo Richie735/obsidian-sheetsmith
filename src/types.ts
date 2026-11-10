@@ -572,6 +572,16 @@ export interface ConfigFieldSpec<
 	 * appears in no note.
 	 */
 	addressesHeading?: 'record';
+	/**
+	 * For a `'zones'` field only: the sibling config keys that each hold one of
+	 * this list's zone keys — a Stat block's `briefZone`
+	 * (`docs/features/stat-block-brief-zone.md`). A key commit carries the new
+	 * key into each one naming the old, and removing a zone clears each one
+	 * naming it, in the same write and so the same undo step: the id rename's
+	 * precedent (`editor/id-rename.ts`), one list over. The field asks the
+	 * *field* where its keys are read, so the editor learns nothing about briefs.
+	 */
+	keyReferences?: readonly TSiblingKey[];
 }
 
 /**

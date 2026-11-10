@@ -29,12 +29,22 @@ import { isBuiltInZone, zoneHeadingKey } from '../parse/zones';
 /** Why a zone key cannot stand, against the keys the other zones hold. */
 export type ZoneKeyFault = 'blank' | 'not-a-name' | 'taken';
 
+/**
+ * Whether two spellings name one zone: trimmed and without case. The one
+ * spelling of that match, for the clash below, the sheet's reading of a key
+ * that names a zone (a Stat block's `briefZone`) and the zone editor carrying a
+ * re-key into it, so the editor never rewrites a reference the sheet would
+ * read as naming another zone, or leaves one it would read as this one.
+ */
+export function sameZoneKey(a: string | undefined, b: string | undefined): boolean {
+	return (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+}
+
 export function zoneKeyFault(key: string, others: readonly (string | undefined)[]): ZoneKeyFault | null {
 	const trimmed = key.trim();
 	if (trimmed === '') return 'blank';
 	if (!isName(trimmed)) return 'not-a-name';
-	const lower = trimmed.toLowerCase();
-	if (others.some((other) => (other ?? '').trim().toLowerCase() === lower)) return 'taken';
+	if (others.some((other) => sameZoneKey(other, trimmed))) return 'taken';
 	return null;
 }
 
