@@ -4639,6 +4639,10 @@ export function notesSamples(): Sample[] {
  *   choosing orange, so each brief's rule previews its form's colour beside the
  *   block's `&tint=`;
  * - `empty`: no form written yet, so *No forms yet.* and **Add form**;
+ * - `none-zone`: the same as `none` with a table zone of ability scores the
+ *   layout names for briefs, so the bear's and the Wolf's briefs draw it in
+ *   their changes line's place and the Thug, holding none, keeps its line
+ *   (`docs/features/stat-block-brief-zone.md`);
  * - `none-long`: the same as `none` with the Wolf changing enough that its
  *   brief's changes line runs past two lines, so its clamp's ellipsis shows,
  *   and its Speed left blank, so the brief leaves the field out;
@@ -4656,6 +4660,7 @@ export type FormsVariant =
 	| 'none'
 	| 'none-one'
 	| 'none-tint'
+	| 'none-zone'
 	| 'empty'
 	| 'none-long'
 	| 'two'
@@ -4697,6 +4702,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 		variant === 'none' ||
 		variant === 'none-one' ||
 		variant === 'none-tint' ||
+		variant === 'none-zone' ||
 		variant === 'none-long' ||
 		variant === 'mook' ||
 		variant === 'tint-error' ||
@@ -4744,6 +4750,14 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 			? ['#### traits:', '', 'A second heading for Traits, which only the first is read under.', '']
 			: [];
 	const lead = variant === 'drift' ? ['A line above the first heading.', ''] : [];
+	/*
+	 * A table zone the briefs draw, declared after Attacks so Attacks stays the
+	 * first table zone: a 0.9.0 lead's leading table goes to the first one
+	 * (`parse/zones.ts`, `placeZones`), and the Wolf's Bite table is such a lead.
+	 */
+	const scored = variant === 'none-zone';
+	const scores = (row: string) =>
+		scored ? ['#### Ability Scores', '', '| Str | Dex | Con |', '|---|---|---|', row, ''] : [];
 	return [
 		{
 			config: {
@@ -4927,6 +4941,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						heading: 'Attacks',
 						columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
 					},
+					...(scored
+						? [{ key: 'scores', type: 'table', heading: 'Ability Scores', columns: [{ key: 'Str' }, { key: 'Dex' }, { key: 'Con' }] }]
+						: []),
 					{ key: 'actions', type: 'features', heading: 'Actions' },
 					{
 						key: 'traits',
@@ -4935,6 +4952,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						...(variant === 'expanded' ? {} : { collapsed: true }),
 					},
 				],
+				...(scored ? { briefZone: 'scores' } : {}),
 			} as ComponentConfig,
 			body: [
 				'',
@@ -4961,6 +4979,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						'',
 						...attacks,
 						'',
+						...scores('| 19 | 10 | 16 |'),
 						'#### Actions',
 						'',
 						'**Multiattack.** The bear makes two attacks: one with its bite and one with its claws.',
@@ -5001,6 +5020,8 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						'',
 						'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
 						'',
+						// After the lead, so its table and prose read as in `none`.
+						...scores('| 12 | 15 | 12 |'),
 						// A Fate mook's shape: a whole stat block with nothing in its zones,
 						// which In play draws as its head and vitals alone.
 						'### Thug',

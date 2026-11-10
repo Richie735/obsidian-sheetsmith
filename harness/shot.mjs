@@ -3782,13 +3782,28 @@ function formsPolishViews() {
 		{ name: 'sheet-forms-none-long', query: 'surface=sheet&state=forms-none-long', size: '1400,1500', frame: BLOCK },
 		// The briefs one a row at a phone's width.
 		{ name: 'sheet-forms-none-narrow', query: 'surface=sheet&state=forms-none&width=380', size: '380,3000', frame: BLOCK },
+		// The brief zone (`docs/features/stat-block-brief-zone.md`): the bear's and
+		// the Wolf's Ability Scores in their changes line's place, the Thug's line kept.
+		{ name: 'sheet-forms-none-zone', query: 'surface=sheet&state=forms-none-zone', size: '1400,1500', frame: BLOCK },
+		// One brief a row, each grid on one line.
+		{ name: 'sheet-forms-none-zone-narrow', query: 'surface=sheet&state=forms-none-zone&width=380', size: '380,3000', frame: BLOCK },
 	];
-	return views.flatMap(({ name, query, ...view }) => [
-		{ ...view, name, query: `${query}&theme=light` },
-		{ ...view, name: `${name}-dark`, query: `${query}&theme=dark` },
-		{ ...view, name: `${name}-contrast-more`, query: `${query}&theme=light`, media: { 'prefers-contrast': 'more' } },
-		{ ...view, name: `${name}-forced-colors`, query: `${query}&theme=light`, flags: ['--force-high-contrast'] },
-	]);
+	return [
+		...views.flatMap(({ name, query, ...view }) => [
+			{ ...view, name, query: `${query}&theme=light` },
+			{ ...view, name: `${name}-dark`, query: `${query}&theme=dark` },
+			{ ...view, name: `${name}-contrast-more`, query: `${query}&theme=light`, media: { 'prefers-contrast': 'more' } },
+			{ ...view, name: `${name}-forced-colors`, query: `${query}&theme=light`, flags: ['--force-high-contrast'] },
+		]),
+		// The zone at the larger sheet size, light only: every size in it is a
+		// fixed-px token, and its neighbours are not all fixed.
+		{
+			name: 'sheet-forms-none-zone-text24',
+			query: 'surface=sheet&state=forms-none-zone&text=24&theme=light',
+			size: '1400,1500',
+			frame: BLOCK,
+		},
+	];
 }
 
 const args = process.argv.slice(2);
