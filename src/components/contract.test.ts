@@ -726,6 +726,34 @@ describe('component registry', () => {
 		expect(conditions).toBeGreaterThan(0);
 	});
 
+	it('names a declared text field in every keyReferences, and declares it only on a zones field', () => {
+		/*
+		 * A reference the zones field cannot find is silently not carried: a
+		 * re-key would leave the sibling naming the old key, which the
+		 * component then reports as a configuration error. The compiler holds
+		 * the key to a config property where the component is typed, and not to
+		 * a declared field, so this runs off the live registry.
+		 */
+		let references = 0;
+		for (const type of types) {
+			const fields = getComponent(type)?.configFields ?? [];
+			for (const field of fields) {
+				if (field.keyReferences === undefined) continue;
+				expect(field.kind, `${type} ${field.key} declares keyReferences`).toBe('zones');
+				for (const key of field.keyReferences) {
+					references++;
+					expect(key, `${type} ${field.key} references itself`).not.toBe(field.key);
+					expect(
+						fields.find((other) => other.key === key)?.kind,
+						`${type} ${field.key} references ${key}, which no text field declares`,
+					).toBe('text');
+				}
+			}
+		}
+		// One today, the Stat block's `briefZone`.
+		expect(references).toBeGreaterThan(0);
+	});
+
 	it('never declares an empty example', () => {
 		// `{}` is what the bare type already draws.
 		for (const type of types) {

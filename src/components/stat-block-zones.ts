@@ -256,9 +256,10 @@ interface ShownTable {
 }
 
 /**
- * **One reading of a table zone in play**, separate from its drawing, so a
- * second face can draw the same rows without a second reading of which rows
- * survive, what a column is called or how a number is signed.
+ * **One reading of a table zone in play, for its two drawings**: In play's
+ * table and a form's brief (`docs/features/stat-block-brief-zone.md`). So the
+ * two cannot disagree about which rows survive, what a column is called or how
+ * a number is signed.
  */
 function shownTable(zone: BodyZone, read: Extract<ZoneRead, { type: 'table' }>): ShownTable {
 	const repeats = (text: string): boolean => zoneHeadingKey(text) === zoneHeadingKey(zone.heading);
@@ -277,6 +278,61 @@ function shownTable(zone: BodyZone, read: Extract<ZoneRead, { type: 'table' }>):
 			}),
 		);
 	return { columns, rows };
+}
+
+/**
+ * Draw a table zone into a form's brief, read-only and in spans, and return
+ * what it says as one sentence, or '' where it drew nothing
+ * (`docs/features/stat-block-brief-zone.md`). The brief's painter for the zone
+ * its layout names, `stat-block-briefs.ts`'s `zone`.
+ *
+ * **In play's reading, drawn for a button.** A button holds phrasing content,
+ * so the grid is spans and no table roles, which a button's children would
+ * flatten anyway; a link is drawn as its display text, since an anchor cannot
+ * sit inside a button; and the text after the table, or a zone that is not a
+ * table, is markdown In play renders as blocks, so a form holding no row In
+ * play would draw draws nothing here and its brief keeps its changes line.
+ *
+ * **The sentence is the grid read as text**, `Ability Scores: Str 19, Dex 10`,
+ * `; ` between rows and a blank cell left out: the fields' "label reading"
+ * grammar, since a grid read in order runs its labels into its cells. A label
+ * hidden on sight is still said.
+ */
+export function drawZoneBrief(into: HTMLElement, zone: BodyZone, read: ZoneRead | undefined): string {
+	// `read.type` narrows the union: the component reads a table zone as a
+	// table, so a brief never meets the other two. An accepted table zone has a
+	// column (`zonesError`), so no empty-columns case is asked here.
+	if (read === undefined || read.type !== 'table' || read.notTable !== null) return '';
+	const { columns, rows } = shownTable(zone, read);
+	if (rows.length === 0) return '';
+	into.style.setProperty('--sheetsmith-brief-zone-columns', String(columns.length));
+	// The first column names each row, so it is never a number's, as In play's
+	// row heading is neither end-aligned nor signed (`shownTable`).
+	const number = (at: number): string =>
+		at > 0 && columns[at]?.number === true ? ' sheetsmith-stat-block-brief-zone-number' : '';
+	columns.forEach((column, at) => {
+		into.createSpan({
+			cls: `sheetsmith-stat-block-brief-zone-label${number(at)}`,
+			text: column.repeats ? '' : column.label,
+		});
+	});
+	const said: string[] = [];
+	rows.forEach((cells, row) => {
+		const pairs: string[] = [];
+		// A row after the first is spaced from the one above it; the first sits
+		// under its labels as a value under its label (the stylesheet's reason).
+		const next = row > 0 ? ' sheetsmith-stat-block-brief-zone-next' : '';
+		cells.forEach((cell, at) => {
+			const shown = displayText(cell).trim();
+			into.createSpan({
+				cls: `sheetsmith-stat-block-brief-zone-cell${at === 0 ? ' sheetsmith-stat-block-brief-zone-name' : ''}${number(at)}${next}`,
+				text: shown,
+			});
+			if (shown !== '') pairs.push(`${columns[at]?.label ?? ''} ${shown}`);
+		});
+		said.push(pairs.join(', '));
+	});
+	return `${zone.heading}: ${said.join('; ')}`;
 }
 
 /** Markdown drawn read-only: the app's renderer where there is one. */

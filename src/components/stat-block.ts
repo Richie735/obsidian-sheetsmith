@@ -85,13 +85,14 @@ import { flagText, isFlagSet } from './stored-flag';
 import { boundedText } from './typed-value';
 import { embedRefusal } from './embed-rule';
 import { renderPictureFrame } from './picture-frame';
-import { columnKeyFault, zoneHeadingFault, zoneKeyFault } from './zone-rules';
+import { columnKeyFault, sameZoneKey, zoneHeadingFault, zoneKeyFault } from './zone-rules';
 import { drawBriefs, FormBrief } from './stat-block-briefs';
 import {
 	BodyZone,
 	ZoneHost,
 	drawDrift,
 	drawZone,
+	drawZoneBrief,
 	shiftOpenZones,
 	FeatureZoneEdit,
 	StatBlockZone,
@@ -231,6 +232,7 @@ export interface StatBlockConfig extends ComponentConfig {
 	 * the changes and never hide them.
 	 */
 	zones?: StatBlockZone[];
+	briefZone?: string;
 	image?: boolean;
 	/**
 	 * One of `TINT_COLOURS`, absent for the accent. Typed as text because a
@@ -481,6 +483,46 @@ function zonesError(config: StatBlockConfig): string | null {
 	return null;
 }
 
+/** The brief zone's key as the layout spells it, or null where there is none. */
+function briefZoneKey(config: StatBlockConfig): string | null {
+	const key = (config.briefZone ?? '').trim();
+	return key === '' ? null : key;
+}
+
+/** The body zone the brief zone's key names, by `sameZoneKey`, or null. */
+function namedBriefZone(config: StatBlockConfig, key: string): BodyZone | null {
+	return bodyZones(config).find((zone) => sameZoneKey(zone.key, key)) ?? null;
+}
+
+/**
+ * The table zone each brief draws in place of its changes line, or null where
+ * the layout names none. Reads an accepted configuration, so a name no table
+ * zone answers is `configError`'s and never reaches here as a fallback.
+ */
+function briefZone(config: StatBlockConfig): BodyZone | null {
+	const key = briefZoneKey(config);
+	const zone = key === null ? null : namedBriefZone(config, key);
+	return zone?.type === 'table' ? zone : null;
+}
+
+/**
+ * Why the brief zone cannot draw, or null where it can or is blank
+ * (`docs/features/stat-block-brief-zone.md`, question 3): on the Errors
+ * pattern and `exclusive`'s precedent, the layout says one thing and silently
+ * drawing another would hide the typo. After `zonesError`, since it reads the
+ * accepted zones. A built-in is asked by its key, since a list may leave one
+ * out and it is still drawn.
+ */
+function briefZoneError(config: StatBlockConfig): string | null {
+	const key = briefZoneKey(config);
+	if (key === null) return null;
+	if (isBuiltInZone(key)) return `Brief zone names "${key}", a built-in zone. Name a table zone's key instead.`;
+	const zone = namedBriefZone(config, key);
+	if (zone === null) return `Brief zone names "${key}", which no zone declares. Name a table zone's key, or clear it.`;
+	if (zone.type !== 'table') return `Brief zone names "${key}", a ${zone.type} zone. Name a table zone's key instead.`;
+	return null;
+}
+
 /**
  * Why this configuration cannot draw, or null where it can (`docs/features/
  * character-forms.md` and `stat-block-zones.md`, Error states). Each names the
@@ -525,7 +567,7 @@ function configError(config: StatBlockConfig): string | null {
 			return `One at a time by names "${fieldLabel(field)}", a ${fieldType(field)} field. Name a toggle field's key instead.`;
 		}
 	}
-	return zonesError(config);
+	return zonesError(config) ?? briefZoneError(config);
 }
 
 /**
@@ -825,6 +867,16 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			addressesHeading: 'record',
 			description:
 				"What each record's body is made of, in the order it is drawn: tables, named features or text, each under a heading the note stores, plus the record's vitals and changes, which can be moved but not removed. Renaming a heading renames it in every note on this layout. Removing a zone keeps its text in every note, shown as not in this layout. A collapsed text zone is closed in play and drawn open under Every form, where it is filled. Blank draws the vitals, the changes, then the body as text under a closed Details heading.",
+			// A key commit carries into Brief zone, and removing the zone it names
+			// clears it, so the zone editor never leaves Brief zone naming nothing.
+			keyReferences: ['briefZone'],
+		},
+		{
+			key: 'briefZone',
+			kind: 'text',
+			label: 'Brief zone',
+			description:
+				'The key of a table zone each form\'s brief draws in place of its changes line while no form is in play, so forms are compared by that table. Every row is drawn, so a long table makes a tall brief. A form whose table has no rows keeps its changes line. Only a table zone can be named, and it needs One at a time by. Blank draws the changes line.',
 		},
 		{
 			key: 'image',
@@ -1475,6 +1527,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 						: `No ${lower} is active.`,
 				);
 				if (readable.length > 0) {
+					const briefed = briefZone(config);
 					drawBriefs(
 						content,
 						readable.map(({ record, at }) => brief(record, at)),
@@ -1483,6 +1536,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 							listName: `${config.label}: choose a ${lower}`,
 							thumb: (into, source, named, onError) => paintThumb(into, source, named, onError, true),
 							tiles: (into, at) => briefTiles(into, at),
+							...(briefed === null
+								? {}
+								: { zone: (into: HTMLElement, at: number) => drawZoneBrief(into, briefed, records[at]?.zones?.[briefed.key]) }),
 							choose: (at) => {
 								awaitingPick = config.id;
 								choose(at);

@@ -214,6 +214,12 @@ export function addControls<T>(
 	 * Stat block's built-in zone, which a layout places and never removes.
 	 */
 	removable = true,
+	/**
+	 * What else the removal changes in the config, run after the entry leaves
+	 * the list and before the one persist, so the two are one write and one
+	 * undo step: a Stat block zone's `keyReferences` (`zones-field.ts`).
+	 */
+	onRemoved?: () => void,
 ): void {
 	row.addEventListener('dragover', (event) => {
 		const from = context.drag.index;
@@ -292,6 +298,7 @@ export function addControls<T>(
 	remove.addEventListener('click', () => {
 		const drop = () => {
 			list.splice(index, 1);
+			onRemoved?.();
 			context.persist();
 			context.redraw();
 		};

@@ -20,8 +20,11 @@
  * **What it is: what In play draws above the zones, in small and read-only.**
  * The picture, the name at the head's title size, the record's fields and any
  * number a form's `=` sets as label-over-value pairs (In play's fields, read,
- * without the tile's box), and the changes as one line clamped to two.
- * **What it is not**: no zones (Every form is where they
+ * without the tile's box), and the changes as one line clamped to two — or, in
+ * the changes line's place, the one table zone the layout names for briefs,
+ * drawn by the host's zone painter (`docs/features/stat-block-brief-zone.md`,
+ * which amends the polish's §4 by owner decision).
+ * **What it is not**: no zones but that one (Every form is where they
  * are read), no steppers, no field and no other control — the brief is one
  * button, and everything in it is phrasing content, so in spans — and no
  * picture failure sentence, which is said where the picture is set and under
@@ -67,6 +70,15 @@ export interface BriefsHost {
 	 * they say as words, `HP 22/34 · Speed 40 ft.`, or '' where it drew none.
 	 */
 	tiles: (into: HTMLElement, at: number) => string;
+	/**
+	 * Draw the form's brief zone, read-only and in spans, into the box this
+	 * module draws in the changes line's place: the host's zone painter, so
+	 * nothing here learns what a zone, a table or a note is. Returns what it
+	 * says as one sentence, or '' where it drew nothing, and then the brief
+	 * draws its changes line exactly as it would without one. Absent where the
+	 * layout names no zone for briefs.
+	 */
+	zone?: (into: HTMLElement, at: number) => string;
 	/** The picker's write: the chosen form on, and a use spent where the layout asks. */
 	choose: (at: number) => void;
 }
@@ -77,7 +89,8 @@ export interface BriefsHost {
  * `aria-labelledby`, and **described by what its fields and its changes say**:
  * the fields as one sentence of label and reading (a hidden twin, since a row
  * of pairs read as text runs its labels into its numbers) and the changes line as it
- * is drawn. So a screen reader hears "Brown Bear, button", then the figures.
+ * is drawn, or, where the zone takes its place, the zone's own hidden sentence,
+ * for the same reason as the fields'. So a screen reader hears "Brown Bear, button", then the figures.
  */
 export function drawBriefs(into: HTMLElement, briefs: readonly FormBrief[], host: BriefsHost): void {
 	const list = element('ul', 'sheetsmith-stat-block-briefs', into);
@@ -107,7 +120,10 @@ export function drawBriefs(into: HTMLElement, briefs: readonly FormBrief[], host
 			twin.id = ids('tiles');
 			described.push(twin.id);
 		}
-		if (brief.changes !== '') {
+		// The zone takes the changes line's slot and never sits beside it: it
+		// replaces a line that says less than the table does.
+		const zoned = host.zone !== undefined && drawZone(button, brief, host.zone, ids, described);
+		if (!zoned && brief.changes !== '') {
 			const changes = element('span', 'sheetsmith-stat-block-brief-changes', button, brief.changes);
 			changes.id = ids('changes');
 			described.push(changes.id);
@@ -115,4 +131,28 @@ export function drawBriefs(into: HTMLElement, briefs: readonly FormBrief[], host
 		if (described.length > 0) button.setAttribute('aria-describedby', described.join(' '));
 		button.addEventListener('click', () => host.choose(brief.at));
 	}
+}
+
+/**
+ * The brief's zone through the host's painter, with its hidden twin, so the
+ * description reads it as the sentence the painter returned. False, with
+ * nothing left drawn, where the painter drew nothing.
+ */
+function drawZone(
+	button: HTMLButtonElement,
+	brief: FormBrief,
+	paint: NonNullable<BriefsHost['zone']>,
+	ids: (part: string) => string,
+	described: string[],
+): boolean {
+	const zone = element('span', 'sheetsmith-stat-block-brief-zone', button);
+	const said = paint(zone, brief.at);
+	if (said === '') {
+		zone.remove();
+		return false;
+	}
+	const twin = element('span', 'sheetsmith-sr-only sheetsmith-stat-block-brief-zone-said', button, said);
+	twin.id = ids('zone');
+	described.push(twin.id);
+	return true;
 }

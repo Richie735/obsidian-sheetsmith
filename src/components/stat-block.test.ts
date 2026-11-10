@@ -6,6 +6,7 @@ import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { parseModifierPart } from '../parse/modifier-cell';
 import { outcomeView } from '../test/modifier-views';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
+import { formsSamples } from '../../harness/samples';
 
 /*
  * Stat block (`docs/features/character-forms.md`): one form at a time over a
@@ -2051,5 +2052,252 @@ describe('the briefs with no form on', () => {
 		expect(empty.el.textContent).toContain('No forms yet.');
 		expect(empty.el.querySelector('.sheetsmith-stat-block-action')?.textContent).toBe('Add form');
 		expect(briefs(render(NONE, { exclusive: '' }).el)).toEqual([]);
+	});
+});
+
+/*
+ * The brief zone (`docs/features/stat-block-brief-zone.md`): a layout names one
+ * table zone, and each brief draws its rows in the changes line's place, read
+ * by In play's own reading.
+ */
+describe('the brief zone', () => {
+	const SCORED: StatBlockConfig = {
+		...config,
+		zones: [
+			{ key: 'vitals' },
+			{ key: 'changes' },
+			{
+				key: 'attacks',
+				type: 'table',
+				heading: 'Attacks',
+				columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
+			},
+			{ key: 'scores', type: 'table', heading: 'Ability Scores', columns: [{ key: 'Str' }, { key: 'Dex' }, { key: 'Con' }] },
+			{ key: 'traits', type: 'text', heading: 'Traits', collapsed: true },
+		],
+		briefZone: 'scores',
+	};
+	const SCORES = (row: string) => ['#### Ability Scores', '', '| Str | Dex | Con |', '|---|---|---|', row, ''];
+	const body = (bear: string[], wolf: string[] = SCORES('| 12 | 15 | 12 |'), on = 'no') =>
+		[
+			'',
+			'### Brown Bear',
+			'```sheet',
+			`Active: ${on}`,
+			'HP: 22 / 34',
+			'Speed: 40 ft., climb 30 ft.',
+			'Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3',
+			'```',
+			'',
+			...bear,
+			'### Wolf',
+			'```sheet',
+			'Active: no',
+			'HP: 11 / 11',
+			'Modifiers: abilities.DEX = 2; skills.stealth >= 4',
+			'```',
+			'',
+			...wolf,
+		].join('\n');
+	const BOTH = body(SCORES('| 19 | 10 | 16 |'));
+	const briefs = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLButtonElement>('.sheetsmith-stat-block-brief'));
+	const texts = (from: Element, selector: string) => Array.from(from.querySelectorAll(selector)).map((one) => one.textContent);
+	const described = (button: HTMLElement) =>
+		(button.getAttribute('aria-describedby') ?? '')
+			.split(' ')
+			.map((id) => button.ownerDocument.getElementById(id)?.textContent);
+
+	it('draws the zone in the changes line\'s place, and no changes line', () => {
+		const { el } = render(BOTH, SCORED);
+		for (const brief of briefs(el)) {
+			const zone = brief.querySelector('.sheetsmith-stat-block-brief-zone') as HTMLElement;
+			expect(zone).not.toBeNull();
+			expect(brief.querySelector('.sheetsmith-stat-block-brief-changes')).toBeNull();
+			// After the fields row, in the changes line's slot.
+			expect(brief.querySelector('.sheetsmith-stat-block-brief-stats + .sheetsmith-sr-only + .sheetsmith-stat-block-brief-zone')).toBe(zone);
+		}
+		const bear = briefs(el)[0] as HTMLButtonElement;
+		expect(texts(bear, '.sheetsmith-stat-block-brief-zone-label')).toEqual(['Str', 'Dex', 'Con']);
+		expect(texts(bear, '.sheetsmith-stat-block-brief-zone-cell')).toEqual(['19', '10', '16']);
+		expect(texts(bear, '.sheetsmith-stat-block-brief-zone-name')).toEqual(['19']);
+		expect(texts(briefs(el)[1] as HTMLElement, '.sheetsmith-stat-block-brief-zone-cell')).toEqual(['12', '15', '12']);
+	});
+
+	it('leaves every brief as it was where the setting is blank or absent', () => {
+		const html = (over: Partial<StatBlockConfig>) => {
+			const { el } = render(BOTH, { ...SCORED, ...over });
+			const list = el.querySelector('.sheetsmith-stat-block-briefs')?.outerHTML;
+			document.body.replaceChildren();
+			return list;
+		};
+		const { briefZone: _unused, ...absent } = SCORED;
+		void _unused;
+		const without = html({ ...absent, briefZone: undefined });
+		expect(without).toContain('sheetsmith-stat-block-brief-changes');
+		expect(html({ briefZone: '' })).toBe(without);
+		expect(html({ briefZone: '   ' })).toBe(without);
+		expect(without).not.toContain('brief-zone');
+	});
+
+	it('draws In play\'s cells for the same form: the placeholder row out, a number signed, links as their text', () => {
+		const attacks = [
+			'#### Attacks',
+			'',
+			'| Attack | Bonus | Damage |',
+			'|---|---|---|',
+			'| Bite | 6 | 1d8+4 piercing |',
+			'| [[Claws (Brown Bear)\\|Claws]] | -1 | 2d6+4 slashing |',
+			'| Attack | | |',
+			'',
+		];
+		const over = { ...SCORED, briefZone: 'Attacks ' };
+		const brief = briefs(render(body(attacks), over).el)[0] as HTMLButtonElement;
+		const said = described(brief).at(-1);
+		document.body.replaceChildren();
+		const play = render(body(attacks, [], 'yes'), over).el.querySelector('.sheetsmith-stat-block-table') as HTMLElement;
+		const playCells = (selector: string) =>
+			Array.from(play.querySelectorAll(selector))
+				.filter((cell) => !cell.classList.contains('sheetsmith-stat-block-remove-cell'))
+				.map((cell) => cell.textContent);
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-label')).toEqual(playCells('thead th'));
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-cell')).toEqual(playCells('tbody th, tbody td'));
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-cell')).toEqual([
+			'Bite', '+6', '1d8+4 piercing', 'Claws', '-1', '2d6+4 slashing',
+		]);
+		// The first cell of each row is bold, as In play's row heading is.
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-name')).toEqual(texts(play, 'tbody th strong'));
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-number').slice(1)).toEqual(['+6', '-1']);
+		// Only a row after the first is spaced from the row above it.
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-next')).toEqual(['Claws', '-1', '2d6+4 slashing']);
+		// Spans only: nothing interactive inside the button, and no block.
+		expect(brief.querySelector('a, input, textarea, select, table, div, p')).toBeNull();
+		expect(said).toBe(
+			'Attacks: Attack Bite, Bonus +6, Damage 1d8+4 piercing; Attack Claws, Bonus -1, Damage 2d6+4 slashing',
+		);
+	});
+
+	it('blanks a column label that repeats the zone heading on sight, and still says it', () => {
+		const over: Partial<StatBlockConfig> = {
+			...SCORED,
+			zones: [{ key: 'scores', type: 'table', heading: 'Str', columns: [{ key: 'Str' }, { key: 'Dex' }] }],
+		};
+		const bear = ['#### Str', '', '| Str | Dex |', '|---|---|', '| 19 | 10 |', ''];
+		const brief = briefs(render(body(bear, []), over).el)[0] as HTMLButtonElement;
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-label')).toEqual(['', 'Dex']);
+		expect(described(brief).at(-1)).toBe('Str: Str 19, Dex 10');
+	});
+
+	it('is described by the fields\' twin then the zone\'s, which leaves a blank cell out', () => {
+		const { el } = render(body(SCORES('| 19 | | 16 |')), SCORED);
+		const bear = briefs(el)[0] as HTMLButtonElement;
+		const said = described(bear);
+		expect(said).toHaveLength(2);
+		expect(said[0]).toContain('HP 22/34');
+		expect(said[1]).toBe('Ability Scores: Str 19, Con 16');
+		expect(bear.querySelector('.sheetsmith-stat-block-brief-zone-said')?.classList.contains('sheetsmith-sr-only')).toBe(true);
+		document.body.replaceChildren();
+		const two = briefs(render(BOTH, SCORED).el)[0] as HTMLButtonElement;
+		expect(described(two)[1]).toBe('Ability Scores: Str 19, Dex 10, Con 16');
+	});
+
+	it.each([
+		['absent', []],
+		['placeholder only', SCORES('| Str | | |')],
+		['not a table', ['#### Ability Scores', '', 'The bear is strong.', '']],
+	])('keeps the changes line for a form whose zone is %s', (_case, bear) => {
+		const { el } = render(body(bear), SCORED);
+		const brief = briefs(el)[0] as HTMLButtonElement;
+		expect(brief.querySelector('.sheetsmith-stat-block-brief-zone')).toBeNull();
+		const changes = brief.querySelector('.sheetsmith-stat-block-brief-changes') as HTMLElement;
+		expect(changes).not.toBeNull();
+		// Described by the changes line, as without the setting.
+		expect(described(brief).at(-1)).toBe(changes.textContent);
+		// The Wolf, whose zone holds a row, still draws its zone.
+		expect(briefs(el)[1]?.querySelector('.sheetsmith-stat-block-brief-zone')).not.toBeNull();
+	});
+
+	it('never aligns or signs the first column as a number, as In play does not', () => {
+		const over: Partial<StatBlockConfig> = {
+			...SCORED,
+			zones: [
+				{
+					key: 'scores',
+					type: 'table',
+					heading: 'Ability Scores',
+					columns: [{ key: 'Str', type: 'number' }, { key: 'Dex', type: 'number' }],
+				},
+			],
+		};
+		const brief = briefs(render(body(['#### Ability Scores', '', '| Str | Dex |', '|---|---|', '| 19 | 10 |', ''], []), over).el)[0] as HTMLButtonElement;
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-cell')).toEqual(['19', '+10']);
+		expect(texts(brief, '.sheetsmith-stat-block-brief-zone-number')).toEqual(['Dex', '+10']);
+	});
+
+	it('draws the forms-none sample\'s briefs exactly as before where the setting is blank', () => {
+		const sample = formsSamples('none').find((one) => one.config.type === 'stat-block');
+		const sampled = sample?.config as StatBlockConfig;
+		const list = (over: Partial<StatBlockConfig>) => {
+			const { el } = render(sample?.body ?? '', { ...sampled, ...over });
+			const html = el.querySelector('.sheetsmith-stat-block-briefs')?.outerHTML;
+			document.body.replaceChildren();
+			return html;
+		};
+		const today = list({});
+		expect(sampled.briefZone).toBeUndefined();
+		expect(today).toContain('sheetsmith-stat-block-brief-changes');
+		expect(list({ briefZone: '' })).toBe(today);
+		expect(list({ briefZone: '  ' })).toBe(today);
+	});
+
+	it('sets the column count as the grid\'s custom property', () => {
+		const zone = render(BOTH, SCORED).el.querySelector<HTMLElement>('.sheetsmith-stat-block-brief-zone') as HTMLElement;
+		expect(zone.style.getPropertyValue('--sheetsmith-brief-zone-columns')).toBe('3');
+	});
+
+	it('writes nothing for a press but the picker\'s own', () => {
+		const { el, edits } = render(BOTH, SCORED);
+		briefs(el)[1]?.click();
+		expect(edits).toHaveLength(1);
+		expect(edits[0]?.records).toEqual({ 1: { fields: { Active: 'yes' } } });
+	});
+
+	describe('a name no table zone answers', () => {
+		const error = (briefZone: string) => {
+			const result = statBlock.read(BOTH, { ...SCORED, briefZone });
+			return result.ok ? null : result.error;
+		};
+
+		it('names no zone', () => {
+			expect(error(' score ')).toBe('Brief zone names "score", which no zone declares. Name a table zone\'s key, or clear it.');
+		});
+
+		it('names a built-in, listed or not', () => {
+			expect(error('Changes')).toBe('Brief zone names "Changes", a built-in zone. Name a table zone\'s key instead.');
+			const unlisted = statBlock.read(BOTH, { ...SCORED, zones: SCORED.zones?.slice(2), briefZone: 'vitals' });
+			expect(unlisted.ok ? null : unlisted.error).toBe('Brief zone names "vitals", a built-in zone. Name a table zone\'s key instead.');
+		});
+
+		it('names a features or a text zone', () => {
+			expect(error('traits')).toBe('Brief zone names "traits", a text zone. Name a table zone\'s key instead.');
+			const featured = statBlock.read(BOTH, {
+				...SCORED,
+				zones: [...(SCORED.zones ?? []), { key: 'actions', type: 'features', heading: 'Actions' }],
+				briefZone: 'actions',
+			});
+			expect(featured.ok ? null : featured.error).toBe('Brief zone names "actions", a features zone. Name a table zone\'s key instead.');
+		});
+
+		it('accepts a table zone named in another case, trimmed', () => {
+			expect(error(' SCORES ')).toBeNull();
+			const { el } = render(BOTH, { ...SCORED, briefZone: ' SCORES ' });
+			expect(el.querySelectorAll('.sheetsmith-stat-block-brief-zone')).toHaveLength(2);
+		});
+
+		it('draws the sentence and nothing else on the block', () => {
+			const el = document.createElement('div');
+			statBlock.render(el, { ...SCORED, briefZone: 'score' }, null, context);
+			expect(el.querySelector('.sheetsmith-error')?.textContent).toContain('which no zone declares');
+			expect(el.querySelector('.sheetsmith-stat-block-briefs')).toBeNull();
+		});
 	});
 });
