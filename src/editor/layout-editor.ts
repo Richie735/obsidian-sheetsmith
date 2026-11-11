@@ -1,5 +1,6 @@
 import {
 	ButtonComponent,
+	Component,
 	debounce,
 	Notice,
 	Setting,
@@ -58,6 +59,8 @@ import { copyContext } from './paste-dependencies';
 import { configurationSentence, pasteSentence } from './paste-notice';
 import { PasteBoxModal } from './paste-box';
 import { childIsPlaced, walkLayout } from '../view/grid-cells';
+import { LinkSource, resolvesLink } from '../view/link-resolution';
+import { MarkdownPasses } from '../view/markdown-pass';
 import {
 	adoptionReport,
 	countAdoptions,
@@ -176,6 +179,13 @@ export interface LayoutEditorHost {
 	setCollapsed(ids: Iterable<string>): void;
 	/** Rebuild both regions from the layout as it now stands. */
 	redraw(): void;
+	/**
+	 * The `Component` whose lifetime bounds every markdown pass the canvas and
+	 * the picker preview begin (`view/markdown-pass.ts`), so closing the pane
+	 * unloads whatever the last render left loaded. The view answers itself, as
+	 * the sheet view hands itself to its own passes.
+	 */
+	readonly markdownOwner: Component;
 	/** Refresh every open sheet view, after a write to the layout file. */
 	refreshSheets(): void;
 	/**
@@ -259,7 +269,7 @@ export class LayoutEditorSection {
 	 * once, like the canvas, because it holds posture a redraw must keep: open,
 	 * the query, the active line, the destination and its last report.
 	 */
-	private picker = new ComponentPicker();
+	private picker: ComponentPicker;
 	/**
 	 * Inline errors, by the focus token of the field showing them. A redraw
 	 * tears down the DOM they live in, so an error on one field would vanish
@@ -431,6 +441,14 @@ export class LayoutEditorSection {
 		// getter cannot be an arrow and `this` inside the object literal below is
 		// the host rather than this section.
 		const samplesOn = (): boolean => this.sampleValues;
+		// Where the canvas's and the preview's prose resolve its links: the open
+		// layout file, read live because the pane can open another one.
+		const source: LinkSource = {
+			get sourcePath(): string {
+				return host.layoutFile?.path ?? '';
+			},
+			resolves: (target) => resolvesLink(plugin.app, target, host.layoutFile?.path ?? ''),
+		};
 		// Arrow functions throughout, for the reasons `redraw` above states for
 		// itself and `persist` states for the `void`: `this.persist` is async and
 		// `no-misused-promises` refuses a promise-returning function where a void
@@ -457,7 +475,17 @@ export class LayoutEditorSection {
 			get sampleValues(): boolean {
 				return samplesOn();
 			},
+			get sourcePath(): string {
+				return source.sourcePath;
+			},
+			resolves: (target) => source.resolves(target),
+			markdown: new MarkdownPasses(host.markdownOwner, plugin.app),
 		});
+		// Its own passes, not the canvas's: each surface ends only its own.
+		this.picker = new ComponentPicker(
+			new MarkdownPasses(host.markdownOwner, plugin.app),
+			source,
+		);
 		// The same mapping one region over, and the same reasons for the arrows.
 		// `errors` is the exception and deliberately not a getter: the panel is
 		// handed the map itself, so both halves write into one map rather than two

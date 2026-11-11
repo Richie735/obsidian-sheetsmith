@@ -756,10 +756,12 @@ function drawFeaturesZone(into: HTMLElement, zone: BodyZone, read: Extract<ZoneR
 }
 
 /**
- * An entry where there is no app to render its markdown — the layout editor's
- * canvas: the parsed name and usage bold and run in, then the text, so the
- * fallback draws the entry a reader sees rather than its `**` marks. The
- * entry's own emphasis is lost here, which the app's renderer keeps.
+ * An entry where there is no app to render its markdown — a host that hands
+ * over no renderer, which the harness's `renderer=none` stages: the parsed name
+ * and usage bold and run in, then the text, so the fallback draws the entry a
+ * reader sees rather than its `**` marks. The entry's own emphasis is lost
+ * here, which the app's renderer keeps. The layout editor's canvas is no longer
+ * this case: it renders (`docs/features/canvas-renders-markdown.md`).
  */
 function drawEntryPlain(
 	into: HTMLElement,
