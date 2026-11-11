@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { statBlock, StatBlockConfig, StatBlockData } from './stat-block';
+import { isAcronym, statBlock, StatBlockConfig, StatBlockData } from './stat-block';
 import { ModifierPush, RenderContext } from '../types';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { parseModifierPart } from '../parse/modifier-cell';
@@ -115,6 +115,11 @@ const picker = (el: HTMLElement) =>
 /** Switch to **Every form**, the face a form is edited on. */
 function toLibrary(el: HTMLElement): void {
 	el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-switch')?.click();
+}
+
+/** Press **Edit <noun>s**, a companion block's way onto its edit face. */
+function toEdit(el: HTMLElement): void {
+	el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-edit')?.click();
 }
 
 function choose(select: HTMLSelectElement, value: string): void {
@@ -716,6 +721,7 @@ describe('a delete in a companion block', () => {
 			openRecords: [0, 1],
 			onToggleRecord: (at, open) => toggles.push([at, open]),
 		});
+		toEdit(el);
 		const remove = el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-remove')[0] as HTMLButtonElement;
 		remove.click();
 		remove.click();
@@ -743,6 +749,347 @@ describe('a delete in a companion block', () => {
 		const after = applied(first.edits[first.edits.length - 1] as StatBlockData, body);
 		render(after);
 		expect(disclosures()[0]?.getAttribute('aria-expanded')).toBe('true');
+	});
+});
+
+/*
+ * A companion block (`docs/features/stat-block-companion-face.md`): no
+ * `exclusive`, so every record is listed and applies, read as In play reads it
+ * until **Edit** is pressed.
+ */
+const NPCS: Partial<StatBlockConfig> = {
+	id: 'npcs',
+	label: 'NPCs',
+	recordName: 'NPC',
+	exclusive: '',
+	uses: '2',
+	spendOnPick: false,
+	image: true,
+	fields: [
+		{ key: 'Stress', type: 'number', maxSource: 'record' },
+		{ key: 'Mild', type: 'text' },
+		{ key: 'Alert', type: 'toggle' },
+		{ key: 'Modifiers', type: 'modifier' },
+	],
+	zones: [
+		{ key: 'vitals' },
+		{ key: 'changes' },
+		{ key: 'notes', type: 'text', heading: 'Notes', collapsed: true },
+		{ key: 'skills', type: 'table', heading: 'Skills', columns: [{ key: 'Skill' }, { key: 'Rating', type: 'number' }] },
+		{ key: 'stunts', type: 'features', heading: 'Stunts' },
+	],
+};
+
+/** A Fate mook with only Skills filled, then an NPC with every zone filled. */
+const NPC_BODY = [
+	'',
+	'```sheet',
+	'uses: 1',
+	'```',
+	'',
+	'### Thug',
+	'```sheet',
+	'Stress: 0 / 1',
+	'Alert: no',
+	'```',
+	'',
+	'#### Skills',
+	'',
+	'| Skill | Rating |',
+	'|---|---|',
+	'| Fight | 1 |',
+	'',
+	'### Baron Corvan',
+	'```sheet',
+	'Stress: 1 / 3',
+	'Mild: Bruised pride',
+	'Alert: yes',
+	'```',
+	'',
+	'![[Corvan.png]]',
+	'',
+	'#### Notes',
+	'',
+	'Proud and cornered.',
+	'',
+	'#### Skills',
+	'',
+	'| Skill | Rating |',
+	'|---|---|',
+	'| Rapport | 3 |',
+	'',
+	'#### Stunts',
+	'',
+	'**Silver Tongue (1/Session).** He talks his way out.',
+	'',
+].join('\n');
+
+/** The block as `render` merges it, for `applied`. */
+const NPCS_CONFIG: StatBlockConfig = { ...config, ...NPCS };
+
+function npcs(body: string = NPC_BODY, ctx: Partial<RenderContext<StatBlockData>> = {}) {
+	return render(body, NPCS, ctx);
+}
+
+describe('a companion block', () => {
+	const details = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-detail'));
+	const chevrons = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-disclosure'));
+	const done = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-done');
+	const footWords = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-stat-block-foot > button')).map((one) => one.textContent);
+
+	it('opens on its reading face, each name read as text with no field, no delete and no Add while records exist', () => {
+		const { el } = npcs();
+		const names = Array.from(el.querySelectorAll('.sheetsmith-record-name')).map((one) => one.textContent);
+		expect(names).toEqual(['Thug', 'Baron Corvan']);
+		expect(el.querySelector('.sheetsmith-record-name-input')).toBeNull();
+		expect(el.querySelector('.sheetsmith-record-remove')).toBeNull();
+		expect(el.querySelector('.sheetsmith-stat-block-add, .sheetsmith-stat-block-action')).toBeNull();
+		expect(el.querySelector('.sheetsmith-stat-block-tag')).toBeNull();
+		expect(footWords(el)).toEqual(['Edit NPCs']);
+	});
+
+	it('leaves an empty zone of each type out at rest, and draws it with its placeholder behind Edit', () => {
+		// The Thug with its Skills table gone too, so every zone it has is empty.
+		const bare = NPC_BODY.replace('#### Skills\n\n| Skill | Rating |\n|---|---|\n| Fight | 1 |\n\n', '');
+		expect(bare).not.toContain('Fight');
+		const { el } = npcs(bare);
+		const thug = () => details(el)[0] as HTMLElement;
+		expect(thug().querySelector('.sheetsmith-stat-block-zone')).toBeNull();
+		expect(thug().textContent).not.toContain('Skills');
+		expect(thug().textContent).not.toContain('None yet');
+		toEdit(el);
+		expect(Array.from(thug().querySelectorAll('.sheetsmith-stat-block-zone .sheetsmith-stat-block-section-heading')).map(
+			(one) => one.textContent,
+		)).toEqual(['Notes', 'Skills', 'Stunts']);
+		expect(thug().querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea')?.placeholder).toBe('Add text');
+		expect(thug().querySelector('.sheetsmith-stat-block-add-action')?.textContent).toBe('Add skill');
+		expect(thug().querySelector('.sheetsmith-stat-block-add-entry')?.textContent).toBe('Add entry');
+	});
+
+	it('keeps a collapsed text zone closed at rest, and draws it open behind Edit', () => {
+		const { el } = npcs(NPC_BODY, { openRecords: [1] });
+		const baron = () => details(el)[1] as HTMLElement;
+		const disclosure = baron().querySelector('.sheetsmith-stat-block-disclosure');
+		expect(disclosure?.getAttribute('aria-expanded')).toBe('false');
+		expect(baron().querySelector('.sheetsmith-stat-block-zone-text .sheetsmith-record-body')?.getAttribute('hidden')).toBe(
+			'until-found',
+		);
+		toEdit(el);
+		expect(baron().querySelector('.sheetsmith-stat-block-disclosure')).toBeNull();
+		expect(baron().querySelector('.sheetsmith-stat-block-zone-text .sheetsmith-record-body')?.hasAttribute('hidden')).toBe(false);
+	});
+
+	it('keeps the HP field and steppers, a toggle\'s ring, the prose\'s press and the uses rings live at rest', () => {
+		vi.useFakeTimers();
+		try {
+			const { el, edits } = npcs(NPC_BODY, { openRecords: [1] });
+			const thug = details(el)[0] as HTMLElement;
+			expect(thug.querySelector('.sheetsmith-stat-block-vital input')).not.toBeNull();
+			const plus = thug.querySelectorAll<HTMLButtonElement>('.sheetsmith-stat-block-step')[1] as HTMLButtonElement;
+			plus.click();
+			vi.advanceTimersByTime(GESTURE_COMMIT + 10);
+			expect(applied(edits[0] as StatBlockData, NPC_BODY, NPCS_CONFIG)).toContain(
+				'Stress: 1 / 1',
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+		document.body.replaceChildren();
+		const { el, edits } = npcs(NPC_BODY, { openRecords: [1] });
+		(details(el)[0]?.querySelector('.sheetsmith-stat-block-ring') as HTMLButtonElement).click();
+		expect(applied(edits[0] as StatBlockData, NPC_BODY, NPCS_CONFIG)).toContain('Thug\n```sheet\nStress: 0 / 1\nAlert: yes');
+		const prose = details(el)[1]?.querySelector<HTMLTextAreaElement>('.sheetsmith-stat-block-zone-text textarea') as HTMLTextAreaElement;
+		typeInto(prose, 'Proud, cornered and cruel.');
+		expect(applied(edits[1] as StatBlockData, NPC_BODY, NPCS_CONFIG)).toContain('#### Notes\n\nProud, cornered and cruel.\n');
+		el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-use')[1]?.click();
+		expect(edits[2]?.uses).toBe('2');
+		expect(el.querySelector('.sheetsmith-stat-block-edit')).not.toBeNull();
+	});
+
+	it('draws the changes at rest as In play does, the glyph unlabelled', () => {
+		const { el } = npcs();
+		const thug = () => details(el)[0] as HTMLElement;
+		expect(thug().querySelector('.sheetsmith-stat-block-change-glyph button')).not.toBeNull();
+		expect(thug().querySelector('.sheetsmith-stat-block-edit-changes')).toBeNull();
+		toEdit(el);
+		expect(thug().querySelector('.sheetsmith-stat-block-edit-changes')?.textContent).toBe('Edit changes');
+	});
+
+	it('draws a closed record\'s vitals on its line at rest, and hides them while it is open', () => {
+		const { el } = npcs();
+		const lines = Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-summary'));
+		expect(lines.map((line) => line.textContent?.startsWith('Stress'))).toEqual([true, true]);
+		expect(lines[1]?.textContent).toContain('Stress 1/3');
+		expect(lines.map((line) => line.hasAttribute('hidden'))).toEqual([true, false]);
+		chevrons(el)[1]?.click();
+		expect(lines[1]?.hasAttribute('hidden')).toBe(true);
+	});
+
+	it('opens the edit face with Edit <noun>s and leaves it with Done, writing nothing', () => {
+		const faces: number[] = [];
+		const { el, edits } = npcs(NPC_BODY, { onActivateTab: (at) => faces.push(at) });
+		toEdit(el);
+		expect(el.querySelectorAll('.sheetsmith-record-name-input')).toHaveLength(2);
+		expect(el.querySelectorAll('.sheetsmith-record-remove')).toHaveLength(2);
+		expect(footWords(el)).toEqual(['Done', 'Add npc']);
+		expect(done(el)?.getAttribute('aria-label')).toBe('Done editing NPCs');
+		done(el)?.click();
+		expect(el.querySelector('.sheetsmith-record-name-input')).toBeNull();
+		expect(footWords(el)).toEqual(['Edit NPCs']);
+		expect(faces).toEqual([1, 0]);
+		expect(edits).toHaveLength(0);
+	});
+
+	it('reopens on the face context.activeTab holds', () => {
+		const { el } = npcs(NPC_BODY, { activeTab: 1 });
+		expect(el.querySelectorAll('.sheetsmith-record-name-input')).toHaveLength(2);
+		expect(done(el)).not.toBeNull();
+	});
+
+	it('moves focus to Done on entry and back to Edit on exit, only where the press held focus', () => {
+		const { el } = npcs();
+		const edit = el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-edit') as HTMLButtonElement;
+		edit.focus();
+		edit.click();
+		expect(document.activeElement).toBe(done(el));
+		done(el)?.click();
+		expect(document.activeElement).toBe(el.querySelector('.sheetsmith-stat-block-edit'));
+
+		// A press that focused nothing is given nothing.
+		(document.activeElement as HTMLElement).blur();
+		el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-edit')?.click();
+		expect(document.activeElement).not.toBe(done(el));
+		done(el)?.click();
+		expect(document.activeElement).not.toBe(el.querySelector('.sheetsmith-stat-block-edit'));
+	});
+
+	it('carries open records across both faces through one set', () => {
+		const shut = (el: HTMLElement) => details(el).map((one) => one.hasAttribute('hidden'));
+		const { el } = npcs(NPC_BODY, { openRecords: [0, 1] });
+		expect(shut(el)).toEqual([true, false]);
+		toEdit(el);
+		expect(shut(el)).toEqual([true, false]);
+		// A record opened on one face is open on the other.
+		chevrons(el)[0]?.click();
+		done(el)?.click();
+		expect(shut(el)).toEqual([false, false]);
+	});
+
+	it('keeps a zone disclosure\'s state across a trip to the edit face', () => {
+		const { el } = npcs(NPC_BODY, { openRecords: [1] });
+		const disclosure = () => details(el)[1]?.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-disclosure');
+		disclosure()?.click();
+		toEdit(el);
+		done(el)?.click();
+		expect(disclosure()?.getAttribute('aria-expanded')).toBe('true');
+		// Closed again, since the disclosures are module state another test reads.
+		disclosure()?.click();
+		expect(disclosure()?.getAttribute('aria-expanded')).toBe('false');
+	});
+
+	it('says No <noun>s yet. with Add <noun> at rest, which adds, opens the edit face and lands in the new name', () => {
+		const none = '\n```sheet\nuses: 1\n```\n';
+		const faces: number[] = [];
+		const { el, edits } = npcs(none, { onActivateTab: (at) => faces.push(at) });
+		expect(el.querySelector('.sheetsmith-stat-block-empty')?.textContent).toBe('No npcs yet.');
+		expect(el.querySelector('.sheetsmith-stat-block-foot')?.childElementCount).toBe(0);
+		const add = el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-action') as HTMLButtonElement;
+		expect(add.textContent).toBe('Add npc');
+		add.click();
+		expect(faces).toEqual([1]);
+		expect(edits[0]?.added).toEqual([{ name: 'NPC' }]);
+		document.body.replaceChildren();
+		const after = npcs(applied(edits[0] as StatBlockData, none, NPCS_CONFIG), { activeTab: 1 });
+		expect(document.activeElement).toBe(after.el.querySelector('.sheetsmith-record-name-input'));
+	});
+
+	it('says No <noun>s yet. with Done and Add behind the press once the last record is deleted', () => {
+		const one = NPC_BODY.slice(0, NPC_BODY.indexOf('### Baron Corvan'));
+		const first = npcs(one, { activeTab: 1 });
+		const remove = first.el.querySelector<HTMLButtonElement>('.sheetsmith-record-remove') as HTMLButtonElement;
+		remove.click();
+		remove.click();
+		document.body.replaceChildren();
+		const { el } = npcs(applied(first.edits[0] as StatBlockData, one, NPCS_CONFIG), { activeTab: 1 });
+		expect(el.querySelector('.sheetsmith-stat-block-empty')?.textContent).toBe('No npcs yet.');
+		expect(footWords(el)).toEqual(['Done', 'Add npc']);
+		done(el)?.click();
+		expect(el.querySelector('.sheetsmith-stat-block-action')?.textContent).toBe('Add npc');
+		expect(footWords(el)).toEqual([]);
+	});
+
+	it('moves focus from Done to the empty state\'s Add where no record is left to edit', () => {
+		const { el } = npcs('\n```sheet\nuses: 1\n```\n', { activeTab: 1 });
+		const leaving = done(el) as HTMLButtonElement;
+		leaving.focus();
+		leaving.click();
+		expect(document.activeElement).toBe(el.querySelector('.sheetsmith-stat-block-action'));
+	});
+
+	it('draws the picture on an open record\'s line at rest, after the chevron, and none while closed', () => {
+		const resource = (target: string) => (target === 'Corvan.png' ? 'app://corvan.png' : null);
+		const { el } = npcs(NPC_BODY, { resource });
+		const summary = el.querySelectorAll<HTMLElement>('.sheetsmith-record-summary')[1] as HTMLElement;
+		const thumb = summary.querySelector<HTMLElement>('.sheetsmith-stat-block-thumb') as HTMLElement;
+		expect(summary.firstElementChild?.classList.contains('sheetsmith-record-disclosure')).toBe(true);
+		expect(thumb.nextElementSibling?.classList.contains('sheetsmith-record-name')).toBe(true);
+		expect(thumb.querySelector('img')?.getAttribute('src')).toBe('app://corvan.png');
+		expect(thumb.hasAttribute('hidden')).toBe(true);
+		chevrons(el)[1]?.click();
+		expect(thumb.hasAttribute('hidden')).toBe(false);
+		chevrons(el)[1]?.click();
+		expect(thumb.hasAttribute('hidden')).toBe(true);
+		// The Thug holds no picture line, so its line takes no thumbnail.
+		expect(el.querySelectorAll('.sheetsmith-stat-block-thumb')).toHaveLength(1);
+	});
+
+	it('says a companion\'s picture failure as Set it under Edit <noun>s, in Picture.', () => {
+		const { el } = npcs(NPC_BODY, { resource: () => null, openRecords: [1] });
+		expect(el.querySelector('.sheetsmith-stat-block-thumb')).toBeNull();
+		expect(details(el)[1]?.querySelector('.sheetsmith-stat-block-problem')?.textContent).toBe(
+			'No file in this vault is called "Corvan.png". Set it under Edit NPCs, in Picture.',
+		);
+	});
+
+	it('draws a companion\'s name at title size open or closed, by the stamped class', () => {
+		const { el } = npcs();
+		const stamped = () =>
+			Array.from(el.querySelectorAll('.sheetsmith-record-name')).map((one) =>
+				one.classList.contains('sheetsmith-stat-block-name-read') && one.classList.contains('sheetsmith-record-name-plain'),
+			);
+		expect(stamped()).toEqual([true, true]);
+		chevrons(el)[0]?.click();
+		chevrons(el)[1]?.click();
+		expect(stamped()).toEqual([true, true]);
+	});
+
+	it('keeps an all-capitals noun\'s case on Edit and every string naming it, and lowercases any other', () => {
+		const { el } = npcs(NPC_BODY, { resource: () => null, openRecords: [1] });
+		expect(footWords(el)).toEqual(['Edit NPCs']);
+		expect(el.textContent).toContain('Set it under Edit NPCs, in Picture.');
+		toEdit(el);
+		expect(done(el)?.getAttribute('aria-label')).toBe('Done editing NPCs');
+		// Every other string keeps the lowercased noun.
+		expect(footWords(el)).toEqual(['Done', 'Add npc']);
+		document.body.replaceChildren();
+		const owl = render(NPC_BODY, { ...NPCS, recordName: 'Familiar' }, { activeTab: 1 });
+		expect(done(owl.el)?.getAttribute('aria-label')).toBe('Done editing familiars');
+		done(owl.el)?.click();
+		expect(footWords(owl.el)).toEqual(['Edit familiars']);
+		expect([isAcronym('NPC'), isAcronym('Familiar'), isAcronym('A'), isAcronym('NPC 2')]).toEqual([true, false, false, true]);
+	});
+
+	it('draws a record whose fence will not read with its name, its problem and its prose, read-only at rest', () => {
+		const broken = NPC_BODY.replace('Stress: 1 / 3', 'Stress 1 / 3');
+		const { el } = npcs(broken, { openRecords: [1] });
+		const row = el.querySelectorAll('.sheetsmith-stat-block-record')[1] as HTMLElement;
+		expect(row.querySelector('.sheetsmith-stat-block-name-read')?.textContent).toBe('Baron Corvan');
+		expect(row.querySelector('.sheetsmith-error')).not.toBeNull();
+		const detail = details(el)[1] as HTMLElement;
+		expect(detail.textContent).toContain('Proud and cornered.');
+		expect(detail.querySelector('textarea, input')).toBeNull();
 	});
 });
 
