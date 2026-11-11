@@ -1254,13 +1254,24 @@ describe('a component that says what a sample of itself looks like', () => {
 		}
 	});
 
-	it('puts no wikilink in a sample', () => {
-		// There is no vault behind the canvas, so a link would draw unresolved
-		// and read as a fault in the author's layout rather than as filler.
+	it('links a sample only to a note named as filler', () => {
+		// The canvas renders a sample's prose and resolves its links against the
+		// open layout file, so a link draws as the theme's unresolved link where
+		// the vault holds no such note (`docs/features/canvas-renders-markdown.md`).
+		// That is honest for filler and only for filler: a link naming a
+		// plausible note would read as a fault in the author's layout, or as
+		// somebody's real backstory. So every target says it is a sample, on
+		// Rich text's rule that prose names itself as filler.
 		const seen = filled();
 		expect(seen).toHaveLength(SWEPT.length - EMPTY.length);
-		for (const { where, body } of seen) {
-			expect(body, `${where} samples a wikilink`).not.toContain('[[');
+		const targets = seen.flatMap(({ where, body }) =>
+			[...body.matchAll(/\[\[([^\]|#]+)/g)].map((match) => ({ where, target: match[1] ?? '' })),
+		);
+		// The floor: Rich text's sample holds one, so a sweep finding none has
+		// stopped reading the bodies it was meant to.
+		expect(targets.length).toBeGreaterThan(0);
+		for (const { where, target } of targets) {
+			expect(target, `${where} links a sample to a note not named as one`).toMatch(/^Sample\b/);
 		}
 	});
 

@@ -198,7 +198,7 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 	],
 
 	/*
-	 * Two short paragraphs of obvious filler.
+	 * Two short paragraphs of obvious filler, and a short list after them.
 	 *
 	 * **Two rather than one**, because the break between them is the only thing
 	 * about this block a canvas can be wrong about and an empty one never showed:
@@ -212,20 +212,29 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 	 * one names itself. The block's own label carries the index, so the words a
 	 * reader recognises are still the author's (§2).
 	 *
-	 * No markdown, and no wikilink. A sample draws through `paintParagraphs`
-	 * wherever there is no renderer — the layout editor's canvas hands over none
-	 * (`docs/UI.md` §12) — so anything but prose would draw as its own source, and
-	 * a link would draw unresolved against a canvas with no vault behind it.
+	 * **It holds a little markdown, because every surface that draws it now
+	 * renders**: the layout editor's canvas and the picker's preview hand over
+	 * the app's renderer as the sheet does
+	 * (`docs/features/canvas-renders-markdown.md`), so an author judging the
+	 * layout sees the marks a character's prose will carry. One bold run, one
+	 * link to a note named as filler, and one two-item list **after the second
+	 * paragraph, never between them**: between, a short box showed the first
+	 * paragraph and the list and stopped there, and a sample ending on a list
+	 * item read as complete with its second paragraph out of sight. The link's
+	 * note is one no vault is expected to hold, so it draws as the theme's
+	 * unresolved link, honest for a sample. **Never a heading**: `## ` is the
+	 * section boundary, and `read` would hand the rest to the next section.
 	 */
 	sample(config): string {
 		// The block's own name, or a word for what it holds where the layout has
 		// not given it one — an unnamed block still has to fill something in.
 		const name = config.label.trim() === '' ? 'Text' : config.label.trim();
-		const paragraphs = [
-			`${sampleText(name, 0)}. Sample text, so the block shows how a paragraph fills the box and where it stops.`,
-			`${sampleText(name, 1)}. A second paragraph, so the space between two is visible as well.`,
+		const blocks = [
+			`${sampleText(name, 0)}. Sample text, so the block shows how a **paragraph** fills the box and where it stops.`,
+			`${sampleText(name, 1)}. A second paragraph, so the space between two is visible, with a link to [[Sample note]].`,
+			'- A sample list item\n- A second sample item',
 		];
-		return writeBodyText(null, paragraphs.join('\n\n'));
+		return writeBodyText(null, blocks.join('\n\n'));
 	},
 
 	/*
