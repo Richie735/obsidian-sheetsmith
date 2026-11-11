@@ -445,6 +445,24 @@ describe('the metadata cache double', () => {
 		await app.vault.delete(file);
 		expect(app.metadataCache.getFileCache(file)).toBeNull();
 	});
+
+	it('finds a link\'s file by exact path, by path without its extension, and by name in a folder', async () => {
+		const app = new App();
+		await app.vault.createFolder('People');
+		const nested = await app.vault.create('People/Sildar.md', '');
+		const top = await app.vault.create('Notes.md', '');
+		expect(app.metadataCache.getFirstLinkpathDest('Notes.md', '')).toBe(top);
+		expect(app.metadataCache.getFirstLinkpathDest('Notes', '')).toBe(top);
+		expect(app.metadataCache.getFirstLinkpathDest('People/Sildar', '')).toBe(nested);
+		expect(app.metadataCache.getFirstLinkpathDest('Sildar', 'Notes.md')).toBe(nested);
+	});
+
+	it('answers the source file for an empty linkpath, and null for a note nobody wrote', async () => {
+		const app = new App();
+		const top = await app.vault.create('Notes.md', '');
+		expect(app.metadataCache.getFirstLinkpathDest('', 'Notes.md')).toBe(top);
+		expect(app.metadataCache.getFirstLinkpathDest('Sample note', 'Notes.md')).toBeNull();
+	});
 });
 
 describe('generateMarkdownLink', () => {

@@ -1706,9 +1706,9 @@ export class Component {
  *
  * So the markup is one `<p>` holding the source. That is enough for a test to
  * say whether anything landed and whose pass it landed in, and honest about
- * being a stand-in. The harness passes no renderer at all, for the same reason
- * this one is not real: a component's fallback is what a reviewer should be
- * looking at where there is no app.
+ * being a stand-in. The harness replaces `render` with a stand-in of its own
+ * (`harness/stand-in-markdown.ts`), in its bundle only, so a shot draws the few
+ * marks a sample holds; vitest keeps this one, which its tests rely on.
  */
 export class MarkdownRenderer {
 	/**
@@ -2332,6 +2332,29 @@ export class MetadataCache extends Events {
 			frontmatter[key] = value;
 		}
 		return { frontmatter };
+	}
+
+	/**
+	 * The file a link's path half names, or null where the vault holds none.
+	 *
+	 * **A simplification of the app's lookup, and it is the cases the plugin
+	 * asks about rather than the app's whole ranking.** The app prefers an
+	 * exact path, then the path with `.md` on it, then the note of that name
+	 * closest to `sourcePath`; this answers the first two and then the first
+	 * note of that name anywhere, which agrees with the app wherever a vault
+	 * holds one note per name. The empty linkpath, a `[[#Heading]]` in the note
+	 * itself, is the source file, as in the app.
+	 *
+	 * The reader is `view/link-resolution.ts`, which both the sheet and the
+	 * layout editor's canvas ask whether a link resolves; a link the harness
+	 * draws with no such file is what paints faint as unresolved.
+	 */
+	getFirstLinkpathDest(linkpath: string, sourcePath: string): TFile | null {
+		if (linkpath === '') return this.vault.getFileByPath(sourcePath);
+		const exact = this.vault.getFileByPath(linkpath) ?? this.vault.getFileByPath(`${linkpath}.md`);
+		if (exact) return exact;
+		const name = linkpath.split('/').pop() ?? linkpath;
+		return this.vault.getMarkdownFiles().find((file) => file.basename === name) ?? null;
 	}
 }
 

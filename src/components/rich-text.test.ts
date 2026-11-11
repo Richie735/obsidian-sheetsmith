@@ -7,6 +7,7 @@ import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
+import { appRenderedLink } from '../test/rendered-link';
 
 const config: RichTextConfig = {
 	id: 'backstory',
@@ -200,22 +201,27 @@ describe('richText.sample', () => {
 		const body = sampleOf(richText, config);
 		const read = richText.read(body, config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
-		// Two, because the break between them is the thing an empty box never
-		// showed and a single line would not answer: whether prose fills the
-		// placement, wraps inside it and stops where it was told to.
-		expect(read.data.text.split(/\n\s*\n/)).toHaveLength(2);
+		// Two paragraphs, because the break between them is the thing an empty
+		// box never showed and a single line would not answer: whether prose
+		// fills the placement, wraps inside it and stops where it was told to.
+		// The list comes after both, never between them: between, a short box
+		// showed one paragraph and the list and read as complete.
+		const blocks = read.data.text.split(/\n\s*\n/);
+		expect(blocks.map((block) => block.startsWith('- '))).toEqual([false, false, true]);
 		// The block's own name carries the index, so the words a reader
 		// recognises are the author's.
 		expect(read.data.text.startsWith('Backstory 1.')).toBe(true);
 	});
 
-	it('holds no markdown, no wikilink and no heading', () => {
-		// The canvas hands over no renderer, so a sample draws through
-		// `paintParagraphs` — anything but prose would draw as its own source,
-		// and a link would draw unresolved against a canvas with no vault.
+	it('holds a bold run, a list and a wikilink, and no heading', () => {
+		// Every surface that draws a sample renders it now, the canvas and the
+		// picker's preview included, so the sample carries one of each mark a
+		// reader's prose will. A heading never: `## ` is the section boundary.
 		const body = sampleOf(richText, config);
-		expect(body).not.toContain('[[');
-		expect(body).not.toMatch(/^#|[*_`]/m);
+		expect(body).toMatch(/\*\*[^*]+\*\*/);
+		expect(body).toMatch(/^- .+\n- .+$/m);
+		expect(body).toMatch(/\[\[[^\]]+\]\]/);
+		expect(body).not.toMatch(/^#/m);
 	});
 
 	it('names itself even where the layout has not named the block', () => {
@@ -610,17 +616,7 @@ describe('richText.render — the layer answers presses because it scrolls', () 
 	const appRenders =
 		(target: string, external = false) =>
 		(_markdown: string, into: HTMLElement, _onFailure: () => void) => {
-			const anchor = into.ownerDocument.createElement('a');
-			anchor.setAttribute('href', target);
-			// `className`, not `classList.add`, and deliberately: `styles.test.ts`
-			// scans every `.ts` under `src/` for the plugin claiming an unprefixed
-			// class, and this is a fake of *Obsidian's* output rather than anything
-			// the plugin paints. Widening that guard's `BORROWED` list to let a test
-			// double through would weaken it for the next real one.
-			anchor.className = external ? 'external-link' : 'internal-link';
-			if (!external) anchor.setAttribute('data-href', target);
-			anchor.textContent = target;
-			into.appendChild(anchor);
+			appRenderedLink(into, target, { external });
 		};
 
 	it('opens a link the *app* rendered, which is the only path that ships', () => {

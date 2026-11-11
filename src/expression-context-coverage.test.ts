@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { App, Component } from 'obsidian';
 import { recordSet, RecordSetConfig } from './components/record-set';
 import { Canvas } from './editor/canvas';
 import { renderComponentPreview } from './editor/component-preview';
@@ -7,6 +8,7 @@ import { pickerCatalog } from './editor/picker-catalog';
 import { NO_ENV } from './formula/resolve';
 import { note, sheetOn } from './test/sheet-on-note';
 import { ComponentConfig, RenderContext, ResetContext } from './types';
+import { MarkdownPasses } from './view/markdown-pass';
 import { planTrigger } from './view/reset-plan';
 
 /*
@@ -83,6 +85,9 @@ describe('every production host supplies the expression readers', () => {
 			select: () => undefined,
 			selection: '',
 			sampleValues: true,
+			sourcePath: '',
+			resolves: () => false,
+			markdown: new MarkdownPasses(new Component(), new App()),
 		};
 		const config = {
 			id: 'features',
@@ -102,7 +107,12 @@ describe('every production host supplies the expression readers', () => {
 			(one) => one.type === 'record-set' && !one.entry,
 		);
 		if (choice === undefined) throw new Error('no Record set in the picker');
-		renderComponentPreview(document.createElement('div'), choice);
+		const passes = new MarkdownPasses(new Component(), new App());
+		renderComponentPreview(
+			document.createElement('div'),
+			choice,
+			passes.begin('', () => false),
+		);
 		expectEvaluates(seen.at(-1));
 	});
 

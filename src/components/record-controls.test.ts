@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { bindDisclosure, drawRecordNumber, shiftOpenRecords } from './record-controls';
+import { bindDisclosure, drawRecordName, drawRecordNumber, shiftOpenRecords } from './record-controls';
 
 /*
  * The record controls Record set and Stat block share. Each consumer's suite
@@ -78,5 +78,32 @@ describe('drawRecordNumber', () => {
 		handle.set('1/2');
 		expect(commits).toHaveLength(1);
 		expect(row.textContent).toContain('A slash separates a value');
+	});
+});
+
+describe('drawRecordName', () => {
+	const host = () => ({
+		context: { resolved: {}, resolveField: () => null },
+		id: 'npcs',
+		noun: 'NPC',
+		status: document.createElement('div'),
+	});
+
+	it('draws a field by default, and the plain read name where asked to read only', () => {
+		const into = document.createElement('div');
+		const field = drawRecordName(into, host(), { name: 'Thug', error: null }, 'Thug', () => undefined);
+		expect(field?.value).toBe('Thug');
+		expect(into.querySelector('.sheetsmith-record-name-plain')).toBeNull();
+
+		const read = document.createElement('div');
+		const commits: string[] = [];
+		const none = drawRecordName(read, host(), { name: 'Thug', error: null }, 'Thug', (next) => commits.push(next), {
+			readOnly: true,
+		});
+		expect(none).toBeNull();
+		expect(read.querySelector('input')).toBeNull();
+		const cell = read.querySelector('.sheetsmith-record-name.sheetsmith-record-name-plain');
+		expect(cell?.textContent).toBe('Thug');
+		expect(commits).toEqual([]);
 	});
 });

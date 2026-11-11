@@ -2671,6 +2671,163 @@ const heavier = (a: [number, number, number], b: [number, number, number]) =>
 const same = (a: [number, number, number], b: [number, number, number]) =>
 	a.join() === b.join();
 
+describe('a rule reads the class that says why, never the elements drawn', () => {
+	/*
+	 * `docs/PATTERNS.md` §5, "A stamped class, not `:has()`". The case this
+	 * holds is the one that shipped: `:has(tfoot)` and `:has(> thead)` asked
+	 * whether a foot or a heading row had been drawn, where `table.ts` and
+	 * `roster.ts` already knew why and now say so in a class. A `:has()` whose
+	 * argument reads structure alone can only be reading what is drawn, so it is
+	 * refused wherever it sits, not only in the form tint's rules where it was
+	 * first caught. Structure is element names, `*`, combinators, the structural
+	 * pseudo-classes (`STRUCTURAL` below), and `:not()`, `:is()` or `:where()`
+	 * over arguments that are themselves structure alone: `:has(> tbody >
+	 * tr:only-child)` and `:has(> :not(thead))` are refused as `:has(tfoot)` is.
+	 *
+	 * Narrow on purpose. A class, an attribute, an id or a state pseudo-class
+	 * (`:focus`, `:checked`) anywhere in the argument lets it through, because
+	 * such a `:has()` can be either kind, and which is a judgement the PATTERNS
+	 * entry makes and `docs/BACKLOG.md` § Patterns records, not one a pattern
+	 * over the text can.
+	 */
+
+	/** The argument of every `:has(` in one selector, its parentheses counted. */
+	const hasArguments = (selector: string): string[] => {
+		const found: string[] = [];
+		for (let at = selector.indexOf(':has('); at !== -1; at = selector.indexOf(':has(', at + 1)) {
+			const from = at + ':has('.length;
+			let depth = 1;
+			let to = from;
+			while (to < selector.length && depth > 0) {
+				if (selector[to] === '(') depth += 1;
+				else if (selector[to] === ')') depth -= 1;
+				to += 1;
+			}
+			found.push(selector.slice(from, to - 1).trim());
+		}
+		return found;
+	};
+	/** The pseudo-classes that read only where an element sits among its siblings. */
+	const STRUCTURAL = new Set([
+		'first-child',
+		'last-child',
+		'only-child',
+		'first-of-type',
+		'last-of-type',
+		'only-of-type',
+		'nth-child',
+		'nth-last-child',
+		'nth-of-type',
+		'nth-last-of-type',
+		'empty',
+		'root',
+	]);
+	/** Pseudo-classes whose argument is a selector list, read the same way. */
+	const LOGICAL = new Set(['not', 'is', 'where']);
+	/** Where the parenthesis opened just before `from` closes. */
+	const closing = (text: string, from: number): number => {
+		let depth = 1;
+		let at = from;
+		while (at < text.length && depth > 0) {
+			if (text[at] === '(') depth += 1;
+			else if (text[at] === ')') depth -= 1;
+			at += 1;
+		}
+		return at - 1;
+	};
+	/**
+	 * Whether `text` reads structure and nothing else: no class, attribute or
+	 * id, and no pseudo-class but the structural ones and `:not()`/`:is()`/
+	 * `:where()` over structure. An `An+B of S` argument is read for its `S`.
+	 */
+	const structureOnly = (text: string): boolean => {
+		for (let at = 0; at < text.length; at++) {
+			const char = text[at];
+			if (char === '.' || char === '[' || char === '#') return false;
+			if (char !== ':') continue;
+			if (text[at + 1] === ':') return false;
+			const name = /^[\w-]+/.exec(text.slice(at + 1))?.[0] ?? '';
+			let next = at + 1 + name.length;
+			if (!STRUCTURAL.has(name) && !LOGICAL.has(name)) return false;
+			if (text[next] === '(') {
+				const end = closing(text, next + 1);
+				const inner = text.slice(next + 1, end);
+				if (LOGICAL.has(name)) {
+					if (!selectorList(inner).every(structureOnly)) return false;
+				} else {
+					const of = /\bof\b/.exec(inner);
+					if (of !== null && !structureOnly(inner.slice(of.index + 2))) return false;
+				}
+				next = end + 1;
+			}
+			at = next - 1;
+		}
+		return true;
+	};
+	/** The `:has()` arguments in `selector` that read structure and nothing else. */
+	const drawnOnly = (selector: string): string[] =>
+		hasArguments(selector).filter((argument) => selectorList(argument).every(structureOnly));
+
+	/** Every selector in `text` holding such a `:has()`, at-rule blocks included. */
+	const offenders = (text: string): string[] =>
+		rules(text).flatMap((rule) =>
+			selectorList(rule.selector).filter((selector) => drawnOnly(selector).length > 0),
+		);
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	it('has no `:has()` reading which elements are drawn', () => {
+		expect(offenders(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would notice one', () => {
+		// §10: the walk read the stylesheet and went inside its at-rule blocks,
+		// so an empty list above is a finding. Neither fact rests on a `:has()`
+		// the stylesheet holds today, since retiring those is the backlog's aim.
+		expect(all.length).toBeGreaterThan(1000);
+		expect(all.some((rule) => rule.context.length > 0)).toBe(true);
+		// And the same walk reports one planted inside an at-rule, one listed
+		// beside a clean selector, and none in a clean rule.
+		expect(
+			offenders(
+				'@media (forced-colors: active) { .sheetsmith-view .sheetsmith-table:has(> tfoot) td { color: Highlight; } }\n' +
+					'.sheetsmith-a, .sheetsmith-table:has(thead) th { color: red; }\n' +
+					'.sheetsmith-table:has(> tbody > tr:only-child) td { color: red; }\n' +
+					'.sheetsmith-table:has(> :not(thead)) td { color: red; }\n' +
+					'.sheetsmith-b:has(> .sheetsmith-c[hidden]) { color: red; }',
+			),
+		).toEqual([
+			'.sheetsmith-view .sheetsmith-table:has(> tfoot) td',
+			'.sheetsmith-table:has(thead) th',
+			'.sheetsmith-table:has(> tbody > tr:only-child) td',
+			'.sheetsmith-table:has(> :not(thead)) td',
+		]);
+		for (const selector of [
+			'.sheetsmith-table:has(> tfoot) td',
+			'.sheetsmith-table:has(thead)',
+			'.sheetsmith-table:not(:has( > thead )) td',
+			'tr:has(+ tr) > td',
+			'.sheetsmith-table:has(> tbody > tr:nth-child(2n + 1):last-child) td',
+			'.sheetsmith-table:has(> :is(thead, tfoot)) td',
+			'.sheetsmith-table:has(> tbody > tr:nth-child(1 of :not(:empty))) td',
+		]) {
+			expect(drawnOnly(selector), selector).not.toEqual([]);
+		}
+		// And the reading it leaves to judgement: a class, an attribute, a state.
+		for (const selector of [
+			'.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])',
+			'.sheetsmith-table:has(.sheetsmith-note-mark) td',
+			'tr:has(+ tr.sheetsmith-in-play) > td',
+			'.sheetsmith-x:has(> button:focus)',
+			'.sheetsmith-table:has(> :not(.sheetsmith-x))',
+			'.sheetsmith-table:has(> tbody > tr:last-child.sheetsmith-in-play)',
+			'.sheetsmith-table:has(> tbody > tr:nth-child(1 of .sheetsmith-in-play))',
+			'.sheetsmith-x:has(> :is(input:checked))',
+		]) {
+			expect(drawnOnly(selector), selector).toEqual([]);
+		}
+	});
+});
+
 describe('no two rules declare the same body', () => {
 	/*
 	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
@@ -5019,6 +5176,153 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(end?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :last-child');
 	});
 
+	it('closes a Roster band head on all four sides and tags it at its line\'s start', () => {
+		// The band is one cell, both first and last child, so one rule draws all
+		// four inset edges, after the two that each draw three.
+		const base = tint.filter((rule) => rule.context.length === 0);
+		const only = base.find((rule) => rule.selector === '.sheetsmith-view tr.sheetsmith-in-play > :only-child');
+		const insets = only?.body.match(/inset [^,;]+/g) ?? [];
+		expect(insets).toHaveLength(4);
+		const last = base.findIndex((rule) => rule.selector === '.sheetsmith-view tr.sheetsmith-in-play > :last-child');
+		expect(last).toBeGreaterThanOrEqual(0);
+		expect(base.indexOf(only as (typeof base)[number])).toBeGreaterThan(last);
+		// The band's own hairline is its bottom edge, in the edge colour.
+		const band = '.sheetsmith-view tr.sheetsmith-in-play .sheetsmith-roster-band-inner';
+		const hairline = base.find((rule) => rule.selector === band);
+		expect(hairline?.body).toMatch(/border-bottom-color:\s*var\(--sheetsmith-tint-edge\)/);
+		// In forced colors, where the shadow goes, the band's cell draws a rule
+		// across the whole row in place of the inset hairline, so a tinted band's
+		// bottom meets its end rules and a tinted row under any band has a top.
+		// The base rule sets the style alone: a shorthand there would reset the
+		// colour above the weight of the row repaints that make it Highlight.
+		const all = rules(CSS_WITHOUT_COMMENTS);
+		const cellSelector = '.sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head';
+		const cellBase = all.find((rule) => rule.context.length === 0 && rule.selector === cellSelector);
+		expect(cellBase?.body).toMatch(/border-bottom-style:\s*none/);
+		expect(cellBase?.body).not.toMatch(/border-bottom:/);
+		const inForced = (selector: string) =>
+			all.find((rule) => rule.context.includes('@media (forced-colors: active)') && rule.selector === selector);
+		const forced = inForced(cellSelector);
+		expect(forced?.body).toMatch(/border-bottom-style:\s*solid/);
+		expect(forced?.body).not.toMatch(/border-bottom(-color)?:/);
+		expect(inForced('.sheetsmith-view .sheetsmith-roster-band-inner')?.body).toMatch(/border-bottom-style:\s*none/);
+		const repaint = all.find(
+			(rule) =>
+				rule.context.includes('@media (forced-colors: active)') &&
+				rule.selector.includes('tr.sheetsmith-in-play > td') &&
+				/border-bottom-color:\s*Highlight/.test(rule.body),
+		);
+		expect(repaint?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > td');
+		// The band's tag at its inline start, centred on the reading's line,
+		// which is its carrier's foot: half that line up from the bottom, or the
+		// carrier's middle where that is lower, which is the name's line once
+		// the score and the reading wrap under it.
+		const tag = base.find(
+			(rule) => rule.selector.includes('.sheetsmith-roster-band-head') && rule.selector.includes('.sheetsmith-in-play-mark-inline'),
+		);
+		expect(tag?.body).toMatch(/inset-inline-start:\s*0/);
+		expect(tag?.body).toMatch(/inset-inline-end:\s*auto/);
+		expect(tag?.body.replace(/\s+/g, ' ')).toMatch(
+			/inset-block-start: max\(50%, calc\(100% - var\(--sheetsmith-band-reading-line\) \/ 2\)\);/,
+		);
+		expect(tag?.body).toMatch(/max-width:\s*12ch/);
+		// Its carrier: empty, zero wide with the line's gap taken back, as tall
+		// as the band's first flex line, and holding the reading's line box as a
+		// registered length, so it reaches the tag resolved at the band's size.
+		const line = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-roster-band-tag-line');
+		expect(line?.body).toMatch(/flex:\s*0 0 0/);
+		expect(line?.body).toMatch(/align-self:\s*stretch/);
+		expect(line?.body).toMatch(/margin-inline-end:\s*calc\(-1 \* var\(--size-4-2\)\)/);
+		expect(line?.body).toMatch(/--sheetsmith-band-reading-line:\s*calc\(var\(--sheetsmith-card-value-size\) \* 1\.05\)/);
+		const inner = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-roster-band-inner');
+		expect(inner?.body).toMatch(/gap:\s*var\(--size-2-1\) var\(--size-4-2\)/);
+		const derived = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-card-derived');
+		expect(derived?.body).toMatch(/line-height:\s*1\.05/);
+		expect(CSS_WITHOUT_COMMENTS).toMatch(/@property --sheetsmith-band-reading-line \{[^}]*syntax: '<length>';[^}]*inherits: true;/);
+		for (const rule of [only, hairline, forced, tag]) {
+			expect(rule?.selector).not.toMatch(/:has\(/);
+			expect(rule?.body).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
+		}
+	});
+
+	it("rounds a row at its scroller's corner to the scroller's inner radius", () => {
+		// The scroller clips to `--radius-m`; square corner cells had their fill
+		// cut along that curve and their inset outline cut off where it met it.
+		const scroller = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-table-wrapper',
+		);
+		expect(scroller?.body).toMatch(/border-radius:\s*var\(--radius-m\)/);
+		expect(scroller?.body).toMatch(/border:\s*1px solid/);
+		const corner = (property: string) =>
+			tint
+				.filter((rule) => rule.context.length === 0 && rule.body.includes(property))
+				.map((rule) => ({ ...rule, selector: rule.selector.replace(/\s+/g, ' ') }));
+		const cases: [string, RegExp][] = [
+			['border-end-start-radius', /\.sheetsmith-table:not\(\.sheetsmith-table-has-totals\) > tbody > tr\.sheetsmith-in-play:last-child > :first-child$/],
+			['border-end-end-radius', /\.sheetsmith-table:not\(\.sheetsmith-table-has-totals\) > tbody > tr\.sheetsmith-in-play:last-child > :last-child$/],
+			['border-start-start-radius', /\.sheetsmith-table\.sheetsmith-table-headless > tbody > tr\.sheetsmith-in-play:first-child > :first-child$/],
+			['border-start-end-radius', /\.sheetsmith-table\.sheetsmith-table-headless > tbody > tr\.sheetsmith-in-play:first-child > :last-child$/],
+		];
+		for (const [property, selector] of cases) {
+			const found = corner(property);
+			expect(found, property).toHaveLength(1);
+			expect(found[0]?.selector).toMatch(/^\.sheetsmith-view \.sheetsmith-table-wrapper/);
+			expect(found[0]?.selector).toMatch(selector);
+			expect(found[0]?.body).toMatch(
+				new RegExp(`${property}:\\s*calc\\(var\\(--radius-m\\) - 1px\\)`),
+			);
+		}
+		// An open table's scroller has the add control under it, so its last row
+		// is not at a corner.
+		for (const property of ['border-end-start-radius', 'border-end-end-radius']) {
+			expect(corner(property)[0]?.selector).toContain(':not(.sheetsmith-table-wrapper-boxed)');
+		}
+		// That the corners are read from those classes rather than `:has()` is
+		// held stylesheet-wide: "a rule reads the class that says why, never the
+		// elements drawn".
+	});
+
+	it('bends the forced-colors rules at the corner on a layer that takes the radius', () => {
+		// A collapsed border takes no radius, so at a corner row the outer rules
+		// move to each cell's ::before (not ::after, a noted column's mark slot), which inherits the cell's radius.
+		const forced = tint
+			.filter((rule) => rule.context.includes('@media (forced-colors: active)'))
+			.map((rule) => ({ ...rule, selector: rule.selector.replace(/\s+/g, ' ') }));
+		const bottom = 'tbody > tr.sheetsmith-in-play:last-child > ';
+		const top = 'tbody > tr.sheetsmith-in-play:first-child > ';
+		const find = (body: RegExp, ...parts: string[]) =>
+			forced.find((rule) => body.test(rule.body) && parts.every((part) => rule.selector.includes(part)));
+		const layer = find(/border-radius:\s*inherit/, `${bottom}*::before`, `${top}*::before`);
+		expect(layer?.body).toMatch(/position:\s*absolute/);
+		expect(layer?.body).toMatch(/inset:\s*0/);
+		expect(layer?.body).toMatch(/pointer-events:\s*none/);
+		// The anchor never unpins the name cell.
+		expect(find(/position:\s*relative/, `${bottom}:not(.sheetsmith-table-name)`)).toBeDefined();
+		// Each side moves: the cell drops its own rule and the layer draws it.
+		expect(find(/border-bottom:\s*none/, `${bottom}*`)).toBeDefined();
+		expect(find(/border-bottom:\s*1px solid Highlight/, `${bottom}*::before`)).toBeDefined();
+		expect(find(/border-inline-start:\s*none/, `${bottom}:first-child`, `${top}:first-child`)).toBeDefined();
+		expect(
+			find(/border-inline-start:\s*1px solid Highlight/, `${bottom}:first-child::before`, `${top}:first-child::before`),
+		).toBeDefined();
+		expect(find(/border-inline-end:\s*none/, `${bottom}:last-child`, `${top}:last-child`)).toBeDefined();
+		expect(
+			find(/border-inline-end:\s*1px solid Highlight/, `${bottom}:last-child::before`, `${top}:last-child::before`),
+		).toBeDefined();
+		// A first row under no heading row has no rule above it, so draws its top.
+		expect(find(/border-top:\s*1px solid Highlight/, `.sheetsmith-table-headless > ${top}*::before`)).toBeDefined();
+		// And never on `::after`, the in-flow mark slot a noted column's cell
+		// keeps (`docs/features/modifier-notes.md`): an absolute layer there took
+		// the slot out of flow and shifted the cell's value off its column.
+		const slot = rules(CSS_WITHOUT_COMMENTS).find((rule) =>
+			rule.selector.includes('td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after'),
+		);
+		expect(slot).toBeDefined();
+		for (const rule of forced) {
+			if (/tr\.sheetsmith-in-play/.test(rule.selector)) expect(rule.selector).not.toMatch(/::after/);
+		}
+	});
+
 	it("leaves a lone card's centring to the value, never to the tag laid over it", () => {
 		// The tag is appended last and taken out of flow, so a lone card's
 		// "last item" rule has to skip it, or the auto margin centring the number
@@ -5313,5 +5617,219 @@ describe('the stat block In play polish (docs/features/stat-block-in-play-polish
 				rule.selector === '.sheetsmith-stat-block-briefs',
 		);
 		expect(narrow?.body).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+	});
+});
+
+describe('the stat block brief zone (docs/features/stat-block-brief-zone.md)', () => {
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const zoneRules = all.filter((rule) => /stat-block-brief-zone/.test(rule.selector));
+
+	it('is a grid of spans that starts at the inline start, sized by its custom property', () => {
+		const grid = zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone');
+		expect(grid?.body).toMatch(/display:\s*grid/);
+		expect(grid?.body).toMatch(/grid-template-columns:\s*repeat\(var\(--sheetsmith-brief-zone-columns, 1\), minmax\(0, auto\)\)/);
+		expect(grid?.body).toMatch(/justify-content:\s*start/);
+		// No row gap, so a label sits on its cell as a pair's does; a later row
+		// takes the fields row's wrapped-line gap instead.
+		expect(grid?.body).toMatch(/gap:\s*0 calc\(var\(--size-4-2\) \+ var\(--size-2-1\)\)/);
+		expect(zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-next')?.body).toMatch(
+			/margin-block-start:\s*var\(--size-2-2\)/,
+		);
+	});
+
+	it('truncates nothing, wraps a cell inside its column, and uses only theme variables', () => {
+		expect(zoneRules.length).toBeGreaterThanOrEqual(5);
+		for (const rule of zoneRules) {
+			expect(rule.body, rule.selector).not.toMatch(/text-overflow|ellipsis|white-space:\s*nowrap|line-clamp|overflow:\s*hidden/);
+			expect(rule.body, rule.selector).not.toMatch(/(?:^|;|\s)(?:border|background(?:-color)?|outline|box-shadow)\s*:/);
+			expect(rule.body, rule.selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
+			expect(rule.selector).not.toMatch(/:has\(/);
+		}
+		const label = zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-label');
+		expect(label?.body).toMatch(/color:\s*var\(--text-muted\)/);
+		expect(label?.body).toMatch(/font-size:\s*var\(--font-ui-smaller\)/);
+		const cell = zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-cell');
+		expect(cell?.body).toMatch(/overflow-wrap:\s*anywhere/);
+		expect(cell?.body).toMatch(/font-size:\s*var\(--font-ui-small\)/);
+		expect(zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-name')?.body).toMatch(
+			/font-weight:\s*var\(--font-bold\)/,
+		);
+		expect(zoneRules.find((rule) => rule.selector === '.sheetsmith-stat-block-brief-zone-number')?.body).toMatch(
+			/font-variant-numeric:\s*tabular-nums/,
+		);
+	});
+});
+
+describe('a placed box that scrolls says more is below', () => {
+	/*
+	 * The table's right-edge shadow turned to the block axis, and drawn over the
+	 * content rather than under it, since a brief, the In play panel and a Record
+	 * set's group heading each paint an opaque surface at the foot that a shadow
+	 * on the scroller's own background would lie beneath (`sheet.css`, "A placed
+	 * box that scrolls says more is below"). Nothing here does layout, so these
+	 * hold the declarations; the `sheet-scroll-cue-*` shots hold the picture.
+	 *
+	 * **Styled once, on a class pair each wearer stamps** (`docs/UI.md` §9). The
+	 * way that breaks is a wearer's own class written back into one of the cue's
+	 * rules and not the others, which reads fine in review and draws the cue in
+	 * some modes only; the guard below refuses any selector but the pair's. That
+	 * each wearer stamps the pair is a claim about the component, and lives in
+	 * `stat-block.test.ts` and `record-set.test.ts`.
+	 */
+	const GATE = '@supports (animation-timeline: scroll())';
+	const WRAPPER = '.sheetsmith-placed-scroll';
+	const SCROLLER = '.sheetsmith-placed-scroller';
+	const CUE = `${WRAPPER}::after`;
+	const RULE = `${WRAPPER}::before`;
+	const MODES = '@media (prefers-contrast: more), (forced-colors: active)';
+	const KEYFRAMES = 'sheetsmith-placed-scroll-cue';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const listing = (rule: Rule) => selectorList(rule.selector);
+	/** The one rule in that context whose selector list is exactly these. */
+	const one = (context: string, ...selectors: string[]) => {
+		const found = all.filter(
+			(rule) =>
+				rule.context.at(-1) === context &&
+				listing(rule).join() === selectors.join(),
+		);
+		expect(found, `${context} ${selectors.join(', ')}`).toHaveLength(1);
+		return found[0]?.body ?? '';
+	};
+
+	it('names no selector but the pair\'s in any rule of the cue', () => {
+		// A wearer's own class beside the pair's, in one rule and not the others,
+		// is the duplication the pair replaced.
+		const cue = all.filter((rule) => listing(rule).some((one) => one.startsWith(WRAPPER)));
+		expect(cue.length).toBeGreaterThan(0);
+		const strays = cue.flatMap(listing).filter((one) => ![WRAPPER, SCROLLER, CUE, RULE].includes(one));
+		expect(strays).toEqual([]);
+	});
+
+	it('names the timeline on the scroller and lifts it to the wrapper round it', () => {
+		expect(one(GATE, SCROLLER)).toMatch(/scroll-timeline:\s*--sheetsmith-placed-scroll block/);
+		const wrapper = one(GATE, WRAPPER);
+		expect(wrapper).toMatch(/timeline-scope:\s*--sheetsmith-placed-scroll/);
+		expect(wrapper).toMatch(/position:\s*relative/);
+	});
+
+	it('lays both layers along the foot, over the content, off unless the scroll turns them on', () => {
+		const body = one(GATE, RULE, CUE);
+		expect(body).toMatch(/position:\s*absolute/);
+		expect(body).toMatch(/bottom:\s*0/);
+		expect(body).toMatch(/pointer-events:\s*none/);
+		// Off where the timeline is inactive, which is a scroller with nothing past it.
+		expect(body).toMatch(/opacity:\s*0/);
+		// The last 24px, or the whole scroll where there is less, so a short
+		// overflow opens the cue whole rather than part faded.
+		expect(body).toMatch(/animation-range:\s*max\(0px, calc\(100% - 24px\)\) 100%/);
+		// The rule layer draws nothing until a mode gives it content.
+		expect(body).not.toMatch(/content:/);
+	});
+
+	it('draws the shade as the table does, the table\'s colour and its transparent stop', () => {
+		const body = one(GATE, CUE);
+		expect(body).toMatch(/content:\s*''/);
+		expect(body).toMatch(
+			/background-image:\s*linear-gradient\(\s*to top,\s*var\(--background-modifier-border\),\s*rgba\(0, 0, 0, 0\)\s*\)/,
+		);
+	});
+
+	it('draws a rule on a floor, not a shade, under more contrast and in forced colors', () => {
+		// A shade over the last legible line lowered its text to about 1.4:1, and
+		// forced colors drops a gradient anyway. The floor ends the content early
+		// rather than fading it, and the rule stands on fill on every side.
+		const modes = all.filter((rule) => rule.context.at(-1) === MODES || rule.context.at(-1) === '@media (forced-colors: active)');
+		for (const rule of modes.filter((rule) => listing(rule).some((one) => one.startsWith(WRAPPER)))) {
+			// Gated too: these give `::before` content, so ungated they would draw for good.
+			expect(rule.context, rule.selector).toContain(GATE);
+		}
+		// One length for the floor, read by the floor and by the scroller.
+		expect(one(MODES, WRAPPER)).toMatch(/--sheetsmith-placed-scroll-floor:\s*10px/);
+		const floor = one(MODES, CUE);
+		expect(floor).toMatch(/height:\s*var\(--sheetsmith-placed-scroll-floor\)/);
+		// A control Tab brings to the foot stops above the floor, ring and all.
+		expect(one(MODES, SCROLLER)).toMatch(
+			/scroll-padding-block-end:\s*calc\(var\(--sheetsmith-placed-scroll-floor\) \+ var\(--size-2-2\)\)/,
+		);
+		// Only where the floor is: in every other mode the cue is a translucent shade.
+		const padded = all.filter((rule) => /scroll-padding-block-end\s*:/.test(rule.body) && listing(rule).includes(SCROLLER));
+		expect(padded.map((rule) => rule.context.at(-1))).toEqual([MODES]);
+		expect(floor).toMatch(/background-color:\s*var\(--background-primary-alt\)/);
+		expect(floor).toMatch(/background-image:\s*none/);
+		const line = one(MODES, RULE);
+		expect(line).toMatch(/content:\s*''/);
+		expect(line).toMatch(/border-bottom:\s*2px solid var\(--text-muted\)/);
+		expect(line).toMatch(/bottom:\s*var\(--size-2-2\)/);
+		expect(line).toMatch(/inset-inline:\s*var\(--size-4-2\)/);
+		expect(line).toMatch(/z-index:\s*3/);
+		// Dashed is a Track's granted segment and dotted a modified value.
+		expect(line).not.toMatch(/dashed|dotted/);
+		expect(one('@media (forced-colors: active)', RULE)).toMatch(/border-bottom-color:\s*CanvasText/);
+	});
+
+	it('writes the timeline on the pair alone, never on a wearer of it', () => {
+		const timed = all.filter((rule) =>
+			/(?:^|;)\s*(?:scroll-timeline|timeline-scope|animation-timeline|animation-range)\s*:/.test(rule.body),
+		);
+		expect(timed.length).toBeGreaterThan(0);
+		const strays = timed
+			.flatMap(listing)
+			.filter((selector) => ![WRAPPER, SCROLLER, CUE, RULE].includes(selector));
+		expect(strays).toEqual([]);
+	});
+
+	it('runs the keyframes only behind the gate and only on a scroll timeline', () => {
+		/*
+		 * The `@keyframes` block is outside the gate, which is legal CSS and the
+		 * whole exposure: a rule naming it in `animation` without a timeline, or
+		 * outside the gate, plays it once on the clock, which is exactly the
+		 * keyframe on time `docs/UI.md` §8 refuses, and a still shot cannot tell.
+		 */
+		const running = all.filter((rule) =>
+			declarations(rule.body).some((one) => new RegExp(`^animation(?:-name)?:.*\\b${KEYFRAMES}\\b`).test(one)),
+		);
+		expect(running).toHaveLength(1);
+		for (const rule of running) {
+			expect(rule.context, rule.selector).toContain(GATE);
+			const names = declarations(rule.body).map((one) => one.slice(0, one.indexOf(':')).trim());
+			const shorthand = names.findIndex((name) => name === 'animation' || name === 'animation-name');
+			const timeline = names.lastIndexOf('animation-timeline');
+			// The shorthand resets `animation-timeline`, so the timeline comes after it.
+			expect(timeline, rule.selector).toBeGreaterThan(shorthand);
+			expect(rule.body).toMatch(/animation-timeline:\s*--sheetsmith-placed-scroll\b/);
+		}
+	});
+
+	it('allows this one @keyframes and no other, from whole to gone', () => {
+		// docs/UI.md §8's exception: scroll progress, not time. Any second
+		// `@keyframes`, on time or not, fails here and is argued for in §8 first.
+		const keyframes = [...CSS_WITHOUT_COMMENTS.matchAll(/@keyframes\s+([\w-]+)/g)].map((match) => match[1]);
+		expect(keyframes).toEqual([KEYFRAMES]);
+		const frames = all.filter((rule) => rule.context.at(-1) === `@keyframes ${KEYFRAMES}`);
+		expect(frames.map((rule) => [rule.selector, rule.body])).toEqual([
+			['from', 'opacity: 1;'],
+			['to', 'opacity: 0;'],
+		]);
+	});
+});
+
+describe('a stat block name is titled open or closed', () => {
+	/*
+	 * `docs/features/stat-block-companion-face.md`: a companion block's read name
+	 * takes In play's title size through the class its reading face stamps, in
+	 * the same rule as the edit face's name field, so the size never comes to
+	 * depend on whether the record is open, as a `:has()` on the chevron would.
+	 */
+	it('sizes the stamped read name beside the name field, with no open state in the selector', () => {
+		const titled = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) =>
+				rule.selector.includes('.sheetsmith-stat-block-name-read') &&
+				declarations(rule.body).includes('font-size: var(--font-ui-large)'),
+		);
+		expect(titled).toHaveLength(1);
+		const [rule] = titled;
+		expect(rule?.selector).toContain('.sheetsmith-record-name-input');
+		expect(rule?.selector).not.toContain('aria-expanded');
+		expect(rule?.selector).not.toContain(':has(');
 	});
 });

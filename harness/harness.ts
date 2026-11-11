@@ -43,6 +43,10 @@ import { revealWhenTruncated } from '../src/ui/truncation';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
 import { App, Platform } from '../src/test/obsidian-stub';
+// Through the alias rather than the stub's own module, which the bundle
+// resolves to the same classes, so the pass is typed as the plugin's is.
+import { App as PassApp, Component } from 'obsidian';
+import { MarkdownPasses } from '../src/view/markdown-pass';
 import {
 	driveDrag,
 	drivePicker,
@@ -62,11 +66,14 @@ import {
 	pinnedAddSamples,
 	recordGroupSamples,
 	formsSamples,
+	companionSamples,
+	markdownSamples,
 	textGroupSamples,
 	notesSamples,
 	NOTE_DEFINITIONS,
 } from './samples';
 import { renderSettings } from './settings-panel';
+import { installStandInRenderer } from './stand-in-markdown';
 import { harnessLayout } from './stub-app';
 
 type StateName =
@@ -84,6 +91,7 @@ type StateName =
 	| 'forms-none'
 	| 'forms-none-one'
 	| 'forms-none-tint'
+	| 'forms-none-zone'
 	| 'forms-empty'
 	| 'forms-none-long'
 	| 'forms-two'
@@ -98,7 +106,17 @@ type StateName =
 	| 'forms-tint-two'
 	| 'forms-tint-error'
 	| 'forms-tint-pool'
-	| 'forms-tint-track';
+	| 'forms-tint-track'
+	| 'forms-roster-score'
+	| 'forms-roster-band'
+	| 'forms-roster-band-score'
+	| 'forms-tint-corners'
+	| 'companion-familiar'
+	| 'companion-picture'
+	| 'companion-mook'
+	| 'companion-npc'
+	| 'companion-empty'
+	| 'markdown';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -143,6 +161,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-none') return formsSamples('none');
 	if (name === 'forms-none-one') return formsSamples('none-one');
 	if (name === 'forms-none-tint') return formsSamples('none-tint');
+	if (name === 'forms-none-zone') return formsSamples('none-zone');
 	if (name === 'forms-empty') return formsSamples('empty');
 	if (name === 'forms-none-long') return formsSamples('none-long');
 	if (name === 'forms-two') return formsSamples('two');
@@ -158,6 +177,16 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-tint-error') return formsSamples('tint-error');
 	if (name === 'forms-tint-pool') return formsSamples('tint-pool');
 	if (name === 'forms-tint-track') return formsSamples('tint-track');
+	if (name === 'forms-roster-score') return formsSamples('roster-score');
+	if (name === 'forms-roster-band') return formsSamples('roster-band');
+	if (name === 'forms-roster-band-score') return formsSamples('roster-band-score');
+	if (name === 'forms-tint-corners') return formsSamples('tint-corners');
+	if (name === 'companion-familiar') return companionSamples('familiar');
+	if (name === 'companion-picture') return companionSamples('picture');
+	if (name === 'companion-mook') return companionSamples('mook');
+	if (name === 'companion-npc') return companionSamples('npc');
+	if (name === 'companion-empty') return companionSamples('empty');
+	if (name === 'markdown') return markdownSamples();
 	return SAMPLES;
 }
 
@@ -213,8 +242,9 @@ function loadState(name: StateName): void {
 }
 
 /**
- * `&place=<id>:<col>,<width>` — move a top-level component to that column and
- * span on its own row, so a shot can stage a placement no sample holds.
+ * `&place=<id>:<col>,<width>[,<height>]` — move a top-level component to that
+ * column and span on its own row, and to that many rows tall where a height is
+ * given, so a shot can stage a placement no sample holds.
  *
  * Added for `docs/features/pool-headline-narrow-fit.md`, whose reported case is
  * a one-unit Pool on a wide sheet: the sample's Pools are three and four units
@@ -222,16 +252,29 @@ function loadState(name: StateName): void {
  * full-sheet shot. It changes the layout rather than the drawn cell's style, so
  * the placement survives the rebuild a `&type=` commit makes and the grid's own
  * code does the arithmetic. Top level only: no shot needs a child moved yet.
+ *
+ * The height was added for the placed scroll cue (`sheet.css`, "A placed box
+ * that scrolls says more is below"): the forms sample's Stat block is sixteen
+ * rows so its library and two-on shots show a whole record, and a cue needs it
+ * shorter than what it holds, which is a placement and not a state.
  */
 function placeComponent(placing: string): void {
-	const match = /^([\w-]+):(\d+),(\d+)$/.exec(placing);
+	const match = /^([\w-]+):(\d+),(\d+)(?:,(\d+))?$/.exec(placing);
 	if (match === null) return;
-	const [, id, col, width] = match;
+	const [, id, col, width, height] = match;
 	layout = {
 		...layout,
 		components: layout.components.map((config) =>
 			config.id === id
-				? { ...config, position: { ...config.position, col: Number(col), width: Number(width) } }
+				? {
+						...config,
+						position: {
+							...config.position,
+							col: Number(col),
+							width: Number(width),
+							...(height === undefined ? {} : { height: Number(height) }),
+						},
+					}
 				: config,
 		),
 	};
@@ -341,45 +384,26 @@ function applyEdit(entry: Live, edited: unknown): void {
 }
 
 /**
- * A stand-in for Obsidian's markdown renderer, for a Stat block's zones only:
- * a paragraph per blank-line block, a block of `- ` lines as a list, and
- * `***…***`, `**…**` and `*…*` as their emphasis. Nothing else of markdown, and the plugin owns none of this — in the
- * app the body goes through `MarkdownRenderer` (`view/markdown-pass.ts`).
+ * Whether the harness draws prose through a stand-in for the app's renderer,
+ * which is the default, or with none, under `renderer=none`.
  *
- * **Scoped to the one component whose look turns on it**, a trait's bold-italic
- * name read as its heading (`docs/features/character-forms.md`). Rich text keeps
- * the fallback the harness has always drawn for it, deliberately (`samples.ts`),
- * so none of its shots move; widening this is a decision for those shots.
+ * Read once, at boot, because the stand-in is installed where the app's
+ * renderer sits and stays for the page's life. With it, both surfaces go
+ * through `view/markdown-pass.ts` exactly as the app's do
+ * (`stand-in-markdown.ts`). Without it the sheet passes no `renderMarkdown`,
+ * so what a component draws where the app cannot help — the fallback a failed
+ * render also draws — keeps a shot of its own.
  */
-function standInMarkdown(markdown: string, into: HTMLElement): void {
-	into.replaceChildren();
-	const inline = (text: string, into: HTMLElement): void => {
-		const pattern = /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
-		let last = 0;
-		for (const match of text.matchAll(pattern)) {
-			const at = match.index ?? 0;
-			if (at > last) into.appendText(text.slice(last, at));
-			const token = match[0];
-			if (token.startsWith('***')) into.createEl('strong').createEl('em', { text: token.slice(3, -3) });
-			else if (token.startsWith('**')) into.createEl('strong', { text: token.slice(2, -2) });
-			else into.createEl('em', { text: token.slice(1, -1) });
-			last = at + token.length;
-		}
-		if (last < text.length) into.appendText(text.slice(last));
-	};
-	for (const block of markdown.split(/\n\s*\n/)) {
-		if (block.trim() === '') continue;
-		// A block of `- ` lines is a list, which a features entry's continuation
-		// holds (`docs/features/stat-block-zones.md`).
-		const lines = block.split('\n');
-		if (lines.every((line) => /^\s*[-*+] /.test(line))) {
-			const list = into.createEl('ul');
-			for (const line of lines) inline(line.replace(/^\s*[-*+] /, ''), list.createEl('li'));
-			continue;
-		}
-		inline(block, into.createEl('p'));
-	}
-}
+const rendererOn = new URLSearchParams(window.location.search).get('renderer') !== 'none';
+if (rendererOn) installStandInRenderer();
+
+/**
+ * The sheet surface's markdown passes, as `SheetView` holds its own: one pass
+ * per draw, the last one ended by the next. The owner stands for the view.
+ */
+const passOwner = new Component();
+passOwner.load();
+const sheetPasses = new MarkdownPasses(passOwner, new PassApp());
 
 /** A note the sample links to that deliberately does not exist. */
 const MISSING_NOTE = 'Torch of Revealing';
@@ -498,6 +522,9 @@ const PICTURES: Record<string, string> = {
 	// (`docs/features/stat-block-zones.md`). Wider than tall, so the square's
 	// `contain` shows.
 	'Brown bear.png': portrait(320, 240, 'Bear'),
+	// A companion Stat block's picture, on its open record's line at rest
+	// (`docs/features/stat-block-companion-face.md`).
+	'Owl.png': portrait(240, 240, 'Owl'),
 	// Well-formed text that is not an image, which is what a note is.
 	'Notes.md': 'data:text/plain;charset=utf-8,not%20a%20picture',
 };
@@ -565,6 +592,14 @@ function renderSheet(into: HTMLElement): void {
 
 	const { env, modifiers, marked } = sheetEnv(live);
 
+	// One pass per draw, begun before anything draws, as the view begins its
+	// own. Resolved by the harness's own link context, so the one missing note
+	// draws faint in rendered prose as it does in a cell.
+	const links = linkContext();
+	const renderMarkdown = rendererOn
+		? sheetPasses.begin('', (target) => links.resolves(target))
+		: undefined;
+
 	// The view's own walk and the view's own descent through it, so the harness
 	// cannot order or nest the sheet differently from the thing it is measuring.
 	// Everything below the context builder is `grid-cells.ts`: the cells, the
@@ -581,18 +616,15 @@ function renderSheet(into: HTMLElement): void {
 				// The entry the grid was given, which is this module's own `Live`:
 				// `applyEdit` writes the re-read section back into it.
 				onChange: (edited: unknown) => applyEdit(entry as Live, edited),
-				link: linkContext(),
+				link: links,
 				// The sheet-wide half of modifiers, on `link`'s own terms: what
 				// accepts one, and what has been pushed at each name.
 				modifiers,
-				// The one member Image needs, on `link`'s own terms. `renderMarkdown`
-				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
-				// fallback for prose and a real picture for an image.
+				// The one member Image needs, on `link`'s own terms.
 				resource,
-				// A stand-in for the app's renderer for a Stat block's traits alone,
-				// so a shot shows a trait's bold-italic name as the app draws it;
-				// every other prose block keeps the fallback (see `standInMarkdown`).
-				...(config.type === 'stat-block' ? { renderMarkdown: standInMarkdown } : {}),
+				// Every component's prose through the real pass, over the stand-in
+				// renderer, as `SheetView` hands it; absent under `renderer=none`.
+				...(renderMarkdown === undefined ? {} : { renderMarkdown }),
 				// The note's own name, which the app takes from the file and this
 				// has none of — so it is supplied for one sample and left absent for
 				// the other, because both readings are worth a shot (see above).
@@ -997,6 +1029,7 @@ function applyQuery(): void {
 			wanted === 'forms-none' ||
 			wanted === 'forms-none-one' ||
 			wanted === 'forms-none-tint' ||
+			wanted === 'forms-none-zone' ||
 			wanted === 'forms-empty' ||
 			wanted === 'forms-none-long' ||
 			wanted === 'forms-two' ||
@@ -1011,7 +1044,17 @@ function applyQuery(): void {
 			wanted === 'forms-tint-two' ||
 			wanted === 'forms-tint-error' ||
 			wanted === 'forms-tint-pool' ||
-			wanted === 'forms-tint-track'
+			wanted === 'forms-tint-track' ||
+			wanted === 'forms-roster-score' ||
+			wanted === 'forms-roster-band' ||
+			wanted === 'forms-roster-band-score' ||
+			wanted === 'forms-tint-corners' ||
+			wanted === 'companion-familiar' ||
+			wanted === 'companion-picture' ||
+			wanted === 'companion-mook' ||
+			wanted === 'companion-npc' ||
+			wanted === 'companion-empty' ||
+			wanted === 'markdown'
 			? wanted
 			: 'populated',
 	);
@@ -1123,14 +1166,26 @@ function applyQuery(): void {
 	 * end, `&scroll=`'s sibling for the other axis. The add control is outside
 	 * the table's scroller, so a claim that its label stays in view with the table
 	 * scrolled to both ends needs a still of each end.
+	 *
+	 * `&scrolly=<selector>|<top|bottom>` — the same on the block axis.
+	 * `&scroll=` centres a target inside its scrollport, which never lands at
+	 * the end, and the placed scroll cue is only gone there, so its claim needs
+	 * a still of each end.
+	 *
+	 * One reading of both, so the two parameters cannot come to parse their
+	 * `selector|end` pair differently.
 	 */
-	const scrolledSideways = params.getAll('scrollx');
-	const scrollSidewaysWanted = () => {
-		for (const wanted of scrolledSideways) {
+	const scrolledToEnds = [
+		...params.getAll('scrollx').map((wanted) => ({ wanted, far: 'right', axis: 'x' as const })),
+		...params.getAll('scrolly').map((wanted) => ({ wanted, far: 'bottom', axis: 'y' as const })),
+	];
+	const scrollToEndsWanted = () => {
+		for (const { wanted, far, axis } of scrolledToEnds) {
 			const [selector, end] = wanted.split('|');
 			const target = document.querySelector<HTMLElement>(selector ?? '');
 			if (target === null) continue;
-			target.scrollLeft = end === 'right' ? target.scrollWidth : 0;
+			if (axis === 'x') target.scrollLeft = end === far ? target.scrollWidth : 0;
+			else target.scrollTop = end === far ? target.scrollHeight : 0;
 		}
 	};
 
@@ -1226,6 +1281,13 @@ function applyQuery(): void {
 
 	void ensureSurface().then(async () => {
 		draw();
+		// **Every gesture below waits for the prose to land.** Markdown arrives
+		// through the pass a task after the draw, as it does in the app, and a
+		// reader presses a sheet whose prose is on screen; pressing before it
+		// landed photographed states the app never draws, the layout still
+		// moving under a press that had already been made. A task rather than a
+		// microtask: the stand-in and the pass chain several.
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
 		// Over the sheet it was planned from, once that sheet is drawn.
 		if (confirm !== null) openConfirmation(confirm);
 		// Before the presses, as it always was — unless the view also scrolls, in
@@ -1247,9 +1309,16 @@ function applyQuery(): void {
 		// first, so every view that focuses something already on screen keeps
 		// its order.
 		if (scrolled.length === 0 && !focusedEarly) focusWanted();
+		// **And again after the presses, where something is to be scrolled**:
+		// a press redraws, and a scroll to a box's end taken before the redraw's
+		// prose landed measured a box still missing it. Only then, so a view that
+		// presses and does not scroll keeps the timing it was photographed at.
+		if (scrolled.length > 0 || scrolledToEnds.length > 0) {
+			await new Promise((resolve) => window.setTimeout(resolve, 0));
+		}
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
-		scrollSidewaysWanted();
+		scrollToEndsWanted();
 		if (scrolled.length > 0) focusWanted();
 		// The component picker, once the pane is on screen: opening it scrolls
 		// the search field clear of the pinned bar, which reads real geometry.

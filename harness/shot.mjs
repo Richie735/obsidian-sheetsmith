@@ -3112,14 +3112,22 @@ export const DEFAULTS = [
 	{
 		// The block's own reflow at a phone's width: the picker on a line of its
 		// own, each stat on its own line, the action table wrapping its cells.
+		// Measured off `document.body` with the harness built: 3009 at 380, the
+		// `checks` Roster's tag ending at 2646, past the 2600 this was. 3200.
 		name: 'sheet-forms-narrow',
 		query: 'surface=sheet&theme=light&state=forms&width=380',
-		size: '380,2600',
+		size: '380,3200',
 	},
 	// No form active: the empty state, Choosing one spends a use, no Revert, and
 	// a brief of each form — and the rest of the In play polish's views
 	// (`docs/features/stat-block-in-play-polish.md`), each in four palettes.
 	...formsPolishViews(),
+	// A placed box that scrolls says more is below, and says nothing at the end.
+	...placedScrollCueViews(),
+	// A companion block read until Edit, and behind it, in five presentations.
+	...companionViews(),
+	// Prose drawn through the markdown pass, on the canvas and on the sheet.
+	...markdownViews(),
 	{
 		// Both on by hand: the picker's extra line, the report and both blocks.
 		name: 'sheet-forms-two-on',
@@ -3355,6 +3363,101 @@ export const DEFAULTS = [
 		name: 'sheet-forms-tint-track',
 		query: 'surface=sheet&theme=light&state=forms-tint-track&tint=orange',
 		size: '1400,1500',
+	},
+	{
+		// The Wolf adding to the Constitution score of the `checks` Roster and to
+		// none of its rows: the pill tinted, the Concentration row not, and the
+		// card's tag flush under that untinted last row — the score-only case Cat Form's
+		// Strength is (`docs/features/character-forms.md`).
+		name: 'sheet-forms-roster-score',
+		query: 'surface=sheet&theme=light&state=forms-roster-score',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-roster-score-dark',
+		query: 'surface=sheet&theme=dark&state=forms-roster-score',
+		size: '1400,1500',
+	},
+	/*
+	 * The `checks` Roster drawn as one table with Brown Bear on
+	 * (`docs/features/character-forms.md`, "A Roster's band head"): the
+	 * Constitution band tinted with Concentration, closed on all four sides
+	 * and tagged once at the start of the reading's line, clear of the name,
+	 * the score and the reading; the Wisdom band untinted with Insight tinted and untagged. Framed
+	 * on the Roster, in each mode and at a true 380.
+	 */
+	{
+		name: 'sheet-forms-roster-band',
+		query: 'surface=sheet&theme=light&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		name: 'sheet-forms-roster-band-dark',
+		query: 'surface=sheet&theme=dark&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		name: 'sheet-forms-roster-band-narrow',
+		query: 'surface=sheet&theme=light&state=forms-roster-band&width=380',
+		size: '380,3200',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		name: 'sheet-forms-roster-band-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-forms-roster-band-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// The Roster one column wide, the one width at which the score and the
+		// reading wrap under the name: the tag falls back to the name's line,
+		// the reading's line start being where they now sit.
+		name: 'sheet-forms-roster-band-onecol',
+		query: 'surface=sheet&theme=light&state=forms-roster-band&place=checks:1,1',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		// The Wolf alone adding to Constitution's score: the band head the only
+		// tinted box, closed on all four sides, its tag on the reading's line.
+		name: 'sheet-forms-roster-band-score',
+		query: 'surface=sheet&theme=light&state=forms-roster-band-score',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	/*
+	 * Brown Bear on with a tinted row at each corner a class decides
+	 * (`docs/features/character-forms.md`, "A row at a corner of its
+	 * scroller"): Saving throws' Constitution above a totals foot and Skills'
+	 * Stealth above an open table's add control, both square at the bottom, and
+	 * the headless `checks` Roster's Constitution band rounded at the top. Each
+	 * mode, since forced colors draws those corners on a layer of its own.
+	 */
+	{
+		name: 'sheet-forms-tint-corners',
+		query: 'surface=sheet&theme=light&state=forms-tint-corners&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-corners-dark',
+		query: 'surface=sheet&theme=dark&state=forms-tint-corners&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-corners-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms-tint-corners&tint=orange',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
 	},
 	{
 		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
@@ -3766,13 +3869,199 @@ function formsPolishViews() {
 		{ name: 'sheet-forms-none-long', query: 'surface=sheet&state=forms-none-long', size: '1400,1500', frame: BLOCK },
 		// The briefs one a row at a phone's width.
 		{ name: 'sheet-forms-none-narrow', query: 'surface=sheet&state=forms-none&width=380', size: '380,3000', frame: BLOCK },
+		// The brief zone (`docs/features/stat-block-brief-zone.md`): the bear's and
+		// the Wolf's Ability Scores in their changes line's place, the Thug's line kept.
+		{ name: 'sheet-forms-none-zone', query: 'surface=sheet&state=forms-none-zone', size: '1400,1500', frame: BLOCK },
+		// One brief a row, each grid on one line.
+		{ name: 'sheet-forms-none-zone-narrow', query: 'surface=sheet&state=forms-none-zone&width=380', size: '380,3000', frame: BLOCK },
 	];
-	return views.flatMap(({ name, query, ...view }) => [
-		{ ...view, name, query: `${query}&theme=light` },
-		{ ...view, name: `${name}-dark`, query: `${query}&theme=dark` },
-		{ ...view, name: `${name}-contrast-more`, query: `${query}&theme=light`, media: { 'prefers-contrast': 'more' } },
-		{ ...view, name: `${name}-forced-colors`, query: `${query}&theme=light`, flags: ['--force-high-contrast'] },
-	]);
+	return [
+		...views.flatMap(({ name, query, ...view }) => [
+			{ ...view, name, query: `${query}&theme=light` },
+			{ ...view, name: `${name}-dark`, query: `${query}&theme=dark` },
+			{ ...view, name: `${name}-contrast-more`, query: `${query}&theme=light`, media: { 'prefers-contrast': 'more' } },
+			{ ...view, name: `${name}-forced-colors`, query: `${query}&theme=light`, flags: ['--force-high-contrast'] },
+		]),
+		// The zone at the larger sheet size, light only: every size in it is a
+		// fixed-px token, and its neighbours are not all fixed.
+		{
+			name: 'sheet-forms-none-zone-text24',
+			query: 'surface=sheet&state=forms-none-zone&text=24&theme=light',
+			size: '1400,1500',
+			frame: BLOCK,
+		},
+	];
+}
+
+/**
+ * **Prose rendered on both surfaces** (`docs/features/canvas-renders-markdown.md`):
+ * the `markdown` state's Rich text and Stat block, drawn on the canvas from
+ * their samples and on the sheet from their bodies, each through
+ * `view/markdown-pass.ts` over the harness's stand-in renderer. In light, dark,
+ * a true 380px, more contrast and forced colours, from one loop as the
+ * companion views are; the canvas framed so the pane's tree and panel stay out
+ * of a picture about prose. Then the sheet with `renderer=none`, which keeps the
+ * fallback a failed render draws photographed: hyphens and asterisks as source.
+ */
+function markdownViews() {
+	const presentations = [
+		{ suffix: '-light', query: '&theme=light', wide: true },
+		{ suffix: '-dark', query: '&theme=dark', wide: true },
+		{ suffix: '-narrow', query: '&theme=light&width=380', wide: false },
+		{ suffix: '-contrast', query: '&theme=light', wide: true, media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-forced', query: '&theme=light', wide: true, flags: ['--force-high-contrast'] },
+	];
+	return [
+		...presentations.map(({ suffix, query, wide, ...view }) => ({
+			...view,
+			name: `editor-markdown${suffix}`,
+			query: `surface=editor&state=markdown${query}`,
+			size: wide ? '1500,4000' : '380,4000',
+			frame: '.sheetsmith-editor-canvas',
+		})),
+		...presentations.map(({ suffix, query, wide, ...view }) => ({
+			...view,
+			name: `sheet-markdown${suffix}`,
+			query: `surface=sheet&state=markdown${query}`,
+			size: wide ? '1400,1200' : '380,2000',
+		})),
+		{
+			name: 'sheet-markdown-renderer-none',
+			query: 'surface=sheet&state=markdown&theme=light&renderer=none',
+			size: '1400,1200',
+		},
+	];
+}
+
+/**
+ * **A companion Stat block** (`docs/features/stat-block-companion-face.md`): a
+ * block with no `exclusive`, read as In play reads at rest and edited behind
+ * **Edit**. The Familiar, the Fate mook first and the main NPC first, each at
+ * rest and behind the press (`-edit`), in light, dark, a true 380px, more
+ * contrast and forced colours, from one loop as the tint views are. Each frames
+ * the one Stat block its state draws, so a scoped shot reproduces its width.
+ * Then the Familiar's Notes opened at rest, its picture at two widths, and the
+ * empty block.
+ */
+function companionViews() {
+	const BLOCK = '.sheetsmith-stat-block';
+	// Under the 8px grid gap, so a neighbouring box's edge (the NPC states'
+	// Refresh card, stacked under the block on a narrow sheet) never reaches the
+	// frame. Every companion view takes it, so they all frame alike.
+	const PAD = 6;
+	const presentations = [
+		{ suffix: '', query: '&theme=light', size: '1400,1500' },
+		{ suffix: '-dark', query: '&theme=dark', size: '1400,1500' },
+		{ suffix: '-narrow', query: '&theme=light&width=380', size: '380,2400' },
+		{ suffix: '-contrast-more', query: '&theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-forced-colors', query: '&theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
+	];
+	const faces = [
+		{ suffix: '', press: '' },
+		{ suffix: '-edit', press: '&press=.sheetsmith-stat-block-edit' },
+	];
+	return [
+		...['familiar', 'mook', 'npc'].flatMap((state) =>
+			faces.flatMap((face) =>
+				presentations.map(({ suffix, query, ...view }) => ({
+					...view,
+					name: `sheet-companion-${state}${face.suffix}${suffix}`,
+					query: `surface=sheet&state=companion-${state}${query}${face.press}`,
+					frame: BLOCK,
+					pad: PAD,
+				})),
+			),
+		),
+		{
+			// Notes opened at rest: the prose in its box, scrolling the block.
+			name: 'sheet-companion-familiar-open',
+			query: 'surface=sheet&state=companion-familiar&theme=light&press=.sheetsmith-stat-block-disclosure',
+			size: '1400,1500',
+			frame: BLOCK,
+			pad: PAD,
+		},
+		{
+			// Picture on: the Owl's thumbnail after the chevron, at its name's start.
+			name: 'sheet-companion-picture',
+			query: 'surface=sheet&state=companion-picture&theme=light',
+			size: '1400,1500',
+			frame: BLOCK,
+			pad: PAD,
+		},
+		{
+			name: 'sheet-companion-picture-narrow',
+			query: 'surface=sheet&state=companion-picture&theme=light&width=380',
+			size: '380,2400',
+			frame: BLOCK,
+			pad: PAD,
+		},
+		{
+			// No familiar yet: the sentence and Add familiar, with no foot.
+			name: 'sheet-companion-empty',
+			query: 'surface=sheet&state=companion-empty&theme=light',
+			size: '1400,1500',
+			frame: BLOCK,
+			pad: PAD,
+		},
+	];
+}
+
+/**
+ * **The placed scroll cue** (`sheet.css`, "A placed box that scrolls says more
+ * is below"): a shadow along a placed scroller's foot while its content runs
+ * past it, gone once it is scrolled to the end. Three scrollers, each at the
+ * top and at the end, in six palettes, so every one shows the cue present and
+ * gone.
+ *
+ * - `stat-block-play`: Brown Bear in play with the Stat block placed four rows
+ *   tall rather than sixteen (`&place=` with a height), so the In play panel and
+ *   the Attacks table are what the foot cuts;
+ * - `stat-block-briefs`: no form on, the briefs drawing the Ability Scores zone,
+ *   the same four rows, so the second row of briefs is under the foot;
+ * - `record-set`: the sample's Traits, six records in its own three rows,
+ *   unchanged;
+ * - `stat-block-short`, light only: the briefs at five rows, which leaves 19px
+ *   to scroll, less than the 24px the cue fades over, so it shows the cue
+ *   opening whole on a short overflow rather than part faded.
+ *
+ * Shot at the top, which is how the sheet opens, and at the end through
+ * `&scrolly=`, since `&scroll=` centres a target and never reaches the end.
+ */
+function placedScrollCueViews() {
+	const SHORT = 'place=wild_shape:7,6,4';
+	const STAT = '.sheetsmith-stat-block-content';
+	const LIST = '.sheetsmith-record-set-fields-5 .sheetsmith-record-set-list';
+	const subjects = [
+		{ name: 'stat-block-play', query: `state=forms&${SHORT}`, frame: '.sheetsmith-stat-block', scroller: STAT },
+		{ name: 'stat-block-briefs', query: `state=forms-none-zone&${SHORT}`, frame: '.sheetsmith-stat-block', scroller: STAT },
+		{ name: 'record-set', query: '', frame: '.sheetsmith-record-set-fields-5', scroller: LIST },
+	];
+	const palettes = [
+		{ suffix: 'light', query: 'theme=light', size: '1400,1500' },
+		{ suffix: 'dark', query: 'theme=dark', size: '1400,1500' },
+		{ suffix: 'narrow', query: 'theme=light&width=380', size: '380,3000' },
+		{ suffix: 'contrast-more', query: 'theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: 'contrast-more-dark', query: 'theme=dark', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: 'forced-colors', query: 'theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
+	];
+	const short = { name: 'stat-block-short', query: 'state=forms-none-zone&place=wild_shape:7,6,5', frame: '.sheetsmith-stat-block', scroller: STAT };
+	return [...subjects, short].flatMap(({ name, query, frame, scroller }) =>
+		(name === short.name ? palettes.slice(0, 1) : palettes).flatMap(({ suffix, query: palette, ...view }) =>
+			['top', 'end'].map((end) => ({
+				...view,
+				name: `sheet-scroll-cue-${name}-${end}-${suffix}`,
+				query: [
+					'surface=sheet',
+					query,
+					palette,
+					end === 'end' ? `scrolly=${encodeURIComponent(`${scroller}|bottom`)}` : '',
+				]
+					.filter((part) => part !== '')
+					.join('&'),
+				frame,
+			})),
+		),
+	);
 }
 
 const args = process.argv.slice(2);

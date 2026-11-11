@@ -124,6 +124,10 @@ the chevron, the rule and the summary, not by type size.
 
 ### 4. In play with no form on: the briefs
 
+*Amended by owner decision in `docs/features/stat-block-brief-zone.md`: a
+layout may name one table zone, which each brief draws in place of its changes
+line. Everything else here holds.*
+
 With `exclusive` set, at least one readable form, and none on, In play draws the
 head as today (*No form active*, the rings, the picker on **None**, no
 **Revert**), then the existing sentence (*No form is active.*, plus *Choosing
@@ -345,7 +349,8 @@ layouts render with the new clothes and nothing else changes.
 - No tint on the stat block's box edge, on a closed or open line under Every
   form, or on the foot. A brief carries the rule only, never a tint fill or
   outline.
-- No zones inside a brief, and no editing from one: no stepper, field or ring
+- No zones inside a brief but the table zone a layout names
+  (`stat-block-brief-zone.md`), and no editing from one: no stepper, field or ring
   control, and the press is always the brief's choice.
 - No tiles inside a brief: no tile box, fill or column, and no truncation.
   In play's tiles are not restyled to match.

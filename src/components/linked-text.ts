@@ -67,6 +67,9 @@ function offerPreview(
 	link?.preview(target, anchor, event);
 }
 
+/** The anchors {@link paintLinkedText} drew and wired itself. */
+const wired = new WeakSet<HTMLElement>();
+
 /**
  * Give the links inside `container` this module's behaviour, for anchors this
  * module did not draw.
@@ -98,11 +101,18 @@ export function adoptRenderedLinks(
 	container: HTMLElement,
 	link: LinkContext | undefined,
 ): void {
-	/** The internal anchor a pointer event happened inside, if any. */
+	/**
+	 * The internal anchor a pointer event happened inside, if the app drew it.
+	 * One {@link paintLinkedText} drew is already wired, and is skipped rather
+	 * than left to its own `stopPropagation`: that covers the press, but a hover
+	 * bubbles on, and the fallback inside a bound layer offered every preview
+	 * twice.
+	 */
 	const anchorOf = (event: Event): HTMLElement | null => {
 		const from = event.target;
 		if (!(from instanceof HTMLElement)) return null;
-		return from.closest<HTMLElement>('a.internal-link[data-href]');
+		const anchor = from.closest<HTMLElement>('a.internal-link[data-href]');
+		return anchor === null || wired.has(anchor) ? null : anchor;
 	};
 
 	container.addEventListener('click', (event) => {
@@ -236,6 +246,7 @@ export function paintLinkedText(
 		// app's styled one, which is also what every other tooltip on this sheet
 		// uses: the level ring's name, a computed cell's formula, a clipped value.
 		if (display !== target) anchor.setAttribute('title', target);
+		wired.add(anchor);
 		anchor.addEventListener('click', (event) => followLink(event, target, link));
 		anchor.addEventListener('mouseover', (event) => {
 			offerPreview(event, target, anchor, link);

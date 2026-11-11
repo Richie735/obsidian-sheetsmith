@@ -47,6 +47,8 @@ import {
 import { Layout } from '../parse/layout';
 import { WalkEntry } from '../parse/layout-walk';
 import { walkLayout } from '../view/grid-cells';
+import { LinkSource } from '../view/link-resolution';
+import { MarkdownPasses } from '../view/markdown-pass';
 import { ComponentConfig } from '../types';
 import { SHEET_DESTINATION } from './tree';
 
@@ -125,7 +127,17 @@ export class ComponentPicker {
 	private layout: Layout | null = null;
 	private host: PickerHost | null = null;
 
-	constructor() {
+	/**
+	 * `markdown` is the preview's own lifecycle, a second instance beside the
+	 * canvas's rather than a share of it: a canvas redraw must not end a
+	 * preview's render, nor a preview repaint the canvas's
+	 * (`docs/features/canvas-renders-markdown.md`). `source` is where its links
+	 * resolve, the open layout file, read on every repaint.
+	 */
+	constructor(
+		private readonly markdown: MarkdownPasses,
+		private readonly source: LinkSource,
+	) {
 		instances += 1;
 		const base = `sheetsmith-picker-${instances}`;
 		this.ids = { region: base, list: `${base}-list`, option: `${base}-option` };
@@ -233,7 +245,12 @@ export class ComponentPicker {
 		toggle.setAttribute('aria-controls', this.ids.region);
 		slot.replaceChildren();
 		this.els = { toggle, slot };
-		if (!this.open || this.layout === null) return;
+		// The preview just removed may have a render in flight, and a closed
+		// picker draws no list to begin the next pass in.
+		if (!this.open || this.layout === null) {
+			this.markdown.end();
+			return;
+		}
 
 		const region = slot.createDiv({
 			cls: 'sheetsmith-picker',
@@ -353,6 +370,11 @@ export class ComponentPicker {
 		const active = this.activeChoice(visible);
 		this.active = active?.value ?? null;
 		list.replaceChildren();
+		// Begun on every repaint, whether or not a preview is drawn, so the last
+		// preview's render cannot land in the option this repaint just removed.
+		const renderMarkdown = this.markdown.begin(this.source.sourcePath, (target) =>
+			this.source.resolves(target),
+		);
 
 		let group: HTMLElement | null = null;
 		for (const choice of visible) {
@@ -402,7 +424,11 @@ export class ComponentPicker {
 				list.focus({ preventScroll: true });
 			});
 			if (choice === active) {
-				renderComponentPreview(option.createDiv('sheetsmith-picker-preview'), choice);
+				renderComponentPreview(
+					option.createDiv('sheetsmith-picker-preview'),
+					choice,
+					renderMarkdown,
+				);
 			}
 		}
 

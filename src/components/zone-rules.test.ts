@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { columnKeyFault, zoneHeadingFault, zoneKeyFault } from './zone-rules';
+import { columnKeyFault, sameZoneKey, zoneHeadingFault, zoneKeyFault } from './zone-rules';
 
 /*
  * The rules a Stat block zone's key, heading and columns are held to, driven
@@ -13,6 +13,15 @@ describe('a zone key', () => {
 		expect(zoneKeyFault('a b', [])).toBe('not-a-name');
 		expect(zoneKeyFault('Traits', ['traits'])).toBe('taken');
 		expect(zoneKeyFault('traits', ['attacks', undefined])).toBeNull();
+	});
+});
+
+describe('two spellings of a zone key', () => {
+	it('name one zone trimmed and without case, and blank names none but blank', () => {
+		expect(sameZoneKey(' Scores ', 'scores')).toBe(true);
+		expect(sameZoneKey('scores', 'score')).toBe(false);
+		expect(sameZoneKey(undefined, '')).toBe(true);
+		expect(sameZoneKey(undefined, 'scores')).toBe(false);
 	});
 });
 

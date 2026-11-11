@@ -726,6 +726,34 @@ describe('component registry', () => {
 		expect(conditions).toBeGreaterThan(0);
 	});
 
+	it('names a declared text field in every keyReferences, and declares it only on a zones field', () => {
+		/*
+		 * A reference the zones field cannot find is silently not carried: a
+		 * re-key would leave the sibling naming the old key, which the
+		 * component then reports as a configuration error. The compiler holds
+		 * the key to a config property where the component is typed, and not to
+		 * a declared field, so this runs off the live registry.
+		 */
+		let references = 0;
+		for (const type of types) {
+			const fields = getComponent(type)?.configFields ?? [];
+			for (const field of fields) {
+				if (field.keyReferences === undefined) continue;
+				expect(field.kind, `${type} ${field.key} declares keyReferences`).toBe('zones');
+				for (const key of field.keyReferences) {
+					references++;
+					expect(key, `${type} ${field.key} references itself`).not.toBe(field.key);
+					expect(
+						fields.find((other) => other.key === key)?.kind,
+						`${type} ${field.key} references ${key}, which no text field declares`,
+					).toBe('text');
+				}
+			}
+		}
+		// One today, the Stat block's `briefZone`.
+		expect(references).toBeGreaterThan(0);
+	});
+
 	it('never declares an empty example', () => {
 		// `{}` is what the bare type already draws.
 		for (const type of types) {
@@ -1226,13 +1254,24 @@ describe('a component that says what a sample of itself looks like', () => {
 		}
 	});
 
-	it('puts no wikilink in a sample', () => {
-		// There is no vault behind the canvas, so a link would draw unresolved
-		// and read as a fault in the author's layout rather than as filler.
+	it('links a sample only to a note named as filler', () => {
+		// The canvas renders a sample's prose and resolves its links against the
+		// open layout file, so a link draws as the theme's unresolved link where
+		// the vault holds no such note (`docs/features/canvas-renders-markdown.md`).
+		// That is honest for filler and only for filler: a link naming a
+		// plausible note would read as a fault in the author's layout, or as
+		// somebody's real backstory. So every target says it is a sample, on
+		// Rich text's rule that prose names itself as filler.
 		const seen = filled();
 		expect(seen).toHaveLength(SWEPT.length - EMPTY.length);
-		for (const { where, body } of seen) {
-			expect(body, `${where} samples a wikilink`).not.toContain('[[');
+		const targets = seen.flatMap(({ where, body }) =>
+			[...body.matchAll(/\[\[([^\]|#]+)/g)].map((match) => ({ where, target: match[1] ?? '' })),
+		);
+		// The floor: Rich text's sample holds one, so a sweep finding none has
+		// stopped reading the bodies it was meant to.
+		expect(targets.length).toBeGreaterThan(0);
+		for (const { where, target } of targets) {
+			expect(target, `${where} links a sample to a note not named as one`).toMatch(/^Sample\b/);
 		}
 	});
 

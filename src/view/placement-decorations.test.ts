@@ -14,6 +14,7 @@ import {
 	IN_PLAY_MARK_INLINE,
 	IN_PLAY_MARK,
 	IN_PLAY_MARK_SEVERAL,
+	IN_PLAY_MARKED,
 	IN_PLAY_PLACEMENT,
 	inPlayDecorations,
 	TAG_TEXT_ATTRIBUTE,
@@ -529,5 +530,422 @@ describe('the tag text picked against the fill', () => {
 		const { root, pill } = pillIn();
 		pickTagText(root);
 		expect(pill.hasAttribute(TAG_TEXT_ATTRIBUTE)).toBe(false);
+	});
+});
+
+/*
+ * A Roster drawn as stat cards, whose rows each move on their own: a form
+ * tints a stat's score pill and each row it changed, never the card, and the
+ * card carries the tag for its pill where a score comes first; where only a
+ * row moved, the tag is in that row's name cell
+ * (`docs/features/character-forms.md`, "Where a decoration lands" and "The
+ * text mark", Roster). Cat adds to its scores, as the owner's
+ * druid's Cat Form does, so `mod.self` moves the score where `effective` reads
+ * it; an `=` sets the published reading and leaves the score alone.
+ */
+const ROSTER = (effective: boolean) => ({
+	name: 'Forms fixture',
+	columns: 12,
+	functions: ['mod(score) = floor((score - 10) / 2)'],
+	components: [
+		{
+			id: 'checks',
+			type: 'roster',
+			label: 'Checks',
+			position: { col: 1, row: 1, width: 12, height: 3 },
+			rowHeader: 'Check',
+			hideColumnHeadings: true,
+			cardLayout: true,
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+				{ key: 'WIS', name: 'Wisdom' },
+			],
+			...(effective ? { effective: 'value + mod.self' } : {}),
+			derived: 'mod(value + mod.self)',
+			columns: [
+				{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+				{
+					key: 'Total',
+					type: 'computed',
+					formula: 'stat + Prof * 2 + mod.self',
+					signed: true,
+					publish: true,
+				},
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Acrobatics', stat: 'DEX', key: 'acrobatics' },
+				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+				{ label: 'Insight', stat: 'WIS', key: 'insight' },
+			],
+		},
+		{
+			id: 'forms',
+			type: 'stat-block',
+			label: 'Wild Shape',
+			position: { col: 1, row: 4, width: 12, height: 4 },
+			recordName: 'Form',
+			fields: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+			exclusive: 'Active',
+		},
+	],
+});
+
+const ROSTER_NOTE = (cat: 'yes' | 'no', owl: 'yes' | 'no' = 'no', ox: 'yes' | 'no' = 'no') => `---
+sheet-layout: Forms fixture
+---
+
+## Checks
+\`\`\`sheet
+STR: 10
+DEX: 14
+WIS: 16
+\`\`\`
+
+| Check | Prof |
+| --- | --- |
+| Athletics | 0 |
+| Acrobatics | 0 |
+| Stealth | 0 |
+| Insight | 1 |
+
+## Wild Shape
+
+### Cat
+\`\`\`sheet
+Active: ${cat}
+Modifiers: checks.STR += 6; checks.DEX += 4; checks.stealth >= 9
+\`\`\`
+
+### Owl
+\`\`\`sheet
+Active: ${owl}
+Modifiers: checks.insight += 1
+\`\`\`
+
+### Ox
+\`\`\`sheet
+Active: ${ox}
+Modifiers: checks.WIS += 2
+\`\`\`
+`;
+
+describe('the in-play tint on a Roster card', () => {
+	const cardsOf = (root: HTMLElement) =>
+		Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('.sheetsmith-card'));
+	const tagsIn = (el: HTMLElement) => el.querySelectorAll(`.${IN_PLAY_MARK}[aria-hidden="true"]`);
+
+	it('tints the score pills and the row a form changed, never a card or a reading', () => {
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(true));
+		const [strength, dexterity, wisdom] = cardsOf(root);
+		const pill = (card: HTMLElement | undefined) => card?.querySelector<HTMLElement>('.sheetsmith-card-value');
+		expect(pill(strength)?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(pill(dexterity)?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(pill(wisdom)?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		for (const box of [pill(strength), pill(dexterity)]) {
+			expect(box?.getAttribute('data-sheetsmith-tint')).toBe('accent');
+		}
+		const rows = Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr'));
+		// Stealth's floor raised it; Athletics and Acrobatics move through their
+		// scores, which nothing pushed at them, and Insight is untouched.
+		expect(rows.map((row) => row.classList.contains(IN_PLAY_BOX))).toEqual([false, false, true, false]);
+		expect(rows[2]?.getAttribute('data-sheetsmith-tint')).toBe('accent');
+		for (const card of cardsOf(root)) {
+			expect(card.classList.contains(IN_PLAY_BOX)).toBe(false);
+			expect(card.hasAttribute('data-sheetsmith-tint')).toBe(false);
+		}
+		for (const reading of Array.from(root.querySelectorAll<HTMLElement>('.sheetsmith-card-derived'))) {
+			expect(reading.classList.contains(IN_PLAY_BOX)).toBe(false);
+			expect(reading.hasAttribute('data-sheetsmith-tint')).toBe(false);
+		}
+		// The readings keep their underline: they moved, through the score.
+		expect(strength?.querySelector('.sheetsmith-card-derived.sheetsmith-modified')).not.toBeNull();
+	});
+
+	const pillOf = (card: HTMLElement | undefined) =>
+		card?.querySelector<HTMLElement>('.sheetsmith-card-value') ?? null;
+
+	it('puts the one tag on the first card in reading order, which takes no tint', () => {
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(true));
+		const [strength, dexterity, wisdom] = cardsOf(root);
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+		expect(strength?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		const tag = tagsIn(strength as HTMLElement)[0];
+		expect(tag?.parentElement).toBe(strength);
+		expect(tag?.textContent).toBe('Cat');
+		for (const card of [dexterity, wisdom]) {
+			expect(card?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+			expect(tagsIn(card as HTMLElement)).toHaveLength(0);
+		}
+		// The pill is the box, not the carrier.
+		expect(pillOf(strength)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+	});
+
+	it('tags the card where a form pushed only at a score', () => {
+		const { root } = draw(ROSTER_NOTE('no', 'no', 'yes'), ROSTER(true));
+		const wisdom = cardsOf(root)[2];
+		expect(pillOf(wisdom)?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(tagsIn(wisdom as HTMLElement)[0]?.parentElement).toBe(wisdom);
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+		const insight = wisdom?.querySelector<HTMLElement>('tbody tr');
+		expect(insight?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(insight?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
+	});
+
+	it('tags a row\'s name cell where a form pushed only at that row', () => {
+		const { root } = draw(ROSTER_NOTE('no', 'yes'), ROSTER(true));
+		const insight = Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr'))[3];
+		expect(insight?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		const tag = insight?.querySelector(`th[scope="row"] .${IN_PLAY_MARK_INLINE}`);
+		expect(tag?.textContent).toBe('Owl');
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+		for (const card of cardsOf(root)) expect(card.classList.contains(IN_PLAY_MARKED)).toBe(false);
+	});
+
+	it('tints the card whole where only the reading moved, with no effective', () => {
+		// The case the smallest version leaves as it was: the score reads the
+		// note, so the reading names the card.
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(false));
+		const [strength, dexterity, wisdom] = cardsOf(root);
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(strength?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
+	});
+
+	it('clears the carrier on the next pass', () => {
+		const { root } = draw(ROSTER_NOTE('yes'), ROSTER(true));
+		expect(cardsOf(root)[0]?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(root.querySelector(`.${IN_PLAY_MARK}`)).not.toBeNull();
+		applyDecorations(root, []);
+		expect(root.querySelector(`.${IN_PLAY_MARKED}`)).toBeNull();
+		expect(root.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
+	});
+});
+
+/*
+ * The same Roster drawn as one table, where a stat's band head is a `tr` with
+ * one cell and no name cell: the tag rides the band's tag line, which the
+ * component stamps as its carrier, and never a `tr` itself
+ * (`docs/features/character-forms.md`, "A Roster's band head").
+ */
+const ROSTER_TABLE = {
+	...ROSTER(true),
+	components: ROSTER(true).components.map((component) =>
+		component.id === 'checks' ? { ...component, cardLayout: false } : component,
+	),
+};
+
+const BAND_NOTE = (form: 'Ox' | 'Bull' | 'Hawk') => `---
+sheet-layout: Forms fixture
+---
+
+## Checks
+\`\`\`sheet
+STR: 10
+DEX: 14
+WIS: 16
+\`\`\`
+
+| Check | Prof |
+| --- | --- |
+| Athletics | 0 |
+| Acrobatics | 0 |
+| Stealth | 0 |
+| Insight | 1 |
+
+## Wild Shape
+
+### Ox
+\`\`\`sheet
+Active: ${form === 'Ox' ? 'yes' : 'no'}
+Modifiers: checks.STR += 2
+\`\`\`
+
+### Bull
+\`\`\`sheet
+Active: ${form === 'Bull' ? 'yes' : 'no'}
+Modifiers: checks.STR += 2; checks.athletics >= 9
+\`\`\`
+
+### Hawk
+\`\`\`sheet
+Active: ${form === 'Hawk' ? 'yes' : 'no'}
+Modifiers: checks.athletics >= 9; checks.DEX += 2
+\`\`\`
+`;
+
+describe('the in-play tint on a Roster band head', () => {
+	const bandsOf = (root: HTMLElement) =>
+		Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tr.sheetsmith-roster-band'));
+	/** What carries a band's tag: its tag line, the band's first flex item. */
+	const headingOf = (band: HTMLElement | undefined) =>
+		band?.querySelector<HTMLElement>('.sheetsmith-roster-band-tag-line') ?? null;
+	const tagsIn = (el: HTMLElement) => el.querySelectorAll(`.${IN_PLAY_MARK}[aria-hidden="true"]`);
+	const rowNamed = (root: HTMLElement, name: string) =>
+		Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr')).find(
+			(row) => row.querySelector('th[scope="row"]')?.textContent?.startsWith(name) === true,
+		);
+	/** Whether every `tr` in the placement holds cells and nothing else. */
+	const rowsHoldCellsAlone = (root: HTMLElement) =>
+		Array.from(cellOf(root, 'checks').querySelectorAll('tr')).every((tr) =>
+			Array.from(tr.children).every((child) => child.tagName === 'TD' || child.tagName === 'TH'),
+		);
+
+	it('tags the band\'s tag line where a form pushed at its score, and leaves the band below alone', () => {
+		const { root } = draw(BAND_NOTE('Ox'), ROSTER_TABLE);
+		const [strength, dexterity] = bandsOf(root);
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		const heading = headingOf(strength);
+		expect(heading?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(heading?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		const tags = tagsIn(cellOf(root, 'checks'));
+		expect(tags).toHaveLength(1);
+		expect(tags[0]?.parentElement).toBe(heading);
+		expect(tags[0]?.classList.contains(IN_PLAY_MARK_INLINE)).toBe(true);
+		expect(tags[0]?.textContent).toBe('Ox');
+		expect(rowsHoldCellsAlone(root)).toBe(true);
+		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(headingOf(dexterity)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+	});
+
+	it('draws one tag, on the band, where a form pushed at its score and one of its rows', () => {
+		const { root } = draw(BAND_NOTE('Bull'), ROSTER_TABLE);
+		const strength = bandsOf(root)[0];
+		const athletics = rowNamed(root, 'Athletics');
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(athletics?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		const tags = tagsIn(cellOf(root, 'checks'));
+		expect(tags).toHaveLength(1);
+		expect(tags[0]?.parentElement).toBe(headingOf(strength));
+		expect(athletics?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
+		expect(rowsHoldCellsAlone(root)).toBe(true);
+	});
+
+	it('keeps the tag in a row\'s name cell where that row comes before a tinted band', () => {
+		const { root } = draw(BAND_NOTE('Hawk'), ROSTER_TABLE);
+		const [strength, dexterity] = bandsOf(root);
+		const athletics = rowNamed(root, 'Athletics');
+		expect(strength?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(true);
+		const tags = tagsIn(cellOf(root, 'checks'));
+		expect(tags).toHaveLength(1);
+		expect(tags[0]?.parentElement).toBe(athletics?.querySelector('th[scope="row"]'));
+		expect(headingOf(dexterity)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		expect(rowsHoldCellsAlone(root)).toBe(true);
+	});
+});
+
+/*
+ * The tag on a band head is carried by the band's name, which wears no tint
+ * layer: the band's cell around it does, and that is the layer it sits on.
+ */
+describe('the tag text on a band head', () => {
+	afterEach(() => vi.restoreAllMocks());
+
+	it('reads the tint layer off the nearest element wearing one', () => {
+		const page = document.body.createDiv();
+		// The band's `tr`, which bounds the walk; its cell wears the layer.
+		const cell = page.createDiv().createDiv();
+		cell.parentElement?.classList.add(IN_PLAY_BOX);
+		const heading = cell.createDiv();
+		const pill = heading.createSpan({ cls: IN_PLAY_MARK, text: 'Ox' });
+		pill.setAttribute('aria-hidden', 'true');
+		// A grey page where black just wins, so the pick turns on the layer: a
+		// strong dark one under the tag's cell makes black the worse of the two
+		// grounds it is judged on, where the plain page alone gives black.
+		const style = (layer: string) =>
+			vi.spyOn(window, 'getComputedStyle').mockImplementation(
+				(el) =>
+					({
+						backgroundColor:
+							el === pill ? 'color(srgb 0.5 0.5 0.5 / 0.5)' : el === page ? 'rgb(128, 128, 128)' : 'rgba(0, 0, 0, 0)',
+						backgroundImage: el === cell ? layer : 'none',
+					}) as CSSStyleDeclaration,
+			);
+		style('none');
+		pickTagText(page);
+		const plain = pill.getAttribute(TAG_TEXT_ATTRIBUTE);
+		vi.restoreAllMocks();
+		style('linear-gradient(color(srgb 0 0 0 / 0.95), color(srgb 0 0 0 / 0.95))');
+		pickTagText(page);
+		expect(plain).toBe('black');
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('white');
+	});
+});
+
+/*
+ * A stamped row with no name cell and no carrier its component named, built by
+ * hand since no registered component draws one: the pass's two fallbacks for a
+ * row, which keep a tag out of the `tr` itself (`carrierOf`).
+ */
+describe('a row with no name cell and no carrier', () => {
+	const ox = [{ kind: 'in-play' as const, label: 'Ox', tint: 'accent' as const, names: ['t.x'] }];
+	const sheetWith = (fill: (tr: HTMLTableRowElement) => void) => {
+		const root = document.body.createDiv({ cls: 'sheetsmith-view' });
+		const cell = root.createDiv();
+		cell.setAttribute('data-sheetsmith-component', 't');
+		const tr = cell.createEl('table').createEl('tbody').createEl('tr');
+		fill(tr);
+		return { root, cell, tr };
+	};
+
+	it('puts the tag in the row\'s first cell', () => {
+		const { root, tr } = sheetWith((tr) => {
+			tr.setAttribute('data-sheetsmith-box', '');
+			tr.createEl('td').createSpan({ attr: { 'data-sheetsmith-name': 't.x' }, text: '3' });
+		});
+		applyDecorations(root, ox);
+		const td = tr.querySelector('td');
+		const tags = root.querySelectorAll(`.${IN_PLAY_MARK}[aria-hidden="true"]`);
+		expect(tags).toHaveLength(1);
+		expect(tags[0]?.parentElement).toBe(td);
+		expect(tags[0]?.classList.contains(IN_PLAY_MARK_INLINE)).toBe(true);
+		expect(td?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(Array.from(tr.children).every((child) => child.tagName === 'TD')).toBe(true);
+	});
+
+	it('draws no tag in a row with no cell, and still says who changed it', () => {
+		const { root, cell, tr } = sheetWith((tr) => tr.setAttribute('data-sheetsmith-name', 't.x'));
+		applyDecorations(root, ox);
+		expect(tr.classList.contains(IN_PLAY_BOX)).toBe(true);
+		expect(tr.children).toHaveLength(0);
+		expect(root.querySelector(`.${IN_PLAY_MARK}[aria-hidden="true"]`)).toBeNull();
+		const twin = cell.querySelector(`.sheetsmith-sr-only.${IN_PLAY_MARK}`);
+		expect(twin?.textContent).toBe('Changed by Ox');
+	});
+});
+
+describe('the tag text on a carrier no tinted box holds', () => {
+	afterEach(() => vi.restoreAllMocks());
+
+	it('reads its own ground, not a gradient an ancestor wears', () => {
+		// A Roster card inside something wearing a gradient that is not a tint,
+		// on the grey page where black just wins: read as a layer, the
+		// ancestor's dark stop would flip the tag to white.
+		const page = document.body.createDiv();
+		const shadowed = page.createDiv();
+		const card = shadowed.createDiv();
+		const pill = card.createSpan({ cls: IN_PLAY_MARK, text: 'Ox' });
+		pill.setAttribute('aria-hidden', 'true');
+		vi.spyOn(window, 'getComputedStyle').mockImplementation(
+			(el) =>
+				({
+					backgroundColor:
+						el === pill ? 'color(srgb 0.5 0.5 0.5 / 0.5)' : el === page ? 'rgb(128, 128, 128)' : 'rgba(0, 0, 0, 0)',
+					backgroundImage:
+						el === shadowed ? 'linear-gradient(color(srgb 0 0 0 / 0.95), color(srgb 0 0 0 / 0.95))' : 'none',
+				}) as CSSStyleDeclaration,
+		);
+		pickTagText(page);
+		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('black');
 	});
 });

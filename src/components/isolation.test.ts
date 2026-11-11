@@ -529,10 +529,10 @@ describe('a modified value is marked through one helper, which also names it', (
 	 * Roster all mark through `stampModifiedHost`; this holds every other spelling
 	 * of the mark, and of the attribute, to none.
 	 */
-	it('adds the modified class, the name attribute and the box attribute in no file but the helper', () => {
+	it('adds the modified class, the name attribute and the box and tag-box attributes in no file but the helper', () => {
 		const spelled = (source: string): boolean =>
 			/classList\.add\(\s*MODIFIED_CLASS\s*\)/.test(source) ||
-			/['"]data-sheetsmith-(name|box)['"]/.test(source);
+			/['"]data-sheetsmith-(name|box|tag-box)['"]/.test(source);
 		const { files, hits } = scan(SRC, spelled, true);
 		expect(files).toBeGreaterThan(100);
 		expect(hits).toEqual(['modifier-breakdown.ts']);

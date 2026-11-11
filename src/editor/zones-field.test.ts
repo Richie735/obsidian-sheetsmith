@@ -27,11 +27,15 @@ beforeEach(() => {
 	};
 });
 
-function draw(zones: unknown[] | undefined): { el: HTMLElement; record: Record<string, unknown> } {
-	const record: Record<string, unknown> = { id: 'forms', label: 'Wild Shape', ...(zones === undefined ? {} : { zones }) };
+function draw(
+	zones: unknown[] | undefined,
+	more: Record<string, unknown> = {},
+	references?: readonly string[],
+): { el: HTMLElement; record: Record<string, unknown> } {
+	const record: Record<string, unknown> = { id: 'forms', label: 'Wild Shape', ...(zones === undefined ? {} : { zones }), ...more };
 	const el = document.createElement('div');
 	document.body.replaceChildren(el);
-	renderZonesField(el, record, 'zones', 'forms', list, 'record');
+	renderZonesField(el, record, 'zones', 'forms', list, 'record', references);
 	return { el, record };
 }
 
@@ -160,5 +164,49 @@ describe('a commit', () => {
 		el.querySelector<HTMLButtonElement>('[aria-label="Remove actions"]')?.click();
 		expect((record.zones as { key: string }[]).map((zone) => zone.key)).toEqual(['vitals', 'attacks', 'traits']);
 		expect(persisted).toEqual([undefined]);
+	});
+});
+
+/*
+ * `keyReferences` (`docs/features/stat-block-brief-zone.md`): a sibling key
+ * holding a zone's key follows a re-key and goes with the zone, in the one
+ * persist the commit makes, so the layout never names a zone it lost.
+ */
+describe('a sibling key naming a zone', () => {
+	const card = (el: HTMLElement, at: number) => el.querySelectorAll('.sheetsmith-zone-card')[at] as HTMLElement;
+
+	it('follows the zone\'s re-key, matched trimmed and without case, in the same persist', () => {
+		const { el, record } = draw(ZONES(), { briefZone: ' Attacks ' }, ['briefZone']);
+		commit(card(el, 1).querySelector<HTMLInputElement>('[aria-label="Zone 2 key"]') as HTMLInputElement, 'hits');
+		expect(record.briefZone).toBe('hits');
+		expect(persisted).toEqual([undefined]);
+	});
+
+	it('leaves a key naming another zone, and a refused re-key, as they were', () => {
+		const { el, record } = draw(ZONES(), { briefZone: 'attacks' }, ['briefZone']);
+		commit(card(el, 2).querySelector<HTMLInputElement>('[aria-label="Zone 3 key"]') as HTMLInputElement, 'deeds');
+		expect(record.briefZone).toBe('attacks');
+		commit(card(el, 1).querySelector<HTMLInputElement>('[aria-label="Zone 2 key"]') as HTMLInputElement, 'traits');
+		expect(record.briefZone).toBe('attacks');
+	});
+
+	it('is cleared when the zone it names is removed, in the same persist', () => {
+		const { el, record } = draw(ZONES(), { briefZone: 'attacks' }, ['briefZone']);
+		el.querySelector<HTMLButtonElement>('[aria-label="Remove attacks"]')?.click();
+		expect('briefZone' in record).toBe(false);
+		expect((record.zones as { key: string }[]).map((zone) => zone.key)).toEqual(['vitals', 'actions', 'traits']);
+		expect(persisted).toEqual([undefined]);
+	});
+
+	it('is kept when another zone is removed', () => {
+		const { el, record } = draw(ZONES(), { briefZone: 'attacks' }, ['briefZone']);
+		el.querySelector<HTMLButtonElement>('[aria-label="Remove actions"]')?.click();
+		expect(record.briefZone).toBe('attacks');
+	});
+
+	it('touches nothing where the field declares no references', () => {
+		const { el, record } = draw(ZONES(), { briefZone: 'attacks' });
+		commit(card(el, 1).querySelector<HTMLInputElement>('[aria-label="Zone 2 key"]') as HTMLInputElement, 'hits');
+		expect(record.briefZone).toBe('attacks');
 	});
 });

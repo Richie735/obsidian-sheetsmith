@@ -368,6 +368,11 @@ export function recordRefusalNotice(
  * A record whose fence will not read gets the display alone. Its bytes have
  * to survive and every write into it is refused at the file boundary, so a
  * field there would be a gesture that does nothing.
+ *
+ * **`readOnly` asks for that same display where the record reads**, for a face
+ * that reads a record rather than edits it (a companion Stat block at rest,
+ * `docs/features/stat-block-companion-face.md`). It is the plain branch, not a
+ * second painter, so a read name and a broken one are one DOM.
  */
 export function drawRecordName(
 	into: HTMLElement,
@@ -376,10 +381,11 @@ export function drawRecordName(
 	named: string,
 	/** A name that is not blank; a blank one puts the stored name back here. */
 	onCommit: (next: string) => void,
+	options: { readOnly?: boolean } = {},
 ): HTMLInputElement | null {
 	const { context, noun, status } = host;
 	const cell = element('div', 'sheetsmith-record-name', into);
-	if (record.error !== null) {
+	if (record.error !== null || options.readOnly === true) {
 		cell.classList.add('sheetsmith-record-name-plain');
 		paintLinkedText(cell, record.name, {
 			link: context.link,

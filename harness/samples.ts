@@ -926,14 +926,15 @@ export const SAMPLES: Sample[] = [
 	 * 4. **Session notes**, 6×1, labelled and empty. The placeholder is the whole
 	 *    empty state: one click from typing, and no error anywhere.
 	 *
-	 * **The harness passes no `renderMarkdown`**, deliberately, so what is drawn
-	 * is the fallback: paragraphs with their wikilinks live and no other markdown.
-	 * A second markdown implementation in the stub would drift from Obsidian's,
-	 * and this repository's whole point is not to have one. The cost is bounded
-	 * and stated — how a *rendered* heading, list or embed sits inside the box is
-	 * the one part of this component reviewed in Obsidian rather than here — and
-	 * the list in the backstory below is on purpose: its hyphens show, which is
-	 * exactly what the fallback promises and the app will not.
+	 * **The harness draws this prose through the plugin's own markdown pass**,
+	 * over a stand-in for the app's renderer installed where that renderer sits
+	 * (`harness/stand-in-markdown.ts`), so the backstory's list below draws as a
+	 * list and its bold as bold, on the sheet and on the canvas alike. **The
+	 * stand-in is not Obsidian's renderer**: it knows paragraphs, `- ` lists,
+	 * emphasis and wikilinks and nothing else, so how a *rendered* heading,
+	 * embed or callout sits inside the box is reviewed in Obsidian only. The
+	 * fallback, with its hyphens showing, is what `renderer=none` draws, which is
+	 * what a render the app rejected draws too.
 	 */
 	{
 		config: {
@@ -4625,6 +4626,223 @@ export function notesSamples(): Sample[] {
 }
 
 /**
+ * Prose with marks in it, on both surfaces, for
+ * `docs/features/canvas-renders-markdown.md`: a Rich text block and a Stat
+ * block with a features zone, the two whose marks the feature is about.
+ *
+ * On the sheet each draws its body here, through the plugin's own pass over the
+ * harness's stand-in renderer: bold, an italic run, a `- ` list, a link that
+ * resolves and the one that does not (`MISSING_NOTE`, `Torch of Revealing`). In
+ * the editor (`surface=editor&state=markdown`) the canvas draws each component's
+ * own *sample* through the same pass, which is the comparison the feature's
+ * shots exist for: the same elements, `strong`, `em`, `ul` and a faint anchor,
+ * on both. The block is `exclusive`, so its sampled first form is the one In
+ * play draws, features zone and all.
+ */
+export function markdownSamples(): Sample[] {
+	return [
+		{
+			config: {
+				id: 'prose',
+				type: 'rich-text',
+				label: 'Backstory',
+				position: { col: 1, row: 1, width: 6, height: 4 },
+			},
+			body: [
+				'',
+				'Born in [[Neverwinter]], and **apprenticed young** to a swordsman who taught very little else.',
+				'',
+				'- Owes a debt nobody has written down',
+				'- Carries a letter, *unopened*',
+				'',
+				'There is also the matter of the [[Torch of Revealing]], which nobody has seen.',
+				'',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'prose_forms',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 7, row: 1, width: 6, height: 4 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'HP', type: 'number', maxSource: 'record' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'actions', type: 'features', heading: 'Actions' }],
+			} as ComponentConfig,
+			body: [
+				'',
+				'### Brown Bear',
+				'```sheet',
+				'Active: yes',
+				'HP: 34 / 34',
+				'```',
+				'',
+				'#### Actions',
+				'',
+				'**Multiattack.** The bear makes *two* attacks, one with its bite and one with its claws.',
+				'',
+			].join('\n'),
+		},
+	];
+}
+
+/**
+ * Which companion Stat block a state draws: a block with no `exclusive`, read
+ * until **Edit** is pressed (`docs/features/stat-block-companion-face.md`). One
+ * Stat block per state, so a `press=` selector names one button.
+ *
+ * - `familiar`: an Owl with HP under its own ceiling, a Speed in words, and
+ *   Notes collapsed, long enough to scroll the box once opened;
+ * - `picture`: the same with **Picture** on and the Owl holding one, so the
+ *   open record's line carries its thumbnail after the chevron;
+ * - `mook`: a Fate block with the Thug first, open, only its Skills filled, and
+ *   Baron Corvan closed after it with every zone filled, his changes raising a
+ *   Refresh card beside the block;
+ * - `npc`: the same block with Baron Corvan first and open, the Thug closed;
+ * - `empty`: the Familiar block holding no record.
+ */
+export type CompanionVariant = 'familiar' | 'picture' | 'mook' | 'npc' | 'empty';
+
+export function companionSamples(variant: CompanionVariant): Sample[] {
+	if (variant === 'familiar' || variant === 'picture' || variant === 'empty') {
+		const pictured = variant === 'picture';
+		return [
+			{
+				config: {
+					id: 'familiar',
+					type: 'stat-block',
+					label: 'Familiar',
+					// Six rows, so the Owl's Notes, opened, run past the foot and the
+					// box scrolls.
+					position: { col: 1, row: 1, width: 6, height: 6 },
+					recordName: 'Familiar',
+					...(pictured ? { image: true } : {}),
+					fields: [
+						{ key: 'HP', type: 'number', maxSource: 'record' },
+						{ key: 'Speed', type: 'text' },
+					],
+					zones: [{ key: 'vitals' }, { key: 'notes', type: 'text', heading: 'Notes', collapsed: true }],
+				} as ComponentConfig,
+				body:
+					variant === 'empty'
+						? ''
+						: [
+								'',
+								'### Owl',
+								'```sheet',
+								'HP: 3 / 3',
+								'Speed: 5 ft., fly 60 ft.',
+								'```',
+								'',
+								...(pictured ? ['![[Owl.png]]', ''] : []),
+								'#### Notes',
+								'',
+								'***Flyby.*** The owl does not provoke opportunity attacks when it flies out of an enemy\'s reach.',
+								'',
+								'***Keen Hearing and Sight.*** The owl has advantage on Wisdom (Perception) checks that rely on hearing or sight.',
+								'',
+								'***Familiar.*** It obeys its master\'s commands, acts on its own turn, and cannot attack. It can deliver a touch spell its master casts, as if it had cast the spell.',
+								'',
+								'Found as a fledgling in the tower\'s eaves, it answers to Quill and will not sit on anyone\'s shoulder but its master\'s.',
+								'',
+							].join('\n'),
+			},
+		];
+	}
+	const thug = [
+		'### Thug',
+		'```sheet',
+		'Stress: 0 / 1',
+		'```',
+		'',
+		'#### Skills',
+		'',
+		'| Skill | Rating |',
+		'|---|---|',
+		'| Fight | 1 |',
+		'',
+	];
+	const baron = [
+		'### Baron Corvan',
+		'```sheet',
+		'Stress: 1 / 3',
+		'Mild: Bruised pride',
+		'Modifiers: refresh += 1',
+		'```',
+		'',
+		'#### Aspects',
+		'',
+		'**High concept:** Disgraced lord of the river march',
+		'',
+		'**Trouble:** My name is all I have left',
+		'',
+		'#### Skills',
+		'',
+		'| Skill | Rating |',
+		'|---|---|',
+		'| Rapport | 3 |',
+		'| Deceive | 2 |',
+		'| Will | 1 |',
+		'',
+		'#### Stunts',
+		'',
+		'**Silver Tongue.** +2 to Rapport when he speaks to a crowd.',
+		'',
+		'**Old Debts (1/Session).** He names someone who owes him, and they are in the scene.',
+		'',
+	];
+	return [
+		{
+			// What Baron Corvan's changes reach, so the changes zone has a line to
+			// read: a companion's records all apply, so his push lands here. At the
+			// grid's far end, clear of the block's frame on a wide sheet; the views'
+			// tight pad keeps it out where a narrow sheet stacks it under the block.
+			config: {
+				id: 'refresh',
+				type: 'card',
+				label: 'Refresh',
+				position: { col: 11, row: 1, width: 2, height: 1 },
+				derived: '3 + mod.self',
+				hideNote: true,
+			} as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'fate_npcs',
+				type: 'stat-block',
+				label: 'NPCs',
+				position: { col: 1, row: 1, width: 6, height: 12 },
+				recordName: 'NPC',
+				fields: [
+					{ key: 'Stress', type: 'number', maxSource: 'record' },
+					{ key: 'Mild', type: 'text' },
+					{ key: 'Moderate', type: 'text' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				zones: [
+					{ key: 'vitals' },
+					{ key: 'changes' },
+					{ key: 'aspects', type: 'text', heading: 'Aspects' },
+					{
+						key: 'skills',
+						type: 'table',
+						heading: 'Skills',
+						columns: [{ key: 'Skill' }, { key: 'Rating', type: 'number' }],
+					},
+					{ key: 'stunts', type: 'features', heading: 'Stunts' },
+				],
+			} as ComponentConfig,
+			body: ['', ...(variant === 'mook' ? [...thug, ...baron] : [...baron, ...thug])].join('\n'),
+		},
+	];
+}
+
+/**
  * Which variant of the forms sheet a state draws (`docs/features/character-forms.md`,
  * `docs/features/stat-block-zones.md`).
  *
@@ -4639,6 +4857,10 @@ export function notesSamples(): Sample[] {
  *   choosing orange, so each brief's rule previews its form's colour beside the
  *   block's `&tint=`;
  * - `empty`: no form written yet, so *No forms yet.* and **Add form**;
+ * - `none-zone`: the same as `none` with a table zone of ability scores the
+ *   layout names for briefs, so the bear's and the Wolf's briefs draw it in
+ *   their changes line's place and the Thug, holding none, keeps its line
+ *   (`docs/features/stat-block-brief-zone.md`);
  * - `none-long`: the same as `none` with the Wolf changing enough that its
  *   brief's changes line runs past two lines, so its clamp's ellipsis shows,
  *   and its Speed left blank, so the brief leaves the field out;
@@ -4656,6 +4878,7 @@ export type FormsVariant =
 	| 'none'
 	| 'none-one'
 	| 'none-tint'
+	| 'none-zone'
 	| 'empty'
 	| 'none-long'
 	| 'two'
@@ -4675,7 +4898,34 @@ export type FormsVariant =
 	/** Brown Bear orange raising a Pool's ceiling, so a form's tag lands on a placed box. */
 	| 'tint-pool'
 	/** Brown Bear orange lengthening a Track's run, so a form's tag lands on a Track. */
-	| 'tint-track';
+	| 'tint-track'
+	/**
+	 * The Wolf alone, adding to the Constitution score in the `checks` Roster and
+	 * to none of its rows: a score-only push, so the card's tag sits flush under
+	 * Concentration, a last row the form left alone. Not Wisdom: its one row is
+	 * stretched to its neighbour's height, so a tag there sits clear of it
+	 * (`docs/features/character-forms.md`).
+	 */
+	| 'roster-score'
+	/**
+	 * Brown Bear with the `checks` Roster drawn as one table: the Constitution
+	 * band tinted with its Concentration row and tagged once on its name line,
+	 * the Wisdom band untinted below with its Insight row tinted and untagged
+	 * (`docs/features/character-forms.md`, "A Roster's band head").
+	 */
+	| 'roster-band'
+	/** The Wolf alone adding to Constitution's score in that table: the band head the only tinted box. */
+	| 'roster-band-score'
+	/**
+	 * Brown Bear on, with a tinted row at each corner the stylesheet declines or
+	 * takes for a reason a class states (`docs/features/character-forms.md`, "A
+	 * row at a corner of its scroller"): Saving throws totals a column, so its
+	 * tinted last row sits above the foot and keeps square corners; Skills is
+	 * open, so its tinted last row sits above the add control in the table's box
+	 * and keeps them too; and the `checks` Roster is one table with no heading
+	 * row, so its tinted first row, the Constitution band, takes the top two.
+	 */
+	| 'tint-corners';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	const tinting =
@@ -4689,14 +4939,22 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 		variant === 'none' ||
 		variant === 'none-one' ||
 		variant === 'none-tint' ||
+		variant === 'none-zone' ||
 		variant === 'none-long' ||
 		variant === 'mook' ||
-		variant === 'tint-error'
+		variant === 'tint-error' ||
+		variant === 'roster-score' ||
+		variant === 'roster-band-score'
 			? 'no'
 			: 'yes';
 	/** Brown Bear alone, or no form at all, for the briefs' one-form and empty states. */
 	const others = variant !== 'none-one' && variant !== 'empty';
-	const wolf = variant === 'two' || variant === 'tint-two' ? 'yes' : 'no';
+	/** The Wolf's score-only push at the `checks` Roster, on its cards or its table. */
+	const scoreOnly = variant === 'roster-score' || variant === 'roster-band-score';
+	/** The `checks` Roster drawn as one table rather than stat cards. */
+	const corners = variant === 'tint-corners';
+	const banded = variant === 'roster-band' || variant === 'roster-band-score' || corners;
+	const wolf = variant === 'two' || variant === 'tint-two' || scoreOnly ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
 	/*
 	 * Two-on with a target both forms add to, so one card is reached by two
@@ -4735,6 +4993,14 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 			? ['#### traits:', '', 'A second heading for Traits, which only the first is read under.', '']
 			: [];
 	const lead = variant === 'drift' ? ['A line above the first heading.', ''] : [];
+	/*
+	 * A table zone the briefs draw, declared after Attacks so Attacks stays the
+	 * first table zone: a 0.9.0 lead's leading table goes to the first one
+	 * (`parse/zones.ts`, `placeZones`), and the Wolf's Bite table is such a lead.
+	 */
+	const scored = variant === 'none-zone';
+	const scores = (row: string) =>
+		scored ? ['#### Ability Scores', '', '| Str | Dex | Con |', '|---|---|---|', row, ''] : [];
 	return [
 		{
 			config: {
@@ -4816,6 +5082,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				position: { col: 1, row: 3, width: 6, height: 2 },
 				rowHeader: 'Skill',
 				namePosition: 1,
+				// Open on the corners state, so the scroller sits in the table's
+				// box with the add control under its tinted last row.
+				...(corners ? { openRows: true } : {}),
 				columns: [
 					{
 						key: 'Training',
@@ -4869,6 +5138,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						signed: true,
 						publish: true,
 					},
+					// A totalled column on the corners state, so a foot follows
+					// the tinted Constitution row.
+					...(corners ? [{ key: 'Uses', type: 'number', total: true }] : []),
 				],
 				rows: [
 					{ label: 'Strength', key: 'STR', values: { ability: 'abilities.STR' } },
@@ -4876,13 +5148,22 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					{ label: 'Constitution', key: 'CON', values: { ability: 'abilities.CON' } },
 				],
 			} as ComponentConfig,
-			body: [
-				'| Save | Prof | Total |',
-				'| --- | --- | --- |',
-				'| Strength | 0 | |',
-				'| Dexterity | 0 | |',
-				'| Constitution | 1 | |',
-			].join('\n'),
+			body: (corners
+				? [
+						'| Save | Prof | Total | Uses |',
+						'| --- | --- | --- | --- |',
+						'| Strength | 0 | | 1 |',
+						'| Dexterity | 0 | | 0 |',
+						'| Constitution | 1 | | 2 |',
+					]
+				: [
+						'| Save | Prof | Total |',
+						'| --- | --- | --- |',
+						'| Strength | 0 | |',
+						'| Dexterity | 0 | |',
+						'| Constitution | 1 | |',
+					]
+			).join('\n'),
 		},
 		{
 			config: {
@@ -4918,6 +5199,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						heading: 'Attacks',
 						columns: [{ key: 'Attack' }, { key: 'Bonus', type: 'number' }, { key: 'Damage' }],
 					},
+					...(scored
+						? [{ key: 'scores', type: 'table', heading: 'Ability Scores', columns: [{ key: 'Str' }, { key: 'Dex' }, { key: 'Con' }] }]
+						: []),
 					{ key: 'actions', type: 'features', heading: 'Actions' },
 					{
 						key: 'traits',
@@ -4926,6 +5210,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						...(variant === 'expanded' ? {} : { collapsed: true }),
 					},
 				],
+				...(scored ? { briefZone: 'scores' } : {}),
 			} as ComponentConfig,
 			body: [
 				'',
@@ -4941,7 +5226,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${bear}`,
 						`HP: ${bearHp}`,
 						'Speed: 40 ft., climb 30 ft.',
-						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5${shared}${poolPush}${trackPush}`,
+						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5; checks.concentration += 2; checks.insight += 1; checks.CON += 2${shared}${poolPush}${trackPush}`,
 						...(tinting ? ['Tint: orange'] : []),
 						'```',
 						'',
@@ -4952,6 +5237,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						'',
 						...attacks,
 						'',
+						...scores('| 19 | 10 | 16 |'),
 						'#### Actions',
 						'',
 						'**Multiattack.** The bear makes two attacks: one with its bite and one with its claws.',
@@ -4979,7 +5265,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${wolf}`,
 						'HP: 11 / 11',
 						variant === 'none-long' ? 'Speed:' : 'Speed: 40 ft.',
-						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${
+						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${scoreOnly ? '; checks.CON += 2' : ''}${
 							variant === 'none-long'
 								? '; abilities.STR = 3; abilities.CON = 2; skills.perception >= 5; skills.athletics >= 4; saves.DEX = 4; saves.CON = 3'
 								: ''
@@ -4992,6 +5278,8 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						'',
 						'***Pack Tactics.*** The wolf has advantage on an attack roll against a creature if an ally is within 5 feet of it.',
 						'',
+						// After the lead, so its table and prose read as in `none`.
+						...scores('| 12 | 15 | 12 |'),
 						// A Fate mook's shape: a whole stat block with nothing in its zones,
 						// which In play draws as its head and vitals alone.
 						'### Thug',
@@ -5005,6 +5293,50 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					]
 					: []),
 			].join('\n'),
+		},
+		{
+			// The druid's own checks drawn as stat cards with no heading row, as
+			// the 5e Caster layout draws them, so a form's push lands on a row
+			// inside a card's mini table at the scroller's corners: the bear's
+			// Concentration is the Constitution card's last row, at its bottom
+			// corners, and its Insight the Wisdom card's only row, at all four.
+			// The bear also adds to the Constitution score, which `effective`
+			// reads, so that card shows a tinted pill beside its tinted row and
+			// no fill of its own, and carries the tag; Wisdom's pill stays plain.
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 1, row: 8, width: 6, height: 3 },
+				rowHeader: 'Check',
+				hideColumnHeadings: true,
+				// Off on the band states, everything else as the cards have it,
+				// `effective` included, so the score is what names the band.
+				cardLayout: !banded,
+				stats: [
+					{ key: 'CON', name: 'Constitution' },
+					{ key: 'WIS', name: 'Wisdom' },
+				],
+				effective: 'value + mod.self',
+				derived: 'mod(value + mod.self)',
+				signed: true,
+				columns: [
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'stat + Prof * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: [
+					{ label: 'Endurance', stat: 'CON', key: 'endurance' },
+					{ label: 'Concentration', stat: 'CON', key: 'concentration' },
+					{ label: 'Insight', stat: 'WIS', key: 'insight' },
+				],
+			} as ComponentConfig,
+			body: '```sheet\nCON: 13\nWIS: 16\n```\n\n| Check | Prof |\n| --- | --- |\n| Endurance | 0 |\n| Concentration | 1 |\n| Insight | 1 |\n',
 		},
 		...(pooled
 			? [

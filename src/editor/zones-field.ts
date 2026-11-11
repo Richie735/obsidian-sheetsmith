@@ -19,10 +19,17 @@
  * **A heading commit carries a rename into every note**, through
  * `addressesHeading` on the field; a key commit carries none, because the key is
  * layout identity and appears in no note.
+ *
+ * **A key commit does carry into the layout**, wherever the field's
+ * `keyReferences` names a sibling key holding a zone's key — a Stat block's
+ * `briefZone` — and removing that zone clears it, both in the commit's own
+ * persist, so one undo restores the two together. The id rename's precedent:
+ * the editor rewrites what reads a name in the write that renames it, so the
+ * zone editor never leaves the layout naming a zone it no longer has.
  */
 
 import { headingRename } from '../component-rename-migration';
-import { columnKeyFault, zoneHeadingFault, zoneKeyFault } from '../components/zone-rules';
+import { columnKeyFault, sameZoneKey, zoneHeadingFault, zoneKeyFault } from '../components/zone-rules';
 import { isBuiltInZone, ZONE_TYPES, ZoneColumnType, ZoneType, zoneHeadingKey } from '../parse/zones';
 import { showFieldError } from './field-error';
 import { addControls, checkField, labelled, ListContext, setOptional } from './list-fields';
@@ -91,11 +98,17 @@ function freshColumn(columns: readonly ColumnEntry[]): string {
 	return `Column ${count}`;
 }
 
+/** Whether a reference holds this zone key, matched as the sheet matches it. */
+function names(held: unknown, key: string): boolean {
+	return typeof held === 'string' && sameZoneKey(held, key);
+}
+
 /**
  * Draw the zone list into `listEl`.
  *
  * `label` is the component's own label, the section a heading rename reaches
- * in every note; `address` is the field's `addressesHeading`.
+ * in every note; `address` is the field's `addressesHeading`, and `references`
+ * its `keyReferences`.
  */
 export function renderZonesField(
 	listEl: HTMLElement,
@@ -104,6 +117,7 @@ export function renderZonesField(
 	prefix: string,
 	context: ListContext,
 	address: 'record' | undefined,
+	references: readonly string[] = [],
 ): void {
 	listEl.addClass('sheetsmith-list', 'sheetsmith-list-zones');
 	const held = record[key];
@@ -165,6 +179,9 @@ export function renderZonesField(
 					return;
 				}
 				fieldError(keyInput, null);
+				for (const reference of references) {
+					if (names(record[reference], String(zone.key ?? ''))) record[reference] = next;
+				}
 				zone.key = next;
 				context.persist();
 				context.redraw();
@@ -204,6 +221,11 @@ export function renderZonesField(
 			context,
 			() => (builtIn ? null : 'Remove this zone? Its text stays in every note and shows as not in this layout.'),
 			!builtIn,
+			() => {
+				for (const reference of references) {
+					if (names(record[reference], String(zone.key ?? ''))) delete record[reference];
+				}
+			},
 		);
 
 		const detail = entry.createDiv('sheetsmith-entry-detail sheetsmith-zone-detail');

@@ -32,6 +32,15 @@
  * reader's. At 0 the number alone says it, since 0 may be a field's normal
  * state (a Fate NPC's Stress), matching a Pool past its boundary.
  *
+ * **Without `exclusive` it is a companion block** (a familiar, a scene's NPCs;
+ * `docs/features/stat-block-companion-face.md`): every record is listed and
+ * applies, and it has two faces on the picker's own mechanism. At rest it reads
+ * as In play reads, each record a disclosure line over its stat block, a name in
+ * text, empty zones left out and collapsed ones closed; behind **Edit** it is
+ * Every form's edit list, left by **Done**. The face is the view's `activeTab`,
+ * so a switch writes nothing, and **Add** always lands on the edit face, where
+ * the new record's name field is.
+ *
  * **The colour a form tints in is the block's `tint`, or the form's own `Tint`
  * entry where the layout turns that on** (`docs/features/form-tint-colour.md`),
  * carried on the push beside `inPlay` as a fact about the row. A colour outside
@@ -85,13 +94,14 @@ import { flagText, isFlagSet } from './stored-flag';
 import { boundedText } from './typed-value';
 import { embedRefusal } from './embed-rule';
 import { renderPictureFrame } from './picture-frame';
-import { columnKeyFault, zoneHeadingFault, zoneKeyFault } from './zone-rules';
+import { columnKeyFault, sameZoneKey, zoneHeadingFault, zoneKeyFault } from './zone-rules';
 import { drawBriefs, FormBrief } from './stat-block-briefs';
 import {
 	BodyZone,
 	ZoneHost,
 	drawDrift,
 	drawZone,
+	drawZoneBrief,
 	shiftOpenZones,
 	FeatureZoneEdit,
 	StatBlockZone,
@@ -231,6 +241,7 @@ export interface StatBlockConfig extends ComponentConfig {
 	 * the changes and never hide them.
 	 */
 	zones?: StatBlockZone[];
+	briefZone?: string;
 	image?: boolean;
 	/**
 	 * One of `TINT_COLOURS`, absent for the accent. Typed as text because a
@@ -481,6 +492,46 @@ function zonesError(config: StatBlockConfig): string | null {
 	return null;
 }
 
+/** The brief zone's key as the layout spells it, or null where there is none. */
+function briefZoneKey(config: StatBlockConfig): string | null {
+	const key = (config.briefZone ?? '').trim();
+	return key === '' ? null : key;
+}
+
+/** The body zone the brief zone's key names, by `sameZoneKey`, or null. */
+function namedBriefZone(config: StatBlockConfig, key: string): BodyZone | null {
+	return bodyZones(config).find((zone) => sameZoneKey(zone.key, key)) ?? null;
+}
+
+/**
+ * The table zone each brief draws in place of its changes line, or null where
+ * the layout names none. Reads an accepted configuration, so a name no table
+ * zone answers is `configError`'s and never reaches here as a fallback.
+ */
+function briefZone(config: StatBlockConfig): BodyZone | null {
+	const key = briefZoneKey(config);
+	const zone = key === null ? null : namedBriefZone(config, key);
+	return zone?.type === 'table' ? zone : null;
+}
+
+/**
+ * Why the brief zone cannot draw, or null where it can or is blank
+ * (`docs/features/stat-block-brief-zone.md`, question 3): on the Errors
+ * pattern and `exclusive`'s precedent, the layout says one thing and silently
+ * drawing another would hide the typo. After `zonesError`, since it reads the
+ * accepted zones. A built-in is asked by its key, since a list may leave one
+ * out and it is still drawn.
+ */
+function briefZoneError(config: StatBlockConfig): string | null {
+	const key = briefZoneKey(config);
+	if (key === null) return null;
+	if (isBuiltInZone(key)) return `Brief zone names "${key}", a built-in zone. Name a table zone's key instead.`;
+	const zone = namedBriefZone(config, key);
+	if (zone === null) return `Brief zone names "${key}", which no zone declares. Name a table zone's key, or clear it.`;
+	if (zone.type !== 'table') return `Brief zone names "${key}", a ${zone.type} zone. Name a table zone's key instead.`;
+	return null;
+}
+
 /**
  * Why this configuration cannot draw, or null where it can (`docs/features/
  * character-forms.md` and `stat-block-zones.md`, Error states). Each names the
@@ -525,7 +576,7 @@ function configError(config: StatBlockConfig): string | null {
 			return `One at a time by names "${fieldLabel(field)}", a ${fieldType(field)} field. Name a toggle field's key instead.`;
 		}
 	}
-	return zonesError(config);
+	return zonesError(config) ?? briefZoneError(config);
 }
 
 /**
@@ -729,7 +780,13 @@ function withUses(preamble: string, uses: string): string {
 	return fence + (preamble.trim() === '' ? '\n' : preamble);
 }
 
-/** What one zone holds in a sample: filler that says it is filler, on Rich text's rule. */
+/**
+ * What one zone holds in a sample: filler that says it is filler, on Rich
+ * text's rule. A features entry carries one emphasis run besides its bold name,
+ * since the canvas renders it as the sheet does and an entry's own marks are
+ * what an author should see there; a text zone stays plain prose, since one
+ * component showing each mark is enough.
+ */
 function sampleZone(zone: BodyZone, noun: string, at: number): string {
 	if (zone.type === 'table') {
 		const headers = zone.columns.map((column) => column.key);
@@ -738,7 +795,7 @@ function sampleZone(zone: BodyZone, noun: string, at: number): string {
 		);
 		return `|${headers.join('|')}|\n|${headers.map(() => '---').join('|')}|\n|${cells.join('|')}|`;
 	}
-	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${noun.toLowerCase()} shows where an entry starts.`;
+	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${noun.toLowerCase()} shows where an *entry* starts.`;
 	return `Sample text, so an open ${noun.toLowerCase()} shows where its prose starts.`;
 }
 
@@ -801,7 +858,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			kind: 'text',
 			label: 'One at a time by',
 			description:
-				'The key of a toggle field. Choosing a record turns it on and every other off in one write, and only that record\'s modifiers apply and tint the sheet. Blank draws every record at once and applies all of them, as a companion block.',
+				'The key of a toggle field. Choosing a record turns it on and every other off in one write, and only that record\'s modifiers apply and tint the sheet. Blank lists every record at once and applies all of them, as a companion block, read until Edit is pressed.',
 		},
 		{
 			key: 'uses',
@@ -824,7 +881,17 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			label: 'Zones',
 			addressesHeading: 'record',
 			description:
-				"What each record's body is made of, in the order it is drawn: tables, named features or text, each under a heading the note stores, plus the record's vitals and changes, which can be moved but not removed. Renaming a heading renames it in every note on this layout. Removing a zone keeps its text in every note, shown as not in this layout. A collapsed text zone is closed in play and drawn open under Every form, where it is filled. Blank draws the vitals, the changes, then the body as text under a closed Details heading.",
+				"What each record's body is made of, in the order it is drawn: tables, named features or text, each under a heading the note stores, plus the record's vitals and changes, which can be moved but not removed. Renaming a heading renames it in every note on this layout. Removing a zone keeps its text in every note, shown as not in this layout. A collapsed text zone starts closed where the record is read, and is drawn open where it is edited, which is where it is filled. Blank draws the vitals, the changes, then the body as text under a closed Details heading.",
+			// A key commit carries into Brief zone, and removing the zone it names
+			// clears it, so the zone editor never leaves Brief zone naming nothing.
+			keyReferences: ['briefZone'],
+		},
+		{
+			key: 'briefZone',
+			kind: 'text',
+			label: 'Brief zone',
+			description:
+				'The key of a table zone each form\'s brief draws in place of its changes line while no form is in play, so forms are compared by that table. Every row is drawn, so a long table makes a tall brief. A form whose table has no rows keeps its changes line. Only a table zone can be named, and it needs One at a time by. Blank draws the changes line.',
 		},
 		{
 			key: 'image',
@@ -1163,6 +1230,14 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 
 		const noun = recordNoun(config);
 		const lower = noun.toLowerCase();
+		/*
+		 * **The noun a companion's Edit press names keeps an all-capitals noun's
+		 * case**, so the Fate block says *Edit NPCs* rather than *Edit npcs*; any
+		 * other noun is lowercased as everywhere else. Every string naming that
+		 * press uses it, so the button and each reference to it agree. The other
+		 * strings keep `lower` (`docs/features/stat-block-companion-face.md`).
+		 */
+		const pressNoun = isAcronym(noun) ? noun : lower;
 		const records = entries(data);
 		const toggle = exclusiveField(config);
 		const exclusive = toggle !== null;
@@ -1187,7 +1262,12 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		const landedAt = landing && awaitingAdd !== null ? awaitingAdd.held : -1;
 		if (landing) awaitingAdd = null;
 		const opened = new Set(context.openRecords ?? []);
-		let face = exclusive && context.activeTab === LIBRARY_FACE ? LIBRARY_FACE : PLAY_FACE;
+		/*
+		 * **Every block has two faces.** With `exclusive` they are In play and
+		 * Every form; without, a companion block's reading face and its edit face
+		 * behind **Edit** (`docs/features/stat-block-companion-face.md`).
+		 */
+		let face = context.activeTab === LIBRARY_FACE ? LIBRARY_FACE : PLAY_FACE;
 		const nameFields = new Map<number, HTMLInputElement>();
 
 		const ceiling = hasUses(config)
@@ -1203,8 +1283,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 */
 		const usesSlot = element('div', 'sheetsmith-stat-block-uses-slot', head);
 
-		const scroll = element('div', 'sheetsmith-stat-block-scroll', box);
-		const content = element('div', 'sheetsmith-stat-block-content', scroll);
+		const scroll = element('div', 'sheetsmith-placed-scroll sheetsmith-stat-block-scroll', box);
+		const content = element('div', 'sheetsmith-placed-scroller sheetsmith-stat-block-content', scroll);
 		const foot = element('div', 'sheetsmith-stat-block-foot', box);
 
 		const picking = awaitingPick === config.id;
@@ -1222,11 +1302,31 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const inPlay = exclusive && face === PLAY_FACE;
 			if (hasUses(config) && !inPlay) drawUses(usesSlot);
 			if (!exclusive) {
-				drawLibrary(false);
+				if (face === LIBRARY_FACE) drawLibrary('edit');
+				else drawLibrary('read');
 				return;
 			}
-			if (face === LIBRARY_FACE) drawLibrary(true);
+			if (face === LIBRARY_FACE) drawLibrary('library');
 			else drawPlay();
+		}
+
+		/**
+		 * A companion block's **Edit** or **Done**: the face switch, and focus to
+		 * the other button where the pressed one held it, since each sits in the
+		 * foot where the other was. Measured before `paint()` replaces the foot; a
+		 * press that focused nothing is given no focus.
+		 */
+		function swapFace(pressed: HTMLElement, next: number): void {
+			const held = doc.activeElement === pressed;
+			setFace(next);
+			if (!held) return;
+			const other = next === LIBRARY_FACE
+				? foot.querySelector<HTMLElement>('.sheetsmith-stat-block-done')
+				// With no record left there is no Edit; the empty state's Add is
+				// what the reading face offers in its place.
+				: (foot.querySelector<HTMLElement>('.sheetsmith-stat-block-edit') ??
+					content.querySelector<HTMLElement>('.sheetsmith-stat-block-action'));
+			other?.focus();
 		}
 
 		function setFace(next: number): void {
@@ -1364,15 +1464,23 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			context.onChange(edit);
 		}
 
+		/**
+		 * No record yet, on the face a block is read on: In play's, and a companion
+		 * block's at rest. The sentence and an Add that lands on the edit face.
+		 */
+		function drawEmpty(): void {
+			element('p', 'sheetsmith-stat-block-empty', content, `No ${lower}s yet.`);
+			const add = element('button', 'sheetsmith-stat-block-action', content, `Add ${lower}`);
+			add.type = 'button';
+			add.addEventListener('click', () => addRecord());
+		}
+
 		function drawPlay(): void {
 			const readable = records
 				.map((record, at) => ({ record, at }))
 				.filter(({ record }) => record.error === null);
 			if (records.length === 0) {
-				element('p', 'sheetsmith-stat-block-empty', content, `No ${lower}s yet.`);
-				const add = element('button', 'sheetsmith-stat-block-action', content, `Add ${lower}`);
-				add.type = 'button';
-				add.addEventListener('click', () => addRecord());
+				drawEmpty();
 				return;
 			}
 			/*
@@ -1475,6 +1583,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 						: `No ${lower} is active.`,
 				);
 				if (readable.length > 0) {
+					const briefed = briefZone(config);
 					drawBriefs(
 						content,
 						readable.map(({ record, at }) => brief(record, at)),
@@ -1483,6 +1592,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 							listName: `${config.label}: choose a ${lower}`,
 							thumb: (into, source, named, onError) => paintThumb(into, source, named, onError, true),
 							tiles: (into, at) => briefTiles(into, at),
+							...(briefed === null
+								? {}
+								: { zone: (into: HTMLElement, at: number) => drawZoneBrief(into, briefed, records[at]?.zones?.[briefed.key]) }),
 							choose: (at) => {
 								awaitingPick = config.id;
 								choose(at);
@@ -1525,11 +1637,22 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 
 		/**
 		 * Every record in file order, each a line of chevron, name and delete, its
-		 * stat block under it when open. **With `exclusive` it is the library
-		 * face; without, it is the whole component**, a companion block, where
-		 * the first record is open until the reader closes it.
+		 * stat block under it when open. **One loop for three faces**: `library` is
+		 * Every form, the edit face of a block with `exclusive`; `edit` is a
+		 * companion block's face behind **Edit**, the same list without **Back to
+		 * play** and the Active tag; and `read` is a companion block at rest, the
+		 * same list read as In play reads, its names as text and nothing to delete
+		 * or add (`docs/features/stat-block-companion-face.md`). Without
+		 * `exclusive` the first record is open until the reader closes it.
 		 */
-		function drawLibrary(asFace: boolean): void {
+		function drawLibrary(mode: 'library' | 'edit' | 'read'): void {
+			const reading = mode === 'read';
+			if (reading && records.length === 0) {
+				// In play's no-forms state exactly, with no foot: adding is editing,
+				// so the press lands on the edit face in the new record's name.
+				drawEmpty();
+				return;
+			}
 			const list = element('div', 'sheetsmith-stat-block-list', content);
 			if (records.length === 0) {
 				element('p', 'sheetsmith-stat-block-empty', list, `No ${lower}s yet.`);
@@ -1550,6 +1673,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				 */
 				const isDefault = defaultOpen(at);
 				const startsOpen = isDefault !== opened.has(at);
+				let summaryLine: HTMLElement | null = null;
+				let thumb: HTMLElement | null = null;
 				bindDisclosure({
 					button: chevron,
 					region: detail,
@@ -1557,18 +1682,38 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					named,
 					onToggle: (open) => {
 						summaryLine?.toggleAttribute('hidden', open);
+						thumb?.toggleAttribute('hidden', !open);
+						// Kept here as well as in the view, so a face switch, which
+						// repaints without a rebuild, draws the record as the reader
+						// left it: one open set for both of a companion's faces.
+						if (open !== isDefault) opened.add(at);
+						else opened.delete(at);
 						context.onToggleRecord?.(at, open !== isDefault);
 					},
 				});
-				let summaryLine: HTMLElement | null = null;
-				const input = drawRecordName(summary, controls, record, named, (next) => {
-					context.onChange({ records: { [at]: { name: next } } });
-				});
+				/*
+				 * **At rest the name is read, and titled.** The plain branch of the
+				 * shared name, in a cell of its own on the line so the picture can
+				 * sit at its inline start; the stamped class gives it In play's title
+				 * size, open or closed, through the rule the name field takes it from.
+				 */
+				const nameHost = reading ? element('div', 'sheetsmith-stat-block-line-name', summary) : summary;
+				const input = drawRecordName(
+					nameHost,
+					controls,
+					record,
+					named,
+					(next) => {
+						context.onChange({ records: { [at]: { name: next } } });
+					},
+					{ readOnly: reading },
+				);
 				if (input !== null) nameFields.set(at, input);
-				if (asFace && isOn(config, record)) {
+				const nameCell = nameHost.querySelector<HTMLElement>('.sheetsmith-record-name');
+				if (reading) nameCell?.classList.add('sheetsmith-stat-block-name-read');
+				if (mode === 'library' && isOn(config, record)) {
 					// Right after the name, in the name's own track, rather than in the
 					// line's next column.
-					const nameCell = summary.querySelector<HTMLElement>('.sheetsmith-record-name');
 					nameCell?.classList.add('sheetsmith-stat-block-named');
 					element('span', 'sheetsmith-stat-block-tag', nameCell ?? summary, 'Active');
 				}
@@ -1580,38 +1725,71 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				const vitals = record.error === null ? closedLine(record) : '';
 				summaryLine = vitals === '' ? null : element('span', 'sheetsmith-stat-block-summary', summary, vitals);
 				summaryLine?.toggleAttribute('hidden', startsOpen);
-				const remove = element('button', 'sheetsmith-record-remove', summary);
-				remove.type = 'button';
-				setIcon(remove, REMOVE_ICON);
-				bindArmToConfirm({
-					button: remove,
-					row,
-					armedClass: 'sheetsmith-record-remove-armed',
-					rowClass: 'sheetsmith-record-arming',
-					named: `Delete ${named}`,
-					announce: (said) => {
-						status.textContent = said;
-					},
-					commit: () => {
-						shiftOpen(at);
-						context.onChange({ records: {}, removed: [at] });
-					},
-					register: armed,
-					doc,
-				});
+				if (reading) {
+					/*
+					 * **The picture is the open record's**, at its name's inline
+					 * start: a closed line is the scan line, and a thumbnail three
+					 * title lines tall would make every one a head. Its failure is said
+					 * at the top of the record's stat block, naming the press that
+					 * reaches the field.
+					 */
+					const failures = element('div', 'sheetsmith-stat-block-problems', detail);
+					thumb = drawThumb(nameHost, record, named, failures, false, {
+						before: nameCell,
+						where: `Edit ${pressNoun}s`,
+					});
+					thumb?.toggleAttribute('hidden', !startsOpen);
+				} else {
+					const remove = element('button', 'sheetsmith-record-remove', summary);
+					remove.type = 'button';
+					setIcon(remove, REMOVE_ICON);
+					bindArmToConfirm({
+						button: remove,
+						row,
+						armedClass: 'sheetsmith-record-remove-armed',
+						rowClass: 'sheetsmith-record-arming',
+						named: `Delete ${named}`,
+						announce: (said) => {
+							status.textContent = said;
+						},
+						commit: () => {
+							shiftOpen(at);
+							context.onChange({ records: {}, removed: [at] });
+						},
+						register: armed,
+						doc,
+					});
+				}
 				if (record.error !== null) {
 					element('div', 'sheetsmith-error', row, record.error);
 				}
-				drawForm(detail, record, at, named, true);
+				drawForm(detail, record, at, named, !reading);
 			});
 
-			if (asFace) {
+			if (reading) {
+				// Where In play's switch sits, in its clothes: the one way into the
+				// edit face. No Add beside it, because adding is editing.
+				const edit = element('button', 'sheetsmith-record-add sheetsmith-stat-block-edit', foot);
+				edit.type = 'button';
+				element('span', 'sheetsmith-record-add-label', edit, `Edit ${pressNoun}s`);
+				edit.addEventListener('click', () => swapFace(edit, LIBRARY_FACE));
+				return;
+			}
+			if (mode === 'library') {
 				// In the foot beside **Add form** and in its clothes, so the face's two
 				// ways out sit together where the other face's switch sits.
 				const back = element('button', 'sheetsmith-record-add sheetsmith-stat-block-back', foot);
 				back.type = 'button';
 				element('span', 'sheetsmith-record-add-label', back, 'Back to play');
 				back.addEventListener('click', () => setFace(PLAY_FACE));
+			} else {
+				// Every form's **Back to play** in its place and clothes, named for
+				// what it leaves: the face that edits the list.
+				const done = element('button', 'sheetsmith-record-add sheetsmith-stat-block-done', foot);
+				done.type = 'button';
+				done.setAttribute('aria-label', `Done editing ${pressNoun}s`);
+				element('span', 'sheetsmith-record-add-label', done, 'Done');
+				done.addEventListener('click', () => swapFace(done, PLAY_FACE));
 			}
 			const add = element('button', 'sheetsmith-record-add sheetsmith-stat-block-add', foot);
 			add.type = 'button';
@@ -1714,10 +1892,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		function addRecord(): void {
 			awaitingAdd = { id: config.id, held: records.length };
 			if (!defaultOpen(records.length)) context.onToggleRecord?.(records.length, true);
-			if (exclusive) {
-				face = LIBRARY_FACE;
-				context.onActivateTab?.(LIBRARY_FACE);
-			}
+			// Onto the face a record is edited on, with `exclusive` or without:
+			// the new record's name field is there and nowhere else.
+			face = LIBRARY_FACE;
+			context.onActivateTab?.(LIBRARY_FACE);
 			status.textContent = `${noun} added`;
 			context.onChange({ records: {}, added: [{ name: noun }] });
 		}
@@ -1748,20 +1926,28 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			 * With one on, the painter's sentence alone, under that form's title.
 			 */
 			prefixed: boolean,
-		): void {
+			/**
+			 * Where it goes and which press the fix names: the row's first child
+			 * and *Every form* unless said, so In play's head and its two-on name
+			 * rows keep both. A companion block's line puts it before the name, after
+			 * the chevron, and names **Edit**, the press that reaches Picture there.
+			 */
+			placing: { before?: Node | null; where?: string } = {},
+		): HTMLElement | null {
 			const picture = pictureOf(record);
-			if (picture === undefined) return;
+			if (picture === undefined) return null;
 			const thumb = element('div', 'sheetsmith-stat-block-thumb', row);
-			row.insertBefore(thumb, row.firstChild);
+			row.insertBefore(thumb, placing.before === undefined ? row.firstChild : placing.before);
 			paintThumb(thumb, picture, named, (message) => {
 				thumb.remove();
 				// The painter's sentence names the fault; the fix is this
 				// component's, since in play the thumbnail has no field to press
 				// (`docs/UI.md` §10). Image and Passport keep theirs, whose frame
 				// is the field.
-				const said = `${message} Set it under Every form, in Picture.`;
+				const said = `${message} Set it under ${placing.where ?? 'Every form'}, in Picture.`;
 				element('div', 'sheetsmith-stat-block-problem', failures, prefixed ? `${named}: ${said}` : said);
 			});
+			return thumb;
 		}
 
 		/** A form's picture line where the layout draws pictures and the form holds one. */
@@ -2374,6 +2560,11 @@ function setsOneNumber(outcome: ModifierOutcome): boolean {
  * form is edited. The words go into its accessible name too, ahead of what it
  * says about the parts, so the name contains the label a voice command reads.
  */
+/** Whether a noun is written in capitals throughout, `NPC`, and so keeps its case. */
+export function isAcronym(noun: string): boolean {
+	return noun.length > 1 && /\p{Lu}/u.test(noun) && noun === noun.toUpperCase();
+}
+
 function labelGlyph(cell: HTMLElement): void {
 	const button = cell.querySelector<HTMLButtonElement>('button');
 	if (button === null) return;

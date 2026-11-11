@@ -1061,6 +1061,9 @@ export class ConfigPanel {
 						// Where a heading lives in a note, declared by the component
 						// rather than known here (`types.ts`, `addressesHeading`).
 						field.addressesHeading,
+						// Which sibling keys hold a zone's key, so a re-key carries
+						// into them (`types.ts`, `keyReferences`).
+						field.keyReferences,
 					);
 				} else if (field.kind === 'rows') {
 					renderRowsEditor(
