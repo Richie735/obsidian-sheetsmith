@@ -110,6 +110,7 @@ type StateName =
 	| 'forms-roster-score'
 	| 'forms-roster-band'
 	| 'forms-roster-band-score'
+	| 'forms-tint-corners'
 	| 'companion-familiar'
 	| 'companion-picture'
 	| 'companion-mook'
@@ -179,6 +180,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-roster-score') return formsSamples('roster-score');
 	if (name === 'forms-roster-band') return formsSamples('roster-band');
 	if (name === 'forms-roster-band-score') return formsSamples('roster-band-score');
+	if (name === 'forms-tint-corners') return formsSamples('tint-corners');
 	if (name === 'companion-familiar') return companionSamples('familiar');
 	if (name === 'companion-picture') return companionSamples('picture');
 	if (name === 'companion-mook') return companionSamples('mook');
@@ -1046,6 +1048,7 @@ function applyQuery(): void {
 			wanted === 'forms-roster-score' ||
 			wanted === 'forms-roster-band' ||
 			wanted === 'forms-roster-band-score' ||
+			wanted === 'forms-tint-corners' ||
 			wanted === 'companion-familiar' ||
 			wanted === 'companion-picture' ||
 			wanted === 'companion-mook' ||

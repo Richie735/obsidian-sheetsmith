@@ -3435,6 +3435,30 @@ export const DEFAULTS = [
 		size: '1400,1500',
 		frame: '[data-sheetsmith-component="checks"]',
 	},
+	/*
+	 * Brown Bear on with a tinted row at each corner a class decides
+	 * (`docs/features/character-forms.md`, "A row at a corner of its
+	 * scroller"): Saving throws' Constitution above a totals foot and Skills'
+	 * Stealth above an open table's add control, both square at the bottom, and
+	 * the headless `checks` Roster's Constitution band rounded at the top. Each
+	 * mode, since forced colors draws those corners on a layer of its own.
+	 */
+	{
+		name: 'sheet-forms-tint-corners',
+		query: 'surface=sheet&theme=light&state=forms-tint-corners&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-corners-dark',
+		query: 'surface=sheet&theme=dark&state=forms-tint-corners&tint=orange',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-forms-tint-corners-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms-tint-corners&tint=orange',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
 	{
 		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
 		// to, in the accent; Strength and Constitution orange and Dexterity green
