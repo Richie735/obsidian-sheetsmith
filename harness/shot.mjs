@@ -3374,6 +3374,63 @@ export const DEFAULTS = [
 		query: 'surface=sheet&theme=dark&state=forms-roster-score',
 		size: '1400,1500',
 	},
+	/*
+	 * The `checks` Roster drawn as one table with Brown Bear on
+	 * (`docs/features/character-forms.md`, "A Roster's band head"): the
+	 * Constitution band tinted with Concentration, closed on all four sides
+	 * and tagged once at the start of the reading's line, clear of the name,
+	 * the score and the reading; the Wisdom band untinted with Insight tinted and untagged. Framed
+	 * on the Roster, in each mode and at a true 380.
+	 */
+	{
+		name: 'sheet-forms-roster-band',
+		query: 'surface=sheet&theme=light&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		name: 'sheet-forms-roster-band-dark',
+		query: 'surface=sheet&theme=dark&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		name: 'sheet-forms-roster-band-narrow',
+		query: 'surface=sheet&theme=light&state=forms-roster-band&width=380',
+		size: '380,3200',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		name: 'sheet-forms-roster-band-contrast-more',
+		query: 'surface=sheet&theme=light&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
+		name: 'sheet-forms-roster-band-forced-colors',
+		query: 'surface=sheet&theme=light&state=forms-roster-band',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// The Roster one column wide, the one width at which the score and the
+		// reading wrap under the name: the tag falls back to the name's line,
+		// the reading's line start being where they now sit.
+		name: 'sheet-forms-roster-band-onecol',
+		query: 'surface=sheet&theme=light&state=forms-roster-band&place=checks:1,1',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
+	{
+		// The Wolf alone adding to Constitution's score: the band head the only
+		// tinted box, closed on all four sides, its tag on the reading's line.
+		name: 'sheet-forms-roster-band-score',
+		query: 'surface=sheet&theme=light&state=forms-roster-band-score',
+		size: '1400,1500',
+		frame: '[data-sheetsmith-component="checks"]',
+	},
 	{
 		// Brown Bear orange and Wolf green on by hand: Initiative, which both add
 		// to, in the accent; Strength and Constitution orange and Dexterity green

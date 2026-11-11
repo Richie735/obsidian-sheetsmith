@@ -4688,7 +4688,16 @@ export type FormsVariant =
 	 * stretched to its neighbour's height, so a tag there sits clear of it
 	 * (`docs/features/character-forms.md`).
 	 */
-	| 'roster-score';
+	| 'roster-score'
+	/**
+	 * Brown Bear with the `checks` Roster drawn as one table: the Constitution
+	 * band tinted with its Concentration row and tagged once on its name line,
+	 * the Wisdom band untinted below with its Insight row tinted and untagged
+	 * (`docs/features/character-forms.md`, "A Roster's band head").
+	 */
+	| 'roster-band'
+	/** The Wolf alone adding to Constitution's score in that table: the band head the only tinted box. */
+	| 'roster-band-score';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	const tinting =
@@ -4706,12 +4715,17 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 		variant === 'none-long' ||
 		variant === 'mook' ||
 		variant === 'tint-error' ||
-		variant === 'roster-score'
+		variant === 'roster-score' ||
+		variant === 'roster-band-score'
 			? 'no'
 			: 'yes';
 	/** Brown Bear alone, or no form at all, for the briefs' one-form and empty states. */
 	const others = variant !== 'none-one' && variant !== 'empty';
-	const wolf = variant === 'two' || variant === 'tint-two' || variant === 'roster-score' ? 'yes' : 'no';
+	/** The Wolf's score-only push at the `checks` Roster, on its cards or its table. */
+	const scoreOnly = variant === 'roster-score' || variant === 'roster-band-score';
+	/** The `checks` Roster drawn as one table rather than stat cards. */
+	const banded = variant === 'roster-band' || variant === 'roster-band-score';
+	const wolf = variant === 'two' || variant === 'tint-two' || scoreOnly ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
 	/*
 	 * Two-on with a target both forms add to, so one card is reached by two
@@ -5007,7 +5021,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${wolf}`,
 						'HP: 11 / 11',
 						variant === 'none-long' ? 'Speed:' : 'Speed: 40 ft.',
-						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${variant === 'roster-score' ? '; checks.CON += 2' : ''}${
+						`Modifiers: abilities.DEX = 2; skills.stealth >= 4${variant === 'tint-two' ? '; initiative += 2' : ''}${scoreOnly ? '; checks.CON += 2' : ''}${
 							variant === 'none-long'
 								? '; abilities.STR = 3; abilities.CON = 2; skills.perception >= 5; skills.athletics >= 4; saves.DEX = 4; saves.CON = 3'
 								: ''
@@ -5052,7 +5066,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				position: { col: 1, row: 8, width: 6, height: 3 },
 				rowHeader: 'Check',
 				hideColumnHeadings: true,
-				cardLayout: true,
+				// Off on the band states, everything else as the cards have it,
+				// `effective` included, so the score is what names the band.
+				cardLayout: !banded,
 				stats: [
 					{ key: 'CON', name: 'Constitution' },
 					{ key: 'WIS', name: 'Wisdom' },
