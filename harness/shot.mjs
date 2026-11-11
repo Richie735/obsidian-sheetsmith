@@ -3126,6 +3126,8 @@ export const DEFAULTS = [
 	...placedScrollCueViews(),
 	// A companion block read until Edit, and behind it, in five presentations.
 	...companionViews(),
+	// Prose drawn through the markdown pass, on the canvas and on the sheet.
+	...markdownViews(),
 	{
 		// Both on by hand: the picker's extra line, the report and both blocks.
 		name: 'sheet-forms-two-on',
@@ -3863,6 +3865,46 @@ function formsPolishViews() {
 			query: 'surface=sheet&state=forms-none-zone&text=24&theme=light',
 			size: '1400,1500',
 			frame: BLOCK,
+		},
+	];
+}
+
+/**
+ * **Prose rendered on both surfaces** (`docs/features/canvas-renders-markdown.md`):
+ * the `markdown` state's Rich text and Stat block, drawn on the canvas from
+ * their samples and on the sheet from their bodies, each through
+ * `view/markdown-pass.ts` over the harness's stand-in renderer. In light, dark,
+ * a true 380px, more contrast and forced colours, from one loop as the
+ * companion views are; the canvas framed so the pane's tree and panel stay out
+ * of a picture about prose. Then the sheet with `renderer=none`, which keeps the
+ * fallback a failed render draws photographed: hyphens and asterisks as source.
+ */
+function markdownViews() {
+	const presentations = [
+		{ suffix: '-light', query: '&theme=light', wide: true },
+		{ suffix: '-dark', query: '&theme=dark', wide: true },
+		{ suffix: '-narrow', query: '&theme=light&width=380', wide: false },
+		{ suffix: '-contrast', query: '&theme=light', wide: true, media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-forced', query: '&theme=light', wide: true, flags: ['--force-high-contrast'] },
+	];
+	return [
+		...presentations.map(({ suffix, query, wide, ...view }) => ({
+			...view,
+			name: `editor-markdown${suffix}`,
+			query: `surface=editor&state=markdown${query}`,
+			size: wide ? '1500,4000' : '380,4000',
+			frame: '.sheetsmith-editor-canvas',
+		})),
+		...presentations.map(({ suffix, query, wide, ...view }) => ({
+			...view,
+			name: `sheet-markdown${suffix}`,
+			query: `surface=sheet&state=markdown${query}`,
+			size: wide ? '1400,1200' : '380,2000',
+		})),
+		{
+			name: 'sheet-markdown-renderer-none',
+			query: 'surface=sheet&state=markdown&theme=light&renderer=none',
+			size: '1400,1200',
 		},
 	];
 }

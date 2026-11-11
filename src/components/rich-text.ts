@@ -158,9 +158,11 @@ export interface RichTextData {
  *
  * What it buys is wikilinks and no other markdown, exactly as a table cell does
  * today: `*italic*` shows its asterisks. That is a stated cost rather than a
- * gap — the harness has no renderer, so how a rendered heading, list or embed
- * sits inside the box is the one part of this component's appearance that is
- * reviewed in Obsidian rather than in the harness.
+ * gap: it is drawn where a host hands over no renderer and where the app's
+ * render rejected, and the harness's `renderer=none` photographs it. The
+ * harness's stand-in renderer draws lists and emphasis only, so how a rendered
+ * heading or embed sits inside the box is still reviewed in Obsidian rather
+ * than in the harness.
  */
 function paintParagraphs(
 	into: HTMLElement,

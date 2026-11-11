@@ -1706,9 +1706,9 @@ export class Component {
  *
  * So the markup is one `<p>` holding the source. That is enough for a test to
  * say whether anything landed and whose pass it landed in, and honest about
- * being a stand-in. The harness passes no renderer at all, for the same reason
- * this one is not real: a component's fallback is what a reviewer should be
- * looking at where there is no app.
+ * being a stand-in. The harness replaces `render` with a stand-in of its own
+ * (`harness/stand-in-markdown.ts`), in its bundle only, so a shot draws the few
+ * marks a sample holds; vitest keeps this one, which its tests rely on.
  */
 export class MarkdownRenderer {
 	/**
