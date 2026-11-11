@@ -5019,6 +5019,75 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(end?.selector).toBe('.sheetsmith-view tr.sheetsmith-in-play > :last-child');
 	});
 
+	it('closes a Roster band head on all four sides and tags it at its line\'s start', () => {
+		// The band is one cell, both first and last child, so one rule draws all
+		// four inset edges, after the two that each draw three.
+		const base = tint.filter((rule) => rule.context.length === 0);
+		const only = base.find((rule) => rule.selector === '.sheetsmith-view tr.sheetsmith-in-play > :only-child');
+		const insets = only?.body.match(/inset [^,;]+/g) ?? [];
+		expect(insets).toHaveLength(4);
+		const last = base.findIndex((rule) => rule.selector === '.sheetsmith-view tr.sheetsmith-in-play > :last-child');
+		expect(last).toBeGreaterThanOrEqual(0);
+		expect(base.indexOf(only as (typeof base)[number])).toBeGreaterThan(last);
+		// The band's own hairline is its bottom edge, in the edge colour.
+		const band = '.sheetsmith-view tr.sheetsmith-in-play .sheetsmith-roster-band-inner';
+		const hairline = base.find((rule) => rule.selector === band);
+		expect(hairline?.body).toMatch(/border-bottom-color:\s*var\(--sheetsmith-tint-edge\)/);
+		// In forced colors, where the shadow goes, the band's cell draws a rule
+		// across the whole row in place of the inset hairline, so a tinted band's
+		// bottom meets its end rules and a tinted row under any band has a top.
+		// The base rule sets the style alone: a shorthand there would reset the
+		// colour above the weight of the row repaints that make it Highlight.
+		const all = rules(CSS_WITHOUT_COMMENTS);
+		const cellSelector = '.sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head';
+		const cellBase = all.find((rule) => rule.context.length === 0 && rule.selector === cellSelector);
+		expect(cellBase?.body).toMatch(/border-bottom-style:\s*none/);
+		expect(cellBase?.body).not.toMatch(/border-bottom:/);
+		const inForced = (selector: string) =>
+			all.find((rule) => rule.context.includes('@media (forced-colors: active)') && rule.selector === selector);
+		const forced = inForced(cellSelector);
+		expect(forced?.body).toMatch(/border-bottom-style:\s*solid/);
+		expect(forced?.body).not.toMatch(/border-bottom(-color)?:/);
+		expect(inForced('.sheetsmith-view .sheetsmith-roster-band-inner')?.body).toMatch(/border-bottom-style:\s*none/);
+		const repaint = all.find(
+			(rule) =>
+				rule.context.includes('@media (forced-colors: active)') &&
+				rule.selector.includes('tr.sheetsmith-in-play > td') &&
+				/border-bottom-color:\s*Highlight/.test(rule.body),
+		);
+		expect(repaint?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > td');
+		// The band's tag at its inline start, centred on the reading's line,
+		// which is its carrier's foot: half that line up from the bottom, or the
+		// carrier's middle where that is lower, which is the name's line once
+		// the score and the reading wrap under it.
+		const tag = base.find(
+			(rule) => rule.selector.includes('.sheetsmith-roster-band-head') && rule.selector.includes('.sheetsmith-in-play-mark-inline'),
+		);
+		expect(tag?.body).toMatch(/inset-inline-start:\s*0/);
+		expect(tag?.body).toMatch(/inset-inline-end:\s*auto/);
+		expect(tag?.body.replace(/\s+/g, ' ')).toMatch(
+			/inset-block-start: max\(50%, calc\(100% - var\(--sheetsmith-band-reading-line\) \/ 2\)\);/,
+		);
+		expect(tag?.body).toMatch(/max-width:\s*12ch/);
+		// Its carrier: empty, zero wide with the line's gap taken back, as tall
+		// as the band's first flex line, and holding the reading's line box as a
+		// registered length, so it reaches the tag resolved at the band's size.
+		const line = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-roster-band-tag-line');
+		expect(line?.body).toMatch(/flex:\s*0 0 0/);
+		expect(line?.body).toMatch(/align-self:\s*stretch/);
+		expect(line?.body).toMatch(/margin-inline-end:\s*calc\(-1 \* var\(--size-4-2\)\)/);
+		expect(line?.body).toMatch(/--sheetsmith-band-reading-line:\s*calc\(var\(--sheetsmith-card-value-size\) \* 1\.05\)/);
+		const inner = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-roster-band-inner');
+		expect(inner?.body).toMatch(/gap:\s*var\(--size-2-1\) var\(--size-4-2\)/);
+		const derived = all.find((rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-card-derived');
+		expect(derived?.body).toMatch(/line-height:\s*1\.05/);
+		expect(CSS_WITHOUT_COMMENTS).toMatch(/@property --sheetsmith-band-reading-line \{[^}]*syntax: '<length>';[^}]*inherits: true;/);
+		for (const rule of [only, hairline, forced, tag]) {
+			expect(rule?.selector).not.toMatch(/:has\(/);
+			expect(rule?.body).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(/i);
+		}
+	});
+
 	it("rounds a row at its scroller's corner to the scroller's inner radius", () => {
 		// The scroller clips to `--radius-m`; square corner cells had their fill
 		// cut along that curve and their inset outline cut off where it met it.

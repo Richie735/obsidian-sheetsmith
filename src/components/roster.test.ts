@@ -777,11 +777,40 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		expect(field?.classList.contains('sheetsmith-modified')).toBe(false);
 	});
 
-	it('names the band row as the score\'s box in the table layout, and no tag carrier', () => {
+	it('names the band row as the score\'s box in the table layout, and its tag line as what carries the tag', () => {
 		const el = drawn((base) => ({ ...base, derived: 'mod(value + mod.self)' }));
 		const field = el.querySelector<HTMLElement>('[data-sheetsmith-name="abilities.STR"]');
-		expect(field?.closest('[data-sheetsmith-box]')?.tagName).toBe('TR');
+		const band = field?.closest('[data-sheetsmith-box]');
+		expect(band?.tagName).toBe('TR');
+		const carriers = el.querySelectorAll<HTMLElement>('[data-sheetsmith-tag-box]');
+		expect(carriers).toHaveLength(1);
+		expect(carriers[0]?.classList.contains('sheetsmith-roster-band-tag-line')).toBe(true);
+		expect(carriers[0]?.closest('tr')).toBe(band);
+		expect(carriers[0]?.hasAttribute('data-sheetsmith-box')).toBe(false);
+		// First on the band's line and empty, so it moves nothing it precedes.
+		expect(carriers[0]?.parentElement?.firstElementChild).toBe(carriers[0]);
+		expect(carriers[0]?.childNodes).toHaveLength(0);
+	});
+
+	it('draws the tag line on a band nothing pushed at, stamped as nothing', () => {
+		// So a band is the same box with a form on as off.
+		const el = drawn((base) => ({ ...base, derived: 'mod(value + mod.self)' }), 'elsewhere += 1');
+		const line = el.querySelector<HTMLElement>('.sheetsmith-roster-band-inner > .sheetsmith-roster-band-tag-line');
+		expect(line).not.toBeNull();
+		expect(line?.parentElement?.firstElementChild).toBe(line);
 		expect(el.querySelector('[data-sheetsmith-tag-box]')).toBeNull();
+		expect(el.querySelector('[data-sheetsmith-box]')).toBeNull();
+	});
+
+	it('names the band row and its tag line from the reading where there is no effective', () => {
+		const el = drawn(({ effective: _effective, ...base }) => ({ ...base, derived: 'mod(value + mod.self)' }));
+		const reading = el.querySelector<HTMLElement>('.sheetsmith-card-derived');
+		expect(reading?.getAttribute('data-sheetsmith-name')).toBe('abilities.STR');
+		const band = reading?.closest('[data-sheetsmith-box]');
+		expect(band?.tagName).toBe('TR');
+		const carrier = el.querySelector<HTMLElement>('[data-sheetsmith-tag-box]');
+		expect(carrier?.classList.contains('sheetsmith-roster-band-tag-line')).toBe(true);
+		expect(carrier?.closest('tr')).toBe(band);
 	});
 
 	it('moves the reading and not the score for an `=` push, so the reading names the card', () => {
