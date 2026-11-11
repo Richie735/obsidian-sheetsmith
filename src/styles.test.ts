@@ -2671,6 +2671,163 @@ const heavier = (a: [number, number, number], b: [number, number, number]) =>
 const same = (a: [number, number, number], b: [number, number, number]) =>
 	a.join() === b.join();
 
+describe('a rule reads the class that says why, never the elements drawn', () => {
+	/*
+	 * `docs/PATTERNS.md` §5, "A stamped class, not `:has()`". The case this
+	 * holds is the one that shipped: `:has(tfoot)` and `:has(> thead)` asked
+	 * whether a foot or a heading row had been drawn, where `table.ts` and
+	 * `roster.ts` already knew why and now say so in a class. A `:has()` whose
+	 * argument reads structure alone can only be reading what is drawn, so it is
+	 * refused wherever it sits, not only in the form tint's rules where it was
+	 * first caught. Structure is element names, `*`, combinators, the structural
+	 * pseudo-classes (`STRUCTURAL` below), and `:not()`, `:is()` or `:where()`
+	 * over arguments that are themselves structure alone: `:has(> tbody >
+	 * tr:only-child)` and `:has(> :not(thead))` are refused as `:has(tfoot)` is.
+	 *
+	 * Narrow on purpose. A class, an attribute, an id or a state pseudo-class
+	 * (`:focus`, `:checked`) anywhere in the argument lets it through, because
+	 * such a `:has()` can be either kind, and which is a judgement the PATTERNS
+	 * entry makes and `docs/BACKLOG.md` § Patterns records, not one a pattern
+	 * over the text can.
+	 */
+
+	/** The argument of every `:has(` in one selector, its parentheses counted. */
+	const hasArguments = (selector: string): string[] => {
+		const found: string[] = [];
+		for (let at = selector.indexOf(':has('); at !== -1; at = selector.indexOf(':has(', at + 1)) {
+			const from = at + ':has('.length;
+			let depth = 1;
+			let to = from;
+			while (to < selector.length && depth > 0) {
+				if (selector[to] === '(') depth += 1;
+				else if (selector[to] === ')') depth -= 1;
+				to += 1;
+			}
+			found.push(selector.slice(from, to - 1).trim());
+		}
+		return found;
+	};
+	/** The pseudo-classes that read only where an element sits among its siblings. */
+	const STRUCTURAL = new Set([
+		'first-child',
+		'last-child',
+		'only-child',
+		'first-of-type',
+		'last-of-type',
+		'only-of-type',
+		'nth-child',
+		'nth-last-child',
+		'nth-of-type',
+		'nth-last-of-type',
+		'empty',
+		'root',
+	]);
+	/** Pseudo-classes whose argument is a selector list, read the same way. */
+	const LOGICAL = new Set(['not', 'is', 'where']);
+	/** Where the parenthesis opened just before `from` closes. */
+	const closing = (text: string, from: number): number => {
+		let depth = 1;
+		let at = from;
+		while (at < text.length && depth > 0) {
+			if (text[at] === '(') depth += 1;
+			else if (text[at] === ')') depth -= 1;
+			at += 1;
+		}
+		return at - 1;
+	};
+	/**
+	 * Whether `text` reads structure and nothing else: no class, attribute or
+	 * id, and no pseudo-class but the structural ones and `:not()`/`:is()`/
+	 * `:where()` over structure. An `An+B of S` argument is read for its `S`.
+	 */
+	const structureOnly = (text: string): boolean => {
+		for (let at = 0; at < text.length; at++) {
+			const char = text[at];
+			if (char === '.' || char === '[' || char === '#') return false;
+			if (char !== ':') continue;
+			if (text[at + 1] === ':') return false;
+			const name = /^[\w-]+/.exec(text.slice(at + 1))?.[0] ?? '';
+			let next = at + 1 + name.length;
+			if (!STRUCTURAL.has(name) && !LOGICAL.has(name)) return false;
+			if (text[next] === '(') {
+				const end = closing(text, next + 1);
+				const inner = text.slice(next + 1, end);
+				if (LOGICAL.has(name)) {
+					if (!selectorList(inner).every(structureOnly)) return false;
+				} else {
+					const of = /\bof\b/.exec(inner);
+					if (of !== null && !structureOnly(inner.slice(of.index + 2))) return false;
+				}
+				next = end + 1;
+			}
+			at = next - 1;
+		}
+		return true;
+	};
+	/** The `:has()` arguments in `selector` that read structure and nothing else. */
+	const drawnOnly = (selector: string): string[] =>
+		hasArguments(selector).filter((argument) => selectorList(argument).every(structureOnly));
+
+	/** Every selector in `text` holding such a `:has()`, at-rule blocks included. */
+	const offenders = (text: string): string[] =>
+		rules(text).flatMap((rule) =>
+			selectorList(rule.selector).filter((selector) => drawnOnly(selector).length > 0),
+		);
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	it('has no `:has()` reading which elements are drawn', () => {
+		expect(offenders(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('would notice one', () => {
+		// §10: the walk read the stylesheet and went inside its at-rule blocks,
+		// so an empty list above is a finding. Neither fact rests on a `:has()`
+		// the stylesheet holds today, since retiring those is the backlog's aim.
+		expect(all.length).toBeGreaterThan(1000);
+		expect(all.some((rule) => rule.context.length > 0)).toBe(true);
+		// And the same walk reports one planted inside an at-rule, one listed
+		// beside a clean selector, and none in a clean rule.
+		expect(
+			offenders(
+				'@media (forced-colors: active) { .sheetsmith-view .sheetsmith-table:has(> tfoot) td { color: Highlight; } }\n' +
+					'.sheetsmith-a, .sheetsmith-table:has(thead) th { color: red; }\n' +
+					'.sheetsmith-table:has(> tbody > tr:only-child) td { color: red; }\n' +
+					'.sheetsmith-table:has(> :not(thead)) td { color: red; }\n' +
+					'.sheetsmith-b:has(> .sheetsmith-c[hidden]) { color: red; }',
+			),
+		).toEqual([
+			'.sheetsmith-view .sheetsmith-table:has(> tfoot) td',
+			'.sheetsmith-table:has(thead) th',
+			'.sheetsmith-table:has(> tbody > tr:only-child) td',
+			'.sheetsmith-table:has(> :not(thead)) td',
+		]);
+		for (const selector of [
+			'.sheetsmith-table:has(> tfoot) td',
+			'.sheetsmith-table:has(thead)',
+			'.sheetsmith-table:not(:has( > thead )) td',
+			'tr:has(+ tr) > td',
+			'.sheetsmith-table:has(> tbody > tr:nth-child(2n + 1):last-child) td',
+			'.sheetsmith-table:has(> :is(thead, tfoot)) td',
+			'.sheetsmith-table:has(> tbody > tr:nth-child(1 of :not(:empty))) td',
+		]) {
+			expect(drawnOnly(selector), selector).not.toEqual([]);
+		}
+		// And the reading it leaves to judgement: a class, an attribute, a state.
+		for (const selector of [
+			'.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])',
+			'.sheetsmith-table:has(.sheetsmith-note-mark) td',
+			'tr:has(+ tr.sheetsmith-in-play) > td',
+			'.sheetsmith-x:has(> button:focus)',
+			'.sheetsmith-table:has(> :not(.sheetsmith-x))',
+			'.sheetsmith-table:has(> tbody > tr:last-child.sheetsmith-in-play)',
+			'.sheetsmith-table:has(> tbody > tr:nth-child(1 of .sheetsmith-in-play))',
+			'.sheetsmith-x:has(> :is(input:checked))',
+		]) {
+			expect(drawnOnly(selector), selector).toEqual([]);
+		}
+	});
+});
+
 describe('no two rules declare the same body', () => {
 	/*
 	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
@@ -5120,8 +5277,9 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		for (const property of ['border-end-start-radius', 'border-end-end-radius']) {
 			expect(corner(property)[0]?.selector).toContain(':not(.sheetsmith-table-wrapper-boxed)');
 		}
-		// The corners are read from the classes that say why, never from `:has()`.
-		for (const rule of tint) expect(rule.selector, rule.selector).not.toMatch(/:has\(\s*>?\s*t(?:head|foot)\s*\)/);
+		// That the corners are read from those classes rather than `:has()` is
+		// held stylesheet-wide: "a rule reads the class that says why, never the
+		// elements drawn".
 	});
 
 	it('bends the forced-colors rules at the corner on a layer that takes the radius', () => {
