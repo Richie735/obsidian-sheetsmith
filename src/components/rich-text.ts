@@ -363,8 +363,8 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		// each anchor as it makes it, and the app's renderer makes its own, so
 		// without this a wikilink worked in a unit test and in the harness and did
 		// nothing in Obsidian. Delegated, so it survives the renderer replacing what
-		// it drew, and harmless on the fallback path — that painter's anchors call
-		// `stopPropagation`, so this never sees them twice.
+		// it drew, and harmless on the fallback path — that painter's anchors are
+		// wired where they are painted, and the layer skips them.
 		adoptRenderedLinks(rendered, context.link);
 
 		/*
