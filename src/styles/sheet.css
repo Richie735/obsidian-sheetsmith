@@ -2197,9 +2197,9 @@
    the total; the control's rule then separates the foot from the control.
 
    `.sheetsmith-table-has-totals`, stamped by `table.ts` from the same
-   `column.total` test that decides whether to draw a `tfoot` at all. It was
-   `:has(tfoot)`, which read the drawn element rather than the reason it was
-   drawn; both are one derivation from `columns`, so nothing is lost but the
+   `column.total` test that decides whether to draw a `tfoot` at all, where this
+   was `:has(tfoot)` (`docs/PATTERNS.md` §5). The class and the foot are two
+   derivations of that one test from `columns`, so what is lost is the
    guarantee that they cannot disagree. */
 .sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child th,
 .sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child td {
@@ -10283,9 +10283,8 @@ a.sheetsmith-notice-action {
    scroller sits in an open table's box with the add control under it; the
    first body row is at the top corners when no heading row is drawn
    (`sheetsmith-table-headless`, which Roster stamps from `hideColumnHeadings`).
-   Classes rather than `:has()`, so each rule reads why the row is at a corner
-   rather than the elements drawn around it. The same in a plain Table and in a
-   Roster, shared or a card's mini table. */
+   Classes rather than `:has()` (`docs/PATTERNS.md` §5). The same in a plain
+   Table and in a Roster, shared or a card's mini table. */
 .sheetsmith-view .sheetsmith-table-wrapper:not(.sheetsmith-table-wrapper-boxed)
 	> .sheetsmith-table:not(.sheetsmith-table-has-totals) > tbody > tr.sheetsmith-in-play:last-child > :first-child {
 	border-end-start-radius: calc(var(--radius-m) - 1px);
