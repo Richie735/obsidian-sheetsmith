@@ -376,9 +376,19 @@ named for `recordName`, opens it, and lands focus in its name field. Beside it
 in the foot, in the same clothes and split by a hairline, **Back to play**. Delete arms, then commits; deleting the active form leaves no
 form active. Reordering is not offered: the note is the order.
 
-**No exclusive configured** (a companion block): no picker and no faces. Every
-record's stat block is drawn in turn, the first open, as the library draws
-them, and every record's modifiers apply.
+**No exclusive configured** (a companion block): no picker, and every record's
+modifiers apply. **Amended by owner ruling, 2026-11-11**
+(`docs/features/stat-block-companion-face.md`): the block has two faces on the
+picker's own mechanism. **At rest it reads as In play does.** Every record is
+drawn in turn, the first open, each stat block read: empty zones stay out, a
+`collapsed` zone is closed, and HP's field and steppers, a toggle's ring and the
+prose's press stay live. **Its editing sits behind one press** in the foot,
+**Edit <noun>s**, which draws the records as the library draws them (rename,
+delete, add, table cells as fields, features, modifiers, Picture) until
+**Done**. This is a visible change: every layout without `exclusive` now opens on
+the reading face. No layout in the owner's own vault has a companion block, so
+it reaches only the test vault's variations. The note does not change. *(Was: no
+picker and no faces, every record drawn as the library draws it.)*
 
 **Empty states.** No forms at all: *No forms yet.* and an **Add form** button,
 which adds one and switches to **Every form**. Forms but none active: *No form
