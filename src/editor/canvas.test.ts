@@ -10,6 +10,7 @@ import { richText } from '../components/rich-text';
 import { RenderContext } from '../types';
 import { getComponent, listComponentTypes } from '../components';
 import { entryConfig } from '../test/palette-entry';
+import { appRenderedLink } from '../test/rendered-link';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, isContainer } from '../types';
 
@@ -900,17 +901,18 @@ describe('prose on the canvas', () => {
 		expect(removed.mock.calls.map((call) => call[0])).toEqual(added.mock.results.slice(0, 10).map((result) => result.value as Component));
 	});
 
-	it('selects from the overlay over a rendered link, follows nothing, and hands over no link context', async () => {
-		// A renderer that draws what the app's does for a wikilink, so there is an
-		// anchor under the overlay to not follow.
+	/**
+	 * A renderer that draws what the app's does for a wikilink, one per render,
+	 * so there is an anchor under the overlay to not follow.
+	 */
+	const rendersSampleLink = () =>
 		vi.spyOn(MarkdownRenderer, 'render').mockImplementation(async (_app, _markdown, into) => {
 			await Promise.resolve();
-			into.createEl('p').createEl('a', {
-				cls: 'internal-link',
-				text: 'Sample note',
-				attr: { href: 'Sample note', 'data-href': 'Sample note' },
-			});
+			appRenderedLink(into.createEl('p'), 'Sample note');
 		});
+
+	it('selects from the overlay over a rendered link, follows nothing, and hands over no link context', async () => {
+		rendersSampleLink();
 		const seen: RenderContext[] = [];
 		const real = richText.render.bind(richText);
 		vi.spyOn(richText, 'render').mockImplementation((container, config, data, context) => {

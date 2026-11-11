@@ -7,6 +7,7 @@ import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
+import { appRenderedLink } from '../test/rendered-link';
 
 const config: RichTextConfig = {
 	id: 'backstory',
@@ -615,17 +616,7 @@ describe('richText.render — the layer answers presses because it scrolls', () 
 	const appRenders =
 		(target: string, external = false) =>
 		(_markdown: string, into: HTMLElement, _onFailure: () => void) => {
-			const anchor = into.ownerDocument.createElement('a');
-			anchor.setAttribute('href', target);
-			// `className`, not `classList.add`, and deliberately: `styles.test.ts`
-			// scans every `.ts` under `src/` for the plugin claiming an unprefixed
-			// class, and this is a fake of *Obsidian's* output rather than anything
-			// the plugin paints. Widening that guard's `BORROWED` list to let a test
-			// double through would weaken it for the next real one.
-			anchor.className = external ? 'external-link' : 'internal-link';
-			if (!external) anchor.setAttribute('data-href', target);
-			anchor.textContent = target;
-			into.appendChild(anchor);
+			appRenderedLink(into, target, { external });
 		};
 
 	it('opens a link the *app* rendered, which is the only path that ships', () => {
