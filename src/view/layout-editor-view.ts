@@ -21,6 +21,7 @@
  */
 
 import {
+	Component,
 	FileView,
 	TAbstractFile,
 	TFile,
@@ -318,6 +319,14 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 
 	get collapsed(): ReadonlySet<string> {
 		return this.folded;
+	}
+
+	/**
+	 * This view, which is a `Component` as the sheet view is, so the canvas's
+	 * and the picker's markdown passes are children of the pane and go with it.
+	 */
+	get markdownOwner(): Component {
+		return this;
 	}
 
 	/**

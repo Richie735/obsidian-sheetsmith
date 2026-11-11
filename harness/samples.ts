@@ -926,14 +926,15 @@ export const SAMPLES: Sample[] = [
 	 * 4. **Session notes**, 6×1, labelled and empty. The placeholder is the whole
 	 *    empty state: one click from typing, and no error anywhere.
 	 *
-	 * **The harness passes no `renderMarkdown`**, deliberately, so what is drawn
-	 * is the fallback: paragraphs with their wikilinks live and no other markdown.
-	 * A second markdown implementation in the stub would drift from Obsidian's,
-	 * and this repository's whole point is not to have one. The cost is bounded
-	 * and stated — how a *rendered* heading, list or embed sits inside the box is
-	 * the one part of this component reviewed in Obsidian rather than here — and
-	 * the list in the backstory below is on purpose: its hyphens show, which is
-	 * exactly what the fallback promises and the app will not.
+	 * **The harness draws this prose through the plugin's own markdown pass**,
+	 * over a stand-in for the app's renderer installed where that renderer sits
+	 * (`harness/stand-in-markdown.ts`), so the backstory's list below draws as a
+	 * list and its bold as bold, on the sheet and on the canvas alike. **The
+	 * stand-in is not Obsidian's renderer**: it knows paragraphs, `- ` lists,
+	 * emphasis and wikilinks and nothing else, so how a *rendered* heading,
+	 * embed or callout sits inside the box is reviewed in Obsidian only. The
+	 * fallback, with its hyphens showing, is what `renderer=none` draws, which is
+	 * what a render the app rejected draws too.
 	 */
 	{
 		config: {
@@ -4619,6 +4620,71 @@ export function notesSamples(): Sample[] {
 				'| Gauntlets | checks_cards.STR += note: Advantage on grapples | yes | a note at a stat card |',
 				'| Athlete | checks_cards.athletics += note: Climbing costs no extra movement | yes | a note at a roster level cell |',
 				'| Torn charm | checks.stealth += when Hidden note: Reroll a failed check | yes | a condition that will not resolve |',
+			].join('\n'),
+		},
+	];
+}
+
+/**
+ * Prose with marks in it, on both surfaces, for
+ * `docs/features/canvas-renders-markdown.md`: a Rich text block and a Stat
+ * block with a features zone, the two whose marks the feature is about.
+ *
+ * On the sheet each draws its body here, through the plugin's own pass over the
+ * harness's stand-in renderer: bold, an italic run, a `- ` list, a link that
+ * resolves and the one that does not (`MISSING_NOTE`, `Torch of Revealing`). In
+ * the editor (`surface=editor&state=markdown`) the canvas draws each component's
+ * own *sample* through the same pass, which is the comparison the feature's
+ * shots exist for: the same elements, `strong`, `em`, `ul` and a faint anchor,
+ * on both. The block is `exclusive`, so its sampled first form is the one In
+ * play draws, features zone and all.
+ */
+export function markdownSamples(): Sample[] {
+	return [
+		{
+			config: {
+				id: 'prose',
+				type: 'rich-text',
+				label: 'Backstory',
+				position: { col: 1, row: 1, width: 6, height: 4 },
+			},
+			body: [
+				'',
+				'Born in [[Neverwinter]], and **apprenticed young** to a swordsman who taught very little else.',
+				'',
+				'- Owes a debt nobody has written down',
+				'- Carries a letter, *unopened*',
+				'',
+				'There is also the matter of the [[Torch of Revealing]], which nobody has seen.',
+				'',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'prose_forms',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 7, row: 1, width: 6, height: 4 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'HP', type: 'number', maxSource: 'record' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'actions', type: 'features', heading: 'Actions' }],
+			} as ComponentConfig,
+			body: [
+				'',
+				'### Brown Bear',
+				'```sheet',
+				'Active: yes',
+				'HP: 34 / 34',
+				'```',
+				'',
+				'#### Actions',
+				'',
+				'**Multiattack.** The bear makes *two* attacks, one with its bite and one with its claws.',
+				'',
 			].join('\n'),
 		},
 	];

@@ -7,6 +7,7 @@ import { parseModifierPart } from '../parse/modifier-cell';
 import { outcomeView } from '../test/modifier-views';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { formsSamples } from '../../harness/samples';
+import { sampleOf } from '../test/sample';
 
 /*
  * Stat block (`docs/features/character-forms.md`): one form at a time over a
@@ -1847,8 +1848,20 @@ describe('a layout edit to the zones', () => {
 	});
 });
 
+describe('the sample of a zoned block', () => {
+	it('gives a features entry an emphasis run in its body, under its bold name', () => {
+		// The canvas renders an entry as the sheet does, so the sample holds an
+		// entry's own marks for an author to see there.
+		const body = sampleOf(statBlock, ZONED);
+		const entry = read(body, ZONED).records[0]?.zones?.actions;
+		const first = entry?.type === 'features' ? entry.entries[0] : undefined;
+		expect(first?.name).toBe('Sample');
+		expect(first?.source).toMatch(/^\*\*Sample\.\*\* .*\*[^*]+\*/);
+	});
+});
+
 describe('a features entry with no app to render it', () => {
-	it('draws the parsed name bold and run in, with no marks, as the canvas shows it', () => {
+	it('draws the parsed name bold and run in, with no marks, as a host with no renderer shows it', () => {
 		const { el } = zoned(BEAR, {}, { renderMarkdown: undefined });
 		const entries = Array.from(el.querySelectorAll('.sheetsmith-stat-block-entry'));
 		expect(entries[1]?.querySelector('p > strong')?.textContent).toBe('Roar (1/Day).');

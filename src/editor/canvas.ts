@@ -42,6 +42,8 @@ import { componentsInside, WalkEntry } from '../parse/layout-walk';
 import { ComponentConfig, isContainer, placesChildren } from '../types';
 import { getComponent } from '../components';
 import { innerPlacement, renderGrid, walkLayout } from '../view/grid-cells';
+import { LinkSource } from '../view/link-resolution';
+import { MarkdownPasses } from '../view/markdown-pass';
 import { focusToken } from './focus-token';
 import { readSample } from './sample-read';
 import { describeCell, findOverlaps } from './preview-grid';
@@ -65,7 +67,7 @@ export function previewToken(id: string): string {
  * for either. `selection` is read rather than cached, on `LayoutEditorHost`'s
  * own rule: a copy is a second answer to "what is selected."
  */
-export interface CanvasHost {
+export interface CanvasHost extends LinkSource {
 	persist(): void;
 	persistSoon(): void;
 	syncPositionFields(config: ComponentConfig): void;
@@ -88,6 +90,18 @@ export interface CanvasHost {
 	 * disagree the first time one of them was updated without the other.
 	 */
 	readonly sampleValues: boolean;
+	/**
+	 * The lifecycle the canvas's prose renders in: the sheet's own module, one
+	 * pass per draw (`docs/features/canvas-renders-markdown.md`). The passes
+	 * object rather than a `renderMarkdown`, because the canvas decides when a
+	 * pass begins — every draw, a drag's redraws included — and a function
+	 * handed over once would be one pass for the pane's whole life.
+	 *
+	 * Resolved against `sourcePath`, the open layout file: the canvas draws
+	 * samples, not a character, so the layout is the one vault path the drawing
+	 * belongs to.
+	 */
+	readonly markdown: MarkdownPasses;
 }
 
 /**
@@ -144,6 +158,12 @@ export class Canvas {
 
 		el.empty();
 		this.schematics = [];
+		// Before anything draws, so a render the last draw started — for a layout
+		// a drag has since moved — is cleared rather than appended into a cell
+		// that is gone (`view/markdown-pass.ts`).
+		const renderMarkdown = this.host.markdown.begin(this.host.sourcePath, (target) =>
+			this.host.resolves(target),
+		);
 
 		const walk = walkLayout(layout.components);
 		this.ensureSelectionVisible(walk, this.host.selection);
@@ -189,6 +209,12 @@ export class Canvas {
 				// would reach this. There is no character behind the canvas
 				// for an edit to land on.
 				onChange: () => undefined,
+				// Prose drawn as the sheet draws it, because an author judges the
+				// layout against this. **No `link`**: a press here selects and drags
+				// (`docs/UI.md` §6–§7), so the anchors the renderer draws are drawn,
+				// never followed, on any modifier — and they sit in the subtree
+				// `markInert` takes out of reach, under the overlay.
+				renderMarkdown,
 				activeTab: this.activeTab.get(config.id),
 				onActivateTab: (index: number) => this.activeTab.set(config.id, index),
 			};

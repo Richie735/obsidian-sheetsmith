@@ -9,7 +9,7 @@ import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/m
 import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
 import { CardConfig } from '../components/card';
 import { cardSet, CardSetConfig } from '../components/card-set';
-import { App, Notice, Platform } from '../test/obsidian-stub';
+import { App, MarkdownRenderer, Notice, Platform } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { pressDown, release } from '../test/pointer';
 import { openView, showFile } from '../test/workspace';
@@ -632,6 +632,26 @@ describe('the component picker', () => {
 		pick(harness, 'group');
 		const group = harness.container.querySelector('.sheetsmith-picker-preview');
 		expect(group?.querySelectorAll('.sheetsmith-subgrid .sheetsmith-cell')).toHaveLength(2);
+	});
+
+	it("draws a Rich text preview through the app's renderer, and a second preview ends the first's render", async () => {
+		// Before the render lands, so the next line's repaint begins a pass that
+		// ends this one: its render must land nowhere.
+		pick(harness, 'rich-text');
+		const first = harness.container.querySelector('.sheetsmith-picker-preview .sheetsmith-rich-text-rendered');
+		expect(first).not.toBeNull();
+		pick(harness, 'card');
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+		expect(first?.childNodes).toHaveLength(0);
+
+		pick(harness, 'rich-text');
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+		const rendered = harness.container.querySelector('.sheetsmith-picker-preview .sheetsmith-rich-text-rendered');
+		// The stub renderer's one paragraph holding the whole source, which the
+		// fallback, splitting paragraphs, never draws.
+		const paragraphs = rendered?.querySelectorAll('p') ?? [];
+		expect(paragraphs).toHaveLength(1);
+		expect(paragraphs[0]?.textContent).toContain('**paragraph**');
 	});
 
 	it('inserts a bare type empty, never with its example', async () => {
@@ -7165,5 +7185,56 @@ describe('renaming a component id', () => {
 		expect(Notice.messages.join(' ')).not.toContain('"bag"');
 		const labelRow = control(harness, 'label-bag').closest('.setting-item');
 		expect(labelRow?.textContent?.toLowerCase()).not.toContain(' id');
+	});
+});
+
+/*
+ * The pane's own wiring of the canvas's markdown pass
+ * (`docs/features/canvas-renders-markdown.md`, Question 1): the open layout
+ * file's path and the plugin's own vault, through `view/link-resolution.ts`.
+ * `canvas.test.ts` drives the pass against a fake host that resolves nothing,
+ * so this is the one case where the production answer is asked.
+ */
+describe('prose on the pane\'s canvas', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('renders against the open layout file, and resolves its links against the vault', async () => {
+		// A renderer drawing two anchors whatever it is handed, as the app draws a
+		// wikilink: one to a note the vault holds, one to a note nobody wrote.
+		const render = vi
+			.spyOn(MarkdownRenderer, 'render')
+			.mockImplementation(async (_app, _markdown, into) => {
+				await Promise.resolve();
+				const p = into.createEl('p');
+				for (const target of ['Sample note', 'Nobody wrote this']) {
+					p.createEl('a', { cls: 'internal-link', text: target, attr: { href: target, 'data-href': target } });
+				}
+			});
+		const layout = fixture();
+		layout.components.push({
+			id: 'backstory',
+			type: 'rich-text',
+			label: 'Backstory',
+			position: { col: 1, row: 20, width: 6, height: 3 },
+		});
+		harness = await open(layout);
+		await harness.app.vault.create('Sample note.md', '');
+		await harness.redraw();
+		await tick();
+
+		const anchors = Array.from(
+			harness.container.querySelectorAll<HTMLElement>(
+				'.sheetsmith-editor-canvas .sheetsmith-rich-text-rendered a.internal-link',
+			),
+		);
+		const unresolved = (target: string) =>
+			anchors.find((anchor) => anchor.dataset.href === target)?.classList.contains('is-unresolved');
+		expect(anchors.length).toBeGreaterThan(1);
+		expect(unresolved('Sample note')).toBe(false);
+		expect(unresolved('Nobody wrote this')).toBe(true);
+		expect(render).toHaveBeenCalled();
+		for (const call of render.mock.calls) expect(call[3]).toBe(harness.path);
 	});
 });

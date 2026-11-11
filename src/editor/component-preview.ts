@@ -47,6 +47,7 @@ import { Layout } from '../parse/layout';
 import { getComponent, listComponentTypes } from '../components';
 import { ComponentConfig, GridPosition, isContainer, placesChildren } from '../types';
 import { renderGrid, walkLayout } from '../view/grid-cells';
+import { RenderMarkdown } from '../view/markdown-pass';
 import { PickerChoice } from './picker-catalog';
 import { readSample } from './sample-read';
 
@@ -119,8 +120,18 @@ function previewConfig(choice: PickerChoice): ComponentConfig {
  *
  * `into` is made `inert` and `aria-hidden` here rather than by the caller, so
  * no caller can draw a preview that a keyboard or a screen reader reaches.
+ *
+ * `renderMarkdown` is the caller's pass, begun for this draw: the picker owns
+ * the lifecycle, as the canvas owns its own, so a canvas redraw cannot end a
+ * preview's render or the other way round. Required, because a preview drawing
+ * a sample's prose as source beside a canvas drawing it rendered is the drift
+ * `sample-read.ts` exists to prevent.
  */
-export function renderComponentPreview(into: HTMLElement, choice: PickerChoice): void {
+export function renderComponentPreview(
+	into: HTMLElement,
+	choice: PickerChoice,
+	renderMarkdown: RenderMarkdown,
+): void {
 	into.replaceChildren();
 	into.toggleAttribute('inert', true);
 	into.setAttribute('aria-hidden', 'true');
@@ -145,6 +156,8 @@ export function renderComponentPreview(into: HTMLElement, choice: PickerChoice):
 		// There is no character behind a preview for an edit to land on, and
 		// `inert` already stops the press that would reach this.
 		onChange: () => undefined,
+		// No `link`, on the canvas's terms: drawn, never followed.
+		renderMarkdown,
 		onActivateTab: () => undefined,
 	}));
 }

@@ -1,6 +1,5 @@
 import {
 	App,
-	getLinkpath,
 	HoverPopover,
 	Keymap,
 	type Menu,
@@ -59,6 +58,7 @@ import { capturePosture, restorePosture } from './sheet-posture';
 import { attachFileSuggest, FileSuggest } from './file-suggest';
 import { renderGrid, walkLayout } from './grid-cells';
 import { MarkdownPasses } from './markdown-pass';
+import { linkDestination, resolvesLink } from './link-resolution';
 import { renderMissingLayout } from './missing-layout';
 import { openResetConfirmation } from './reset-confirmation';
 import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
@@ -858,11 +858,7 @@ export class SheetView extends TextFileView {
 	private linkContext(): LinkContext {
 		const source = this.file?.path ?? '';
 		return {
-			resolves: (target) =>
-				this.app.metadataCache.getFirstLinkpathDest(
-					getLinkpath(target),
-					source,
-				) !== null,
+			resolves: (target) => resolvesLink(this.app, target, source),
 			open: (target, event) => {
 				// The modifier that means "new tab" is the app's to define, not a
 				// component's — which is half the reason this is passed in.
@@ -891,18 +887,15 @@ export class SheetView extends TextFileView {
 	 * A URL for a file a component names, or null where the vault holds no such
 	 * file.
 	 *
-	 * `linkContext`'s `resolves` with one more step on the end, and resolved
-	 * against the same source path, so an embed in a section means what it would
-	 * mean written in the note body. **No extension list, deliberately** — the app
+	 * Through `linkDestination`, the lookup `linkContext`'s `resolves` asks too,
+	 * and against the same source path, so an embed in a section means what it
+	 * would mean written in the note body. **No extension list, deliberately** — the app
 	 * answers whether the file exists and the browser answers whether it can draw
 	 * it, and a plugin holding its own idea of which formats count is how webp
 	 * stopped rendering inside one while working one line outside it.
 	 */
 	private resourceUrl(target: string): string | null {
-		const file = this.app.metadataCache.getFirstLinkpathDest(
-			getLinkpath(target),
-			this.file?.path ?? '',
-		);
+		const file = linkDestination(this.app, target, this.file?.path ?? '');
 		return file ? this.app.vault.getResourcePath(file) : null;
 	}
 

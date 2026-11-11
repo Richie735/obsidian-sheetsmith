@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { App, Component } from 'obsidian';
 import { Canvas, CanvasHost } from './canvas';
+import { MarkdownPasses } from '../view/markdown-pass';
+// The failure hook is the stub's own and not Obsidian's API, so it comes from
+// the scaffolding rather than the alias, as `markdown-pass.test.ts` takes it.
+import { MarkdownRenderer } from '../test/obsidian-stub';
+import { richText } from '../components/rich-text';
+import { RenderContext } from '../types';
 import { getComponent, listComponentTypes } from '../components';
 import { entryConfig } from '../test/palette-entry';
 import { Layout } from '../parse/layout';
@@ -29,13 +36,25 @@ import { ComponentConfig, isContainer } from '../types';
  * with sample values off the canvas is byte-for-byte what it was before
  * `sample` existed — so the sample cases below pass `true` where they mean it.
  */
+/** The layout file a fake host says is open, which the canvas's prose resolves against. */
+const LAYOUT_PATH = 'Sheetsmith layouts/Canvas fixture.sheetsmith';
+
 function fakeHost(
 	selection = '',
 	sampleValues = false,
-): CanvasHost & { selected: string; samples: boolean } {
+	app: App = new App(),
+): CanvasHost & { selected: string; samples: boolean; owner: Component } {
+	// Loaded, as the app loads the pane that owns the passes.
+	const owner = new Component();
+	owner.load();
 	const host = {
 		selected: selection,
 		samples: sampleValues,
+		owner,
+		markdown: new MarkdownPasses(owner, app),
+		sourcePath: LAYOUT_PATH,
+		// No vault behind a fake host, so no link resolves.
+		resolves: () => false,
 		persist: () => undefined,
 		persistSoon: () => undefined,
 		syncPositionFields: () => undefined,
@@ -420,8 +439,11 @@ describe('the canvas filled with sample values', () => {
 						?.parentElement;
 					// The values a control holds are not in `innerHTML`, so both
 					// go into the comparison — an input's value is exactly what a
-					// sample changes on a card.
-					const values = Array.from(cell?.querySelectorAll('input') ?? [])
+					// sample changes on a card, and a textarea's is the only
+					// change a prose block shows before its render lands.
+					const values = Array.from(
+						cell?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea') ?? [],
+					)
 						.map((input) => input.value)
 						.join('|');
 					return [config.id, `${cell?.innerHTML ?? ''}${values}`];
@@ -758,5 +780,170 @@ describe('the mark on the one block a touch may drag', () => {
 		const spells = el.querySelector('[data-sheetsmith-focus="preview-spells"]');
 		expect(spells?.classList.contains('sheetsmith-preview-editing')).toBe(true);
 		expect(marked(el)).toEqual([]);
+	});
+});
+
+/*
+ * Prose drawn by the app's renderer, as the sheet draws it
+ * (`docs/features/canvas-renders-markdown.md`). The stub's renderer writes the
+ * source into one `<p>` a microtask later, which is enough to say whether a
+ * render landed, whose pass it landed in, and that the fallback did not run —
+ * the fallback splits paragraphs, so a `<p>` holding the whole source, list
+ * and all, is the renderer's and nobody else's.
+ */
+describe('prose on the canvas', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	/** Every render the pass started, landed: the renderer, the catch, the then. */
+	const settle = () => new Promise((resolve) => window.setTimeout(resolve, 0));
+
+	const backstory = () =>
+		component({
+			id: 'backstory',
+			type: 'rich-text',
+			label: 'Backstory',
+			position: { col: 1, row: 1, width: 6, height: 3 },
+		});
+	const forms = () =>
+		component({
+			id: 'forms',
+			type: 'stat-block',
+			label: 'Forms',
+			position: { col: 1, row: 4, width: 6, height: 6 },
+			fields: [{ key: 'HP', type: 'number' }],
+			zones: [{ key: 'vitals' }, { key: 'actions', type: 'features', heading: 'Actions' }],
+		});
+	const feats = () =>
+		component({
+			id: 'feats',
+			type: 'record-set',
+			label: 'Feats',
+			position: { col: 1, row: 10, width: 6, height: 3 },
+			fields: [{ key: 'Uses', type: 'number' }],
+		});
+	const sampleOfBackstory = () => richText.sample?.(backstory() as never)?.trim() ?? '';
+
+	it("draws a Rich text sample through the app's renderer, not its fallback paragraphs", async () => {
+		const el = document.createElement('div');
+		new Canvas(fakeHost('', true)).draw(el, layoutOf(backstory()));
+		await settle();
+		const rendered = el.querySelector('.sheetsmith-rich-text-rendered');
+		const paragraphs = Array.from(rendered?.querySelectorAll('p') ?? []);
+		expect(paragraphs).toHaveLength(1);
+		// The whole source in one paragraph, marks and list included.
+		expect(paragraphs[0]?.textContent).toBe(sampleOfBackstory());
+		expect(paragraphs[0]?.textContent).toContain('**paragraph**');
+	});
+
+	it("draws a Stat block features entry and a Record set body through the renderer", async () => {
+		const el = document.createElement('div');
+		new Canvas(fakeHost('', true)).draw(el, layoutOf(forms(), feats()));
+		await settle();
+		const entry = el.querySelector('.sheetsmith-stat-block-entry');
+		// `drawEntryPlain` would have drawn the parsed name in a `strong` with
+		// no marks; the renderer is handed the entry's own source.
+		expect(entry?.querySelector('strong')).toBeNull();
+		expect(entry?.textContent).toMatch(/^\*\*Sample\.\*\* .*\*entry\*/);
+		const bodies = el.querySelectorAll('[data-sheetsmith-focus="preview-feats"] ~ * .sheetsmith-record-body-rendered');
+		expect(bodies.length).toBeGreaterThan(0);
+		for (const body of Array.from(bodies)) {
+			expect(body.classList.contains('sheetsmith-record-body-plain')).toBe(false);
+			expect(body.querySelectorAll('p')).toHaveLength(1);
+		}
+	});
+
+	it('clears the first draw\'s render and keeps the second\'s, when two draws come back to back', async () => {
+		const el = document.createElement('div');
+		const canvas = new Canvas(fakeHost('', true));
+		canvas.draw(el, layoutOf(backstory()));
+		const first = el.querySelector('.sheetsmith-rich-text-rendered');
+		canvas.redraw();
+		const second = el.querySelector('.sheetsmith-rich-text-rendered');
+		expect(second).not.toBe(first);
+		await settle();
+		expect(first?.childNodes).toHaveLength(0);
+		expect(second?.textContent).toBe(sampleOfBackstory());
+	});
+
+	it('renders against the open layout file\'s path', async () => {
+		const render = vi.spyOn(MarkdownRenderer, 'render');
+		new Canvas(fakeHost('', true)).draw(document.createElement('div'), layoutOf(backstory()));
+		await settle();
+		expect(render).toHaveBeenCalled();
+		for (const call of render.mock.calls) expect(call[3]).toBe(LAYOUT_PATH);
+	});
+
+	it('draws the fallback paragraphs where the render rejects', async () => {
+		MarkdownRenderer.failNextRender = true;
+		const el = document.createElement('div');
+		new Canvas(fakeHost('', true)).draw(el, layoutOf(backstory()));
+		await settle();
+		const rendered = el.querySelector('.sheetsmith-rich-text-rendered');
+		// The fallback's shape: a paragraph per block, the list's hyphens as text.
+		const paragraphs = Array.from(rendered?.querySelectorAll('p') ?? []).map((p) => p.textContent);
+		expect(paragraphs.length).toBeGreaterThan(1);
+		expect(paragraphs.some((text) => text?.startsWith('- A sample list item'))).toBe(true);
+	});
+
+	it('holds one pass child on its owner, never one per redraw', () => {
+		const host = fakeHost('', true);
+		const added = vi.spyOn(host.owner, 'addChild');
+		const removed = vi.spyOn(host.owner, 'removeChild');
+		const canvas = new Canvas(host);
+		canvas.draw(document.createElement('div'), layoutOf(backstory()));
+		for (let step = 0; step < 10; step++) canvas.redraw();
+		expect(added).toHaveBeenCalledTimes(11);
+		// Every pass but the last was removed when the next began.
+		expect(removed).toHaveBeenCalledTimes(10);
+		expect(removed.mock.calls.map((call) => call[0])).toEqual(added.mock.results.slice(0, 10).map((result) => result.value as Component));
+	});
+
+	it('selects from the overlay over a rendered link, follows nothing, and hands over no link context', async () => {
+		// A renderer that draws what the app's does for a wikilink, so there is an
+		// anchor under the overlay to not follow.
+		vi.spyOn(MarkdownRenderer, 'render').mockImplementation(async (_app, _markdown, into) => {
+			await Promise.resolve();
+			into.createEl('p').createEl('a', {
+				cls: 'internal-link',
+				text: 'Sample note',
+				attr: { href: 'Sample note', 'data-href': 'Sample note' },
+			});
+		});
+		const seen: RenderContext[] = [];
+		const real = richText.render.bind(richText);
+		vi.spyOn(richText, 'render').mockImplementation((container, config, data, context) => {
+			seen.push(context as RenderContext);
+			real(container, config, data, context);
+		});
+		const app = new App();
+		const hovered = vi.spyOn(app.workspace, 'trigger');
+		const host = fakeHost('', true, app);
+		const el = document.createElement('div');
+		new Canvas(host).draw(el, layoutOf(backstory()));
+		await settle();
+
+		expect(seen.length).toBeGreaterThan(0);
+		for (const context of seen) expect(context.link).toBeUndefined();
+		const anchor = el.querySelector<HTMLElement>('.sheetsmith-rich-text-rendered a.internal-link');
+		expect(anchor).not.toBeNull();
+		// Unresolved, since the fake host's vault holds nothing: the theme's faint link.
+		expect(anchor?.classList.contains('is-unresolved')).toBe(true);
+
+		// A press on the link itself is stopped in the inert subtree, and a press
+		// on the overlay over it selects.
+		// With Mod held too: no modifier follows a link here. Its default is
+		// prevented, so not even the anchor's `href` is followed, and no
+		// `link.open` exists to call `openLinkText`.
+		const press = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true });
+		anchor?.dispatchEvent(press);
+		expect(press.defaultPrevented).toBe(true);
+		anchor?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+		expect(host.selected).toBe('');
+		el.querySelector<HTMLElement>('[data-sheetsmith-focus="preview-backstory"]')?.click();
+		expect(host.selected).toBe('backstory');
+		// And a hover asks the app for no preview.
+		expect(hovered).not.toHaveBeenCalledWith('hover-link', expect.anything());
 	});
 });

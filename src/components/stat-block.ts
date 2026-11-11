@@ -780,7 +780,13 @@ function withUses(preamble: string, uses: string): string {
 	return fence + (preamble.trim() === '' ? '\n' : preamble);
 }
 
-/** What one zone holds in a sample: filler that says it is filler, on Rich text's rule. */
+/**
+ * What one zone holds in a sample: filler that says it is filler, on Rich
+ * text's rule. A features entry carries one emphasis run besides its bold name,
+ * since the canvas renders it as the sheet does and an entry's own marks are
+ * what an author should see there; a text zone stays plain prose, since one
+ * component showing each mark is enough.
+ */
 function sampleZone(zone: BodyZone, noun: string, at: number): string {
 	if (zone.type === 'table') {
 		const headers = zone.columns.map((column) => column.key);
@@ -789,7 +795,7 @@ function sampleZone(zone: BodyZone, noun: string, at: number): string {
 		);
 		return `|${headers.join('|')}|\n|${headers.map(() => '---').join('|')}|\n|${cells.join('|')}|`;
 	}
-	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${noun.toLowerCase()} shows where an entry starts.`;
+	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${noun.toLowerCase()} shows where an *entry* starts.`;
 	return `Sample text, so an open ${noun.toLowerCase()} shows where its prose starts.`;
 }
 
