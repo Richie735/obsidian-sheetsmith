@@ -933,7 +933,10 @@ repository by `AGENTS.md`'s rule, so the recipe is here):
          said the mook drew only its Skills, which In play would do and a
          block without a picker has no In play to do it in. The empty-zone rule
          is checked on Wild Shape's mook-shaped form in the harness,
-         `sheet-forms-zones-empty`.)*
+         `sheet-forms-zones-empty`.)* *(Superseded by
+         `docs/features/stat-block-companion-face.md`: a block with no
+         `exclusive` now opens on a reading face, where the mook draws only its
+         vitals and Skills, and its placeholders show behind **Edit NPCs**.)*
       10. Repeat the four fixes' checks in the app.
 
 ## Commit boundaries

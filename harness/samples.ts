@@ -4625,6 +4625,158 @@ export function notesSamples(): Sample[] {
 }
 
 /**
+ * Which companion Stat block a state draws: a block with no `exclusive`, read
+ * until **Edit** is pressed (`docs/features/stat-block-companion-face.md`). One
+ * Stat block per state, so a `press=` selector names one button.
+ *
+ * - `familiar`: an Owl with HP under its own ceiling, a Speed in words, and
+ *   Notes collapsed, long enough to scroll the box once opened;
+ * - `picture`: the same with **Picture** on and the Owl holding one, so the
+ *   open record's line carries its thumbnail after the chevron;
+ * - `mook`: a Fate block with the Thug first, open, only its Skills filled, and
+ *   Baron Corvan closed after it with every zone filled, his changes raising a
+ *   Refresh card beside the block;
+ * - `npc`: the same block with Baron Corvan first and open, the Thug closed;
+ * - `empty`: the Familiar block holding no record.
+ */
+export type CompanionVariant = 'familiar' | 'picture' | 'mook' | 'npc' | 'empty';
+
+export function companionSamples(variant: CompanionVariant): Sample[] {
+	if (variant === 'familiar' || variant === 'picture' || variant === 'empty') {
+		const pictured = variant === 'picture';
+		return [
+			{
+				config: {
+					id: 'familiar',
+					type: 'stat-block',
+					label: 'Familiar',
+					// Six rows, so the Owl's Notes, opened, run past the foot and the
+					// box scrolls.
+					position: { col: 1, row: 1, width: 6, height: 6 },
+					recordName: 'Familiar',
+					...(pictured ? { image: true } : {}),
+					fields: [
+						{ key: 'HP', type: 'number', maxSource: 'record' },
+						{ key: 'Speed', type: 'text' },
+					],
+					zones: [{ key: 'vitals' }, { key: 'notes', type: 'text', heading: 'Notes', collapsed: true }],
+				} as ComponentConfig,
+				body:
+					variant === 'empty'
+						? ''
+						: [
+								'',
+								'### Owl',
+								'```sheet',
+								'HP: 3 / 3',
+								'Speed: 5 ft., fly 60 ft.',
+								'```',
+								'',
+								...(pictured ? ['![[Owl.png]]', ''] : []),
+								'#### Notes',
+								'',
+								'***Flyby.*** The owl does not provoke opportunity attacks when it flies out of an enemy\'s reach.',
+								'',
+								'***Keen Hearing and Sight.*** The owl has advantage on Wisdom (Perception) checks that rely on hearing or sight.',
+								'',
+								'***Familiar.*** It obeys its master\'s commands, acts on its own turn, and cannot attack. It can deliver a touch spell its master casts, as if it had cast the spell.',
+								'',
+								'Found as a fledgling in the tower\'s eaves, it answers to Quill and will not sit on anyone\'s shoulder but its master\'s.',
+								'',
+							].join('\n'),
+			},
+		];
+	}
+	const thug = [
+		'### Thug',
+		'```sheet',
+		'Stress: 0 / 1',
+		'```',
+		'',
+		'#### Skills',
+		'',
+		'| Skill | Rating |',
+		'|---|---|',
+		'| Fight | 1 |',
+		'',
+	];
+	const baron = [
+		'### Baron Corvan',
+		'```sheet',
+		'Stress: 1 / 3',
+		'Mild: Bruised pride',
+		'Modifiers: refresh += 1',
+		'```',
+		'',
+		'#### Aspects',
+		'',
+		'**High concept:** Disgraced lord of the river march',
+		'',
+		'**Trouble:** My name is all I have left',
+		'',
+		'#### Skills',
+		'',
+		'| Skill | Rating |',
+		'|---|---|',
+		'| Rapport | 3 |',
+		'| Deceive | 2 |',
+		'| Will | 1 |',
+		'',
+		'#### Stunts',
+		'',
+		'**Silver Tongue.** +2 to Rapport when he speaks to a crowd.',
+		'',
+		'**Old Debts (1/Session).** He names someone who owes him, and they are in the scene.',
+		'',
+	];
+	return [
+		{
+			// What Baron Corvan's changes reach, so the changes zone has a line to
+			// read: a companion's records all apply, so his push lands here. At the
+			// grid's far end, clear of the block's frame on a wide sheet; the views'
+			// tight pad keeps it out where a narrow sheet stacks it under the block.
+			config: {
+				id: 'refresh',
+				type: 'card',
+				label: 'Refresh',
+				position: { col: 11, row: 1, width: 2, height: 1 },
+				derived: '3 + mod.self',
+				hideNote: true,
+			} as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'fate_npcs',
+				type: 'stat-block',
+				label: 'NPCs',
+				position: { col: 1, row: 1, width: 6, height: 12 },
+				recordName: 'NPC',
+				fields: [
+					{ key: 'Stress', type: 'number', maxSource: 'record' },
+					{ key: 'Mild', type: 'text' },
+					{ key: 'Moderate', type: 'text' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				zones: [
+					{ key: 'vitals' },
+					{ key: 'changes' },
+					{ key: 'aspects', type: 'text', heading: 'Aspects' },
+					{
+						key: 'skills',
+						type: 'table',
+						heading: 'Skills',
+						columns: [{ key: 'Skill' }, { key: 'Rating', type: 'number' }],
+					},
+					{ key: 'stunts', type: 'features', heading: 'Stunts' },
+				],
+			} as ComponentConfig,
+			body: ['', ...(variant === 'mook' ? [...thug, ...baron] : [...baron, ...thug])].join('\n'),
+		},
+	];
+}
+
+/**
  * Which variant of the forms sheet a state draws (`docs/features/character-forms.md`,
  * `docs/features/stat-block-zones.md`).
  *

@@ -5654,3 +5654,24 @@ describe('a placed box that scrolls says more is below', () => {
 		]);
 	});
 });
+
+describe('a stat block name is titled open or closed', () => {
+	/*
+	 * `docs/features/stat-block-companion-face.md`: a companion block's read name
+	 * takes In play's title size through the class its reading face stamps, in
+	 * the same rule as the edit face's name field, so the size never comes to
+	 * depend on whether the record is open, as a `:has()` on the chevron would.
+	 */
+	it('sizes the stamped read name beside the name field, with no open state in the selector', () => {
+		const titled = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) =>
+				rule.selector.includes('.sheetsmith-stat-block-name-read') &&
+				declarations(rule.body).includes('font-size: var(--font-ui-large)'),
+		);
+		expect(titled).toHaveLength(1);
+		const [rule] = titled;
+		expect(rule?.selector).toContain('.sheetsmith-record-name-input');
+		expect(rule?.selector).not.toContain('aria-expanded');
+		expect(rule?.selector).not.toContain(':has(');
+	});
+});

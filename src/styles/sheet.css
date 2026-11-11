@@ -8837,13 +8837,45 @@ a.sheetsmith-notice-action {
    line's rule and the closed line's summary, never by type size. It was the
    open line's alone, and a name that jumped a step on every press read as a
    second control. Still the name field: the field and its link layer both,
-   which sit exactly over each other. */
+   which sit exactly over each other. **A companion block's read name takes it
+   too** (`docs/features/stat-block-companion-face.md`), by the class its
+   reading face stamps on the plain cell rather than by open state, and past
+   `.sheetsmith-record-name-plain`'s own smaller size. Record set's plain name
+   never carries the class and keeps its size. */
 .sheetsmith-view
 	.sheetsmith-stat-block-record
 	> .sheetsmith-record-summary
-	:is(.sheetsmith-record-name-input, .sheetsmith-record-name-layer) {
+	:is(.sheetsmith-record-name-input, .sheetsmith-record-name-layer, .sheetsmith-stat-block-name-read) {
 	font-size: var(--font-ui-large);
 	font-weight: var(--font-bold);
+}
+
+/* A companion's read name in a cell of its own, in the name's track, so an
+   open record's picture sits at its inline start after the chevron and the
+   name still clips with its ellipsis beside it. */
+.sheetsmith-stat-block-line-name {
+	grid-column: 2;
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+.sheetsmith-stat-block-line-name > .sheetsmith-record-name {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* The read name is the name field's box without the field: its height, the
+   app's `--input-height`, so the open record's line and the rule under it sit
+   where the edit face's do, and Edit moves nothing. **The field's 1px
+   transparent border is folded into the padding, not copied**: forced colors
+   repaints a transparent border `CanvasText`, which would frame read text as a
+   field. The padding is the field's plus that pixel, so the text starts where
+   the field's does. */
+.sheetsmith-view .sheetsmith-record-name-plain.sheetsmith-stat-block-name-read {
+	min-height: var(--input-height);
+	padding: calc(var(--size-2-1) + 1px) calc(var(--size-2-2) + 1px);
 }
 
 /* The picker takes the line's room and **Revert** follows it, wrapping under

@@ -3124,6 +3124,8 @@ export const DEFAULTS = [
 	...formsPolishViews(),
 	// A placed box that scrolls says more is below, and says nothing at the end.
 	...placedScrollCueViews(),
+	// A companion block read until Edit, and behind it, in five presentations.
+	...companionViews(),
 	{
 		// Both on by hand: the picker's extra line, the report and both blocks.
 		name: 'sheet-forms-two-on',
@@ -3861,6 +3863,79 @@ function formsPolishViews() {
 			query: 'surface=sheet&state=forms-none-zone&text=24&theme=light',
 			size: '1400,1500',
 			frame: BLOCK,
+		},
+	];
+}
+
+/**
+ * **A companion Stat block** (`docs/features/stat-block-companion-face.md`): a
+ * block with no `exclusive`, read as In play reads at rest and edited behind
+ * **Edit**. The Familiar, the Fate mook first and the main NPC first, each at
+ * rest and behind the press (`-edit`), in light, dark, a true 380px, more
+ * contrast and forced colours, from one loop as the tint views are. Each frames
+ * the one Stat block its state draws, so a scoped shot reproduces its width.
+ * Then the Familiar's Notes opened at rest, its picture at two widths, and the
+ * empty block.
+ */
+function companionViews() {
+	const BLOCK = '.sheetsmith-stat-block';
+	// Under the 8px grid gap, so a neighbouring box's edge (the NPC states'
+	// Refresh card, stacked under the block on a narrow sheet) never reaches the
+	// frame. Every companion view takes it, so they all frame alike.
+	const PAD = 6;
+	const presentations = [
+		{ suffix: '', query: '&theme=light', size: '1400,1500' },
+		{ suffix: '-dark', query: '&theme=dark', size: '1400,1500' },
+		{ suffix: '-narrow', query: '&theme=light&width=380', size: '380,2400' },
+		{ suffix: '-contrast-more', query: '&theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-forced-colors', query: '&theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
+	];
+	const faces = [
+		{ suffix: '', press: '' },
+		{ suffix: '-edit', press: '&press=.sheetsmith-stat-block-edit' },
+	];
+	return [
+		...['familiar', 'mook', 'npc'].flatMap((state) =>
+			faces.flatMap((face) =>
+				presentations.map(({ suffix, query, ...view }) => ({
+					...view,
+					name: `sheet-companion-${state}${face.suffix}${suffix}`,
+					query: `surface=sheet&state=companion-${state}${query}${face.press}`,
+					frame: BLOCK,
+					pad: PAD,
+				})),
+			),
+		),
+		{
+			// Notes opened at rest: the prose in its box, scrolling the block.
+			name: 'sheet-companion-familiar-open',
+			query: 'surface=sheet&state=companion-familiar&theme=light&press=.sheetsmith-stat-block-disclosure',
+			size: '1400,1500',
+			frame: BLOCK,
+			pad: PAD,
+		},
+		{
+			// Picture on: the Owl's thumbnail after the chevron, at its name's start.
+			name: 'sheet-companion-picture',
+			query: 'surface=sheet&state=companion-picture&theme=light',
+			size: '1400,1500',
+			frame: BLOCK,
+			pad: PAD,
+		},
+		{
+			name: 'sheet-companion-picture-narrow',
+			query: 'surface=sheet&state=companion-picture&theme=light&width=380',
+			size: '380,2400',
+			frame: BLOCK,
+			pad: PAD,
+		},
+		{
+			// No familiar yet: the sentence and Add familiar, with no foot.
+			name: 'sheet-companion-empty',
+			query: 'surface=sheet&state=companion-empty&theme=light',
+			size: '1400,1500',
+			frame: BLOCK,
+			pad: PAD,
 		},
 	];
 }
