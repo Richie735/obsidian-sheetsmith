@@ -1696,10 +1696,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		keepFocusClearOfPinned(wrapper, '.sheetsmith-table-name');
 		const grid = element('table', 'sheetsmith-table', wrapper);
 		// Two facts the stylesheet needs about the whole table, stamped here
-		// because both were `:has()` selectors and Obsidian's review asks for
-		// fewer of those. `columns` is what the cells below are built from, so
-		// the flag and the cells cannot disagree: the alternative `:has()` read
-		// the cells themselves, which is one derivation rather than two.
+		// rather than read by `:has()` (`docs/PATTERNS.md` §5). Each is a
+		// second derivation from `columns`, beside the one that builds what it
+		// describes: the totals test here is spelled again where the foot is
+		// drawn. The `:has()` read the drawn cells and foot themselves, so it
+		// could not disagree with them; these two can, if one copy changes.
 		if (columns.some((column) => columnType(column) === 'text')) {
 			grid.addClass('sheetsmith-table-has-text');
 		}

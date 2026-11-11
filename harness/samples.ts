@@ -4915,7 +4915,17 @@ export type FormsVariant =
 	 */
 	| 'roster-band'
 	/** The Wolf alone adding to Constitution's score in that table: the band head the only tinted box. */
-	| 'roster-band-score';
+	| 'roster-band-score'
+	/**
+	 * Brown Bear on, with a tinted row at each corner the stylesheet declines or
+	 * takes for a reason a class states (`docs/features/character-forms.md`, "A
+	 * row at a corner of its scroller"): Saving throws totals a column, so its
+	 * tinted last row sits above the foot and keeps square corners; Skills is
+	 * open, so its tinted last row sits above the add control in the table's box
+	 * and keeps them too; and the `checks` Roster is one table with no heading
+	 * row, so its tinted first row, the Constitution band, takes the top two.
+	 */
+	| 'tint-corners';
 
 export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	const tinting =
@@ -4942,7 +4952,8 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	/** The Wolf's score-only push at the `checks` Roster, on its cards or its table. */
 	const scoreOnly = variant === 'roster-score' || variant === 'roster-band-score';
 	/** The `checks` Roster drawn as one table rather than stat cards. */
-	const banded = variant === 'roster-band' || variant === 'roster-band-score';
+	const corners = variant === 'tint-corners';
+	const banded = variant === 'roster-band' || variant === 'roster-band-score' || corners;
 	const wolf = variant === 'two' || variant === 'tint-two' || scoreOnly ? 'yes' : 'no';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
 	/*
@@ -5071,6 +5082,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				position: { col: 1, row: 3, width: 6, height: 2 },
 				rowHeader: 'Skill',
 				namePosition: 1,
+				// Open on the corners state, so the scroller sits in the table's
+				// box with the add control under its tinted last row.
+				...(corners ? { openRows: true } : {}),
 				columns: [
 					{
 						key: 'Training',
@@ -5124,6 +5138,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						signed: true,
 						publish: true,
 					},
+					// A totalled column on the corners state, so a foot follows
+					// the tinted Constitution row.
+					...(corners ? [{ key: 'Uses', type: 'number', total: true }] : []),
 				],
 				rows: [
 					{ label: 'Strength', key: 'STR', values: { ability: 'abilities.STR' } },
@@ -5131,13 +5148,22 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					{ label: 'Constitution', key: 'CON', values: { ability: 'abilities.CON' } },
 				],
 			} as ComponentConfig,
-			body: [
-				'| Save | Prof | Total |',
-				'| --- | --- | --- |',
-				'| Strength | 0 | |',
-				'| Dexterity | 0 | |',
-				'| Constitution | 1 | |',
-			].join('\n'),
+			body: (corners
+				? [
+						'| Save | Prof | Total | Uses |',
+						'| --- | --- | --- | --- |',
+						'| Strength | 0 | | 1 |',
+						'| Dexterity | 0 | | 0 |',
+						'| Constitution | 1 | | 2 |',
+					]
+				: [
+						'| Save | Prof | Total |',
+						'| --- | --- | --- |',
+						'| Strength | 0 | |',
+						'| Dexterity | 0 | |',
+						'| Constitution | 1 | |',
+					]
+			).join('\n'),
 		},
 		{
 			config: {

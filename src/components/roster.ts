@@ -861,8 +861,9 @@ function columnOrder(config: RosterConfig): (number | null)[] {
  * A table drawn with no heading row says so on itself, from the setting that
  * left the row out: its first body row is then at the scroller's top corners,
  * which the form tint rounds to (`styles/sheet.css`). A class rather than
- * `:has(> thead)`, as Table's `sheetsmith-table-has-totals` is, so the rule
- * reads the reason rather than the drawn element.
+ * `:has(> thead)` (`docs/PATTERNS.md` §5), called as the `else` of each
+ * `drawHead` call, so the class and the missing row cannot part; a `:has()`
+ * could not part from the row at all, which is what the class costs.
  */
 function markHeadless(grid: HTMLTableElement): void {
 	grid.classList.add('sheetsmith-table-headless');
