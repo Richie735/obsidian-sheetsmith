@@ -62,6 +62,7 @@ import {
 	pinnedAddSamples,
 	recordGroupSamples,
 	formsSamples,
+	companionSamples,
 	textGroupSamples,
 	notesSamples,
 	NOTE_DEFINITIONS,
@@ -102,7 +103,12 @@ type StateName =
 	| 'forms-tint-track'
 	| 'forms-roster-score'
 	| 'forms-roster-band'
-	| 'forms-roster-band-score';
+	| 'forms-roster-band-score'
+	| 'companion-familiar'
+	| 'companion-picture'
+	| 'companion-mook'
+	| 'companion-npc'
+	| 'companion-empty';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -166,6 +172,11 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-roster-score') return formsSamples('roster-score');
 	if (name === 'forms-roster-band') return formsSamples('roster-band');
 	if (name === 'forms-roster-band-score') return formsSamples('roster-band-score');
+	if (name === 'companion-familiar') return companionSamples('familiar');
+	if (name === 'companion-picture') return companionSamples('picture');
+	if (name === 'companion-mook') return companionSamples('mook');
+	if (name === 'companion-npc') return companionSamples('npc');
+	if (name === 'companion-empty') return companionSamples('empty');
 	return SAMPLES;
 }
 
@@ -520,6 +531,9 @@ const PICTURES: Record<string, string> = {
 	// (`docs/features/stat-block-zones.md`). Wider than tall, so the square's
 	// `contain` shows.
 	'Brown bear.png': portrait(320, 240, 'Bear'),
+	// A companion Stat block's picture, on its open record's line at rest
+	// (`docs/features/stat-block-companion-face.md`).
+	'Owl.png': portrait(240, 240, 'Owl'),
 	// Well-formed text that is not an image, which is what a note is.
 	'Notes.md': 'data:text/plain;charset=utf-8,not%20a%20picture',
 };
@@ -1037,7 +1051,12 @@ function applyQuery(): void {
 			wanted === 'forms-tint-track' ||
 			wanted === 'forms-roster-score' ||
 			wanted === 'forms-roster-band' ||
-			wanted === 'forms-roster-band-score'
+			wanted === 'forms-roster-band-score' ||
+			wanted === 'companion-familiar' ||
+			wanted === 'companion-picture' ||
+			wanted === 'companion-mook' ||
+			wanted === 'companion-npc' ||
+			wanted === 'companion-empty'
 			? wanted
 			: 'populated',
 	);
