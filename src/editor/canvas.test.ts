@@ -948,4 +948,37 @@ describe('prose on the canvas', () => {
 		// And a hover asks the app for no preview.
 		expect(hovered).not.toHaveBeenCalledWith('hover-link', expect.anything());
 	});
+
+	it('draws a Stat block features entry\'s link and follows nothing from it', async () => {
+		// The features entry binds its rendered layer as Rich text does, so the
+		// canvas holds only because it hands over no `link`: nothing to call.
+		rendersSampleLink();
+		const statBlock = getComponent('stat-block');
+		if (statBlock === undefined) throw new Error('expected the Stat block');
+		const seen: RenderContext[] = [];
+		const real = statBlock.render.bind(statBlock);
+		vi.spyOn(statBlock, 'render').mockImplementation((container, config, data, context) => {
+			seen.push(context);
+			real(container, config, data, context);
+		});
+		const app = new App();
+		const hovered = vi.spyOn(app.workspace, 'trigger');
+		const host = fakeHost('', true, app);
+		const el = document.createElement('div');
+		new Canvas(host).draw(el, layoutOf(forms()));
+		await settle();
+
+		expect(seen.length).toBeGreaterThan(0);
+		for (const context of seen) expect(context.link).toBeUndefined();
+		const anchor = el.querySelector<HTMLElement>('.sheetsmith-stat-block-entry a.internal-link');
+		expect(anchor).not.toBeNull();
+		const press = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true });
+		anchor?.dispatchEvent(press);
+		expect(press.defaultPrevented).toBe(true);
+		anchor?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, ctrlKey: true, metaKey: true }));
+		expect(host.selected).toBe('');
+		expect(hovered).not.toHaveBeenCalledWith('hover-link', expect.anything());
+		el.querySelector<HTMLElement>('[data-sheetsmith-focus="preview-forms"]')?.click();
+		expect(host.selected).toBe('forms');
+	});
 });
