@@ -45,7 +45,10 @@ export const IN_PLAY_MARKED = 'sheetsmith-in-play-marked';
 /** The pill naming the form, and its spoken twin. */
 export const IN_PLAY_MARK = 'sheetsmith-in-play-mark';
 
-/** The pill's class where it rides in a row's name cell rather than over a box. */
+/**
+ * The pill's class where it rides one line of a row — its name cell, or a
+ * Roster band's name — rather than a box's corner.
+ */
 export const IN_PLAY_MARK_INLINE = 'sheetsmith-in-play-mark-inline';
 
 /**
@@ -162,7 +165,9 @@ function boxOf(host: HTMLElement): HTMLElement {
  * takes no room: on a card-like box in its bottom inline-end corner, inside by
  * exactly the box's bottom padding so it can reach no content in any font,
  * where no note mark, door, score or value sits; on a table row over the name
- * cell's inline end, since a row's two ends hold its name and its value. The CSS places it; this only
+ * cell's inline end, since a row's two ends hold its name and its value; on a
+ * Roster's band head, a row with no name cell, at the inline start of the name
+ * its component named to carry it (`carrierOf`). The CSS places it; this only
  * says which box and which cell carry it.
  */
 export function applyDecorations(
@@ -219,19 +224,25 @@ export function applyDecorations(
 			left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
 		)[0];
 		if (first === undefined) continue;
-		const rowName =
-			first.tagName === 'TR' ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
-		// A box too small for the tag — a Roster card's score pill — has its
-		// component name what carries it instead: the card holding it, which
-		// takes the tag and no fill or outline. A row keeps its name cell.
-		const carrier =
-			rowName === null ? (first.closest<HTMLElement>(`[${TAG_BOX_ATTRIBUTE}]`) ?? first) : null;
-		const host = rowName ?? carrier ?? first;
+		const row = first.tagName === 'TR';
+		const rowName = row ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
+		// A row with a name cell takes the tag there. Otherwise the component
+		// may name what carries it — the card holding a score pill, the name
+		// inside a band's `tr` — which takes the tag and no fill or outline
+		// (`carrierOf`).
+		const carrier = rowName === null ? carrierOf(first, row) : null;
+		const host = rowName ?? carrier;
+		// A row with no cell has nowhere a tag may go; the spoken twin still does.
+		if (host === null) {
+			cell.createSpan({ cls: `sheetsmith-sr-only ${IN_PLAY_MARK}`, text: `Changed by ${said}` });
+			continue;
+		}
 		carrier?.classList.add(IN_PLAY_MARKED);
 		const pill = host.createSpan({
 			cls: [
 				IN_PLAY_MARK,
-				...(rowName === null ? [] : [IN_PLAY_MARK_INLINE]),
+				// A row's tag rides one line, wherever in the row that line is.
+				...(row ? [IN_PLAY_MARK_INLINE] : []),
 				...(labels.length > 1 ? [IN_PLAY_MARK_SEVERAL] : []),
 			].join(' '),
 			text: said,
@@ -242,6 +253,24 @@ export function applyDecorations(
 		cell.createSpan({ cls: `sheetsmith-sr-only ${IN_PLAY_MARK}`, text: `Changed by ${said}` });
 	}
 	pickTagText(root);
+}
+
+/**
+ * What carries the tag for a first box that is not a row's name cell.
+ *
+ * **A card's carrier holds its box from outside, a row's sits inside it**: a
+ * Roster card's pill names the card above it, and a Roster band's `tr`, which
+ * has no name cell, holds the name its component stamped
+ * (`docs/features/character-forms.md`, "A Roster's band head"). So a row looks
+ * down, then falls back to its first cell, and **a tag is never a direct child
+ * of a `tr`**: a span there is outside every cell, resolves its containing
+ * block outside the row, and takes the `:last-child` the row's end edge is
+ * drawn on.
+ */
+function carrierOf(first: HTMLElement, row: boolean): HTMLElement | null {
+	if (!row) return first.closest<HTMLElement>(`[${TAG_BOX_ATTRIBUTE}]`) ?? first;
+	const cell = first.firstElementChild;
+	return first.querySelector<HTMLElement>(`[${TAG_BOX_ATTRIBUTE}]`) ?? (cell instanceof HTMLElement ? cell : null);
 }
 
 /** The two text colours a tag may be written in, as the stylesheet's words map them. */
@@ -277,12 +306,33 @@ export function pickTagText(root: HTMLElement): void {
 			continue;
 		}
 		// The box's tint is a layer over its surface, not a colour of its own.
-		const layer = readColour(view.getComputedStyle(box).backgroundImage);
+		const layer = layerOf(view, box);
 		const tinted = layer === null ? surface : over(layer.rgb, layer.alpha, surface);
 		const grounds = [over(fill.rgb, fill.alpha, tinted), over(fill.rgb, fill.alpha, around)];
 		const worst = (text: Rgb) => Math.min(...grounds.map((ground) => contrast(text, ground)));
 		pill.setAttribute(TAG_TEXT_ATTRIBUTE, worst(TAG_TEXTS.white) > worst(TAG_TEXTS.black) ? 'white' : 'black');
 	}
+}
+
+/**
+ * The tint layer nearest at or above the tag's carrier, **no further out than
+ * the tinted box holding it**.
+ *
+ * A band's carrier is its name, which wears no layer, while the band's cell
+ * around it is tinted, so the layer the tag sits on is read there
+ * (`docs/features/character-forms.md`, "A Roster's band head"). A carrier no
+ * tinted box holds — a Roster card — is read alone, and wears none, so its tag
+ * is read on its plain surface. Bounded because a sheet has other gradients
+ * that are not a tint: a table scroller's sideways shadow opens on an opaque
+ * stop, which an unbounded walk would take for one.
+ */
+function layerOf(view: Window, el: HTMLElement): ReturnType<typeof readColour> {
+	const bound = el.closest<HTMLElement>(`.${IN_PLAY_BOX}`) ?? el;
+	for (let at: HTMLElement | null = el; at !== null; at = at.parentElement) {
+		const layer = readColour(view.getComputedStyle(at).backgroundImage);
+		if (layer !== null || at === bound) return layer;
+	}
+	return null;
 }
 
 /** The first opaque background at or above `el`: what a translucent layer on it is seen against. */

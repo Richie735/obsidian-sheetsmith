@@ -107,10 +107,11 @@ export const BOX_ATTRIBUTE = 'data-sheetsmith-box';
 /**
  * The attribute on the element that carries the form's tag where the box a
  * value belongs to cannot (`docs/features/character-forms.md`, "The text
- * mark"): a box without the room a card keeps for the tag, held inside one
- * that has it. The holder carries the tag and takes no fill or outline of its
- * own. Written by the component, which alone knows which element holds which
- * box and why.
+ * mark"). Outside the box or inside it: a Roster card holds its score pill,
+ * which has no room for the tag, while a Roster band's name sits inside its
+ * `tr`, which has no name cell for it. The carrier takes the tag and no fill or
+ * outline of its own. Written by the component, which alone knows which
+ * element carries which box's tag and why.
  */
 export const TAG_BOX_ATTRIBUTE = 'data-sheetsmith-tag-box';
 

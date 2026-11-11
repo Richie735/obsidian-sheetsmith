@@ -467,7 +467,8 @@ box it belongs to**:
   setting Strength and Constitution tints those two cards and leaves Dexterity,
   Intelligence, Wisdom and Charisma alone.
 - **Roster**: in its table layout, the band head is a row and takes the row's
-  rule, and a row takes the row's rule; both unchanged by the amendment below.
+  rule for its box, and a row takes the row's rule; both unchanged by the
+  amendment below (where the band head's tag rides is "The text mark", below).
   In its card layout, **the stat's score pill, and each row the form changed —
   never the card** (amended after the owner's 5e druid test). The rule above
   had a Roster card be the box, as a Card set's is,
@@ -608,9 +609,121 @@ line is reserved for it — a box is the same size with the form on as off:
   name (and a ring, where the table has one) and its end the value — so the pill
   is laid over the name cell's inline end, centred on the row, in the slack
   between the name and the numbers that the name cell takes by design. A name
-  long enough to fill its cell runs under it. A Roster's table layout, its band
-  head included, keeps whatever placement it has today: the amendment above
-  reaches the card layout alone.
+  long enough to fill its cell runs under it. A Roster's table layout keeps
+  this rule for its rows; its band head has no name cell and takes the bullet
+  below.
+- **A Roster's band head** (amended after the owner found it on 2026-11-11, in
+  a table-layout Roster on a copy of the 5e druid layout, and again after the
+  design review): **the tag rides the inline start of the band's second line,
+  the reading's line**, laid over the slack before the reading and centred on
+  that line; **only at one column**, where the score and the reading wrap under
+  the name to the line's start, it falls back to the inline start of the name's
+  line, centred on it. The band head is one `tr`
+  holding one `td.sheetsmith-roster-band-head` across every column, its
+  `.sheetsmith-roster-band-inner` a wrapping flex line: the name
+  (`.sheetsmith-group-heading`, `--font-ui-medium` at `line-height: 1.3`,
+  19.5px, centred by the table's cell rule) takes the line's slack, and the
+  score and the reading stack at the inline end, each at
+  `--sheetsmith-card-value-size`, so the head is about 72px tall with the name
+  on the score's baseline at its top. Before the fix the band had no
+  `th[scope="row"]`, so the pass appended the tag to the `tr` itself: the
+  tag's containing block resolved outside the band (`-marked:not(tr)` excludes
+  a `tr`) and it drew nowhere, and as the `tr`'s `:last-child` the span took the
+  inline-end edge `tr.sheetsmith-in-play > :last-child` meant for the cell.
+  - **The carrier is the band's tag line, stamped**: in the table layout
+    `drawBandHead` draws `.sheetsmith-roster-band-tag-line`, an empty first
+    flex item of the inner, a sibling before the name rather than a wrapper
+    round it, drawn whether or not a form is on so nothing moves when one
+    turns on. It is zero wide, gives the column gap back with a negative
+    margin, and stretches to the first flex line's height. `drawBandHead`
+    hands it to `drawValueField` and to `drawDerivedReading` as their
+    `tagBox`, the argument a Roster card already passes its card through, so
+    the tag line carries `data-sheetsmith-tag-box` wherever the band's score
+    or its reading is stamped, a layout with no `effective` or a hidden score
+    included. The pass, given a first box that is a `tr` with no row name,
+    looks **down** for its carrier
+    (`first.querySelector('[data-sheetsmith-tag-box]')`), since the tag line is
+    inside the row where a card holds its pill from outside; failing that, the
+    row's first cell. **A tag is never a direct child of a `tr`.** The tag line
+    takes `sheetsmith-in-play-marked` and so `position: relative`, and no fill
+    or outline; the `tr` keeps the tint and its cells the shadows. The name,
+    `.sheetsmith-group-heading`, carries nothing.
+  - **The geometry is a row tag's, mirrored**: the pill takes
+    `sheetsmith-in-play-mark-inline` (16px tall, centred on its line by
+    `translateY(-50%)`) and one rule under `.sheetsmith-roster-band-head`
+    moves it to `inset-inline-start: 0`, 12px from the table's edge (the
+    cell's 8px and the inner's 4px), capped at 12ch. **It is placed on the tag
+    line's height**: where the score and the reading sit beside the name, the
+    first flex line is the whole band, so the tag line spans it; where they
+    wrap, it spans the name line alone. The tag's
+    `inset-block-start: max(50%, calc(100% - var(--sheetsmith-band-reading-line) / 2))`
+    centres it on the reading's line, the band's last, and falls to 50%, the
+    name line, when that is all the tag line spans.
+    `--sheetsmith-band-reading-line` is an `@property` length,
+    `calc(var(--sheetsmith-card-value-size) * 1.05)`, copying
+    `.sheetsmith-card-derived`'s `line-height: 1.05`, which a `styles.test.ts`
+    case holds equal. A band with only a score or only a reading has one line
+    beside the name and the tag centres on it. **Only at one column does the
+    band wrap**: no container query or breakpoint drives it, the inner being a
+    wrapping flex line, and measured it never wraps on a 380 sheet or with the
+    Roster at two or three columns. **Why line two**: the design review's
+    `harness/shots/sheet-forms-roster-band-narrow.png`, at 380px, showed the
+    tag on the name line covering the name, *[Brown Bear]onstitution*: the
+    score had not wrapped yet, so the centred *Constitution* left about 75px of
+    leading slack and a two-word tag is about 80px. A short name, not the long
+    one the first placement allowed to run under it. The reading's line holds
+    only the reading, at the inline end, so its inline start has about 260px of
+    empty slack at 380 and at full width, and the tag reaches neither the name
+    above it nor the score, the reading or the note mark beside it. At one
+    column the name line is the only line with slack at its start, the score
+    and the reading being on the lines under it, so the tag falls back there;
+    16px sits inside the name's 19.5px line, so it reaches no other line, the
+    UI sizes being fixed pixels. A name long enough to reach it there runs
+    under it, as a row's name does, and the reveal answers a clipped tag.
+  - **It sits by nothing the form left alone**: it is inside the band's own
+    head, above the band's rows, and a tagged band is tinted, so the
+    tag is never over an untinted box. **A band head tinted with one of its
+    rows is one tag, on the band head**: the band's `tr` comes before its rows,
+    so it is the first tinted box, and the row carries only its tint. A row
+    tinted in an earlier band keeps the tag in its name cell, the Table rule.
+  - **The outline closes on all four sides.** With the span gone, the band's
+    one cell is both `:first-child` and `:last-child`, and the two shadow rules
+    each set the whole `box-shadow`, so the later one would drop the start edge
+    in its turn. A `tr.sheetsmith-in-play > :only-child` rule draws all four
+    edges. **The bottom edge was missing too**: the owner's check in Obsidian
+    showed it as a corner stub on both tinted bands, the untagged one
+    included, because the inner's own hairline paints over the cell's inset
+    bottom shadow. So on every tinted band, tagged or not, the hairline takes
+    `--sheetsmith-tint-edge` (2px of the shadow still showing under more
+    contrast). **In forced colors the band's cell carries its own full-width
+    bottom rule** (style `solid`, its colour from the existing repaints of a
+    row's rules) **and the inner's hairline drops**: the hairline sits inside
+    the cell's inline padding, so as a tinted band's bottom it stopped short of
+    both end rules, and as the rule above a tinted row it was no cell's for the
+    repaint to reach. Untinted bands therefore draw a full-width bottom rule in
+    forced colors too, like every other row, at the same height. Descendant
+    rules on the stamped class, no `:has()`.
+  - **The tag's text is measured on the band's tint**: `pickTagText` reads the
+    box's tint layer off the carrier, which on a band is the tag line, wearing
+    none; it reads the layer from the nearest element at or above the carrier
+    that wears one instead, which is the band's cell. A card carrier still
+    finds none and reads its plain surface, as today.
+  - Rejected: **the name line's inline start at every width**, the first
+    placement — at mid widths, before the score wraps, a short centred name
+    leaves less slack than a two-word tag and the tag covers the name (the
+    380px shot above); **the cell's bottom inline-start corner** — rejected at
+    the first pass for one column, where the score and the reading wrap to the
+    line's start, which the name-line fallback now covers; **the cell's bottom
+    inline-end corner, as a card's tag** — that
+    is where the reading sits, the band reserves no bottom padding for a tag,
+    and hanging below it lands on the first row's value; **beside the centred
+    name's text** — an absolute tag cannot find the end of centred text
+    without a wrapper round the words, and the wrapper changes the DOM the
+    band shares with a Roster card; **inline after the name** — in flow it
+    takes room, moving the centred name off centre and, at one column, onto a
+    second line when a form turns on, against "a box is the same size with
+    the form on as off"; **the row rule, the inline end centred on the band**
+    — it would cover the score and the reading, the value the form changed.
 
 The colour is never the only channel (WCAG 1.4.1): the outline is a shape, the
 pill is words, and the underline marks the number. Under `prefers-contrast: more`
@@ -1057,6 +1170,64 @@ tag after the owner's review of the build)
       `clipped` 0 at `text=15`, `16` and `24`, so the tag hangs into the gap
       below the card without the placement cutting it or reaching the last row.
 
+**The tag on a Roster band head** (amended after the owner's table-layout
+Roster, 2026-11-11)
+
+- [x] `roster.test.ts`: in the table layout a stat whose `effective` moved
+      stamps its field with the band's `tr` as the box and its tag line,
+      `.sheetsmith-roster-band-tag-line`, as the tag box, which replaces *names
+      the band row as the score's box in the table layout, and no tag carrier*;
+      the tag line is the inner's first child, empty, and is drawn with no
+      form on too; the name carries no `data-sheetsmith-tag-box`; with no
+      `effective`, the reading names the `tr` and the tag line likewise. The
+      `isolation.test.ts` scan still finds the attribute in the helper alone.
+- [x] `view/placement-decorations.test.ts`, on a table-layout Roster with a
+      form pushing at one stat's score and a second band untinted below: the
+      band's `tr` carries `sheetsmith-in-play`, its tag line
+      `sheetsmith-in-play-marked` and the one tag with
+      `sheetsmith-in-play-mark-inline`, and **no `tr` in the placement has a
+      child that is not a `td` or a `th`**; the second band carries neither.
+      Pushing at that score and at one of its rows: one tag, on the band's
+      tag line, the row tinted and untagged. Pushing at a row of the first band
+      and the second band's score: the tag in the row's name cell.
+- [x] `styles.test.ts`: a tinted row's lone cell draws all four inset edges; a
+      tinted band's inner hairline takes the edge colour whether the band
+      carries the tag or not, so an untagged tinted band also closes on all
+      four sides, its bottom edge included; in forced colors the band cell's
+      bottom rule is `solid` and the inner's hairline none, tinted or not; a
+      band head's tag is placed at its line's inline start;
+      the new rules name no literal colour and no `:has()`.
+- [x] Harness: the forms sample gains `forms-roster-band`, the `checks` Roster
+      drawn in its table layout (`cardLayout` off, everything else as the card
+      sample has it, `effective` included) with Brown Bear on, so the
+      Constitution band is tinted with Concentration and tagged once on its
+      second line, Endurance untinted, the Wisdom band untinted below with its
+      Insight row tinted and untagged; and `forms-roster-band-score`, the Wolf
+      alone adding to Constitution's score, the band head the only tinted box.
+      Shots `sheet-forms-roster-band`, `-dark`, `-narrow` (380), `-contrast-more`
+      and `-forced-colors`, `sheet-forms-roster-band-onecol` (at a width where
+      the score and the reading wrap under the name), and
+      `sheet-forms-roster-band-score`, each with an explicit frame. At 380 and
+      at full width the tag is on the band's second line, at its inline start,
+      clear of the name, the score, the reading and the note mark; in the
+      one-column shot it is on the name line's inline start, clear of the name
+      and of the score and the reading below; the band outlined on all four
+      sides in each mode, and in forced colors every band, tinted or not, ruled
+      full width at its bottom; nothing else on the sheet moved.
+- [x] The fixture: a copy of `Sheetsmith layouts/5e Druid.sheetsmith` saved as
+      `5e Druid table.sheetsmith`, its `abilities` Roster with `cardLayout`
+      off, and a copy of `Characters/Thorne - Character Sheet.md` as
+      `Characters/Thorne table.md` naming it. Put **Cat Form** in play and see
+      Dexterity's and Strength's band heads tinted and each closed on all four
+      sides, the untagged one included; Cat Form's tag once, on the second line
+      of the first tinted band in the layout's stat order (Dexterity, in the
+      druid layout's order INT, WIS, DEX, CHA, STR, CON), at its inline start;
+      Strength tinted without a tag; revert and see every tint and the tag go,
+      with no band or row moved between on and off. Stealth stays untinted:
+      Cat Form's at least (+7) loses to the +10 Stealth already reads. Seen in
+      Obsidian by the owner on the uncommitted build, which also settles the
+      harness line's "nothing else on the sheet moved".
+
 **The starter**
 
 - [x] `src/starters/5e.json` carries the formula changes, the `forms` tab with no
@@ -1189,6 +1360,22 @@ The Roster-card amendment, on its own branch:
    sentence ("each changed card of a Card set or Roster") and `docs/UI.md` §9's
    tint row narrowed to match, by `/land-it`.
 
+The band-head amendment, on its own branch:
+
+1. `fix: Show a form's tag on a Roster's band head`. Roster's
+   `.sheetsmith-roster-band-tag-line`, drawn in every band head, as the table
+   layout's `tagBox`, the `--sheetsmith-band-reading-line` property and its
+   match with the reading's line height, the pass looking down a row for its carrier and
+   never writing into a `tr`, `pickTagText` reading the nearest tint layer,
+   the `:only-child` edges, the band hairline and its forced-colors cell rule,
+   and the band tag's second-line and one-column rules, and their tests.
+2. `test: Show a form tagging a Roster's band head in the harness`. The
+   `forms-roster-band` and `-score` states and their shots, the one-column
+   shot included.
+3. `docs: Record where a form's tag rides on a Roster's band head`. `SPEC`
+   §8's tint sentence and `docs/UI.md` §9's tint row gain the band head's
+   placement, by `/land-it`.
+
 ## Release notes
 
 Items for `/release` to carry, recorded here so they are not re-derived:
@@ -1260,4 +1447,22 @@ Items for `/release` to carry, recorded here so they are not re-derived:
     as the line above: the reading would need a box that does not contain it.
   - **Any change to Card, Card set, Table, Pool or Track boxing, to the colour
     words or per-form tint, to the corner rounding of tinted rows, or to a
-    Roster's table layout.**
+    Roster's table layout** beyond its band head's tag (below).
+- **From the band-head amendment**:
+  - **A Roster card's score pill and its tag at the card's corner, and a table
+    row's tag in its name cell**: unchanged; the pass's look-down reaches a
+    `tr` with no row name alone.
+  - **A wrapper round a band head's name**, which a tag beside the name's text
+    would need; the card layout draws the same heading.
+  - **A Stat block without a picker taking a reading face, the layout canvas
+    drawing a features entry's markdown, a guard holding stamped classes over
+    `:has()`, and modifiers that set toggles, levels or text**: none of them
+    is reached by this fix.
+  - The card amendment's own exclusions stand: a card-layout Roster with no
+    `effective`, and an `=` push on a Roster stat.
+  - **Clearing the name at one column**, the owner's accepted trade: where the
+    score and the reading wrap under the name, the fallback tag on the name's
+    line covers most of a short name (`sheet-forms-roster-band-onecol` shows
+    only "tit" of "Constitution"). Clearing it needs a line of its own, which
+    would change the band's height with the form on, against `docs/UI.md` §9's
+    "the box is the same size with the form on as off". Accepted as is.

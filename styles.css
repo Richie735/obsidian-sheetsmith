@@ -9219,10 +9219,41 @@ a.sheetsmith-notice-action {
    of the `<td>`'s own padding is still the only thing that ever set it —
    `.sheetsmith-roster-band-inner` carries a narrower `--size-4-1` on that
    axis, for its own reason above — so zeroing both would pull the band head
-   in from the table's edges while every row under it stayed put. */
+   in from the table's edges while every row under it stayed put.
+
+   **The style alone, not the shorthand**: `border-bottom: none` would also
+   reset the colour at this weight, over the form tint's forced-colors repaint
+   of a row's rules, and in forced colors the cell draws its rule again (the
+   tint's forced-colors block). */
 .sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head {
-	border-bottom: none;
+	border-bottom-style: none;
 	padding-block: 0;
+}
+
+/* **The band's tag line: an empty first item taking no room, as tall as the
+   first flex line** (`docs/features/character-forms.md`, "A Roster's band
+   head"). Zero wide, with the line's column gap taken back by a negative
+   margin, so the name starts where it did. Stretched, so while the score and
+   the reading sit beside the name its box is the whole band, the reading's
+   line at its foot, and once they wrap under the name (a band one column
+   wide) it is the name's line alone. That is what decides the tag's line: the
+   wrap is flex wrapping on the name's and the value's widths, which no width
+   query could restate. Drawn on every band whether a form is on or not. */
+.sheetsmith-roster-band-tag-line {
+	flex: 0 0 0;
+	align-self: stretch;
+	margin-inline-end: calc(-1 * var(--size-4-2));
+	/* The reading's line box, resolved here at the band's own size and
+	   carried to the tag as a length (registered below), whose own font is
+	   the tag's smaller one: the reading's `--sheetsmith-card-value-size` at
+	   `.sheetsmith-card-derived`'s `line-height: 1.05`. */
+	--sheetsmith-band-reading-line: calc(var(--sheetsmith-card-value-size) * 1.05);
+}
+
+@property --sheetsmith-band-reading-line {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
 }
 
 .sheetsmith-roster-band-inner .sheetsmith-group-heading {
@@ -10902,6 +10933,29 @@ a.sheetsmith-notice-action {
 		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--sheetsmith-tint-edge);
 }
 
+/* **A row of one cell draws all four edges**, a Roster's band head being the
+   case (`docs/features/character-forms.md`, "A Roster's band head"): its one
+   cell is both first and last child, and the two rules above each set the
+   whole `box-shadow`, so the later one dropped the start edge. Below both, at
+   their weight, so it wins by order. */
+.sheetsmith-view tr.sheetsmith-in-play > :only-child {
+	box-shadow:
+		inset 0 var(--sheetsmith-in-play-edge) 0 var(--sheetsmith-tint-edge),
+		inset 0 calc(-1 * var(--sheetsmith-in-play-edge)) 0 var(--sheetsmith-tint-edge),
+		inset var(--sheetsmith-in-play-edge) 0 0 var(--sheetsmith-tint-edge),
+		inset calc(-1 * var(--sheetsmith-in-play-edge)) 0 0 var(--sheetsmith-tint-edge);
+}
+
+/* **A tinted band's own hairline is its bottom edge.** The band head's cell
+   has no padding-block, so `.sheetsmith-roster-band-inner`'s hairline paints
+   over the cell's inset bottom shadow, and in the border colour it read as the
+   outline's bottom missing, a stub at each corner, on every tinted band. It
+   takes the edge colour the row's `tr` worked out; under more contrast the 2px
+   shadow's upper pixel still shows above it. */
+.sheetsmith-view tr.sheetsmith-in-play .sheetsmith-roster-band-inner {
+	border-bottom-color: var(--sheetsmith-tint-edge);
+}
+
 /* **A row at a corner of its scroller takes the scroller's corner.** The
    scroller rounds at `--radius-m` and clips what it holds to that curve, so
    square corner cells had their fill cut along it and their outline cut off
@@ -10967,6 +11021,21 @@ a.sheetsmith-notice-action {
 
 	.sheetsmith-view tr.sheetsmith-in-play > :last-child {
 		border-inline-end: 1px solid Highlight;
+	}
+
+	/* **A band head's cell takes back its own bottom rule, and its inner's
+	   hairline goes.** The hairline sits inside the cell's inline padding, so
+	   as a tinted band's bottom it stopped short of both end rules, and as the
+	   rule above a tinted row it was not a cell's for the repaint above to
+	   reach: that row's top went undrawn. The cell's rule spans the row, and
+	   the repaints colour it like any row's, a rowless band above a tinted one
+	   included. Same height: one 1px rule for another. */
+	.sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head {
+		border-bottom-style: solid;
+	}
+
+	.sheetsmith-view .sheetsmith-roster-band-inner {
+		border-bottom-style: none;
 	}
 
 	/* **At a corner of the scroller the row's outer rules move to a layer over
@@ -11201,6 +11270,26 @@ a.sheetsmith-notice-action {
 	inset-block-end: auto;
 	inset-inline-end: var(--size-2-2);
 	transform: translateY(-50%);
+}
+
+/* **On a Roster's band head the tag rides the reading's line at its inline
+   start** (`docs/features/character-forms.md`, "A Roster's band head"), in
+   slack nothing else takes: the name's line holds the centred name, and the
+   line's end the score and the reading, the value the form changed. Its
+   carrier is the band's tag line, as tall as the band's first flex line, so
+   the reading's line is the carrier's foot and the tag is centred on it, half
+   that line up from the bottom. **Where the score and the reading wrap under
+   the name the carrier is the name's line alone**, shorter than the reading's
+   line, so the same `max()` takes the half instead and the tag is centred on
+   the name's line, as the one free start there is. The width is a bound of its
+   own, since the carrier has none. */
+.sheetsmith-view
+	.sheetsmith-roster-band-head
+	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
+	inset-block-start: max(50%, calc(100% - var(--sheetsmith-band-reading-line) / 2));
+	inset-inline-start: 0;
+	inset-inline-end: auto;
+	max-width: 12ch;
 }
 
 /* **Under more contrast the colour survives as the edge alone**: the fills go,

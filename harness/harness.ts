@@ -100,7 +100,9 @@ type StateName =
 	| 'forms-tint-error'
 	| 'forms-tint-pool'
 	| 'forms-tint-track'
-	| 'forms-roster-score';
+	| 'forms-roster-score'
+	| 'forms-roster-band'
+	| 'forms-roster-band-score';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -162,6 +164,8 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'forms-tint-pool') return formsSamples('tint-pool');
 	if (name === 'forms-tint-track') return formsSamples('tint-track');
 	if (name === 'forms-roster-score') return formsSamples('roster-score');
+	if (name === 'forms-roster-band') return formsSamples('roster-band');
+	if (name === 'forms-roster-band-score') return formsSamples('roster-band-score');
 	return SAMPLES;
 }
 
@@ -1031,7 +1035,9 @@ function applyQuery(): void {
 			wanted === 'forms-tint-error' ||
 			wanted === 'forms-tint-pool' ||
 			wanted === 'forms-tint-track' ||
-			wanted === 'forms-roster-score'
+			wanted === 'forms-roster-score' ||
+			wanted === 'forms-roster-band' ||
+			wanted === 'forms-roster-band-score'
 			? wanted
 			: 'populated',
 	);

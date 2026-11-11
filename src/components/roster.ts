@@ -1078,7 +1078,7 @@ function drawBandHead(
 				? null
 				: drawDerivedReading(parent, config, stored, published, signed, context, rowsOf, {
 						scoreNamed,
-						card: parent,
+						tagBox: parent,
 					});
 		if (score !== null) {
 			const value = parent.createDiv('sheetsmith-card-value');
@@ -1095,6 +1095,19 @@ function drawBandHead(
 
 	const inner = parent.createDiv('sheetsmith-roster-band-inner');
 
+	/*
+	 * **What carries the tag for the band** (`TAG_BOX_ATTRIBUTE`,
+	 * `docs/features/character-forms.md`, "A Roster's band head"): the band is a
+	 * `tr` with no name cell, so a tag needs an element inside it to ride. An
+	 * empty first item of the band's flex line, taking no room and stretched to
+	 * the line's height (`sheet.css`), so its box is the whole band while the
+	 * score and the reading sit beside the name, and the name's line alone once
+	 * they wrap under it — which is a fact of the layout, not of any width,
+	 * and so the one thing that can say which line the tag rides. Handed to the
+	 * score and the reading alike, so it is stamped whichever names the band;
+	 * drawn on every band, so nothing moves when a form turns on.
+	 */
+	const tagLine = inner.createDiv('sheetsmith-roster-band-tag-line');
 	inner.createDiv({ cls: 'sheetsmith-group-heading', text: name });
 
 	// The score and the reading share one sub-group, centred on each other
@@ -1104,14 +1117,14 @@ function drawBandHead(
 	// `flex: 0 0 auto` so they can sit beside the name.
 	const valueGroup = inner.createDiv('sheetsmith-roster-band-value');
 	if (score !== null) {
-		drawValueField(valueGroup, inner, config, key, name, stored, published, context, status, score, null);
+		drawValueField(valueGroup, inner, config, key, name, stored, published, context, status, score, tagLine);
 	}
 	const reading =
 		config.derived === undefined
 			? null
 			: drawDerivedReading(valueGroup, config, stored, published, signed, context, rowsOf, {
 					scoreNamed,
-					card: null,
+					tagBox: tagLine,
 				});
 	// At the band head's inline end, after the reading.
 	renderNotesAt(inner, context.modifiers, published, 'sheetsmith-roster-band-has-note', {
@@ -1153,8 +1166,8 @@ function drawValueField(
 	status: HTMLElement,
 	/** `scoreAtRest`'s answer, which the band head also hands the reading. */
 	score: { atRest: string; differs: boolean },
-	/** The stat's card in the card layout, which carries the tag for its pill; null in the table. */
-	card: HTMLElement | null,
+	/** What carries the tag for the score's box: the stat's card, or the band's tag line in the table. */
+	tagBox: HTMLElement,
 ): void {
 	const field = valueGroup.createEl('input', { cls: 'sheetsmith-card-input' });
 	field.type = 'text';
@@ -1177,13 +1190,14 @@ function drawValueField(
 		 * Roster card holds a score, a reading and rows that each move on their
 		 * own, so a form tinting the whole card hid a tinted row inside it. The
 		 * pill is `.sheetsmith-card-value`, the field's own wrapper; in the
-		 * table layout the same lookup finds the band's `tr`. **The card carries
+		 * table layout the same lookup finds the band's `tr`, whose tag line
+		 * carries the tag (`drawBandHead`). **The card carries
 		 * the tag** (`TAG_BOX_ATTRIBUTE`): the pill is about 4em of score with
 		 * 2px of bottom padding, narrower than the tag's 12ch and without the
 		 * room every card keeps under its last row, so on the pill the tag
 		 * would cover the score and, hanging below, the card's first row.
 		 */
-		stampModifiedHost(field, published, field.closest<HTMLElement>('.sheetsmith-card-value, tr'), card);
+		stampModifiedHost(field, published, field.closest<HTMLElement>('.sheetsmith-card-value, tr'), tagBox);
 		field.setAttribute('title', bothNumbers);
 	}
 	field.setAttribute(
@@ -1271,8 +1285,8 @@ function drawDerivedReading(
 	beside: {
 		/** Whether the score's field carries the stat's published name: it moved off the note. */
 		scoreNamed: boolean;
-		/** The stat's card in the card layout, null in the table. */
-		card: HTMLElement | null;
+		/** What carries the tag where the reading names its box: the stat's card, or the band's tag line. */
+		tagBox: HTMLElement;
 	},
 ): number | null {
 	const derivedEl = parent.createDiv('sheetsmith-card-derived');
@@ -1319,7 +1333,7 @@ function drawDerivedReading(
 				derivedEl,
 				published,
 				derivedEl.closest<HTMLElement>('.sheetsmith-card, tr'),
-				beside.card,
+				beside.tagBox,
 			);
 		derivedEl.addEventListener('click', () => showPopover(derivedEl, pushed));
 		derivedEl.createDiv({ cls: 'sheetsmith-sr-only', text: pushed });
