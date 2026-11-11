@@ -5813,6 +5813,188 @@ a.sheetsmith-notice-action {
 }
 
 /* ---------------------------------------------------------------------------
+   **A placed box that scrolls says more is below.** A Stat block or a Record
+   set at its placed height cuts its content under the last section that fits,
+   so while the content runs past the scroller's foot a shadow lies along it,
+   and once the reader reaches the end it is gone.
+
+   **The table's two background layers are the precedent, turned to this axis,
+   and they do not survive the turn.** `.sheetsmith-table-wrapper` paints its
+   shadow as the scroller's own background, under its rows, which holds there
+   because a table's cells are transparent. What sits at a placed scroller's
+   foot is not: a brief, the In play panel and a zone's table each fill
+   `--background-secondary`, and a Record set's group heading draws a band, so
+   a shadow painted on the scroller's background lies *under* them and shows
+   only in the gaps between. A mask on the scroller cannot stand in either: a
+   mask stays with the box and has no `local` attachment, so it would fade the
+   foot at the end as well.
+
+   **One class pair, stamped by each component that wants the cue, and styled
+   here once**: `.sheetsmith-placed-scroll` on the wrapper that never scrolls,
+   `.sheetsmith-placed-scroller` on its child that does. A Stat block's
+   `-stat-block-scroll` and `-content` and a Record set's `-record-set-scroll`
+   and `-list` wear them (`docs/UI.md` §9), so a third scroller joins by taking
+   the two classes, not by being added to five selector lists.
+
+   **So the shadow is a layer over the content, and the scroll drives it.** The
+   wrapper carries it as `::after`, along its foot and inside the box, which clips it to its corner
+   where no foot control sits below, the reason the table moved its border and
+   fill out to `.sheetsmith-table-box`. The scroller names its scroll progress as
+   a timeline and the layer's opacity is read off it: whole until the last 24px
+   of the scroll, gone at its end. Still no scroll listener, since the browser
+   computes it, as it computes a `local` background's position.
+
+   **The one `@keyframes` on the sheet, the exception `docs/UI.md` §8 records.**
+   §8 keeps keyframes on time out because one restarts from zero rather than
+   retargeting a press in flight. This one has no time at all: its progress is
+   the scroll offset, so it is wherever the scroll is and never plays.
+
+   **Where the content fits, there is no cue**: a scroller with nothing to scroll
+   has an inactive timeline, the animation has no effect, and the layer keeps its
+   own `opacity: 0`. Gated on support for the same reason, so a WebView without
+   scroll timelines (an older iOS) draws no cue, which is today's sheet, rather
+   than running the keyframes once over time.
+
+   Below `z-index` 2 sits nothing that scrolls here but a table zone's pinned name
+   cell, at 1, which the shadow is meant to cover. `pointer-events: none`, so the
+   foot of the content stays pressable through it.
+   --------------------------------------------------------------------------- */
+@keyframes sheetsmith-placed-scroll-cue {
+	from {
+		opacity: 1;
+	}
+
+	to {
+		opacity: 0;
+	}
+}
+
+@supports (animation-timeline: scroll()) {
+.sheetsmith-placed-scroll {
+		/* The layer's containing block. Both wearers set it on their own class
+		   already; it is here so the pair carries everything the cue needs. */
+		position: relative;
+		timeline-scope: --sheetsmith-placed-scroll;
+	}
+
+.sheetsmith-placed-scroller {
+		scroll-timeline: --sheetsmith-placed-scroll block;
+	}
+
+.sheetsmith-placed-scroll::before,
+.sheetsmith-placed-scroll::after {
+		position: absolute;
+		inset-inline: 0;
+		bottom: 0;
+		z-index: 2;
+		pointer-events: none;
+		opacity: 0;
+		animation: sheetsmith-placed-scroll-cue auto linear both;
+		animation-timeline: --sheetsmith-placed-scroll;
+		/* The fade is the last 24px of the scroll, or the whole of it where there
+		   is less: a bare `calc(100% - 24px)` starts before the scroll does on a
+		   short overflow, so 19px to scroll opened the cue 79% opaque. */
+		animation-range: max(0px, calc(100% - 24px)) 100%;
+	}
+
+/* The shade. `::before` draws nothing here: it is the line the two modes
+   below add, and has no `content` until they give it one. */
+.sheetsmith-placed-scroll::after {
+		content: '';
+		height: 16px;
+		/* The table's shadow colour and its one transparent stop. */
+		background-image: linear-gradient(
+			to top,
+			var(--background-modifier-border),
+			rgba(0, 0, 0, 0)
+		);
+	}
+
+}
+
+/* **Under more contrast and in forced colors the cue is a rule on a floor, not
+   a shade.** It is the only sign that content is hidden, so it is a state mark
+   and owes 3:1 (`docs/UI.md` §6), and the shadow's
+   `--background-modifier-border` measures 1.22:1 light and 1.24:1 dark against
+   the box's `--background-primary-alt`. Raising the shadow to `--text-muted`
+   was tried first and laid a 16px band over the last line the reader can read:
+   the lower half of a line under it fell to about 1.4:1 light and 2.5:1 dark,
+   which lowers text where §6 raises edges.
+
+   **The line has to stand clear of everything, or it reads as something
+   else**, and each step here is a picture that did:
+   - on the box's bottom edge it merged with the add control's 1px rule under
+     it into one 3px toothed line;
+   - lifted but laid straight over the content, it closed whatever it crossed:
+     a Record set's clipped body field read as a box with a bottom border, and a
+     row of briefs cut in the gap under them took it as a thicker bottom edge;
+   - as a short centred bar over the content, it fell under a word of the
+     record's prose and read as that word's link underline.
+
+   So the cue brings its own ground. `::after` becomes a 10px floor in the
+   box's own fill along the foot, which ends the content 10px early rather than
+   fading it: what is above the floor keeps its full contrast, and what is under
+   it is the part already cut. `::before` is the rule on that floor, 2px, solid,
+   `--size-2-2` up and `--size-4-2` in from each side, so there is fill between
+   it and the content above, the foot's rule below and the box's sides. Forced
+   colors keeps both: it repaints the floor `Canvas`, the mode's own ground, and
+   the rule `CanvasText`, written out below, and it keeps borders where it
+   drops the gradient.
+
+   **Solid, because the other styles are taken**: dashed is a Track's granted
+   segment and dotted is a modified value (`.sheetsmith-pool-max-modified`).
+   `--text-muted` measures 6.41:1 light and 7.50:1 dark on the fill. The
+   opacity is still the scroll's, so in both modes floor and rule go at the
+   end. */
+/* Gated as the cue is: here `::before` is given content, so outside the gate a
+   browser without scroll timelines would draw the floor and the rule for good. */
+@supports (animation-timeline: scroll()) {
+@media (prefers-contrast: more), (forced-colors: active) {
+/* The floor's height, named once on the wrapper so the scroller below it and
+   the floor itself read the same number. */
+.sheetsmith-placed-scroll {
+		--sheetsmith-placed-scroll-floor: 10px;
+	}
+
+/* **A control focused at the foot stops above the floor.** Tab scrolls a
+   control only as far as the scrollport's edge, and the floor is opaque and
+   inside it, so the last control reached sat 10px under it with its ring cut
+   (seen in the Record set: a record's name field and its ring half under the
+   floor while the cue was on). Padding the scrollport's end by the floor and
+   the ring's own reach, a 2px outline at a 2px offset, is what the browser
+   honours when it scrolls a focus into view; it changes nothing at the end,
+   where the floor has gone and the content's own padding is the last thing. */
+.sheetsmith-placed-scroller {
+		scroll-padding-block-end: calc(var(--sheetsmith-placed-scroll-floor) + var(--size-2-2));
+	}
+
+.sheetsmith-placed-scroll::after {
+		height: var(--sheetsmith-placed-scroll-floor);
+		background-color: var(--background-primary-alt);
+		background-image: none;
+	}
+
+.sheetsmith-placed-scroll::before {
+		content: '';
+		inset-inline: var(--size-4-2);
+		bottom: var(--size-2-2);
+		z-index: 3;
+		height: 0;
+		border-bottom: 2px solid var(--text-muted);
+	}
+
+}
+
+@media (forced-colors: active) {
+.sheetsmith-placed-scroll::before {
+		border-bottom-color: CanvasText;
+	}
+
+}
+
+}
+
+/* ---------------------------------------------------------------------------
    Rich text — a free markdown block.
 
    Not a fourth kind of panel (§9 of docs/UI.md). Prose beside cards should read

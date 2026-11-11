@@ -3122,6 +3122,8 @@ export const DEFAULTS = [
 	// a brief of each form — and the rest of the In play polish's views
 	// (`docs/features/stat-block-in-play-polish.md`), each in four palettes.
 	...formsPolishViews(),
+	// A placed box that scrolls says more is below, and says nothing at the end.
+	...placedScrollCueViews(),
 	{
 		// Both on by hand: the picker's extra line, the report and both blocks.
 		name: 'sheet-forms-two-on',
@@ -3804,6 +3806,64 @@ function formsPolishViews() {
 			frame: BLOCK,
 		},
 	];
+}
+
+/**
+ * **The placed scroll cue** (`sheet.css`, "A placed box that scrolls says more
+ * is below"): a shadow along a placed scroller's foot while its content runs
+ * past it, gone once it is scrolled to the end. Three scrollers, each at the
+ * top and at the end, in six palettes, so every one shows the cue present and
+ * gone.
+ *
+ * - `stat-block-play`: Brown Bear in play with the Stat block placed four rows
+ *   tall rather than sixteen (`&place=` with a height), so the In play panel and
+ *   the Attacks table are what the foot cuts;
+ * - `stat-block-briefs`: no form on, the briefs drawing the Ability Scores zone,
+ *   the same four rows, so the second row of briefs is under the foot;
+ * - `record-set`: the sample's Traits, six records in its own three rows,
+ *   unchanged;
+ * - `stat-block-short`, light only: the briefs at five rows, which leaves 19px
+ *   to scroll, less than the 24px the cue fades over, so it shows the cue
+ *   opening whole on a short overflow rather than part faded.
+ *
+ * Shot at the top, which is how the sheet opens, and at the end through
+ * `&scrolly=`, since `&scroll=` centres a target and never reaches the end.
+ */
+function placedScrollCueViews() {
+	const SHORT = 'place=wild_shape:7,6,4';
+	const STAT = '.sheetsmith-stat-block-content';
+	const LIST = '.sheetsmith-record-set-fields-5 .sheetsmith-record-set-list';
+	const subjects = [
+		{ name: 'stat-block-play', query: `state=forms&${SHORT}`, frame: '.sheetsmith-stat-block', scroller: STAT },
+		{ name: 'stat-block-briefs', query: `state=forms-none-zone&${SHORT}`, frame: '.sheetsmith-stat-block', scroller: STAT },
+		{ name: 'record-set', query: '', frame: '.sheetsmith-record-set-fields-5', scroller: LIST },
+	];
+	const palettes = [
+		{ suffix: 'light', query: 'theme=light', size: '1400,1500' },
+		{ suffix: 'dark', query: 'theme=dark', size: '1400,1500' },
+		{ suffix: 'narrow', query: 'theme=light&width=380', size: '380,3000' },
+		{ suffix: 'contrast-more', query: 'theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: 'contrast-more-dark', query: 'theme=dark', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: 'forced-colors', query: 'theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
+	];
+	const short = { name: 'stat-block-short', query: 'state=forms-none-zone&place=wild_shape:7,6,5', frame: '.sheetsmith-stat-block', scroller: STAT };
+	return [...subjects, short].flatMap(({ name, query, frame, scroller }) =>
+		(name === short.name ? palettes.slice(0, 1) : palettes).flatMap(({ suffix, query: palette, ...view }) =>
+			['top', 'end'].map((end) => ({
+				...view,
+				name: `sheet-scroll-cue-${name}-${end}-${suffix}`,
+				query: [
+					'surface=sheet',
+					query,
+					palette,
+					end === 'end' ? `scrolly=${encodeURIComponent(`${scroller}|bottom`)}` : '',
+				]
+					.filter((part) => part !== '')
+					.join('&'),
+				frame,
+			})),
+		),
+	);
 }
 
 const args = process.argv.slice(2);

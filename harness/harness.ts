@@ -217,8 +217,9 @@ function loadState(name: StateName): void {
 }
 
 /**
- * `&place=<id>:<col>,<width>` — move a top-level component to that column and
- * span on its own row, so a shot can stage a placement no sample holds.
+ * `&place=<id>:<col>,<width>[,<height>]` — move a top-level component to that
+ * column and span on its own row, and to that many rows tall where a height is
+ * given, so a shot can stage a placement no sample holds.
  *
  * Added for `docs/features/pool-headline-narrow-fit.md`, whose reported case is
  * a one-unit Pool on a wide sheet: the sample's Pools are three and four units
@@ -226,16 +227,29 @@ function loadState(name: StateName): void {
  * full-sheet shot. It changes the layout rather than the drawn cell's style, so
  * the placement survives the rebuild a `&type=` commit makes and the grid's own
  * code does the arithmetic. Top level only: no shot needs a child moved yet.
+ *
+ * The height was added for the placed scroll cue (`sheet.css`, "A placed box
+ * that scrolls says more is below"): the forms sample's Stat block is sixteen
+ * rows so its library and two-on shots show a whole record, and a cue needs it
+ * shorter than what it holds, which is a placement and not a state.
  */
 function placeComponent(placing: string): void {
-	const match = /^([\w-]+):(\d+),(\d+)$/.exec(placing);
+	const match = /^([\w-]+):(\d+),(\d+)(?:,(\d+))?$/.exec(placing);
 	if (match === null) return;
-	const [, id, col, width] = match;
+	const [, id, col, width, height] = match;
 	layout = {
 		...layout,
 		components: layout.components.map((config) =>
 			config.id === id
-				? { ...config, position: { ...config.position, col: Number(col), width: Number(width) } }
+				? {
+						...config,
+						position: {
+							...config.position,
+							col: Number(col),
+							width: Number(width),
+							...(height === undefined ? {} : { height: Number(height) }),
+						},
+					}
 				: config,
 		),
 	};
@@ -1129,14 +1143,26 @@ function applyQuery(): void {
 	 * end, `&scroll=`'s sibling for the other axis. The add control is outside
 	 * the table's scroller, so a claim that its label stays in view with the table
 	 * scrolled to both ends needs a still of each end.
+	 *
+	 * `&scrolly=<selector>|<top|bottom>` — the same on the block axis.
+	 * `&scroll=` centres a target inside its scrollport, which never lands at
+	 * the end, and the placed scroll cue is only gone there, so its claim needs
+	 * a still of each end.
+	 *
+	 * One reading of both, so the two parameters cannot come to parse their
+	 * `selector|end` pair differently.
 	 */
-	const scrolledSideways = params.getAll('scrollx');
-	const scrollSidewaysWanted = () => {
-		for (const wanted of scrolledSideways) {
+	const scrolledToEnds = [
+		...params.getAll('scrollx').map((wanted) => ({ wanted, far: 'right', axis: 'x' as const })),
+		...params.getAll('scrolly').map((wanted) => ({ wanted, far: 'bottom', axis: 'y' as const })),
+	];
+	const scrollToEndsWanted = () => {
+		for (const { wanted, far, axis } of scrolledToEnds) {
 			const [selector, end] = wanted.split('|');
 			const target = document.querySelector<HTMLElement>(selector ?? '');
 			if (target === null) continue;
-			target.scrollLeft = end === 'right' ? target.scrollWidth : 0;
+			if (axis === 'x') target.scrollLeft = end === far ? target.scrollWidth : 0;
+			else target.scrollTop = end === far ? target.scrollHeight : 0;
 		}
 	};
 
@@ -1255,7 +1281,7 @@ function applyQuery(): void {
 		if (scrolled.length === 0 && !focusedEarly) focusWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
-		scrollSidewaysWanted();
+		scrollToEndsWanted();
 		if (scrolled.length > 0) focusWanted();
 		// The component picker, once the pane is on screen: opening it scrolls
 		// the search field clear of the pinned bar, which reads real geometry.

@@ -421,7 +421,12 @@ sheet.
   That is a card's border and pill, a table's box and cells, a pool's box and
   steppers, a track's box, segments and dividers, a placed box, a record group's
   outline and header rule, the record strip's rule, and a record's menu, which
-  was the one edge left faint until this was looked at. **The form tint keeps
+  was the one edge left faint until this was looked at. A placed scroller's
+  foot cue is raised too, since it is the only sign that content is hidden,
+  but as a 2px `--text-muted` rule on a 10px floor of the box's own fill
+  rather than a darker shade: a shade over the last legible line lowers that
+  line's text, and a rule laid straight over content reads as an edge of
+  whatever it crosses. **The form tint keeps
   its colour as the edge alone**: the box's fill and the tag's go, the box's
   outline is 2px in the edge colour, and the tag sits on the plain page with its
   1px edge, since the edge already clears 3:1 against a card in every colour
@@ -716,11 +721,17 @@ energetically than the app around it.
 - **Motion earns its place by doing a job** [judgement]: showing state changed,
   keeping the reader oriented, softening a jump, confirming a press landed.
   Anything touched every few seconds gets feedback, not animation.
-- **Transitions, never `@keyframes`** [judgement]. A transition can be
-  interrupted and retargeted mid-flight; a keyframe animation restarts from
-  zero. Everything here is repeatable and reversible, so everything is a
-  transition. The plugin currently has zero `@keyframes` and that is worth
-  keeping.
+- **Transitions, never a keyframe on time** [judgement]. A transition can be
+  interrupted and retargeted mid-flight; a keyframe animation on the clock
+  restarts from zero. Everything here is repeatable and reversible, so
+  everything is a transition. **One `@keyframes` is the exception, and it is
+  not on time**: the placed scroll cue's, run on a scroll timeline, so it never
+  plays and never restarts, its progress being the scroll offset (`sheet.css`,
+  "A placed box that scrolls says more is below"). **That it stays the only
+  one is checked, and so is that it never runs on the clock** [checked:
+  `styles.test.ts` allows that one `@keyframes` and refuses any other, on time
+  or not, and holds every rule naming it to the `@supports` gate and an
+  `animation-timeline`]. A second keyframe argues its case here first.
 - **Never `ease-in`.** It delays the instant the user is watching.
 - **Motion stays under 300ms.** A colour or opacity fade is not motion and may
   run longer when it is deliberately slow.
@@ -773,6 +784,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Text with its wikilinks as links | `components/linked-text.ts` | Table's cells; Rich text's and Record set's fallback, **and the anchors the app's own renderer drew** — the module both paints anchors and adopts them, because the press and the hover are the same policy either way |
 | A box sized by its placement | `.sheetsmith-placed`, `.sheetsmith-placed-box` | Rich text, Image, Record set, Passport, Stat block — the component's own block, and its picture, which takes the *box* alone inside a card rather than the pair |
 | A boundary on that box | `.sheetsmith-placed-box`'s own border | all four, always rather than only under a coarse pointer: the fill alone measures 1.04:1 against the page. Inside a Passport's card the same fill measures 1.035:1 the other way — Obsidian's subtle surfaces are calibrated against the page and a card is already tinted — and it reads as belonging to the card, which the even 8px inset is what does |
+| A placed box's scroll cue | `.sheetsmith-placed-scroll` on the wrapper that never scrolls, `.sheetsmith-placed-scroller` on its child that does; `sheet.css`, "A placed box that scrolls says more is below" | Stat block (`-stat-block-scroll`, `-stat-block-content`), Record set (`-record-set-scroll`, `-record-set-list`). A shadow along the foot while the content runs past it, gone at the end, driven by the scroller's scroll timeline; under more contrast and in forced colors a solid 2px rule instead, `--text-muted` and `CanvasText`, on a 10px floor of the box's fill (`::before` on `::after`), so it stands on fill on every side and completes no edge in the content. **Not** Rich text, whose two layers sit in the box with no wrapper between, and not the Table's sideways shadow, which paints under transparent cells |
 | Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name, a Passport's name, a Record set's group header name and a text field's value. **"Its own text" is `value` on an `<input>` and `textContent` everywhere else**, which the fourth consumer forced: a field has no `textContent`, so the first three's spelling would have set the tooltip to the empty string on a clipped field — a reveal that decided there was nothing to reveal. A copy in the caller is forbidden and unguardable, since `scrollWidth` and `clientWidth` are both 0 under happy-dom |
 | A list inside one row of another list | `editor/nested-list-field.ts`; `.sheetsmith-nested-list`, `-line`, `-controls`, `-controls-reserved` | a modifier definition's **Changes**, a Stat block table zone's **Columns**. **The frame only**: the caller draws each line's own controls and names them, so the module knows that no modifier exists — `linked-text.ts`'s arrangement, in the editor. What it owns is the indent, the trailing control track, the remove, and the **Add** footer in `.sheetsmith-entry-footer`'s own clothes. **Indented by geometry rather than a background**, `--size-4-2`, so the nesting survives `forced-colors: active` where an author background is repainted one system colour — and little enough that a definition with one change is still the form that shipped. **A hairline between one line and the next, and spacing alone could not do it**: the forced break puts each line's six controls on two rows, measured 63px apart, against 56px between one line and the next — so the gap said the opposite of the grouping, and raising it far enough would make a two-line entry twice the object a one-line one is. A rule is a difference in kind, it survives forced colors as a border, and it costs a pixel. **The remove is reserved and hidden on the only line there is**, `.sheetsmith-detail-field-reserved`'s argument one element over: a control that is not created gives its width back to the line's grow, so a list holding one-line and two-line entries would read as two forms down the pane. **Up and down arrows where the caller hands its list over, and no drag**: order inside a modifier definition's changes is not observable, since a breakdown lists contributors in *definition* order and two changes at one target contest by size (`docs/features/multi-change-definitions.md`), so that caller draws none; a Stat block table zone's **Columns** is the second consumer, where order is the order the columns are drawn and written in, and its arrows disable at their ends and are named for the column (`docs/features/stat-block-zones.md`) |
 | A problem list under a textarea field | `.sheetsmith-field-problems`, `-problem`, `-problem-line` | the function library, the reset triggers, the bonus types |

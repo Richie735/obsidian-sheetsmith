@@ -5432,3 +5432,156 @@ describe('the stat block brief zone (docs/features/stat-block-brief-zone.md)', (
 		);
 	});
 });
+
+describe('a placed box that scrolls says more is below', () => {
+	/*
+	 * The table's right-edge shadow turned to the block axis, and drawn over the
+	 * content rather than under it, since a brief, the In play panel and a Record
+	 * set's group heading each paint an opaque surface at the foot that a shadow
+	 * on the scroller's own background would lie beneath (`sheet.css`, "A placed
+	 * box that scrolls says more is below"). Nothing here does layout, so these
+	 * hold the declarations; the `sheet-scroll-cue-*` shots hold the picture.
+	 *
+	 * **Styled once, on a class pair each wearer stamps** (`docs/UI.md` §9). The
+	 * way that breaks is a wearer's own class written back into one of the cue's
+	 * rules and not the others, which reads fine in review and draws the cue in
+	 * some modes only; the guard below refuses any selector but the pair's. That
+	 * each wearer stamps the pair is a claim about the component, and lives in
+	 * `stat-block.test.ts` and `record-set.test.ts`.
+	 */
+	const GATE = '@supports (animation-timeline: scroll())';
+	const WRAPPER = '.sheetsmith-placed-scroll';
+	const SCROLLER = '.sheetsmith-placed-scroller';
+	const CUE = `${WRAPPER}::after`;
+	const RULE = `${WRAPPER}::before`;
+	const MODES = '@media (prefers-contrast: more), (forced-colors: active)';
+	const KEYFRAMES = 'sheetsmith-placed-scroll-cue';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const listing = (rule: Rule) => selectorList(rule.selector);
+	/** The one rule in that context whose selector list is exactly these. */
+	const one = (context: string, ...selectors: string[]) => {
+		const found = all.filter(
+			(rule) =>
+				rule.context.at(-1) === context &&
+				listing(rule).join() === selectors.join(),
+		);
+		expect(found, `${context} ${selectors.join(', ')}`).toHaveLength(1);
+		return found[0]?.body ?? '';
+	};
+
+	it('names no selector but the pair\'s in any rule of the cue', () => {
+		// A wearer's own class beside the pair's, in one rule and not the others,
+		// is the duplication the pair replaced.
+		const cue = all.filter((rule) => listing(rule).some((one) => one.startsWith(WRAPPER)));
+		expect(cue.length).toBeGreaterThan(0);
+		const strays = cue.flatMap(listing).filter((one) => ![WRAPPER, SCROLLER, CUE, RULE].includes(one));
+		expect(strays).toEqual([]);
+	});
+
+	it('names the timeline on the scroller and lifts it to the wrapper round it', () => {
+		expect(one(GATE, SCROLLER)).toMatch(/scroll-timeline:\s*--sheetsmith-placed-scroll block/);
+		const wrapper = one(GATE, WRAPPER);
+		expect(wrapper).toMatch(/timeline-scope:\s*--sheetsmith-placed-scroll/);
+		expect(wrapper).toMatch(/position:\s*relative/);
+	});
+
+	it('lays both layers along the foot, over the content, off unless the scroll turns them on', () => {
+		const body = one(GATE, RULE, CUE);
+		expect(body).toMatch(/position:\s*absolute/);
+		expect(body).toMatch(/bottom:\s*0/);
+		expect(body).toMatch(/pointer-events:\s*none/);
+		// Off where the timeline is inactive, which is a scroller with nothing past it.
+		expect(body).toMatch(/opacity:\s*0/);
+		// The last 24px, or the whole scroll where there is less, so a short
+		// overflow opens the cue whole rather than part faded.
+		expect(body).toMatch(/animation-range:\s*max\(0px, calc\(100% - 24px\)\) 100%/);
+		// The rule layer draws nothing until a mode gives it content.
+		expect(body).not.toMatch(/content:/);
+	});
+
+	it('draws the shade as the table does, the table\'s colour and its transparent stop', () => {
+		const body = one(GATE, CUE);
+		expect(body).toMatch(/content:\s*''/);
+		expect(body).toMatch(
+			/background-image:\s*linear-gradient\(\s*to top,\s*var\(--background-modifier-border\),\s*rgba\(0, 0, 0, 0\)\s*\)/,
+		);
+	});
+
+	it('draws a rule on a floor, not a shade, under more contrast and in forced colors', () => {
+		// A shade over the last legible line lowered its text to about 1.4:1, and
+		// forced colors drops a gradient anyway. The floor ends the content early
+		// rather than fading it, and the rule stands on fill on every side.
+		const modes = all.filter((rule) => rule.context.at(-1) === MODES || rule.context.at(-1) === '@media (forced-colors: active)');
+		for (const rule of modes.filter((rule) => listing(rule).some((one) => one.startsWith(WRAPPER)))) {
+			// Gated too: these give `::before` content, so ungated they would draw for good.
+			expect(rule.context, rule.selector).toContain(GATE);
+		}
+		// One length for the floor, read by the floor and by the scroller.
+		expect(one(MODES, WRAPPER)).toMatch(/--sheetsmith-placed-scroll-floor:\s*10px/);
+		const floor = one(MODES, CUE);
+		expect(floor).toMatch(/height:\s*var\(--sheetsmith-placed-scroll-floor\)/);
+		// A control Tab brings to the foot stops above the floor, ring and all.
+		expect(one(MODES, SCROLLER)).toMatch(
+			/scroll-padding-block-end:\s*calc\(var\(--sheetsmith-placed-scroll-floor\) \+ var\(--size-2-2\)\)/,
+		);
+		// Only where the floor is: in every other mode the cue is a translucent shade.
+		const padded = all.filter((rule) => /scroll-padding-block-end\s*:/.test(rule.body) && listing(rule).includes(SCROLLER));
+		expect(padded.map((rule) => rule.context.at(-1))).toEqual([MODES]);
+		expect(floor).toMatch(/background-color:\s*var\(--background-primary-alt\)/);
+		expect(floor).toMatch(/background-image:\s*none/);
+		const line = one(MODES, RULE);
+		expect(line).toMatch(/content:\s*''/);
+		expect(line).toMatch(/border-bottom:\s*2px solid var\(--text-muted\)/);
+		expect(line).toMatch(/bottom:\s*var\(--size-2-2\)/);
+		expect(line).toMatch(/inset-inline:\s*var\(--size-4-2\)/);
+		expect(line).toMatch(/z-index:\s*3/);
+		// Dashed is a Track's granted segment and dotted a modified value.
+		expect(line).not.toMatch(/dashed|dotted/);
+		expect(one('@media (forced-colors: active)', RULE)).toMatch(/border-bottom-color:\s*CanvasText/);
+	});
+
+	it('writes the timeline on the pair alone, never on a wearer of it', () => {
+		const timed = all.filter((rule) =>
+			/(?:^|;)\s*(?:scroll-timeline|timeline-scope|animation-timeline|animation-range)\s*:/.test(rule.body),
+		);
+		expect(timed.length).toBeGreaterThan(0);
+		const strays = timed
+			.flatMap(listing)
+			.filter((selector) => ![WRAPPER, SCROLLER, CUE, RULE].includes(selector));
+		expect(strays).toEqual([]);
+	});
+
+	it('runs the keyframes only behind the gate and only on a scroll timeline', () => {
+		/*
+		 * The `@keyframes` block is outside the gate, which is legal CSS and the
+		 * whole exposure: a rule naming it in `animation` without a timeline, or
+		 * outside the gate, plays it once on the clock, which is exactly the
+		 * keyframe on time `docs/UI.md` §8 refuses, and a still shot cannot tell.
+		 */
+		const running = all.filter((rule) =>
+			declarations(rule.body).some((one) => new RegExp(`^animation(?:-name)?:.*\\b${KEYFRAMES}\\b`).test(one)),
+		);
+		expect(running).toHaveLength(1);
+		for (const rule of running) {
+			expect(rule.context, rule.selector).toContain(GATE);
+			const names = declarations(rule.body).map((one) => one.slice(0, one.indexOf(':')).trim());
+			const shorthand = names.findIndex((name) => name === 'animation' || name === 'animation-name');
+			const timeline = names.lastIndexOf('animation-timeline');
+			// The shorthand resets `animation-timeline`, so the timeline comes after it.
+			expect(timeline, rule.selector).toBeGreaterThan(shorthand);
+			expect(rule.body).toMatch(/animation-timeline:\s*--sheetsmith-placed-scroll\b/);
+		}
+	});
+
+	it('allows this one @keyframes and no other, from whole to gone', () => {
+		// docs/UI.md §8's exception: scroll progress, not time. Any second
+		// `@keyframes`, on time or not, fails here and is argued for in §8 first.
+		const keyframes = [...CSS_WITHOUT_COMMENTS.matchAll(/@keyframes\s+([\w-]+)/g)].map((match) => match[1]);
+		expect(keyframes).toEqual([KEYFRAMES]);
+		const frames = all.filter((rule) => rule.context.at(-1) === `@keyframes ${KEYFRAMES}`);
+		expect(frames.map((rule) => [rule.selector, rule.body])).toEqual([
+			['from', 'opacity: 1;'],
+			['to', 'opacity: 0;'],
+		]);
+	});
+});

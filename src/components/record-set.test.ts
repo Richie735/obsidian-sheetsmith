@@ -685,6 +685,12 @@ describe('recordSet rendering', () => {
 			expect(
 				box.querySelector('.sheetsmith-record-set-list'),
 			).not.toBeNull();
+			// The placed scroll cue's pair, styled once in `sheet.css`.
+			expect(
+				box.querySelector(
+					':scope > .sheetsmith-placed-scroll.sheetsmith-record-set-scroll > .sheetsmith-placed-scroller.sheetsmith-record-set-list',
+				),
+			).not.toBeNull();
 			// And nothing anywhere sets a height per record, which is the other way
 			// the box could come to be sized by what is open.
 			for (const record of records(el)) {
@@ -7754,8 +7760,8 @@ describe('a text field as the group key', () => {
 				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-28
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
-				      div.sheetsmith-record-set-scroll
-				        div.sheetsmith-record-set-list
+				      div.sheetsmith-placed-scroll.sheetsmith-record-set-scroll
+				        div.sheetsmith-placed-scroller.sheetsmith-record-set-list
 				          div.sheetsmith-record
 				            div.sheetsmith-record-summary
 				              button.sheetsmith-record-disclosure [type=button aria-label=Open First aria-expanded=false]
@@ -7839,8 +7845,8 @@ describe('a text field as the group key', () => {
 				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-28
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
-				      div.sheetsmith-record-set-scroll
-				        div.sheetsmith-record-set-list
+				      div.sheetsmith-placed-scroll.sheetsmith-record-set-scroll
+				        div.sheetsmith-placed-scroller.sheetsmith-record-set-list
 				          div.sheetsmith-record-group
 				            h3.sheetsmith-record-group-heading
 				              button.sheetsmith-record-group-toggle [type=button aria-expanded=true]
@@ -7944,8 +7950,8 @@ describe('a text field as the group key', () => {
 				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-28
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
-				      div.sheetsmith-record-set-scroll
-				        div.sheetsmith-record-set-list
+				      div.sheetsmith-placed-scroll.sheetsmith-record-set-scroll
+				        div.sheetsmith-placed-scroller.sheetsmith-record-set-list
 				          div.sheetsmith-record-group
 				            h3.sheetsmith-record-group-heading
 				              button.sheetsmith-record-group-toggle [type=button aria-expanded=true]

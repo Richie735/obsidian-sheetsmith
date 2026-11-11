@@ -1255,8 +1255,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 */
 		const usesSlot = element('div', 'sheetsmith-stat-block-uses-slot', head);
 
-		const scroll = element('div', 'sheetsmith-stat-block-scroll', box);
-		const content = element('div', 'sheetsmith-stat-block-content', scroll);
+		const scroll = element('div', 'sheetsmith-placed-scroll sheetsmith-stat-block-scroll', box);
+		const content = element('div', 'sheetsmith-placed-scroller sheetsmith-stat-block-content', scroll);
 		const foot = element('div', 'sheetsmith-stat-block-foot', box);
 
 		const picking = awaitingPick === config.id;
