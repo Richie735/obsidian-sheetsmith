@@ -10,6 +10,7 @@ import { richText } from '../components/rich-text';
 import { RenderContext } from '../types';
 import { getComponent, listComponentTypes } from '../components';
 import { entryConfig } from '../test/palette-entry';
+import { appRenderedLink } from '../test/rendered-link';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, isContainer } from '../types';
 
@@ -900,17 +901,18 @@ describe('prose on the canvas', () => {
 		expect(removed.mock.calls.map((call) => call[0])).toEqual(added.mock.results.slice(0, 10).map((result) => result.value as Component));
 	});
 
-	it('selects from the overlay over a rendered link, follows nothing, and hands over no link context', async () => {
-		// A renderer that draws what the app's does for a wikilink, so there is an
-		// anchor under the overlay to not follow.
+	/**
+	 * A renderer that draws what the app's does for a wikilink, one per render,
+	 * so there is an anchor under the overlay to not follow.
+	 */
+	const rendersSampleLink = () =>
 		vi.spyOn(MarkdownRenderer, 'render').mockImplementation(async (_app, _markdown, into) => {
 			await Promise.resolve();
-			into.createEl('p').createEl('a', {
-				cls: 'internal-link',
-				text: 'Sample note',
-				attr: { href: 'Sample note', 'data-href': 'Sample note' },
-			});
+			appRenderedLink(into.createEl('p'), 'Sample note');
 		});
+
+	it('selects from the overlay over a rendered link, follows nothing, and hands over no link context', async () => {
+		rendersSampleLink();
 		const seen: RenderContext[] = [];
 		const real = richText.render.bind(richText);
 		vi.spyOn(richText, 'render').mockImplementation((container, config, data, context) => {
@@ -945,5 +947,38 @@ describe('prose on the canvas', () => {
 		expect(host.selected).toBe('backstory');
 		// And a hover asks the app for no preview.
 		expect(hovered).not.toHaveBeenCalledWith('hover-link', expect.anything());
+	});
+
+	it('draws a Stat block features entry\'s link and follows nothing from it', async () => {
+		// The features entry binds its rendered layer as Rich text does, so the
+		// canvas holds only because it hands over no `link`: nothing to call.
+		rendersSampleLink();
+		const statBlock = getComponent('stat-block');
+		if (statBlock === undefined) throw new Error('expected the Stat block');
+		const seen: RenderContext[] = [];
+		const real = statBlock.render.bind(statBlock);
+		vi.spyOn(statBlock, 'render').mockImplementation((container, config, data, context) => {
+			seen.push(context);
+			real(container, config, data, context);
+		});
+		const app = new App();
+		const hovered = vi.spyOn(app.workspace, 'trigger');
+		const host = fakeHost('', true, app);
+		const el = document.createElement('div');
+		new Canvas(host).draw(el, layoutOf(forms()));
+		await settle();
+
+		expect(seen.length).toBeGreaterThan(0);
+		for (const context of seen) expect(context.link).toBeUndefined();
+		const anchor = el.querySelector<HTMLElement>('.sheetsmith-stat-block-entry a.internal-link');
+		expect(anchor).not.toBeNull();
+		const press = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true });
+		anchor?.dispatchEvent(press);
+		expect(press.defaultPrevented).toBe(true);
+		anchor?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, ctrlKey: true, metaKey: true }));
+		expect(host.selected).toBe('');
+		expect(hovered).not.toHaveBeenCalledWith('hover-link', expect.anything());
+		el.querySelector<HTMLElement>('[data-sheetsmith-focus="preview-forms"]')?.click();
+		expect(host.selected).toBe('forms');
 	});
 });

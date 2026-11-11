@@ -30,7 +30,7 @@ import { displayText } from '../parse/wikilink';
 import { ZoneColumnType, ZoneType, zoneHeadingKey, zoneHeadingLines } from '../parse/zones';
 import { RenderContext } from '../types';
 import { element } from '../ui/element';
-import { paintLinkedText } from './linked-text';
+import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import {
 	bindDisclosure,
 	drawRecordBody,
@@ -339,6 +339,14 @@ export function drawZoneBrief(into: HTMLElement, zone: BodyZone, read: ZoneRead 
 type MarkdownContext = Pick<RenderContext, 'renderMarkdown' | 'link'>;
 
 function drawMarkdown(into: HTMLElement, text: string, context: MarkdownContext): void {
+	// The links the app draws, given this plugin's behaviour, as Rich text and
+	// the record body bind theirs: once, before anything is painted, delegated so
+	// it outlives the renderer replacing its output. Every caller hands in an
+	// element of its own, made for this call and inside no other bound layer, so
+	// no press is answered twice; and the fallback's anchors are wired where they
+	// are painted, so the layer skips them. On the canvas `link` is undefined and a press
+	// follows nothing (`docs/features/canvas-renders-markdown.md`).
+	adoptRenderedLinks(into, context.link);
 	if (context.renderMarkdown !== undefined) {
 		context.renderMarkdown(text, into, () => paintRecordProse(into, text, context));
 	} else {

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { adoptRenderedLinks, markRenderedResolution } from './linked-text';
+import { adoptRenderedLinks, markRenderedResolution, paintLinkedText } from './linked-text';
 import { LinkContext } from '../types';
 
 /*
@@ -127,6 +127,21 @@ describe('adoptRenderedLinks', () => {
 			new MouseEvent('click', { bubbles: true, cancelable: true }),
 		);
 		expect(opened).toEqual(['Waterdeep']);
+		into.remove();
+	});
+
+	it('leaves an anchor the fallback painted to the fallback, press and hover alike', () => {
+		// The fallback's own `stopPropagation` covered the press only: a hover
+		// bubbled on to the layer, and every preview was offered twice.
+		const into = container();
+		const { opened, previewed, link } = spy();
+		adoptRenderedLinks(into, link);
+		paintLinkedText(into, 'See [[Neverwinter]].', { link });
+		const el = into.querySelector('a.internal-link') as HTMLElement;
+		el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+		el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+		expect(opened).toEqual(['Neverwinter']);
+		expect(previewed).toEqual(['Neverwinter']);
 		into.remove();
 	});
 });

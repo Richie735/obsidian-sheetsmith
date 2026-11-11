@@ -8,6 +8,7 @@ import { outcomeView } from '../test/modifier-views';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { formsSamples } from '../../harness/samples';
 import { sampleOf } from '../test/sample';
+import { rendersLinks } from '../test/rendered-link';
 
 /*
  * Stat block (`docs/features/character-forms.md`): one form at a time over a
@@ -1867,6 +1868,90 @@ describe('a features entry with no app to render it', () => {
 		expect(entries[1]?.querySelector('p > strong')?.textContent).toBe('Roar (1/Day).');
 		expect(entries[1]?.textContent).not.toContain('**');
 		expect(entries[1]?.textContent).toContain('On a failure it is frightened.');
+	});
+});
+
+describe("a link the app rendered in a zone's markdown", () => {
+	/*
+	 * The record body's and Rich text's bug again, on the surfaces that draw
+	 * through `drawMarkdown`: the fallback painter wires each anchor it makes,
+	 * the app's renderer makes its own, and nothing listened to those, so a
+	 * wikilink in a features entry was dead in Obsidian alone.
+	 */
+	const LINKED = BEAR.replace('| [[Claws (Brown Bear)\\|Claws]] | 6 | 2d6+4 slashing |\n', '| Claws | 6 | 2d6+4 slashing |\n\nAfter the table, [[After note]].\n')
+		.replace('#### Actions\n\n', '#### Actions\n\nThe lead, [[Lead note]].\n\n')
+		.replace('**Multiattack.** Two attacks.', '**Multiattack.** Two attacks, [[Entry note]].')
+		.replace('Not a zone in this layout.', 'Not a zone, [[Drift note]].')
+		.replace('***Keen Smell.*** Smell.', '***Keen Smell.*** [[Trait note]].');
+
+	/** The app's renderer, or the same render rejected so the fallback paints. */
+	const appRenders = (markdown: string, into: HTMLElement, onFailure: () => void, fail = false): void => {
+		if (fail) onFailure();
+		else rendersLinks(markdown, into);
+	};
+
+	function linked(renderMarkdown: RenderContext['renderMarkdown']) {
+		const opened: string[] = [];
+		const previewed: string[] = [];
+		const { el } = zoned(LINKED, {}, {
+			renderMarkdown,
+			link: {
+				resolves: () => true,
+				open: (target) => opened.push(target),
+				preview: (target) => previewed.push(target),
+			},
+		});
+		const anchorTo = (target: string) => el.querySelector<HTMLElement>(`a.internal-link[data-href="${target}"]`);
+		return { el, opened, previewed, anchorTo };
+	}
+
+	const press = (anchor: HTMLElement | null, mod = false): MouseEvent => {
+		const event = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: mod, metaKey: mod });
+		anchor?.dispatchEvent(event);
+		return event;
+	};
+
+	const SURFACES: [string, string, string][] = [
+		['a features entry', 'Entry note', '.sheetsmith-stat-block-entry:not(.sheetsmith-stat-block-entry-lead)'],
+		['the features lead', 'Lead note', '.sheetsmith-stat-block-entry-lead'],
+		['the text after a table', 'After note', '.sheetsmith-stat-block-zone-markdown'],
+		['a text zone', 'Trait note', '.sheetsmith-stat-block-zone-text'],
+		['the drift panel', 'Drift note', '.sheetsmith-stat-block-drift'],
+	];
+
+	for (const [surface, target, within] of SURFACES) {
+		it(`follows a press and offers the preview on ${surface}`, () => {
+			const { el, opened, previewed, anchorTo } = linked(appRenders);
+			const anchor = anchorTo(target);
+			expect(anchor?.closest(within)).not.toBeNull();
+			const event = press(anchor, true);
+			expect(opened).toEqual([target]);
+			// The target is `data-href`'s, and the browser's own navigation refused.
+			expect(event.defaultPrevented).toBe(true);
+			anchor?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, ctrlKey: true, metaKey: true }));
+			expect(previewed).toEqual([target]);
+			el.remove();
+		});
+	}
+
+	it('answers every press once, whether the app renders or its fallback does', () => {
+		for (const renderer of [
+			appRenders,
+			(markdown: string, into: HTMLElement, onFailure: () => void) => appRenders(markdown, into, onFailure, true),
+		]) {
+			const { el, opened, previewed } = linked(renderer);
+			const anchors = Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-form a.internal-link'));
+			expect(anchors.map((one) => one.getAttribute('data-href')).sort()).toEqual(
+				['After note', 'Drift note', 'Entry note', 'Lead note', 'Trait note'],
+			);
+			for (const anchor of anchors) {
+				press(anchor);
+				anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+			}
+			expect(opened.slice().sort()).toEqual(anchors.map((one) => one.getAttribute('data-href')).sort());
+			expect(previewed).toHaveLength(anchors.length);
+			el.remove();
+		}
 	});
 });
 
