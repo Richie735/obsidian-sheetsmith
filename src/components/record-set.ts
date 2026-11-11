@@ -1155,8 +1155,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// below). The list is out of flow inside its wrapper, so nothing in it
 		// contributes intrinsic height and the box cannot be grown past its
 		// placement by a long list or a long body.
-		const scroll = element('div', 'sheetsmith-record-set-scroll', box);
-		const list = element('div', 'sheetsmith-record-set-list', scroll);
+		const scroll = element('div', 'sheetsmith-placed-scroll sheetsmith-record-set-scroll', box);
+		const list = element('div', 'sheetsmith-placed-scroller sheetsmith-record-set-list', scroll);
 		if (headed) {
 			/*
 			 * **Aria-hidden, and no table role anywhere.** Every control already

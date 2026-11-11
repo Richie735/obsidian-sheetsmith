@@ -554,6 +554,23 @@ describe('the library', () => {
 	});
 });
 
+describe('the placed scroll cue', () => {
+	it('stamps the shared scroll pair on its wrapper and its scroller, on both faces', () => {
+		// The cue is styled once on the pair (`sheet.css`, "A placed box that
+		// scrolls says more is below"); a face drawn without it has no cue at all.
+		const { el } = render();
+		const check = () => {
+			const scroll = el.querySelector('.sheetsmith-stat-block-scroll');
+			expect(scroll?.classList.contains('sheetsmith-placed-scroll')).toBe(true);
+			const content = scroll?.querySelector(':scope > .sheetsmith-stat-block-content');
+			expect(content?.classList.contains('sheetsmith-placed-scroller')).toBe(true);
+		};
+		check();
+		toLibrary(el);
+		check();
+	});
+});
+
 describe('a rest', () => {
 	it('empties the active toggle and fills each HP to its own ceiling', () => {
 		const resolve = { resolve: () => null, explain: () => null };
