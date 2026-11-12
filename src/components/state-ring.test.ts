@@ -411,7 +411,7 @@ describe('a Table whose published column is itself a level (D3)', () => {
 			{ config: ranks, component: table, body },
 			gear(['skills.stealth = 2 in Training']),
 		]);
-		const outcome = modifiers.outcomes('skills.stealth = 2 in Training', { label: 'Cat Form', values: {} })[0];
+		const outcome = modifiers.outcomes('skills.stealth = 2 in Training', { label: 'Cat Form', values: {} }, '')[0];
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe(
 			'Skills · stealth already is "Training", so this change needs no column. Clear it.',

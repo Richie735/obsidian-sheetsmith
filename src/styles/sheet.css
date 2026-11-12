@@ -2727,6 +2727,19 @@ body {
 	border-bottom: 2px dotted var(--text-muted);
 }
 
+/* **The same mark on the temporary points a grant raises**
+   (`docs/features/granted-temporary-points.md`), and not the underline: the
+   pill's press edits, so `cursor: help` would promise one it does not have. The
+   field's box is the app's fixed input height, so the rule is drawn inside it
+   and the pill is the same height with a grant on as off (`docs/UI.md` §9);
+   its 2px come out of the bottom padding, so the digits sit where they sat. At
+   (0,3,0), past the field's `border: none`; its focus rule takes it away while
+   the field is edited. Its width is the rule below's. */
+.sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-granted {
+	padding-bottom: max(0px, calc(var(--size-2-1) - 2px));
+	border-bottom: 2px dotted var(--text-muted);
+}
+
 /* A max the character owns, typed where it is read.
 
    It keeps the span's colour and size rather than taking the value's, because
@@ -3034,6 +3047,24 @@ body {
 .sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
 	--sheetsmith-pool-temp-width: calc(3ch + 2 * var(--size-2-2));
 	width: var(--sheetsmith-pool-temp-width);
+}
+
+/* **A granted field gives up the reach into the pill's padding**, so its border
+   runs under its own three digits rather than into the pill's rounded corner.
+   The field normally reaches into that padding by a negative margin to widen
+   its target; here the margin and the inline padding go together, and the
+   width loses the padding's two halves, so the margin box, and the pill, are
+   exactly as wide as before and the digits centre in the same three `ch`. A
+   press on the padding now lands on the pill, whose router hands it to the
+   field. Not `clip-path`, which the directory's browser-support check flags
+   (the sr-only rule above). At (0,4,0), past the width rule above, and level
+   with the refused rule, which it follows and so outweighs: a granted field
+   draws the effective number and never the refused text, so it has nothing to
+   widen for. */
+.sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-granted.sheetsmith-pool-temp-granted {
+	width: calc(var(--sheetsmith-pool-temp-width) - 2 * var(--size-2-2));
+	margin-inline: 0;
+	padding-inline: 0;
 }
 
 /* The pill wears the ring, so the field inside it wears nothing.
@@ -3890,7 +3921,8 @@ a.sheetsmith-notice-action {
    by selector rather than a copy of it, at its `--font-ui-smaller`. `grid-column`
    is inert on it: a pool card is a flex column, and its own rule stretches it. */
 .sheetsmith-view .sheetsmith-track-row-problem,
-.sheetsmith-view .sheetsmith-pool > .sheetsmith-error {
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-error,
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-pool-temp-notice {
 	grid-column: 1 / -1;
 	padding: 0 0 0 var(--size-2-2);
 	border: none;
@@ -3898,6 +3930,17 @@ a.sheetsmith-notice-action {
 	border-radius: 0;
 	font-size: var(--font-ui-smaller);
 	text-align: left;
+}
+
+/* The pill's notice (`docs/features/granted-temporary-points.md` D8): a commit
+   that was written left the pill drawing a grant over what was typed, so the
+   sentence takes the refusal's slot and shape and none of its alarm. Muted,
+   which measures 6.19:1 on a card, with the leading rule in the border colour,
+   since nothing is wrong. Spans the card as the refusal does. */
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-pool-temp-notice {
+	align-self: stretch;
+	border-left-color: var(--background-modifier-border);
+	color: var(--text-muted);
 }
 
 /* The **Add** form, under whatever declared rows the picker still offers and

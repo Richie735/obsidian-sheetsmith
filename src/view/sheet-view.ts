@@ -27,7 +27,6 @@ import {
 	applySectionWrites,
 	CharacterNote,
 	CharacterParseError,
-	getSection,
 	parseCharacter,
 	serialiseCharacter,
 	withLayoutName,
@@ -49,7 +48,6 @@ import { parseTriggers } from '../parse/triggers';
 import {
 	ComponentConfig,
 	ComponentDefinition,
-	isContainer,
 	LinkContext,
 	PromoteResult,
 	TypedEffect,
@@ -65,8 +63,11 @@ import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
-import { applyDecorations, inPlayDecorations, stateLinesIn, pickTagText } from './placement-decorations';
+import { applyDecorations, bufferLinesIn, inPlayDecorations, stateLinesIn, pickTagText } from './placement-decorations';
 import { revealWhenTruncated } from '../ui/truncation';
+import { grantEndEdits, RecordedGrants, recordedActiveGrants } from './grant-ends';
+import { readComponents } from './read-components';
+import { FunctionLibrary } from '../formula/expression';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -227,6 +228,22 @@ export class SheetView extends TextFileView {
 	 * leaf moves to another file (`types.ts`, `collapsedGroups`).
 	 */
 	private collapsedGroups = new Map<string, Set<string>>();
+
+	/** D8's held sentences, by component, on the two maps' terms (`types.ts`, `heldNotice`). */
+	private heldNotices = new Map<string, string>();
+
+	/**
+	 * What the last render knew about grants with spent records, so an edit that
+	 * ends one clears its record in the same write
+	 * (`docs/features/granted-temporary-points.md` D7). Null before a render and
+	 * after a file change, and empty where nothing has a record, so an edit on
+	 * such a sheet builds no second walk.
+	 */
+	private grants: {
+		layout: Layout;
+		library: FunctionLibrary;
+		recorded: readonly RecordedGrants[];
+	} | null = null;
 	/**
 	 * The lifecycle of markdown a component asked the app to draw.
 	 *
@@ -412,8 +429,10 @@ export class SheetView extends TextFileView {
 		this.pendingSave = false;
 		this.renderId++;
 		this.activeTab.clear();
+		this.grants = null;
 		this.openRecords.clear();
 		this.collapsedGroups.clear();
+		this.heldNotices.clear();
 		// An undo offered on the note being left has nothing to restore into.
 		this.undoExpectation = null;
 		// The outgoing note's embeds go with it: a transclusion loaded for the
@@ -618,23 +637,8 @@ export class SheetView extends TextFileView {
 		// be complete before the first card draws. A component that failed to
 		// read publishes nothing, which makes formulas depending on it report an
 		// unknown name rather than compute from a blank.
-		const prepared: PreparedComponent[] = walk.map(({ config }) => {
-			const component = getComponent(config.type);
-			// A container has no section, so there is nothing to look for and no
-			// note body to be misread as its own: unmapped prose under a heading
-			// that happens to match a container's label is never even read
-			// (SPEC §10).
-			const readable = isContainer(component) ? undefined : component;
-			const section = readable ? getSection(note, config.label) : undefined;
-			const result =
-				readable && section ? readable.read(section.body, config) : null;
-			return {
-				config,
-				component,
-				error: result && !result.ok ? result.error : null,
-				data: result?.ok === true ? result.data : null,
-			};
-		});
+		// Through the one read the grant pass shares (`read-components.ts`).
+		const prepared: PreparedComponent[] = readComponents(note, walk);
 
 		// The layout's own arithmetic (SPEC §5). Definitions that failed to
 		// parse are left out and reported in the layout editor, where they
@@ -740,6 +744,11 @@ export class SheetView extends TextFileView {
 				else held.delete(key);
 				this.collapsedGroups.set(config.id, held);
 			},
+			heldNotice: this.heldNotices.get(config.id),
+			onHoldNotice: (stored: string | null) => {
+				if (stored === null) this.heldNotices.delete(config.id);
+				else this.heldNotices.set(config.id, stored);
+			},
 		}));
 
 		// The form tint, after every component has drawn and stamped its values
@@ -750,8 +759,9 @@ export class SheetView extends TextFileView {
 			inPlayDecorations(
 			marked,
 			(name) => modifiers.breakdown(name),
-			// And every ring a modifier set, which needs no slot (D11).
-			stateLinesIn(grid, modifiers),
+			// And every ring a modifier set, which needs no slot (D11), and every
+			// buffer a form in play's grant is drawing (granted-temporary-points D12).
+			[...stateLinesIn(grid, modifiers), ...bufferLinesIn(prepared, modifiers)],
 		),
 			revealWhenTruncated,
 		);
@@ -760,6 +770,14 @@ export class SheetView extends TextFileView {
 		// in the note untouched and simply do not render.
 
 		this.renderTriggers(triggerBar, layout, prepared, env);
+
+		// After every component has drawn, so asking a buffer which grants are
+		// active never moves the modifier walk's first entry in this render.
+		this.grants = {
+			layout,
+			library,
+			recorded: recordedActiveGrants(prepared, modifiers),
+		};
 
 		// In `sheet-posture.ts`'s order, which the harness shares rather than
 		// copies, so check 10 holds this call and not a twin of it.
@@ -1107,16 +1125,39 @@ export class SheetView extends TextFileView {
 					write: (body: string | null) => component.write(data, body, config),
 				})),
 			);
+			/*
+			 * **A grant this edit ended has its record cleared in the same write**
+			 * (`docs/features/granted-temporary-points.md` D7): the next text's
+			 * sheet is asked which recorded grants are still active, and the
+			 * component of each that is not adds its `endGrants` to the batch. One
+			 * commit, so one save and one rebuild, and a reset's undo restores
+			 * both halves with the note it replaces.
+			 */
+			const ended =
+				this.grants === null
+					? []
+					: grantEndEdits(this.grants.recorded, this.grants.layout, this.grants.library, text);
+			const cleared =
+				ended.length === 0
+					? { text, failed: [] }
+					: applySectionWrites(
+							text,
+							ended.map(({ component, config, data }) => ({
+								label: config.label,
+								write: (body: string | null) => component.write(data, body, config),
+							})),
+						);
 			// Every section that could be written still is; the ones that could
 			// not are named. A batch must not be all-or-nothing, or one
 			// misconfigured component would refuse a whole long rest.
-			if (failed.length > 0) {
+			const notSaved = [...failed, ...cleared.failed];
+			if (notSaved.length > 0) {
 				warn(
 					'Sheetsmith could not save:',
-					failed.map((failure) => `${failure.label} — ${failure.error}`),
+					notSaved.map((failure) => `${failure.label} — ${failure.error}`),
 				);
 			}
-			this.commit(text);
+			this.commit(cleared.text);
 		} catch (error) {
 			// The note itself would not parse, so there is no partial result to
 			// keep — nothing was written.

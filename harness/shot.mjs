@@ -3963,6 +3963,42 @@ export const DEFAULTS = [
 		hover: '.sheetsmith-record-input-text',
 	},
 	...poolHeadlineViews(),
+	/*
+	 * Temporary points a modifier grants (`docs/features/granted-temporary-points.md`):
+	 * a Pool beside a Stat block's form in play, a Record set's spell and a
+	 * Table's worn item, each active and then ended, so each pair shows the card
+	 * holding its size while the grant comes and goes. Then the form view's door
+	 * opened on the account, and a value typed under the bear's grant, the pill
+	 * still drawing the grant and D8's sentence under it.
+	 */
+	...['form-active', 'form-ended', 'spell-active', 'spell-ended', 'item-active', 'item-ended'].map(
+		(variant) => ({
+			name: `pool-grant-${variant}`,
+			query: `surface=sheet&theme=light&state=pool-grant-${variant}&bar=off`,
+			size: '1400,700',
+		}),
+	),
+	{
+		name: 'pool-grant-door',
+		query:
+			'surface=sheet&theme=light&state=pool-grant-door&bar=off&press=.sheetsmith-pool-modifier-button',
+		size: '1400,900',
+	},
+	/*
+	 * The bear spent down to 1 left beside the ring worn whole: the ring is the
+	 * grant in effect, so the pill draws 5 and the Gear row's glyph applies.
+	 */
+	{
+		name: 'pool-grant-spent-below',
+		query: 'surface=sheet&theme=light&state=pool-grant-spent-below&bar=off',
+		size: '1400,700',
+	},
+	{
+		name: 'pool-grant-typed-under',
+		query:
+			'surface=sheet&theme=light&state=pool-grant-form-active&bar=off&type=.sheetsmith-pool-temp-input%7C2',
+		size: '1400,700',
+	},
 ];
 
 /**

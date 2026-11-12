@@ -63,13 +63,15 @@
  * `layout-editor.test.ts` keeps only what needs the pane.
  */
 
-import { OPERATOR_LABELS } from '../en';
+import { OPERATOR_LABELS, TEXT } from '../en';
 import {
 	acceptingTargets,
 	ModifierTargetSource,
 	noteTargets,
 	stateTargets,
+	bufferTargets,
 } from '../formula/modifier-targets';
+import { aimsAtBuffer } from '../formula/modifier-buffers';
 import {
 	fillTargetOptions,
 	readTargetOption,
@@ -227,6 +229,9 @@ export function renderModifierDefinitions(
 	// The levels and flags a change may set, through the one derivation the
 	// sheet's form and the walk read (`docs/features/non-number-modifiers.md`).
 	const states = stateTargets(context.sources);
+	// The buffers a grant may raise, through the one derivation the sheet's form
+	// and the walk read (`docs/features/granted-temporary-points.md`).
+	const buffers = bufferTargets(context.sources);
 	const bonusTypes = parseModifierTypes(layout).names;
 	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
@@ -582,7 +587,9 @@ export function renderModifierDefinitions(
 			/** The level or flag this change sets, where it sets one. */
 			const aimed = stateOf(states, storedTarget, storedColumn === '' ? null : storedColumn);
 			value.createEl('option', { value: '', text: '—' });
-			fillTargetOptions(value, targets, notable, states);
+			fillTargetOptions(value, targets, notable, states, buffers);
+			/** Whether this change grants temporary points: At least is then its one operator. */
+			const granting = aimsAtBuffer(buffers, storedTarget, storedColumn === '' ? null : storedColumn);
 			/*
 			 * A stored target the picker does not offer, carried as its bare name.
 			 *
@@ -602,6 +609,7 @@ export function renderModifierDefinitions(
 			if (
 				storedTarget !== '' &&
 				aimed === undefined &&
+				!granting &&
 				!targets.some((t) => t.name === storedTarget) &&
 				!notable.some((t) => t.name === storedTarget)
 			) {
@@ -630,10 +638,13 @@ export function renderModifierDefinitions(
 				 * position (D6), and a stored one would sit in a select that cannot
 				 * show it.
 				 */
-				const onto = operatorOnto(
-					stateOf(states, chosen.target, chosen.column) !== undefined,
-					operatorOf(change),
-				);
+				// And onto a buffer, any operator becomes an At least, the one a grant is.
+				const onto = aimsAtBuffer(buffers, chosen.target, chosen.column)
+					? 'upgrade'
+					: operatorOnto(
+							stateOf(states, chosen.target, chosen.column) !== undefined,
+							operatorOf(change),
+						);
 				if (onto !== operatorOf(change)) {
 					change.operator = onto;
 					delete change.applies;
@@ -672,7 +683,11 @@ export function renderModifierDefinitions(
 			const effective: ModifierOperator = operatorOf(change);
 			// Sets and At least only, at a level or a flag; a stored Adds to is
 			// carried so the select can show it, and the report says why.
-			for (const id of operatorsAt(aimed !== undefined, effective)) {
+			// At least only, at a buffer, a stored other one carried on the same terms.
+			const offered: readonly ModifierOperator[] = granting
+				? ['upgrade', ...(effective === 'upgrade' ? [] : [effective])]
+				: operatorsAt(aimed !== undefined, effective);
+			for (const id of offered) {
 				operator.createEl('option', {
 					value: id,
 					text: OPERATOR_LABELS[id],
@@ -741,6 +756,11 @@ export function renderModifierDefinitions(
 					text: positionLegend(aimed.shape),
 				});
 				amount.parentElement?.after(legend);
+			}
+			if (granting) {
+				amount.parentElement?.after(
+					createDiv({ cls: 'sheetsmith-entry-footnote sheetsmith-detail-legend', text: TEXT.grantLegend }),
+				);
 			}
 			amount.addEventListener('change', () => {
 				setOptional(change, 'amount', amount.value);

@@ -1108,7 +1108,7 @@ describe('the changes list', () => {
 		return {
 			...modifiers,
 			outcomes: (part, row) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: labels[outcome.target] ?? outcome.target,
 				})),
@@ -1146,7 +1146,7 @@ describe('the changes list', () => {
 		const idle = {
 			...base,
 			outcomes: (part: string, row: Parameters<typeof base.outcomes>[1]) =>
-				base.outcomes(part, row).map((outcome) =>
+				base.outcomes(part, row, '').map((outcome) =>
 					outcome.target === 'skills.perception'
 						? { ...outcome, applies: false, suppressed: 'already higher' }
 						: outcome,
@@ -1179,7 +1179,7 @@ describe('the changes list', () => {
 		const idle = {
 			...base,
 			outcomes: (part: string, row: Parameters<typeof base.outcomes>[1]) =>
-				base.outcomes(part, row).map((outcome) =>
+				base.outcomes(part, row, '').map((outcome) =>
 					outcome.target === 'armour_class'
 						? { ...outcome, applies: false, condition: false }
 						: outcome,
@@ -1266,7 +1266,7 @@ describe('a closed form in the library', () => {
 		const labelled = {
 			...modifiers,
 			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
 				})),
@@ -2360,7 +2360,7 @@ describe('the briefs with no form on', () => {
 		const labelled = {
 			...modifiers,
 			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
 				})),
@@ -2385,7 +2385,7 @@ describe('the briefs with no form on', () => {
 		const idle = {
 			...modifiers,
 			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
 					applies: false,

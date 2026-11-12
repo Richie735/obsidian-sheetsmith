@@ -88,6 +88,7 @@ import {
 	phaseOf,
 	PromoteResult,
 	StateTarget,
+	BufferTarget,
 	TypedEffect,
 } from '../types';
 import { bindEditable } from '../interaction/editable';
@@ -113,7 +114,7 @@ import {
 	positionLegend,
 } from './modifier-breakdown';
 import { element } from '../ui/element';
-import { OPERATOR_LABELS } from '../en';
+import { OPERATOR_LABELS, TEXT } from '../en';
 import {
 	addressOf,
 	operatorOnto,
@@ -121,6 +122,9 @@ import {
 	shapesOf,
 	STATE_REFUSES_ADD,
 } from '../formula/modifier-states';
+import { aimsAtBuffer, BUFFER_TAKES_AT_LEAST } from '../formula/modifier-buffers';
+
+
 
 /** The one option that is not a definition: the row spells its own effect. */
 const TYPED_OPTION = 'sheetsmith-typed';
@@ -217,6 +221,11 @@ export interface ModifierFormOptions {
 	 * flags** group (`docs/features/non-number-modifiers.md`). Absent offers none.
 	 */
 	states?: readonly StateTarget[];
+	/**
+	 * The buffers a grant may raise, for **Value**'s **Temporary points** group
+	 * (`docs/features/granted-temporary-points.md`). Absent offers none.
+	 */
+	buffers?: readonly BufferTarget[];
 	bonusTypes: readonly string[];
 	/**
 	 * Paint a Lucide icon into an element.
@@ -276,14 +285,21 @@ export function fillTargetOptions(
 	 * option. Absent or empty, the list is the one it always was.
 	 */
 	states: readonly StateTarget[] = [],
+	/**
+	 * The buffers a grant may raise, offered as a fourth group after the levels
+	 * and flags (`docs/features/granted-temporary-points.md`). A buffer is
+	 * offered there alone, since a grant is the one thing a change does to it.
+	 */
+	buffers: readonly BufferTarget[] = [],
 ): void {
-	const own = new Set(
-		states.filter((state) => state.column === undefined).map((state) => state.name),
-	);
+	const own = new Set([
+		...states.filter((state) => state.column === undefined).map((state) => state.name),
+		...buffers.map((buffer) => buffer.name),
+	]);
 	const arithmetic = accepting.filter((target) => !own.has(target.name));
 	const taken = new Set([...arithmetic.map((target) => target.name), ...own]);
 	const notesOnly = notable.filter((target) => !taken.has(target.name));
-	if (notesOnly.length === 0 && states.length === 0) {
+	if (notesOnly.length === 0 && states.length === 0 && buffers.length === 0) {
 		for (const target of arithmetic) option(select, target.name, target.label);
 		return;
 	}
@@ -296,6 +312,7 @@ export function fillTargetOptions(
 				label: state.label,
 			})),
 		],
+		['Temporary points', buffers.map((buffer) => ({ value: buffer.name, label: buffer.label }))],
 		['Notes only', notesOnly.map((target) => ({ value: target.name, label: target.label }))],
 	];
 	for (const [label, members] of groups) {
@@ -1023,6 +1040,9 @@ function renderFields(
 	 * without one of them being told to press something that is not there.
 	 */
 	const states = options.states ?? [];
+	const buffers = options.buffers ?? [];
+	/** Whether this part grants temporary points: At least is then its one operator. */
+	const granting = aimsAtBuffer(buffers, shown.target, shown.column);
 	/**
 	 * Where this part lands, through the walk's own address: the level or flag
 	 * it sets, or a column the target does not hold, which is carried as
@@ -1043,7 +1063,7 @@ function renderFields(
 	if (shown.target === '') option(changes, '', 'Choose a value');
 	// The editor's own groups, through the one helper, so the sheet and the
 	// pane offer one list.
-	fillTargetOptions(changes, options.targets, options.noteTargets ?? [], states);
+	fillTargetOptions(changes, options.targets, options.noteTargets ?? [], states, buffers);
 	if (strayColumn !== null) {
 		const label =
 			options.published.find((target) => target.name === shown.target)?.label ?? shown.target;
@@ -1052,7 +1072,8 @@ function renderFields(
 		shown.target !== '' &&
 		aimed === undefined &&
 		!options.targets.some((target) => target.name === shown.target) &&
-		!(options.noteTargets ?? []).some((target) => target.name === shown.target)
+		!(options.noteTargets ?? []).some((target) => target.name === shown.target) &&
+		!granting
 	) {
 		const label =
 			options.published.find((target) => target.name === shown.target)
@@ -1084,7 +1105,10 @@ function renderFields(
 		 * make Adds to valid at a position, so it is not offered there, and a
 		 * change carrying one would arrive in a select that cannot show it.
 		 */
-		const onto = operatorOnto(next !== undefined, shown.operator);
+		// **Onto a buffer, any operator becomes an At least**, the one a grant is.
+		const onto = aimsAtBuffer(buffers, chosen.target, chosen.column)
+			? 'upgrade'
+			: operatorOnto(next !== undefined, shown.operator);
 		if (onto !== shown.operator) options.announce(`Operator ${OPERATOR_LABELS[onto]}`);
 		put({
 			target: chosen.target,
@@ -1096,7 +1120,12 @@ function renderFields(
 	const operator = select('Operator', 'operator');
 	// A level or a flag takes Sets and At least only: Adds to is left out rather
 	// than disabled, because nothing could make it valid there (D6).
-	for (const id of operatorsAt(aimed !== undefined, shown.operator)) {
+	// A buffer takes At least only; a stored other operator is kept in the list,
+	// so the select shows what the change says while the refusal says why.
+	const offered = granting
+		? (['upgrade', ...(shown.operator === 'upgrade' ? [] : [shown.operator])] as const)
+		: operatorsAt(aimed !== undefined, shown.operator);
+	for (const id of offered) {
 		option(operator, id, OPERATOR_LABELS[id]);
 	}
 	operator.value = shown.operator;
@@ -1126,6 +1155,12 @@ function renderFields(
 		element('p', 'sheetsmith-panel-why sheetsmith-panel-legend', fields, positionLegend(aimed.shape));
 		if (shown.operator === 'add') {
 			element('p', 'sheetsmith-panel-problem', fields, STATE_REFUSES_ADD);
+		}
+	}
+	if (granting) {
+		element('p', 'sheetsmith-panel-why sheetsmith-panel-legend', fields, TEXT.grantLegend);
+		if (shown.operator !== 'upgrade') {
+			element('p', 'sheetsmith-panel-problem', fields, BUFFER_TAKES_AT_LEAST);
 		}
 	}
 	amount.readOnly = !editable;

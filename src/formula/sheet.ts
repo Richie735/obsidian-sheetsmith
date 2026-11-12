@@ -36,6 +36,7 @@ import {
 	ModifierTarget,
 	PromoteResult,
 	RowsSource,
+	RowValues,
 	ScopeEntry,
 	ModifierOutcome,
 	ScopeValues,
@@ -43,6 +44,8 @@ import {
 	StateReader,
 	StateTarget,
 	TypedEffect,
+	BufferAccount,
+	BufferTarget,
 } from '../types';
 import {
 	FormulaError,
@@ -62,8 +65,10 @@ import {
 	noteTargets,
 	publishedTargets,
 	stateTargets,
+	bufferTargets,
 } from './modifier-targets';
 import {
+	called,
 	definitionTable,
 	Enrolment,
 	resolveEnrolments,
@@ -77,6 +82,15 @@ import {
 	stateVerdict,
 } from './modifier-states';
 import { suppressionWording } from './suppression-wording';
+import {
+	aimsAtBuffer,
+	BufferLookup,
+	bufferEntries,
+	foldBuffer,
+	grantVerdict,
+	NO_BUFFERS,
+	storedBuffer,
+} from './modifier-buffers';
 import {
 	buildModifierTables,
 	enrolmentOutcome,
@@ -239,12 +253,28 @@ export function buildSheetEnv(
 		rows: (id, caller) => rows(id, caller),
 		modifiers: (name) => slots(name),
 		states: (name, column) => states(name, column),
+		// What the walk found, with what the note stores of the buffer beside it.
+		buffers: (name) => {
+			const result = buffers(name);
+			const held = notes.get(name);
+			return result === null || 'error' in result || held === undefined
+				? result
+				: { ...result, ...held };
+		},
 		// One guard for the whole sheet build, on `FormulaEnv.selfGuard`'s own
 		// comment: the ring it catches crosses several separate `resolveField`
 		// calls, so it must not be reset per evaluation.
 		selfGuard: new Set(),
 		floors: new Map(),
 	};
+	/** What each buffer's note stores, its own points and its records, by name. */
+	const notes = new Map<string, { stored?: string; spent: Readonly<Record<string, string>> }>();
+	for (const component of components) {
+		for (const { name, buffer, entry } of bufferEntries(component.id, component.values)) {
+			const stored = storedBuffer(entry);
+			notes.set(name, { ...(stored === undefined ? {} : { stored }), spent: buffer.spent });
+		}
+	}
 	const names = buildSheetScope(components, env);
 	// One reader for every row on the sheet, so an aggregate and a published
 	// name read one level or flag the same way (D10).
@@ -260,7 +290,7 @@ export function buildSheetEnv(
 			return { id: component.id, rows: () => source(resolve, readState) };
 		}),
 	);
-	const { slots, states } = buildModifierTables(
+	const { slots, states, buffers } = buildModifierTables(
 		components.map((component): ModifierComponent => {
 			const source = component.modifiers;
 			if (source === undefined) return { id: component.id };
@@ -278,6 +308,7 @@ export function buildSheetEnv(
 		// over. Through `callsFrom`, which is the one conversion (`resolve.ts`).
 		callsFrom(env),
 		shapesOf(modifiers.states ?? []),
+		new Set((modifiers.buffers ?? []).map((target) => target.name)),
 	);
 	return env;
 }
@@ -378,6 +409,12 @@ export interface SheetModifiers {
 	 * flags**. Optional on `noteTargets`' terms, and absent means none.
 	 */
 	states?: readonly StateTarget[];
+	/**
+	 * Every buffer a grant may raise (`bufferTargets`), which the walk reduces
+	 * apart from the slots and the form offers under **Temporary points**.
+	 * Optional on `states`' terms, and absent means none.
+	 */
+	buffers?: readonly BufferTarget[];
 }
 
 /** A layout with no modifiers, and the paths with no layout at all. */
@@ -391,6 +428,7 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	noteTargets: [],
 	notable: new Set(),
 	states: [],
+	buffers: [],
 };
 
 /**
@@ -434,6 +472,7 @@ export function sheetModifierInput(
 		noteTargets: notes,
 		notable: new Set(notes.map((target) => target.name)),
 		states: stateTargets(sources),
+		buffers: bufferTargets(sources),
 	};
 }
 
@@ -725,6 +764,83 @@ export function sheetModifiers(
 			suppressed,
 		};
 	};
+	const bufferNames = new Set((modifiers.buffers ?? []).map((target) => target.name));
+	const grants: BufferLookup = env.buffers ?? NO_BUFFERS;
+	/**
+	 * What one part comes to where it is aimed at a buffer, or null where it is
+	 * not (`docs/features/granted-temporary-points.md`).
+	 *
+	 * **Each verdict is the walk's**, through the same sentences in the same
+	 * order, so the row's popup and the pill's door cannot disagree about a
+	 * refusal. What it cannot say is whether the pool's own points beat it, since
+	 * the row is not the buffer's: the door says that.
+	 */
+	const bufferOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+		row: RowValues,
+		/** The row's component, whose label is half of the grant's key. */
+		source: string,
+	): ModifierOutcome | null => {
+		const { fields } = found;
+		if (!aimsAtBuffer(bufferNames, fields.target, fields.column)) return null;
+		if (found.kind !== 'applies') return null;
+		const named = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: fields.target,
+			targetLabel: label(fields.target),
+			grant: true as const,
+		};
+		const refused = (suppressed: string, amount: number | null = null): ModifierOutcome => ({
+			...named,
+			applies: false,
+			amount,
+			condition: null,
+			suppressed,
+		});
+		// The walk's own verdict, through the one function both read.
+		const verdict = grantVerdict(
+			fields.operator,
+			found.contribution.literal ?? found.contribution.amount,
+			called(found),
+			source,
+			row.label,
+		);
+		if (verdict.refused !== null || verdict.amount === null) {
+			return refused(verdict.refused ?? '');
+		}
+		const result = grants(fields.target);
+		if (result !== null && 'error' in result) return refused(result.error, verdict.amount);
+		/*
+		 * **The door's own verdict**: the grants folded against what the note
+		 * stores of the buffer, its own points and its records, so a grant spent
+		 * down below another is the one passed over, and one the pool's own points
+		 * beat is `already higher`, on the row as at the door (D6). Its own line is
+		 * found by key and nothing else: a label alone would match a same-named
+		 * row on another component, which is what the source in the key keeps
+		 * apart. A miss weighs the grant's whole amount against what the buffer
+		 * draws.
+		 */
+		const account =
+			result === null ? null : foldBuffer('', result.stored, result.spent ?? {}, result);
+		const own = account?.grants.find(
+			(line) => line.refused === undefined && verdict.key !== null && line.key === verdict.key,
+		);
+		const suppressed =
+			own !== undefined
+				? own.suppressed
+				: account !== null && verdict.amount < account.effective
+					? suppressionWording('grant', false, 'value')
+					: null;
+		return {
+			...named,
+			applies: suppressed === null,
+			amount: verdict.amount,
+			condition: found.conditional ? true : null,
+			suppressed,
+		};
+	};
 	return {
 		definitions: modifiers.definitions,
 		targets: modifiers.targets,
@@ -737,6 +853,20 @@ export function sheetModifiers(
 			if (result === null) return null;
 			const account = foldState(result, stored);
 			return account.error === null && account.lines.length === 0 ? null : account;
+		},
+		buffers: modifiers.buffers ?? [],
+		buffer: (name, stored, spent): BufferAccount | null => {
+			const result = grants(name);
+			if (result === null) return null;
+			const account = foldBuffer(
+				(modifiers.buffers ?? []).find((target) => target.name === name)?.called ?? name,
+				stored,
+				spent,
+				result,
+			);
+			return account.error === null && account.grants.length === 0 && account.leftovers.length === 0
+				? null
+				: account;
 		},
 		/*
 		 * **Bounded by the accepting set**, which is wider than `breakdown`'s
@@ -784,13 +914,16 @@ export function sheetModifiers(
 		 * already has the same shape, telling the reader to choose another and the
 		 * author to add one.
 		 */
-		outcomes: (part, row) =>
+		outcomes: (part, row, source) =>
 			// One per change the part's modifier names, in the definition's own
 			// order, so a two-change modifier states both on the row that enrols in
 			// it. The gate below is per change for the same reason the walk's is:
 			// one of a definition's values may read no modifier while another does.
 			resolveEnrolments(table, part, row, calls).map((found) => {
 				if (found.kind !== 'unknown') {
+					// A grant at a buffer, in the walk's words.
+					const granted = bufferOutcome(found, row, source);
+					if (granted !== null) return granted;
 					// A level or a flag, or a boolean at a number, in the walk's words.
 					const stated = stateOutcome(found);
 					if (stated !== null) return stated;
@@ -1001,6 +1134,25 @@ export function buildSheetScope(
 			 */
 			if (entry.state !== undefined) {
 				thunks.set(name, () => clean(readState(name, null, entry.value)));
+				return;
+			}
+			/*
+			 * **A buffer a grant may raise folds here too**, with no component code
+			 * involved: the bare name reads the effective buffer and `.value`,
+			 * registered above, what the note stores. A buffer no grant addresses
+			 * reads exactly as it did, the stored value as stored. A refused one
+			 * throws with the row named, as a refused slot does (D11).
+			 */
+			if (entry.buffer !== undefined) {
+				const { buffer } = entry;
+				thunks.set(name, () => {
+					const result = bound.buffers?.(name) ?? null;
+					if (result === null) return clean(entry.value);
+					if ('error' in result) throw new FormulaError(result.error);
+					const account = foldBuffer(buffer.label, storedBuffer(entry), buffer.spent, result);
+					if (account.grants.every((line) => line.refused !== undefined)) return clean(entry.value);
+					return account.effective;
+				});
 				return;
 			}
 			if (display === undefined || resolve === undefined) {

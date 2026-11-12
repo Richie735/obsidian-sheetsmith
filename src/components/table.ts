@@ -2500,7 +2500,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 * the same reason the breakdown is.
 					 */
 					const ask = (part: string) =>
-						context.modifiers?.outcomes(part, noteRow()) ?? [];
+						context.modifiers?.outcomes(part, noteRow(), config.label) ?? [];
 					const applied = rowModifiers(enrolled, ask);
 					// Through the shared predicate, which is where "a part applies if
 					// any of its changes does" lives: the glyph here, the glyph on a
@@ -2579,6 +2579,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							published: context.modifiers?.published ?? [],
 							noteTargets: context.modifiers?.noteTargets ?? [],
 							states: context.modifiers?.states ?? [],
+							buffers: context.modifiers?.buffers ?? [],
 							bonusTypes: context.modifiers?.bonusTypes ?? [],
 							// The one import from `obsidian` in this folder, passed on
 							// rather than taken again: the allowlist stays one name long.

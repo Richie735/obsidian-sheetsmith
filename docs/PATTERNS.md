@@ -508,7 +508,7 @@ Every component follows the same order. A reader who knows one knows them all.
    order [judgement]:
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
    `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
-   `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
+   `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `endGrants`, `hasBuffer`,
    `drawsNotes`, `resetColumns`, `resetWhole`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
@@ -534,6 +534,9 @@ Every component follows the same order. A reader who knows one knows them all.
    behaviour it conditions. `drawsNotes` sits directly after `hasBuffer` because
    it is the same kind of declaration — a fact about what this component draws
    that nothing outside it could infer (`docs/features/modifier-notes.md`).
+   `endGrants` sits directly after `write` because it is the write the sheet
+   adds when a grant ends, the data path's last step, before the declarations
+   (`docs/features/granted-temporary-points.md`).
    `resetWhole` sits directly after `resetColumns`
    because it answers the same picker read the other way: one names the parts a
    binding may pick, the other names what the picker calls a binding that picks
@@ -947,6 +950,14 @@ A component inventing its own is the failure mode to watch for.
   component's parts, so without a picker there is nowhere to offer it — a string
   with nothing for it to be the alternative to
   (`docs/features/record-set-reset-field-targeting.md`).
+- **Declaring a `ScopeEntry.buffer` obliges `endGrants` and `hasBuffer`, and
+  `endGrants` obliges a buffer** [checked: `contract.test.ts`]. The sheet view
+  clears an ended grant's spent records through `endGrants`, so a component
+  publishing a buffer without it keeps those records for ever, and one with it
+  and no buffer is never asked; a buffer is also what a reset's `buffer: 'clear'`
+  reaches. The check reads the bare config, the example, every palette entry
+  and every boolean field on, so a buffer behind a toggle is found
+  (`docs/features/granted-temporary-points.md`).
 - **Declaring `reset.*.where` obliges honouring it in `applyReset`** [checked:
   `contract.test.ts`]. The declaration is what the sheet reads to hand a component
   a binding carrying a condition, and what the editor reads to draw **Only where**

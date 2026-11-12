@@ -35,6 +35,7 @@ import {
 	ScopeEntry,
 	ScopeValues,
 	StateTarget,
+	BufferTarget,
 } from '../types';
 import { referencesName } from './expression';
 import { modifierSlot, SELF_SLOT } from './modifiers';
@@ -251,6 +252,28 @@ export function stateTargets(
 			for (const [column, shape] of Object.entries(entry.states ?? {})) {
 				found.push({ name, column, label: `${label} · ${column}`, shape });
 			}
+		}
+	}
+	return found;
+}
+
+/**
+ * Every buffer a grant may raise (`docs/features/granted-temporary-points.md`
+ * D3), in publication order.
+ *
+ * **Read statically from what the components declare**, `ScopeEntry.buffer`,
+ * on `stateTargets`' terms: no note is read, so the editor's picker, the
+ * sheet's form and the walk all reach one answer from the layout alone. A
+ * Pool declares one on `<id>.temp` where its layout asks for temporary points,
+ * labelled as the name is: `HP · temp`.
+ */
+export function bufferTargets(
+	components: readonly ModifierTargetSource[],
+): readonly BufferTarget[] {
+	const found: BufferTarget[] = [];
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			if (entry.buffer !== undefined) found.push({ name, label, called: entry.buffer.label });
 		}
 	}
 	return found;

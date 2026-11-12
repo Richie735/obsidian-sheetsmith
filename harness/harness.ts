@@ -38,7 +38,7 @@ import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
-import { applyDecorations, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
+import { applyDecorations, bufferLinesIn, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
 import { revealWhenTruncated } from '../src/ui/truncation';
 import { closePopover } from '../src/ui/popover';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
@@ -76,6 +76,9 @@ import {
 	rosterCardStateSamples,
 	STATE_DEFINITIONS,
 	ROSTER_CARD_DEFINITIONS,
+	poolGrantSamples,
+	PoolGrantVariant,
+	POOL_GRANT_VARIANTS,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { installStandInRenderer } from './stand-in-markdown';
@@ -124,8 +127,12 @@ type StateName =
 	| 'markdown'
 	| 'modifier-states'
 	| 'modifier-states-cycle'
-	| 'modifier-states-roster-card';
+	| 'modifier-states-roster-card'
+	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
+
+/** The grant sheets (`poolGrantSamples`), one state per variant, from its one list. */
+const POOL_GRANT_STATES: readonly string[] = POOL_GRANT_VARIANTS.map((variant) => `pool-grant-${variant}`);
 
 interface Live {
 	config: ComponentConfig;
@@ -198,6 +205,9 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'modifier-states') return modifierStatesSamples('all');
 	if (name === 'modifier-states-cycle') return modifierStatesSamples('cycle');
 	if (name === 'modifier-states-roster-card') return rosterCardStateSamples();
+	if (name.startsWith('pool-grant-')) {
+		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
+	}
 	return SAMPLES;
 }
 
@@ -574,6 +584,8 @@ const activeTab = new Map<string, number>();
  * open. Empty to begin with — "every group open" is the default a shot should show.
  */
 const collapsedGroups = new Map<string, Set<string>>();
+/** D8's held sentences, by component, as the view holds them (`types.ts`, `heldNotice`). */
+const heldNotices = new Map<string, string>();
 
 /**
  * Which records the reader has opened where, exactly as the view holds them.
@@ -674,6 +686,11 @@ function renderSheet(into: HTMLElement): void {
 					else held.delete(key);
 					collapsedGroups.set(config.id, held);
 				},
+				heldNotice: heldNotices.get(config.id),
+				onHoldNotice: (stored: string | null) => {
+					if (stored === null) heldNotices.delete(config.id);
+					else heldNotices.set(config.id, stored);
+				},
 				openRecords: [...(openRecords.get(config.id) ?? [])],
 				onToggleRecord: (index: number, open: boolean) => {
 					const held = openRecords.get(config.id) ?? new Set<number>();
@@ -692,8 +709,9 @@ function renderSheet(into: HTMLElement): void {
 		inPlayDecorations(
 			marked,
 			(name) => modifiers.breakdown(name),
-			// And every ring a modifier set, which needs no slot (D11).
-			stateLinesIn(grid, modifiers),
+			// And every ring a modifier set, which needs no slot (D11), and every
+			// buffer a form in play's grant is drawing.
+			[...stateLinesIn(grid, modifiers), ...bufferLinesIn(live, modifiers)],
 		),
 		revealWhenTruncated,
 	);
@@ -1094,8 +1112,9 @@ function applyQuery(): void {
 			wanted === 'markdown' ||
 			wanted === 'modifier-states' ||
 			wanted === 'modifier-states-cycle' ||
-			wanted === 'modifier-states-roster-card'
-			? wanted
+			wanted === 'modifier-states-roster-card' ||
+			POOL_GRANT_STATES.includes(wanted ?? '')
+			? (wanted as StateName)
 			: 'populated',
 	);
 	press('state', state);

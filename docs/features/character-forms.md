@@ -58,8 +58,9 @@ carries it:
    §13's ceiling precedent — render, do not correct. Carrying excess damage to
    the character's own pool is out of scope. **No on-activate trigger**:
    refilling a 5e 2014 beast's HP on shifting is the reader's press, a rest
-   refill is an ordinary reset binding, and 5e 2024's temporary HP is the
-   existing Pool buffer on the character's own `hp`.
+   refill is an ordinary reset binding, and 5e 2024's temporary HP is a grant
+   from the form to the character's own `hp` buffer, removed when the form
+   leaves play (`docs/features/granted-temporary-points.md`).
 5. **A new catalog component, `Stat block`** (`stat-block`), named for its shape
    under §2's rule. It covers an always-present companion or familiar block too,
    where no `exclusive` is configured. It is new rather than a Record set
@@ -1410,7 +1411,8 @@ Items for `/release` to carry, recorded here so they are not re-derived:
   score rather than the modifier).
 - **Automatic revert at 0, carrying excess damage to the character's pool, and
   any on-activate trigger** (a 2014 beast's HP refilled on shifting is the
-  reader's press).
+  reader's press). A form granting temporary points is not one: it is a grant,
+  worked out at render (`docs/features/granted-temporary-points.md`).
 - **The cap half** of §13's activation-constraint entry, and exclusivity on a
   Record set or a Table.
 - **Overriding a single formula locally** (§13, untouched).

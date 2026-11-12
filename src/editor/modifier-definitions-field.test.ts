@@ -1324,3 +1324,71 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 		).toEqual([]);
 	});
 });
+
+describe('a change that grants temporary points (docs/features/granted-temporary-points.md)', () => {
+	const SOURCES: readonly ModifierTargetSource[] = [
+		{
+			id: 'hp',
+			label: 'HP',
+			values: { self: { value: '22' }, named: { temp: { value: '0', buffer: { label: 'HP', spent: {} } } } },
+		},
+		{ id: 'armour_class', label: 'Armour class', values: { self: { display: { field: 'derived', scope: {} } } }, formulas: ['10 + mod.self'] },
+	];
+
+	function drawn(modifiers: Declared[], sources = SOURCES): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, layout(modifiers), {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources,
+		});
+		return container;
+	}
+
+	const valueSelect = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('select[aria-label*="value"], select[aria-label*="Value"]');
+
+	it('offers HP · temp under Temporary points, At least only, with the legend', () => {
+		const el = drawn([{ name: 'Vitality', target: 'hp.temp', operator: 'upgrade', amount: '5' }]);
+		expect(Array.from(el.querySelectorAll('optgroup')).map((group) => group.label)).toContain('Temporary points');
+		expect(valueSelect(el)?.selectedOptions[0]?.textContent).toBe('HP · temp');
+		const operator = el.querySelector<HTMLSelectElement>('select[aria-label*="perator"]');
+		expect(Array.from(operator?.options ?? []).map((one) => one.textContent)).toEqual(['At least']);
+		expect(el.textContent).toContain("Whole points. The highest grant, or the pool's own, applies.");
+	});
+
+	it('turns a change moved onto a buffer into an At least', () => {
+		const modifiers: Declared[] = [{ name: 'Vitality', target: 'armour_class', amount: '5' }];
+		const el = drawn(modifiers);
+		const value = valueSelect(el) as HTMLSelectElement;
+		value.value = 'hp.temp';
+		value.dispatchEvent(new Event('change'));
+		expect(modifiers[0]).toMatchObject({ target: 'hp.temp', operator: 'upgrade' });
+	});
+
+	it('reports an Adds to and a Sets aimed at a buffer, and nothing for an At least', () => {
+		expect(
+			problems(
+				drawn([
+					{ name: 'Adds', target: 'hp.temp', amount: '5' },
+					{ name: 'Sets', target: 'hp.temp', operator: 'override', amount: '5' },
+					{ name: 'Grant', target: 'hp.temp', operator: 'upgrade', amount: '5' },
+				]),
+			),
+		).toEqual([
+			'AddsTemporary points do not add up, so only the highest grant applies. Choose At least.',
+			'SetsTemporary points do not add up, so only the highest grant applies. Choose At least.',
+		]);
+	});
+
+	it('draws today’s groups for a layout with no buffer', () => {
+		const el = drawn([{ name: 'Ring', target: 'armour_class', amount: '1' }], [SOURCES[1] as ModifierTargetSource]);
+		expect(el.querySelector('optgroup')).toBeNull();
+	});
+});

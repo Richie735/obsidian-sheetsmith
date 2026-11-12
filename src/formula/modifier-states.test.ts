@@ -304,14 +304,14 @@ describe('the walk: a state push is a third reduction', () => {
 	it('changes nothing for a column the target does not hold, and says so at the row', () => {
 		const { modifiers } = sheetOf(['skills.stealth >= 1 in Trainig']);
 		expect(modifiers.state?.('skills.stealth', 'Training', 0)).toBeNull();
-		const outcome = modifiers.outcomes('skills.stealth >= 1 in Trainig', { label: 'Row 1', values: {} })[0];
+		const outcome = modifiers.outcomes('skills.stealth >= 1 in Trainig', { label: 'Row 1', values: {} }, '')[0];
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe('Skills · stealth has no level or flag called "Trainig".');
 	});
 
 	it('says what a state change does in its position words', () => {
 		const { modifiers } = sheetOf(['Cat Form']);
-		const outcome = modifiers.outcomes('Cat Form', { label: 'Row 1', values: {} })[0];
+		const outcome = modifiers.outcomes('Cat Form', { label: 'Row 1', values: {} }, '')[0];
 		expect(outcome?.applies).toBe(true);
 		expect(outcome?.targetLabel).toBe('Skills · stealth · Training');
 		expect(outcome?.state).toEqual(TRAINING);
@@ -397,7 +397,7 @@ describe('one verdict for the walk and the row (stateVerdict)', () => {
 		];
 		for (const part of parts) {
 			const { modifiers } = sheetOf([part]);
-			const outcome = modifiers.outcomes(part, { label: 'Row 1', values: {} })[0];
+			const outcome = modifiers.outcomes(part, { label: 'Row 1', values: {} }, '')[0];
 			const name = part.startsWith('inspiration') ? 'inspiration' : 'skills.stealth';
 			const column = name === 'inspiration' ? null : 'Training';
 			const account = modifiers.state?.(name, column, 0);
@@ -409,7 +409,7 @@ describe('one verdict for the walk and the row (stateVerdict)', () => {
 	it('changes nothing and refuses nothing for a stray, in both readers', () => {
 		const { modifiers } = sheetOf(['skills.stealth = 1 in Rank']);
 		expect(modifiers.state?.('skills.stealth', 'Training', 0)).toBeNull();
-		expect(modifiers.outcomes('skills.stealth = 1 in Rank', { label: 'Row 1', values: {} })[0]?.suppressed).toBe(
+		expect(modifiers.outcomes('skills.stealth = 1 in Rank', { label: 'Row 1', values: {} }, '')[0]?.suppressed).toBe(
 			'Skills · stealth has no level or flag called "Rank".',
 		);
 	});
@@ -418,7 +418,7 @@ describe('one verdict for the walk and the row (stateVerdict)', () => {
 describe('the row popup judges a state change against its own kind only', () => {
 	it('calls an At least applying whatever the note stores, and a lower Sets beaten by a higher one', () => {
 		const { modifiers } = sheetOf(['skills.stealth >= 1 in Training', 'skills.stealth = 0 in Training', 'skills.stealth = 2 in Training']);
-		const at = (part: string) => modifiers.outcomes(part, { label: 'Row', values: {} })[0];
+		const at = (part: string) => modifiers.outcomes(part, { label: 'Row', values: {} }, '')[0];
 		// The row is not the state's, so the note is unknown here: no "already".
 		expect(at('skills.stealth >= 1 in Training')?.applies).toBe(true);
 		expect(at('skills.stealth = 0 in Training')?.suppressed).toBe('a higher override applies');

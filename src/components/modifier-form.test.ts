@@ -433,3 +433,107 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 		expect(written).toEqual([]);
 	});
 });
+
+describe('a change that grants temporary points (docs/features/granted-temporary-points.md)', () => {
+	const BUFFERS = [{ name: 'hp.temp', label: 'HP · temp', called: 'HP' }];
+	const ACCEPT = [{ name: 'armour_class', label: 'Armour class' }];
+
+	it('offers Temporary points after the levels and flags and before the notes', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(
+			select,
+			ACCEPT,
+			[{ name: 'passive', label: 'Passive perception' }],
+			[{ name: 'inspiration', label: 'Inspiration', shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' } }],
+			BUFFERS,
+		);
+		expect(Array.from(select.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+			'Takes modifiers',
+			'Levels and flags',
+			'Temporary points',
+			'Notes only',
+		]);
+		expect(select.querySelector('optgroup[label="Temporary points"] option')?.textContent).toBe('HP · temp');
+	});
+
+	it('draws today’s list where the layout has no buffer', () => {
+		const plain = document.createElement('select');
+		fillTargetOptions(plain, ACCEPT, []);
+		const none = document.createElement('select');
+		fillTargetOptions(none, ACCEPT, [], [], []);
+		expect(none.innerHTML).toBe(plain.innerHTML);
+	});
+
+	function form(part: string, announced: string[] = [], written: string[][] = []) {
+		const body = document.body.createDiv();
+		const state = modifierFormState([part]);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Ring of Vitality',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({
+					typed: {
+						target: part.startsWith('hp.temp') ? 'hp.temp' : 'armour_class',
+						operator: part.includes('+=') ? 'add' : part.includes('>=') ? 'upgrade' : 'override',
+						amount: '5',
+					},
+					target: part.startsWith('hp.temp') ? 'hp.temp' : 'armour_class',
+					targetLabel: part.startsWith('hp.temp') ? 'HP · temp' : 'Armour class',
+					applies: true,
+					amount: 5,
+				}),
+			],
+			definitions: [],
+			targets: ACCEPT,
+			published: [...ACCEPT, { name: 'hp.temp', label: 'HP · temp' }],
+			buffers: BUFFERS,
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		return body;
+	}
+
+	const control = (body: HTMLElement, label: string) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-field'))
+			.find((one) => one.querySelector('.sheetsmith-panel-field-label')?.textContent === label)
+			?.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | undefined;
+
+	it('offers At least only, no bonus type or phase, and the legend', () => {
+		const body = form('hp.temp >= 5');
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['At least']);
+		expect(control(body, 'Bonus type')).toBeUndefined();
+		expect(control(body, 'Applies to')).toBeUndefined();
+		expect(body.querySelector('.sheetsmith-panel-legend')?.textContent).toBe(
+			'Whole points. The highest grant, or the pool\'s own, applies.',
+		);
+		body.remove();
+	});
+
+	it('keeps a stored Adds to in the list and says why it grants nothing', () => {
+		const body = form('hp.temp += 5');
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['At least', 'Adds to']);
+		expect(Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).map((one) => one.textContent)).toContain(
+			'Temporary points do not add up, so only the highest grant applies. Choose At least.',
+		);
+		body.remove();
+	});
+
+	it('switches a change moved onto a buffer to At least, and says so', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = form('armour_class += 5', announced, written);
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = 'hp.temp';
+		value.dispatchEvent(new Event('change'));
+		expect(announced).toContain('Operator At least');
+		expect(written).toEqual([['hp.temp >= 5']]);
+		body.remove();
+	});
+});

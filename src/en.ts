@@ -39,6 +39,21 @@ export const TEXT = {
 	 * shows.
 	 */
 	stateRefusesAdd: 'Adds to cannot change a level or a flag.',
+	/**
+	 * Why a change aimed at a buffer may only be an At least: the row popup, the
+	 * modifier form and the layout editor's definitions report all say it
+	 * (`docs/features/granted-temporary-points.md` D2). The fault only, on
+	 * `stateRefusesAdd`'s terms: `formula/modifier-buffers.ts` composes the fix
+	 * from `OPERATOR_LABELS` as `BUFFER_TAKES_AT_LEAST`.
+	 */
+	bufferRefusesOperator: 'Temporary points do not add up, so only the highest grant applies.',
+	/**
+	 * What a grant's amount means, under the field it is typed into: the sheet's
+	 * modifier form and the layout editor's definitions field
+	 * (`docs/features/granted-temporary-points.md`), in the position legend's
+	 * spelling.
+	 */
+	grantLegend: "Whole points. The highest grant, or the pool's own, applies.",
 } as const;
 
 /**

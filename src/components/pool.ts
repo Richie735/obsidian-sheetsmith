@@ -26,15 +26,26 @@ import { stepButton } from '../interaction/hold-repeat';
 import { bindScrub } from '../interaction/scrub';
 import { readFenced, writeFenced } from '../parse/fenced';
 import { publishedFieldNames } from '../formula/resolve';
+import {
+	drainBuffer,
+	grantsActive,
+	refoldBuffer,
+	SPENT_PREFIX,
+	wholePoints,
+} from '../formula/modifier-buffers';
 import { showPopover } from '../ui/popover';
 import { formatDerived } from './card-face';
 import {
 	ACCOUNT_GLYPH,
+	bufferAccountText,
+	bufferOwnDescription,
+	bufferOwnNowSentence,
 	modifierBreakdown,
 	modifiersOnName,
 } from './modifier-breakdown';
 import { samplePart, sampleNumber, sampleSeed } from './sample-values';
 import {
+	BufferAccount,
 	ComponentConfig,
 	ComponentDefinition,
 	ReadResult,
@@ -88,6 +99,23 @@ export interface PoolData {
 	 * ignored and preserved, per §10.
 	 */
 	max?: string;
+	/**
+	 * How much of each grant has been spent, by grant key, as the note spells it
+	 * (`docs/features/granted-temporary-points.md`). Stored under
+	 * `spent · <key>`; a key mapped to null in an edit removes its line, which is
+	 * how a grant's end clears its record (`endGrants`). Absent from an edit
+	 * that spent from no grant.
+	 */
+	spent?: Record<string, string | null>;
+}
+
+/** The spent records the note holds, the ones an edit removes left out. */
+function recordsOf(data: PoolData | null): Record<string, string> {
+	const held: Record<string, string> = {};
+	for (const [key, value] of Object.entries(data?.spent ?? {})) {
+		if (value !== null) held[key] = value;
+	}
+	return held;
 }
 
 /** How long a refused step stays marked on the field. */
@@ -753,6 +781,13 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// character, the number already in the note is the one it gets.
 		const max = parsed.values.get(MAX_KEY);
 		if (max !== undefined) data.max = max;
+		// A grant's spent records, under their prefix. Read as the note spells
+		// them and never rewritten: a value the rule refuses counts as none in
+		// the account, which says so (`docs/features/granted-temporary-points.md`).
+		for (const [key, value] of parsed.values) {
+			if (!key.startsWith(SPENT_PREFIX)) continue;
+			(data.spent ??= {})[key.slice(SPENT_PREFIX.length)] = value;
+		}
 		// Entries under any other key are left where they are, untouched.
 		return { ok: true, data };
 	},
@@ -773,7 +808,13 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			named[MAX_KEY] = { display: { field: 'max', scope: {} } };
 		}
 		if (config.hasTemp === true) {
-			named[TEMP_KEY] = { value: data?.temp };
+			// A buffer a grant may raise, carrying the note's spent records so the
+			// walk folds them without learning this fence (D3). Absent records are
+			// the static read the targets come from.
+			named[TEMP_KEY] = {
+				value: data?.temp,
+				buffer: { label: config.label, spent: recordsOf(data) },
+			};
 		}
 		return {
 			self: { value: data?.current },
@@ -782,11 +823,23 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 	},
 
 	write(data, body): string {
-		const updates = new Map<string, string>();
+		const updates = new Map<string, string | null>();
 		if (data.current !== undefined) updates.set(CURRENT_KEY, data.current);
 		if (data.temp !== undefined) updates.set(TEMP_KEY, data.temp);
 		if (data.max !== undefined) updates.set(MAX_KEY, data.max);
+		// A record is written only by a spend through its grant, and removed by
+		// the write that ends it; every other line is left as it is.
+		for (const [key, value] of Object.entries(data.spent ?? {})) {
+			updates.set(`${SPENT_PREFIX}${key}`, value);
+		}
 		return writeFenced(body, updates);
+	},
+
+	endGrants(data, _config, ended): PoolData | null {
+		const recorded = data?.spent ?? {};
+		const gone = ended.filter((key) => recorded[key] !== undefined && recorded[key] !== null);
+		if (gone.length === 0) return null;
+		return { spent: Object.fromEntries(gone.map((key) => [key, null])) };
 	},
 
 	hasBuffer: true,
@@ -904,12 +957,46 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * Track's `withBreakdown` rule, that the popover carries what the reader
 		 * cannot otherwise see.
 		 */
-		const doorText =
+		const ceilingText =
 			ceilingPushed === null
 				? null
 				: resolvedMax === null
 					? `${unresolvedMax}\n\n${ceilingPushed}`
 					: ceilingPushed;
+		/**
+		 * What the grants aimed at this pool's temporary points come to, or null
+		 * where none is and no spent record is left
+		 * (`docs/features/granted-temporary-points.md`). Asked of the published
+		 * name, as the ceiling's breakdown is, so a pool without `hasTemp`
+		 * publishes no buffer and asks nothing.
+		 */
+		const storedRecords = recordsOf(data);
+		const bufferAccount: BufferAccount | null =
+			config.hasTemp === true
+				? (context.modifiers?.buffer?.(
+						`${config.id}.${TEMP_KEY}`,
+						data?.temp,
+						storedRecords,
+					) ?? null)
+				: null;
+		/**
+		 * Whether a grant is listed that raises, or could raise, the buffer: the
+		 * pill then draws the effective buffer and carries the ceiling's mark,
+		 * and a spend drains every grant with the stored points (D6, D8). A
+		 * leftover alone or a refused buffer draws the stored points, as today.
+		 */
+		const granted = grantsActive(bufferAccount);
+		/**
+		 * **One door per card** (`docs/UI.md` §9's one-door rule for a Roster
+		 * row): where the card has both a ceiling breakdown and a buffer account,
+		 * the door opens both, each under a heading line; a door of one part
+		 * carries no heading.
+		 */
+		const bufferText = bufferAccount === null ? null : bufferAccountText(bufferAccount);
+		const doorText =
+			ceilingText !== null && bufferText !== null
+				? `Max\n${ceilingText}\n\nTemporary\n${bufferText}`
+				: (ceilingText ?? bufferText);
 
 		/** The door's `.sheetsmith-sr-only` twin, appended with the card's other spoken children. */
 		let doorTwin: HTMLElement | null = null;
@@ -1080,6 +1167,34 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		let sentMax = data?.max ?? '';
 
 		/**
+		 * The buffer as a spend or a typed value has left it, before the rebuild,
+		 * where a grant is listed (D6, D8): the account against the stored points
+		 * and records the draft now holds, which is what the pill draws and what a
+		 * further spend is measured from. Null where no grant is listed, and then
+		 * nothing below differs from a pool with no grants at all.
+		 */
+		let draftAccount: BufferAccount | null = granted ? bufferAccount : null;
+		/** The stored points as the draft holds them, in the note's own spelling. */
+		let draftStored = data?.temp ?? '';
+		/** The spent records as the draft holds them, in the note's own spelling. */
+		let draftRecords: Record<string, string> = { ...storedRecords };
+		/** The records last reported, on `sentTemp`'s terms. */
+		let sentRecords: Record<string, string> = { ...storedRecords };
+		/**
+		 * What the pill last drew, which is what a commit of the pill is compared
+		 * against (D8) — never the stored value, or a pill drawing 10 over a
+		 * stored 3 would write 10 on a blur that changed nothing.
+		 */
+		let drawnTemp = draftAccount === null ? (data?.temp ?? '') : String(draftAccount.effective);
+		/**
+		 * The sentence a typed value under a grant left under the pill, standing
+		 * until the pill is edited again (D8), or null.
+		 */
+		let standingNotice: string | null = null;
+		/** Draw a D8 sentence in the pill's notice slot, once the pill exists. */
+		let showTempNotice: ((sentence: string) => void) | null = null;
+
+		/**
 		 * Where a pending amount would land, or null when none is pending. Held
 		 * here rather than inside the amount control because the bar belongs to
 		 * the card, and `paint` is the one place that decides what it shows.
@@ -1180,7 +1295,16 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * reversal left the card in a third state that was neither. Derived from
 		 * the origin, a net of nothing is exactly where you started.
 		 */
-		let origin: { current: number; temp: number } | null = null;
+		let origin: {
+			current: number;
+			temp: number;
+			/**
+			 * The buffer the gesture began on, where a grant is listed: a spend is
+			 * drained from it and its records, always from here, so a step back up
+			 * refunds the grants a step down drained exactly as it refunds `temp`.
+			 */
+			grants?: { account: BufferAccount; stored: string; records: Record<string, string> };
+		} | null = null;
 		let net = 0;
 
 		/**
@@ -1195,10 +1319,38 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			nextNet: number,
 			from?: { current: number; temp: number },
 		): void => {
-			if (from !== undefined) origin = from;
-			origin ??= { current: draftValue() ?? 0, temp: tempValue() };
+			/*
+			 * Where a grant is listed, the origin carries the buffer it began on,
+			 * whoever names the starting value: the amount control hands its own,
+			 * and a spend from there that left the grants out would draw the drain
+			 * and write none of it.
+			 */
+			const grantsAt = () =>
+				draftAccount === null
+					? {}
+					: {
+							// The effective part from the account and never from the
+							// field's text (D8).
+							temp: draftAccount.effective,
+							grants: { account: draftAccount, stored: draftStored, records: { ...draftRecords } },
+						};
+			if (from !== undefined) origin = { ...from, ...grantsAt() };
+			origin ??= { current: draftValue() ?? 0, temp: tempValue(), ...grantsAt() };
 			net = nextNet;
 			const next = landing(origin, net);
+			if (origin.grants !== undefined) {
+				// Every active buffer is drained by what the spend absorbed, each
+				// floored at 0 (D6), and a value that did not move keeps the
+				// note's own spelling.
+				const { account, stored, records } = origin.grants;
+				const drained = drainBuffer(account, next.absorbed);
+				draftStored = drained.stored === account.stored ? stored : String(drained.stored);
+				draftRecords = { ...records };
+				for (const [key, points] of drained.spent) {
+					if (points !== (wholePoints(records[key]) ?? 0)) draftRecords[key] = String(points);
+				}
+				draftAccount = refoldBuffer(account, draftStored, draftRecords);
+			}
 			// A buffer the rule refuses is left exactly as it reads: it absorbed
 			// nothing (`tempValue`), and writing a `0` over it would put a number in
 			// the note the character never typed, which a stored value is never
@@ -1206,6 +1358,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			if (tempInput !== null && !refusesTemp(tempInput.value.trim())) {
 				const before = tempInput.value;
 				tempInput.value = String(next.temp);
+				if (draftAccount !== null) drawnTemp = tempInput.value;
 				if (tempInput.value !== before && next.absorbed > 0) flashTemp();
 			}
 			input.value = String(next.current);
@@ -1293,12 +1446,34 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			let temp = tempInput?.value.trim() ?? null;
 			// The floor holds however the value arrived. Stepping and absorbing
 			// respect it by construction; typing "-5" would not, and a negative
-			// buffer is a state this component defines out of existence.
+			// buffer is a state this component defines out of existence. Once,
+			// ahead of the grant branch below, so a typed value under a grant is
+			// floored by the same line.
 			if (tempInput !== null && temp !== null) {
 				const parsed = Number(temp);
 				if (Number.isFinite(parsed) && parsed < 0) {
 					temp = '0';
 					tempInput.value = temp;
+				}
+			}
+			/**
+			 * Where a grant is listed, the pill draws the effective buffer and the
+			 * note stores the reader's own part, so the two are told apart here
+			 * (D8). Text the pill did not draw was typed, and is the stored part
+			 * under every existing rule; text it did draw was put there by a spend
+			 * or by the render, and the stored part is the draft's.
+			 */
+			let typedUnder = false;
+			if (draftAccount !== null && tempInput !== null && temp !== null) {
+				if (temp !== drawnTemp && !refusesTemp(temp)) {
+					draftStored = temp;
+					draftAccount = refoldBuffer(draftAccount, draftStored, draftRecords);
+					drawnTemp = String(draftAccount.effective);
+					tempInput.value = drawnTemp;
+					typedUnder = draftAccount.inEffect !== null;
+					temp = draftStored;
+				} else {
+					temp = refusesTemp(temp) ? null : draftStored;
 				}
 			}
 			// A buffer the rule refuses is not written from here either. Its own
@@ -1317,14 +1492,23 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			if (current !== sentCurrent) delta.current = current;
 			if (temp !== null && temp !== sentTemp) delta.temp = temp;
 			if (max !== null && max !== sentMax) delta.max = max;
+			// A grant's records ride in the same change as the spend that moved
+			// them, so a spend through two grants and the stored points is one save.
+			const records: Record<string, string> = {};
+			for (const [key, value] of Object.entries(draftRecords)) {
+				if (sentRecords[key] !== value) records[key] = value;
+			}
+			if (Object.keys(records).length > 0) delta.spent = records;
 			if (
 				delta.current === undefined &&
 				delta.temp === undefined &&
-				delta.max === undefined
+				delta.max === undefined &&
+				delta.spent === undefined
 			) {
 				return;
 			}
 			sentCurrent = current;
+			sentRecords = { ...draftRecords };
 			if (temp !== null) sentTemp = temp;
 			if (max !== null) sentMax = max;
 			// Settle every field before reporting, so a later blur does not
@@ -1332,16 +1516,33 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			handle?.sync(current);
 			// Not a refused draft, which `sync` would make the stored value that
 			// Escape restores.
-			if (temp !== null) tempHandle?.sync(temp);
+			// Where a grant is listed the field's committed text is what it drew.
+			if (draftAccount !== null) tempHandle?.sync(drawnTemp);
+			else if (temp !== null) tempHandle?.sync(temp);
 			maxHandle?.sync(max ?? '');
 			endGesture();
 			// A spend the buffer absorbed whole leaves the pool where it was, so
 			// announcing the pool alone would report that nothing happened. Say
-			// what actually moved.
+			// what actually moved: the buffer the pill now draws.
+			const bufferMoved = delta.temp !== undefined || delta.spent !== undefined;
 			announce(
 				current,
-				delta.temp !== undefined ? `, ${delta.temp || '0'} temporary` : '',
+				bufferMoved
+					? `, ${(draftAccount === null ? delta.temp : drawnTemp) || '0'} temporary`
+					: '',
 			);
+			/*
+			 * **The one place a typed value is not what the pill draws** (D8), so
+			 * it is said under the pill and to the live region both: the commit
+			 * was written, which makes it a notice and not a refusal.
+			 */
+			const sentence = typedUnder && draftAccount !== null ? bufferOwnNowSentence(draftAccount) : null;
+			if (sentence !== null) {
+				context.onHoldNotice?.(draftStored);
+				standingNotice = sentence;
+				showTempNotice?.(sentence);
+				status.textContent = sentence;
+			}
 			context.onChange(delta);
 		};
 
@@ -1525,11 +1726,34 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// here is refused or clamped, not meant (`docs/UI.md` §7, and
 			// `refusesTemp` above).
 			tempInput.inputMode = 'numeric';
-			tempInput.value = data?.temp ?? '';
+			// The effective buffer where a grant is listed, and the note's own
+			// points otherwise (D8).
+			tempInput.value = drawnTemp;
 			tempInput.placeholder = '—';
 			tempInput.setAttribute('aria-label', `${config.label} temporary`);
+			if (granted) {
+				/*
+				 * **The ceiling's own mark, the dotted rule, and not the underline**
+				 * (`docs/features/pool-ceiling-modifier-door.md`): the pill's press
+				 * edits, so the underline's `cursor: help` would promise a press it
+				 * does not have. Drawn wherever a grant is listed, beaten or not, as
+				 * a number's mark follows what was pushed rather than how far it moved.
+				 */
+				tempInput.classList.add('sheetsmith-pool-temp-granted');
+			}
+			// Which grant the pill is drawing, while one is in effect over the
+			// reader's own points (D9): a description, never a line on the card,
+			// so the card is the same size with the grant on as off.
+			const grantedBy = bufferOwnDescription(draftAccount);
+			if (grantedBy !== null) {
+				tempInput.setAttribute('aria-description', grantedBy);
+				tempInput.title = grantedBy;
+			}
 
 			const field = tempInput;
+			/** What the note stores for the buffer, for the stored value's mark. */
+			const storedText = (): string =>
+				draftAccount === null ? field.value.trim() : (data?.temp ?? '').trim();
 
 			// No steppers on the pill, deliberately. A buffer is granted in
 			// lumps and replaced, never incremented: nothing adds temporary
@@ -1554,14 +1778,32 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			 * reader without sight meets it.
 			 */
 			let tempNotice: HTMLElement | null = null;
-			const markTemp = (message: string | null): void => {
+			const markTemp = (
+				message: string | null,
+				/**
+				 * A refusal, or a notice: D8's sentence, which says what a commit
+				 * that *was* written left the pill drawing, so it takes the slot and
+				 * the description and neither the refused border nor `aria-invalid`.
+				 */
+				kind: 'refused' | 'notice' = 'refused',
+			): void => {
 				tempNotice?.remove();
 				tempNotice = null;
-				temp.classList.toggle('sheetsmith-pool-temp-refused', message !== null);
-				if (message === null) {
+				temp.classList.toggle(
+					'sheetsmith-pool-temp-refused',
+					message !== null && kind === 'refused',
+				);
+				if (message === null || kind === 'notice') {
 					field.style.removeProperty('--sheetsmith-pool-temp-chars');
 					field.removeAttribute('aria-invalid');
 					field.removeAttribute('aria-describedby');
+				}
+				if (message === null) return;
+				if (kind === 'notice') {
+					tempNotice = createDiv({ cls: 'sheetsmith-pool-temp-notice', text: message });
+					tempNotice.id = `sheetsmith-pool-temp-problem-${config.id}`;
+					temp.after(tempNotice);
+					field.setAttribute('aria-describedby', tempNotice.id);
 					return;
 				}
 				// The field is three digits wide, which a buffer of points
@@ -1587,12 +1829,34 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// same rule the commit refuses by, not a second copy of it. The list
 			// fields' render-time check is the precedent, and so is what follows
 			// from it: the note is not rewritten, the mark says so instead.
-			markTemp(storedTempMark(field.value.trim()));
+			/*
+			 * The sentence a typed value under a grant left here stands across the
+			 * rebuild its own write started, while the note still stores what was
+			 * typed and a grant is still in effect over it. The view holds it
+			 * (`RenderContext.heldNotice`): the write rebuilds this card, and a
+			 * module-level copy would draw it on another note of the same layout.
+			 */
+			const held = context.heldNotice;
+			if (held !== undefined) {
+				const sentence =
+					draftAccount !== null && held === (data?.temp ?? '')
+						? bufferOwnNowSentence(draftAccount)
+						: null;
+				if (sentence === null) context.onHoldNotice?.(null);
+				standingNotice = sentence;
+			}
+			const settleMark = (): void => {
+				if (standingNotice !== null) markTemp(standingNotice, 'notice');
+				else markTemp(storedTempMark(storedText()));
+			};
+			settleMark();
+			showTempNotice = (sentence) => markTemp(sentence, 'notice');
 
 			field.addEventListener('blur', commitDraft);
 
 			tempHandle = bindEditable(field, {
-				initial: data?.temp ?? '',
+				// What the pill drew, so a blur that changed nothing writes nothing.
+				initial: drawnTemp,
 				step: true,
 				// The floor holds on the arrows as well as on the commit, so a
 				// step down from nothing never shows a `-1` the commit would only
@@ -1607,8 +1871,16 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 					}
 					// Nothing refused this attempt, which is also the path a blur
 					// with nothing changed takes — so a stored value the rule
-					// refuses keeps its mark rather than losing it to a blur.
-					markTemp(storedTempMark(field.value.trim()));
+					// refuses keeps its mark rather than losing it to a blur, and
+					// D8's sentence stands until the pill is edited.
+					settleMark();
+				},
+				// An edit of the pill is what clears D8's sentence.
+				onDraft: () => {
+					if (standingNotice === null) return;
+					standingNotice = null;
+					context.onHoldNotice?.(null);
+					markTemp(storedTempMark(storedText()));
 				},
 				announceCommit: (next) => {
 					status.textContent =

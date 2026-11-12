@@ -30,6 +30,8 @@ import {
 	TintColour,
 } from '../types';
 import { contrast, over, readColour, Rgb } from '../ui/contrast';
+import { bufferEntries, storedBuffer } from '../formula/modifier-buffers';
+import type { ReadComponent } from '../formula/sheet';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
 import {
 	BOX_ATTRIBUTE,
@@ -166,6 +168,50 @@ export function stateLinesIn(
 		const stored = Number(host.getAttribute(STATE_STORED_ATTRIBUTE) ?? '0');
 		const account = modifiers.state(name, column === '' ? null : column, stored);
 		if (account !== null) found.push({ name, lines: account.lines });
+	}
+	return found;
+}
+
+/**
+ * The grant in effect at each buffer on the sheet, as the one line the tint
+ * reads (`docs/features/granted-temporary-points.md` D12): a form in play whose
+ * grant is the buffer the card draws changed that card directly, so its card is
+ * tinted as a number the form changed would be. A grant a higher one passed
+ * over, or that the pool's own points beat, changed nothing and lists nothing.
+ *
+ * Read off the components as the sheet read them, since a buffer's account
+ * needs the note's stored points and records, which no box on the sheet stamps.
+ */
+export function bufferLinesIn(
+	prepared: readonly ReadComponent[],
+	modifiers: Pick<ModifierContext, 'buffer'>,
+): { name: string; lines: readonly ModifierLine[] }[] {
+	if (modifiers.buffer === undefined) return [];
+	const found: { name: string; lines: readonly ModifierLine[] }[] = [];
+	for (const { config, component, data, error } of prepared) {
+		if (component === undefined || error !== null) continue;
+		const values = component.scopeValues?.(data, config) ?? {};
+		for (const { name, buffer, entry } of bufferEntries(config.id, values)) {
+			const account = modifiers.buffer(name, storedBuffer(entry), buffer.spent);
+			const grant = account?.inEffect ?? null;
+			if (grant === null) continue;
+			found.push({
+				name,
+				lines: [
+					{
+						label: grant.label,
+						source: grant.source,
+						operator: 'upgrade',
+						type: null,
+						amount: grant.left,
+						applies: 'result',
+						suppressed: null,
+						...(grant.inPlay === true ? { inPlay: true } : {}),
+						...(grant.tint === undefined ? {} : { tint: grant.tint }),
+					},
+				],
+			});
+		}
 	}
 	return found;
 }

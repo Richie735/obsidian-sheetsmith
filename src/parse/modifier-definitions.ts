@@ -35,8 +35,10 @@ import {
 	noteTargets,
 	publishedTargets,
 	stateTargets,
+	bufferTargets,
 } from '../formula/modifier-targets';
 import { shapesOf, storedStateFault } from '../formula/modifier-states';
+import { aimsAtBuffer, BUFFER_TAKES_AT_LEAST } from '../formula/modifier-buffers';
 import { Layout } from './layout';
 import { isNoteOnly, unspellableName, unspellableNote } from './modifier-cell';
 import { series, spelled } from './spelled';
@@ -174,6 +176,7 @@ export function parseModifierDefinitions(
 	// The levels and flags a change may set, through the same derivation the walk
 	// and both pickers read (`docs/features/non-number-modifiers.md`).
 	const shapes = shapesOf(stateTargets(sources));
+	const buffers = new Set(bufferTargets(sources).map((buffer) => buffer.name));
 	// Read as a shape rather than as the declared type: `parseLayout` checked that
 	// each entry is an object and nothing more, so every member here is still a
 	// free `unknown` and a hand-edited file may hold a number where a name goes.
@@ -309,8 +312,17 @@ export function parseModifierDefinitions(
 			 * **A level or a flag needs no slot**, so it is never told its target
 			 * reads no modifier: it is told the three things that make it do
 			 * nothing instead — an Adds to, a column the target does not hold, and a
-			 * column naming the state the target already is (D5, D6).
+			 * column naming the state the target already is (D5, D6). **A buffer
+			 * needs no slot either**, and a grant is an At least: an Adds to or a
+			 * Sets aimed at one is told so, in the sheet's own sentence
+			 * (`docs/features/granted-temporary-points.md` D2).
 			 */
+			if (aimsAtBuffer(buffers, target, change.column)) {
+				if (operatorOf(change) !== 'upgrade' && !noteOnly(change)) {
+					problems.push({ definition: name, message: BUFFER_TAKES_AT_LEAST });
+				}
+				continue;
+			}
 			// The sheet's own verdict, read off the stored change before anything
 			// is evaluated, so the report and the sheet name one fault.
 			const stated = published.has(target)

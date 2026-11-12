@@ -68,6 +68,7 @@ import {
 	ModifierOutcome,
 	StateAccount,
 	StateShape,
+	BufferAccount,
 } from '../types';
 import { isNoteOnly } from '../parse/modifier-cell';
 import { roundSum } from '../formula/expression';
@@ -625,6 +626,92 @@ export function stateAccountText(account: StateAccount, inRows?: boolean): strin
 }
 
 /**
+ * A buffer's account, as one block of text: what a Pool's door opens for its
+ * temporary points (`docs/features/granted-temporary-points.md`).
+ *
+ * ```
+ * Your own: 5
+ *
+ * Wild Shape · Brown Bear — grants 10, 7 left
+ * Gear · Ring of Vitality — grants 5, 3 left (not applied: a higher grant applies)
+ *
+ * Not granting now: Gear · Old ring, 4 spent
+ *
+ * Now 7
+ * ```
+ *
+ * The state account's shape read for a buffer: the reader's own first where a
+ * grant is in effect over it, one line per grant, the leftovers, and what the
+ * card draws last. **Every line names its component**, however few sources
+ * there are, because the component is half of the key a grant's record is kept
+ * under, and a leftover line is that key and nothing else: a reader matching
+ * `Gear · Old ring` against the note's `spent · Gear · Old ring` finds it.
+ * A refused buffer opens on its sentence and has no own line, since it draws
+ * what the note stores.
+ */
+export function bufferAccountText(account: BufferAccount): string {
+	const now = `Now ${account.effective}`;
+	if (account.error !== null) return [account.error, '', now].join('\n');
+	const own = account.inEffect === null ? [] : [`Your own: ${account.stored}`, ''];
+	const said = account.grants.map((line) => {
+		const named = identity(line, true);
+		// A refused grant reads its sentence in place of the verdict, and keeps
+		// what it asked for, since its amount is known (D5); it carries no
+		// remainder, because it granted nothing and nothing was spent of it.
+		if (line.refused !== undefined) {
+			const asked =
+				typeof line.asked === 'number' && Number.isInteger(line.asked)
+					? String(line.amount)
+					: String(line.asked ?? line.amount);
+			return `${named} — grants ${asked} (not applied: ${line.suppressed ?? ''})`;
+		}
+		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
+		return `${named} — grants ${line.amount}, ${line.left} left${why}${recordMark(line.recordRefused)}`;
+	});
+	const leftovers = account.leftovers.map(
+		(record) =>
+			`Not granting now: ${record.key}, ${record.spent} spent${recordMark(record.recordRefused)}`,
+	);
+	return [
+		...own,
+		...said,
+		...(said.length > 0 && leftovers.length > 0 ? [''] : []),
+		...leftovers,
+		'',
+		now,
+	].join('\n');
+}
+
+/**
+ * The mark on a spent record the rule refuses, on the stored buffer's own
+ * terms (`storedTempMark`): it counts as none, and the note is not rewritten.
+ */
+function recordMark(refused: string | undefined): string {
+	return refused === undefined ? '' : `. The note's "${refused}" is not a whole number, so it counts as none spent`;
+}
+
+/**
+ * What a buffer's pill says beside the number it draws while a grant is in
+ * effect over the reader's own points: `Granted by Wild Shape · Brown Bear;
+ * your own: 5.`, or null where the pill draws the reader's own. The ring's
+ * `Set by a modifier; your own: Untrained`, read for a buffer (D9).
+ */
+export function bufferOwnDescription(account: BufferAccount | null): string | null {
+	if (account === null || account.error !== null || account.inEffect === null) return null;
+	return `Granted by ${identity(account.inEffect, true)}; your own: ${account.stored}.`;
+}
+
+/**
+ * What the pill says once a typed value lands below a grant still in effect,
+ * which the pill goes on drawing (D8): `HP temporary 10, granted by Wild Shape ·
+ * Brown Bear; your own is now 3.`, or null where the pill draws what was typed.
+ */
+export function bufferOwnNowSentence(account: BufferAccount): string | null {
+	if (account.error !== null || account.inEffect === null) return null;
+	return `${account.label} temporary ${account.effective}, granted by ${identity(account.inEffect, true)}; your own is now ${account.stored}.`;
+}
+
+/**
  * What a ring says beside its drawn state when the note holds another:
  * `Set by a modifier; your own: Untrained`, or null where they agree. A word
  * for the state that is *not* drawn, so `aria-pressed` still speaks alone for
@@ -693,7 +780,11 @@ export function outcomeWords(outcome: ModifierOutcome): string {
 	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
 	const noteOnly = isNoteOnly(moved ?? typed ?? {});
 	const arithmetic =
-		outcome.amount !== null && outcome.state !== undefined
+		outcome.grant === true
+			? outcome.amount === null
+				? 'grants temporary points'
+				: `grants ${outcome.amount}`
+			: outcome.amount !== null && outcome.state !== undefined
 			? stateChange({ operator, amount: outcome.amount }, outcome.state)
 			: outcome.amount === null
 			? operator === 'override'
