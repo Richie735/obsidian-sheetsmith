@@ -1,3 +1,4 @@
+import { bufferEntries } from '../formula/modifier-buffers';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -119,6 +120,9 @@ const MEMBER_ORDER = [
 	// the changes it declares against names that are not its own.
 	'scopeModifiers',
 	'write',
+	// Directly after `write`, because it is the write the sheet adds when a
+	// grant ends: the data path's last step, before the declarations below.
+	'endGrants',
 	'hasBuffer',
 	// Beside `hasBuffer` because it is the same kind of declaration: a fact about
 	// what this component draws that nothing outside it could infer, read by the
@@ -1503,6 +1507,30 @@ describe.each(types)('component "%s"', (type) => {
 		// the `reset.*.to` rule below exists to prevent one step over.
 		if (component?.resetColumns === undefined) return;
 		expect(typeof component.applyReset).toBe('function');
+	});
+
+	it('clears a grant’s records wherever it declares a buffer a grant may raise, and nowhere else', () => {
+		// `docs/features/granted-temporary-points.md`: the view clears an ended
+		// grant's records through `endGrants`, so a component publishing a
+		// buffer without it would keep spent records for ever, and one with it
+		// and no buffer could never be asked. And a buffer is a buffer a reset
+		// may clear, so it declares `hasBuffer` too. Read over the bare config,
+		// the example, each palette entry and every boolean field on, so a buffer
+		// behind a toggle is reached.
+		if (component === undefined) return;
+		const on: Record<string, boolean> = {};
+		for (const field of component.configFields) if (field.kind === 'boolean') on[field.key] = true;
+		const configs: ComponentConfig[] = [
+			bareConfig(type),
+			{ ...bareConfig(type), ...(component.example ?? {}) },
+			{ ...bareConfig(type), ...on },
+			...(component.palette ?? []).map((entry) => ({ ...bareConfig(type), ...entry.config })),
+		];
+		const declares = configs.some((config) =>
+			bufferEntries(config.id, component.scopeValues?.(null, config) ?? {}).length > 0,
+		);
+		expect(typeof component.endGrants).toBe(declares ? 'function' : 'undefined');
+		if (declares) expect(component.hasBuffer).toBe(true);
 	});
 
 	it('names the whole only where it names the parts', () => {

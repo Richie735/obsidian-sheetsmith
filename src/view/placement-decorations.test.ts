@@ -20,6 +20,7 @@ import {
 	TAG_TEXT_ATTRIBUTE,
 	pickTagText,
 	stateLinesIn,
+	bufferLinesIn,
 } from './placement-decorations';
 import { modifierBreakdown, stampStateHost } from '../components/modifier-breakdown';
 import { contrast } from '../ui/contrast';
@@ -1008,5 +1009,89 @@ describe('stateLinesIn: a ring a form in play set (docs/features/non-number-modi
 		const { root } = ringed();
 		expect(stateLinesIn(root, {})).toEqual([]);
 		expect(stateLinesIn(document.createElement('div'), ringed().modifiers)).toEqual([]);
+	});
+});
+
+describe('bufferLinesIn: a pool a form in play grants (docs/features/granted-temporary-points.md D12)', () => {
+	const GRANTS = {
+		name: 'Grants fixture',
+		columns: 12,
+		components: [
+			{ id: 'hp', type: 'pool', label: 'HP', max: '30', hasTemp: true, position: { col: 1, row: 1, width: 3, height: 2 } },
+			{
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				position: { col: 4, row: 1, width: 6, height: 4 },
+			},
+		],
+	};
+	const note = (temp: number) => `---
+sheet-layout: Grants fixture
+---
+
+## HP
+\`\`\`sheet
+current: 22
+temp: ${temp}
+\`\`\`
+
+## Wild Shape
+
+### Brown Bear
+\`\`\`sheet
+Active: yes
+Modifiers: hp.temp >= 10
+\`\`\`
+`;
+
+	function drawn(source: string) {
+		const layout = parseLayout(JSON.stringify(GRANTS));
+		const parsed = parseCharacter(source);
+		const walk = walkLayout(layout.components);
+		const prepared = walk.map(({ config }) => {
+			const component = getComponent(config.type);
+			if (component === undefined) throw new Error(config.type);
+			const section = getSection(parsed, config.label);
+			const result = section ? component.read(section.body, config) : null;
+			return { config, component, error: null, data: result?.ok === true ? result.data : null };
+		});
+		const { env, modifiers, marked } = buildSheet(layout, prepared);
+		const root = document.createElement('div');
+		root.className = 'sheetsmith-view';
+		document.body.appendChild(root);
+		renderGrid(root, walk, prepared, ({ config, component, data }) => ({
+			...formulaContext(component, config, data, env),
+			modifiers,
+			onChange: () => undefined,
+		}));
+		applyDecorations(
+			root,
+			inPlayDecorations(marked, (name) => modifiers.breakdown(name), bufferLinesIn(prepared, modifiers)),
+		);
+		return { root, lines: bufferLinesIn(prepared, modifiers) };
+	}
+
+	it('tints the pool’s card where the form’s grant is the buffer it draws', () => {
+		const { root, lines } = drawn(note(3));
+		expect(lines.map((one) => [one.name, one.lines[0]?.label, one.lines[0]?.inPlay])).toEqual([
+			['hp.temp', 'Brown Bear', true],
+		]);
+		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_BOX}`)).not.toBeNull();
+		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_MARK}`)?.textContent).toBe('Brown Bear');
+		// The form's change line names the pool it grants at, not only its key.
+		expect(cellOf(root, 'wild_shape').textContent).toContain('HP · temp grants 10');
+	});
+
+	it('leaves the pool untinted where its own points beat the grant', () => {
+		const { root, lines } = drawn(note(12));
+		expect(lines).toEqual([]);
+		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_BOX}`)).toBeNull();
 	});
 });

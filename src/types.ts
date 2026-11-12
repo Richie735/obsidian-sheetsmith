@@ -1003,7 +1003,35 @@ export type ScopeEntry = {
 	 * row sees one state.
 	 */
 	states?: Readonly<Record<string, StateShape>>;
+	/**
+	 * That this entry's value is a buffer a grant may raise, with what the note
+	 * stores of each grant's spending (`docs/features/granted-temporary-points.md`).
+	 * The bare name then reads the effective buffer and `<name>.value` what the
+	 * note stores. Only on an entry that publishes its `value`, with neither
+	 * `display` nor `compute`; a component declaring one implements `endGrants`.
+	 */
+	buffer?: BufferShape;
 } & ScopeEntrySource;
+
+/**
+ * What a buffer a grant may raise carries to the walk
+ * (`docs/features/granted-temporary-points.md`).
+ *
+ * **Only the component knows its spent records' spelling**, which is why they
+ * travel here: the walk folds them onto the stored value without learning a
+ * Pool's fence, as `StateShape` carries a level's words without the walk
+ * learning a Table's columns.
+ */
+export interface BufferShape {
+	/** What a sentence calls the buffer: the component's label, `HP`. */
+	label: string;
+	/**
+	 * What the note stores of each grant's spending, by grant key
+	 * (`<source> · <row>`), as the note spells it. Empty where nothing has been
+	 * spent, and on the static read the targets are collected from.
+	 */
+	spent: Readonly<Record<string, string>>;
+}
 
 /**
  * What a component publishes to formulas elsewhere on the sheet (SPEC §5).
@@ -1955,6 +1983,12 @@ export interface ModifierOutcome {
 	 * on every part aimed at a number, so such an outcome is the object it was.
 	 */
 	state?: StateShape;
+	/**
+	 * That this part grants temporary points to a buffer
+	 * (`docs/features/granted-temporary-points.md`): `amount` is then whole
+	 * points, and the words say it as `grants 10`. Absent on every other part.
+	 */
+	grant?: true;
 }
 
 /**
@@ -2032,6 +2066,27 @@ export interface ModifierContext {
 		stored: FieldValue | undefined,
 	): StateAccount | null;
 	/**
+	 * Every buffer a grant may raise, for the form's **Value** select's
+	 * **Temporary points** group (`docs/features/granted-temporary-points.md`).
+	 * Optional on `states`' terms, and absent offers none.
+	 */
+	buffers?: readonly BufferTarget[];
+	/**
+	 * What the grants aimed at one buffer come to, folded onto what the note
+	 * stores and what each grant has had spent, or null where no grant
+	 * addresses it and no spent record is left — so a pill with nothing pushed
+	 * at it draws no mark and no door.
+	 *
+	 * `stored` is the note's own text for the buffer, and `spent` the
+	 * component's records as `BufferShape.spent` spells them. Optional on
+	 * `state`'s terms, and absent answers null.
+	 */
+	buffer?(
+		name: string,
+		stored: string | undefined,
+		spent: Readonly<Record<string, string>>,
+	): BufferAccount | null;
+	/**
 	 * What one part of one cell comes to on this row: **one outcome per change**
 	 * the part's modifier names, in the definition's own order.
 	 *
@@ -2043,7 +2098,17 @@ export interface ModifierContext {
 	 * value each give exactly one. Plural because a named part gives one per
 	 * change, which is the whole of what a multi-change definition is on the sheet.
 	 */
-	outcomes(part: string, row: RowValues): readonly ModifierOutcome[];
+	outcomes(
+		part: string,
+		row: RowValues,
+		/**
+		 * The row's component, as its pushes name it (its label): half of a
+		 * grant's key, so the popup's verdict on a grant is the walk's
+		 * (`docs/features/granted-temporary-points.md` D5). Required, so a new
+		 * host cannot leave it out and have the popup disagree with the walk.
+		 */
+		source: string,
+	): readonly ModifierOutcome[];
 	/**
 	 * What applies at this name, in declaration order, and what it comes to. No
 	 * lines where nothing does, and none for a name that accepts no modifier — so
@@ -2120,6 +2185,85 @@ export interface StateAccount {
 	 */
 	lines: readonly ModifierLine[];
 	/** The refusal, where one change could not be read; null where none was. */
+	error: string | null;
+}
+
+/**
+ * One buffer a grant may raise, and what to show for it
+ * (`docs/features/granted-temporary-points.md`).
+ */
+export interface BufferTarget {
+	/** The published name a grant's `target` spells: `hp.temp`. */
+	name: string;
+	/** What a picker shows: `HP · temp`. */
+	label: string;
+	/** What a sentence calls the buffer (`BufferShape.label`): `HP`. */
+	called: string;
+}
+
+/**
+ * One grant listed at a buffer, as the account words it
+ * (`docs/features/granted-temporary-points.md`).
+ */
+export interface GrantLine {
+	/**
+	 * The key its spent record is held under, `<source> · <row>`, or null where
+	 * the row's label cannot be one (D5) and the line grants nothing.
+	 */
+	key: string | null;
+	/** The row as a reader sees it. */
+	label: string;
+	/** The component the row lives on. */
+	source: string;
+	/** The modifier, as the layout names it, or absent for one typed on the row. */
+	definition?: string;
+	/**
+	 * Whole points, 0 where the amount came out negative. A refused grant keeps
+	 * what it asked for where that is whole, and grants none of it.
+	 */
+	amount: number;
+	/** What a refused grant's amount came to, as it was judged (D4: `2.5`). */
+	asked?: number | boolean;
+	/** What the record says has been spent of it, 0 where there is none. */
+	spent: number;
+	/** What is left of it: `max(0, amount − spent)`. */
+	left: number;
+	/**
+	 * The record as the note spells it, where the rule refuses it and it counts
+	 * as none spent: marked in the account, and never rewritten by a read.
+	 */
+	recordRefused?: string;
+	/**
+	 * Null where this grant is the buffer in effect, the reason it is not where
+	 * it was passed over, or its refusal where it grants nothing (D2, D4, D5).
+	 */
+	suppressed: string | null;
+	/** Set where the line grants nothing, beside the sentence in `suppressed`. */
+	refused?: true;
+	/** The push's own `inPlay`, which the tint reads (D12). */
+	inPlay?: boolean;
+	/** The push's own `tint`, carried beside `inPlay` and never without it. */
+	tint?: TintColour;
+}
+
+/**
+ * What a buffer comes to once the grants aimed at it are folded onto what the
+ * note stores (`docs/features/granted-temporary-points.md`, D6).
+ */
+export interface BufferAccount {
+	/** What a sentence calls the buffer. */
+	label: string;
+	/** The note's own points, a refused spelling counting as 0. */
+	stored: number;
+	/** What the card draws: the highest of `stored` and each grant's remainder. */
+	effective: number;
+	/** The grant whose remainder the card draws, or null where its own points are. */
+	inEffect: GrantLine | null;
+	/** Every grant listed at the buffer, in walk order. */
+	grants: readonly GrantLine[];
+	/** Spent records no listed grant claims (D10), in the note's order. */
+	leftovers: readonly { key: string; spent: number; recordRefused?: string }[];
+	/** The refusal, where a grant's amount could not be read (D11); null where none was. */
 	error: string | null;
 }
 
@@ -2510,6 +2654,20 @@ export interface RenderContext<TData = unknown> {
 	collapsedGroups?: readonly string[];
 	/** Report the reader collapsing or expanding one of this component's groups. */
 	onToggleGroup?: (key: string, collapsed: boolean) => void;
+	/**
+	 * The stored value a reader last typed into this component below a grant
+	 * still in effect over it, or absent (`docs/features/granted-temporary-points.md`
+	 * D8): the sentence saying so is drawn while the note still stores it.
+	 *
+	 * **The view's, on `collapsedGroups`' terms and for their reason**: the
+	 * commit is a write and the write rebuilds the card, so the sentence cannot
+	 * live in the closure; and held by the view rather than the module, since the
+	 * view is one note and the module is every note on the layout. Cleared when
+	 * the leaf moves to another file.
+	 */
+	heldNotice?: string;
+	/** Report the stored value a typed commit left under a grant, or null to clear it. */
+	onHoldNotice?: (stored: string | null) => void;
 }
 
 /**
@@ -2658,6 +2816,17 @@ export interface ComponentDefinition<
 	 */
 	write(data: TData, body: string | null, config: TConfig): string;
 	/**
+	 * Clear the spent records of grants that have just ended, given the
+	 * component's data and their keys (`docs/features/granted-temporary-points.md`
+	 * D7): the edit `write` is then handed, or null where none of them is
+	 * recorded. The sheet view calls it in the same batch as the reader's edit
+	 * that ended them, so a grant's end is one write (SPEC §6).
+	 *
+	 * `hasBuffer`'s argument: the alternative is the view knowing a Pool's fence
+	 * keys. Declaring a `buffer` entry obliges it [checked: `contract.test.ts`].
+	 */
+	endGrants?(data: TData | null, config: TConfig, ended: readonly string[]): TData | null;
+	/**
 	 * Display the component. `data` is null when the section is missing or
 	 * failed to read.
 	 *
@@ -2791,7 +2960,8 @@ export interface ComponentDefinition<
 	 * Declared rather than inferred, because the alternative is the layout
 	 * editor knowing that a Pool has temporary points and a Track does not —
 	 * which is the rule in §4.1 that decides what may be an optional member at
-	 * all. The editor offers `reset.buffer` exactly where this is set.
+	 * all. The editor offers `reset.buffer` exactly where this is set. A
+	 * component declaring a `buffer` entry declares this too.
 	 */
 	hasBuffer?: boolean;
 	/**

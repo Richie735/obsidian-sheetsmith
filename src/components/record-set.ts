@@ -1196,7 +1196,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// before its text changes or the message is never queued.
 		const status = element('div', 'sheetsmith-sr-only', block);
 		/** What the shared record controls need from this list. */
-		const controls: RecordHost = { context, id: config.id, noun, status };
+		const controls: RecordHost = { context, id: config.id, noun, status, source: config.label };
 		status.setAttribute('aria-live', 'polite');
 
 		/**

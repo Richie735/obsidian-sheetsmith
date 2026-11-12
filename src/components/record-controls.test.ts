@@ -61,7 +61,7 @@ describe('drawRecordNumber', () => {
 		const handle = drawRecordNumber(
 			cell,
 			row,
-			{ context: { resolved: {}, resolveField: () => null }, id: 'forms', noun: 'Form', status },
+			{ context: { resolved: {}, resolveField: () => null }, id: 'forms', noun: 'Form', status, source: 'Forms' },
 			{
 				field: { key: 'HP', type: 'number', maxSource: 'record' },
 				raw: '22 / 34',
@@ -86,6 +86,7 @@ describe('drawRecordName', () => {
 		context: { resolved: {}, resolveField: () => null },
 		id: 'npcs',
 		noun: 'NPC',
+		source: 'NPCs',
 		status: document.createElement('div'),
 	});
 

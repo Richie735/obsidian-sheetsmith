@@ -1254,7 +1254,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		const box = element('div', 'sheetsmith-placed-box sheetsmith-stat-block-box', block);
 		const status = element('div', 'sheetsmith-sr-only', block);
 		status.setAttribute('aria-live', 'polite');
-		const controls: RecordHost = { context, id: config.id, noun, status };
+		const controls: RecordHost = { context, id: config.id, noun, status, source: config.label };
 		const { refusal } = recordRefusals(controls);
 		const armed = armRegister();
 
@@ -2290,7 +2290,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const said: FormChange[] = [];
 			let held: RowValues | null = null;
 			for (const part of cellParts(raw)) {
-				const outcomes = context.modifiers?.outcomes(part, (held ??= values())) ?? [];
+				const outcomes = context.modifiers?.outcomes(part, (held ??= values()), config.label) ?? [];
 				if (outcomes.length === 0) {
 					said.push({ group: part, label: part, text: part, applies: true, why: null, vital: false });
 					continue;
@@ -2513,6 +2513,10 @@ function compactChange(
 				? String(outcome.amount)
 				: signedText(String(outcome.amount))
 			: outcomeWords(outcome);
+	// A grant leads with the buffer's whole label, `HP · temp grants 10`: its
+	// short half names no pool, and two pools' temporary points would read alike
+	// (`docs/features/granted-temporary-points.md`).
+	if (outcome.grant === true) return { group, text: `${outcome.targetLabel} ${said}` };
 	return { group: at < 0 ? outcome.target : group, text: `${lead} ${said}` };
 }
 

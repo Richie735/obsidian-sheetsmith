@@ -2228,7 +2228,7 @@ describe('an at least where it lands', () => {
 			enrolling('forms', [enrol('stealth >= 4', 'Wolf')]),
 		]);
 		env.sheet('stealth');
-		const [outcome] = context.outcomes('stealth >= 4', { label: 'Wolf', values: {} });
+		const [outcome] = context.outcomes('stealth >= 4', { label: 'Wolf', values: {} }, '');
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe('already higher');
 	});

@@ -2828,6 +2828,32 @@ describe('a rule reads the class that says why, never the elements drawn', () =>
 	});
 });
 
+describe('no rule clips with `clip-path`', () => {
+	/*
+	 * `sheet.css` at the visually-hidden rule: the browser-support check the
+	 * directory runs reads `clip-path` as partially supported — about external
+	 * SVG references, not `inset()` — so the stylesheet clips with `clip` there
+	 * and with an element's own box everywhere else. A granted temporary-points
+	 * field reached for it once, to inset its dotted rule, and was refused at the
+	 * land stop (`docs/features/granted-temporary-points.md`).
+	 */
+	const declares = (text: string, property: string): string[] =>
+		text.match(new RegExp(`(?:^|[;{\\s])${property}\\s*:[^;}]*`, 'gm')) ?? [];
+
+	it('declares no `clip-path` anywhere in the stylesheet', () => {
+		expect(declares(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
+	});
+
+	it('would notice one', () => {
+		// The same scan finds the `clip` the visually-hidden rule does declare,
+		// so the empty list above is a finding, and one planted in an at-rule.
+		expect(declares(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
+		expect(
+			declares('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
+		).toHaveLength(1);
+	});
+});
+
 describe('no two rules declare the same body', () => {
 	/*
 	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice

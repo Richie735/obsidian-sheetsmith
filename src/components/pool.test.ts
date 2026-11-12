@@ -156,8 +156,17 @@ describe('pool.scopeValues', () => {
 	it('publishes temp only when the layout asks for it', () => {
 		expect(
 			pool.scopeValues?.({ temp: '4' }, { ...config, hasTemp: true })?.named?.temp,
-		).toEqual({ value: '4' });
+		).toEqual({ value: '4', buffer: { label: 'HP', spent: {} } });
 		expect(pool.scopeValues?.({ temp: '4' }, config)?.named?.temp).toBeUndefined();
+	});
+
+	it('declares temp a buffer a grant may raise, carrying its spent records', () => {
+		const published = pool.scopeValues?.(
+			{ temp: '3', spent: { 'Gear · Ring': '1', 'Gear · Gone': null } },
+			{ ...config, hasTemp: true },
+		);
+		// A record an edit removes is not one the note holds.
+		expect(published?.named?.temp?.buffer).toEqual({ label: 'HP', spent: { 'Gear · Ring': '1' } });
 	});
 });
 
@@ -3067,6 +3076,382 @@ describe('a buffer its rule refuses', () => {
 			const at = visible.findIndex((child) => child.classList.contains('sheetsmith-error'));
 			expect(visible[at - 1]?.classList.contains('sheetsmith-pool-temp')).toBe(true);
 			expect(visible.at(-1)?.classList.contains('sheetsmith-pool-track')).toBe(true);
+		});
+	});
+});
+
+/*
+ * **Temporary points a modifier grants** (`docs/features/granted-temporary-points.md`).
+ *
+ * Through a real sheet, as the ceiling's door is: the buffer is a fact
+ * `scopeValues` declares and the walk folds, and a stubbed `modifiers` could
+ * not show a grant ending with its row.
+ */
+describe('temporary points a modifier grants', () => {
+	const hp: PoolConfig = { ...config, max: '30', hasTemp: true };
+	const gear: TableConfig = {
+		id: 'gear',
+		type: 'table',
+		label: 'Gear',
+		position: { col: 3, row: 1, width: 4, height: 2 },
+		rowHeader: 'Item',
+		openRows: true,
+		columns: [
+			{ key: 'Worn', type: 'toggle' },
+			{ key: 'Modifiers', type: 'modifier' },
+		],
+	};
+	const fence = (...lines: string[]) => `\n\`\`\`sheet\n${lines.join('\n')}\n\`\`\`\n`;
+	const gearOf = (...rows: [string, boolean, string][]) =>
+		[
+			'| Item | Worn | Modifiers |',
+			'| --- | --- | --- |',
+			...rows.map(([item, worn, cell]) => `| ${item} | ${worn ? 'yes' : ''} | ${cell} |`),
+		].join('\n');
+
+	/** The view's held notices, one map per open note, as `SheetView` holds them. */
+	let held = new Map<string, string>();
+	afterEach(() => {
+		held = new Map();
+	});
+	const sheetOf = (
+		poolBody: string,
+		gearBody: string,
+		onChange = vi.fn(),
+		poolConfig: PoolConfig = hp,
+		notices: Map<string, string> = held,
+	) => {
+		const poolRead = pool.read(poolBody, poolConfig);
+		const gearRead = table.read(gearBody, gear);
+		if (!poolRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [poolConfig, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: poolConfig, component: pool, data: poolRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		pool.render(el, poolConfig, poolRead.data, {
+			resolved: resolveFormulaFields(pool, poolConfig, poolRead.data, env),
+			resolveField: makeFieldResolver(pool, poolConfig, poolRead.data, env),
+			explainField: makeFieldExplainer(pool, poolConfig, poolRead.data, env),
+			onChange,
+			modifiers,
+			heldNotice: notices.get(poolConfig.id),
+			onHoldNotice: (stored) => {
+				if (stored === null) notices.delete(poolConfig.id);
+				else notices.set(poolConfig.id, stored);
+			},
+		});
+		return { el, env, onChange, data: poolRead.data, ...parts(el) };
+	};
+
+	describe('the note', () => {
+		it('round-trips spent records byte for byte, a hand-spaced one included', () => {
+			const body = fence('current: 22', 'temp: 3', 'spent · Gear · Ring:    1', 'spent · Wild Shape · Brown Bear: 4');
+			const read = pool.read(body, hp);
+			if (!read.ok || read.data === null) throw new Error('read failed');
+			expect(read.data.spent).toEqual({ 'Gear · Ring': '1', 'Wild Shape · Brown Bear': '4' });
+			expect(pool.write({}, body, hp)).toBe(body);
+			expect(pool.write(read.data, body, hp)).toBe(body);
+		});
+
+		it('counts a record the rule refuses as none, marks it, and never rewrites it', () => {
+			const body = fence('current: 22', 'temp: 0', 'spent · Gear · Ring: x');
+			const { temp, onChange, el } = sheetOf(body, gearOf(['Ring', true, 'hp.temp >= 5 when Worn']));
+			expect(temp?.value).toBe('5');
+			expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toContain(
+				'The note\'s "x" is not a whole number, so it counts as none spent',
+			);
+			settle(el);
+			expect(onChange).not.toHaveBeenCalled();
+		});
+
+		it('writes temp and every drained record in one change', () => {
+			const body = fence('current: 22', 'temp: 4');
+			const { el, steps, onChange, temp } = sheetOf(
+				body,
+				gearOf(['Ring', true, 'hp.temp >= 5 when Worn'], ['Amulet', true, 'hp.temp >= 3 when Worn']),
+			);
+			expect(temp?.value).toBe('5');
+			press(steps[0], { shiftKey: true });
+			expect(temp?.value).toBe('0');
+			expect(parts(el).current?.value).toBe('17');
+			settle(el);
+			expect(onChange).toHaveBeenCalledTimes(1);
+			expect(onChange).toHaveBeenCalledWith({
+				current: '17',
+				temp: '0',
+				spent: { 'Gear · Ring': '5', 'Gear · Amulet': '3' },
+			});
+			// The record's line lands after the fence's other entries.
+			expect(pool.write(onChange.mock.calls[0]?.[0] as PoolData, body, hp)).toBe(
+				fence('current: 17', 'temp: 0', 'spent · Gear · Ring: 5', 'spent · Gear · Amulet: 3'),
+			);
+		});
+
+		it('the owner’s case: stored 5 and a grant of 10 take a spend of 7, then of 4, through the pool', () => {
+			const gearBody = gearOf(['Ring', true, 'hp.temp >= 10 when Worn']);
+			const first = sheetOf(fence('current: 22', 'temp: 5'), gearBody);
+			expect(first.temp?.value).toBe('10');
+			pressDown(first.trigger);
+			if (first.amount === null) throw new Error('no amount');
+			first.amount.value = '7';
+			first.amount.dispatchEvent(new Event('input'));
+			first.amount.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+			expect(first.onChange).toHaveBeenCalledTimes(1);
+			const spent = first.onChange.mock.calls[0]?.[0] as PoolData;
+			// The pool loses nothing: the buffer took all seven.
+			expect(spent).toEqual({ temp: '0', spent: { 'Gear · Ring': '7' } });
+			expect(first.temp?.value).toBe('3');
+			// The rebuilt sheet, from what that wrote.
+			const written = pool.write(spent, fence('current: 22', 'temp: 5'), hp);
+			document.body.replaceChildren();
+			const second = sheetOf(written, gearBody);
+			expect(second.temp?.value).toBe('3');
+			pressDown(second.trigger);
+			if (second.amount === null) throw new Error('no amount');
+			second.amount.value = '4';
+			second.amount.dispatchEvent(new Event('input'));
+			second.amount.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+			// Three from the grant, one from the pool.
+			expect(second.onChange).toHaveBeenCalledWith({ current: '21', spent: { 'Gear · Ring': '10' } });
+			expect(second.temp?.value).toBe('0');
+		});
+
+		it('refunds every grant a step down drained, on the step back up', () => {
+			const body = fence('current: 22', 'temp: 4', 'spent · Gear · Ring: 1');
+			const { el, steps, onChange, temp } = sheetOf(
+				body,
+				gearOf(['Ring', true, 'hp.temp >= 5 when Worn'], ['Amulet', true, 'hp.temp >= 3 when Worn']),
+			);
+			press(steps[0]);
+			press(steps[0]);
+			expect(temp?.value).toBe('2');
+			press(steps[1]);
+			press(steps[1]);
+			expect(temp?.value).toBe('4');
+			settle(el);
+			expect(onChange).not.toHaveBeenCalled();
+		});
+
+		it('drains the stored part alone where the buffer is refused, writing no record (D11)', () => {
+			const body = fence('current: 22', 'temp: 4');
+			const { el, steps, onChange, temp } = sheetOf(body, gearOf(['Ring', true, 'hp.temp >= nowhere']));
+			expect(temp?.value).toBe('4');
+			press(steps[0]);
+			settle(el);
+			expect(onChange).toHaveBeenCalledWith({ temp: '3' });
+		});
+	});
+
+	describe('the pill', () => {
+		it('draws the effective buffer, marked, with whose grant it is', () => {
+			const { temp } = sheetOf(
+				fence('current: 22', 'temp: 3', 'spent · Gear · Ring: 1'),
+				gearOf(['Ring', true, 'hp.temp >= 5 when Worn']),
+			);
+			expect(temp?.value).toBe('4');
+			expect(temp?.classList.contains('sheetsmith-pool-temp-granted')).toBe(true);
+			expect(temp?.getAttribute('aria-description')).toBe('Granted by Gear · Ring; your own: 3.');
+			expect(temp?.title).toBe('Granted by Gear · Ring; your own: 3.');
+		});
+
+		it('keeps the mark and drops the description where the pool’s own points beat the grant', () => {
+			const { temp } = sheetOf(fence('current: 22', 'temp: 6'), gearOf(['Ring', true, 'hp.temp >= 5 when Worn']));
+			expect(temp?.value).toBe('6');
+			expect(temp?.classList.contains('sheetsmith-pool-temp-granted')).toBe(true);
+			expect(temp?.hasAttribute('aria-description')).toBe(false);
+		});
+
+		it('is exactly today’s pill where no grant is listed', () => {
+			const { temp, el } = sheetOf(fence('current: 22', 'temp: 6'), gearOf(['Ring', false, 'hp.temp >= 5 when Worn']));
+			expect(temp?.value).toBe('6');
+			expect(temp?.classList.contains('sheetsmith-pool-temp-granted')).toBe(false);
+			expect(el.querySelector('.sheetsmith-pool-modifier-button')).toBeNull();
+		});
+
+		it('draws a spent grant at 0 in its drained colour, still marked', () => {
+			const { temp } = sheetOf(
+				fence('current: 22', 'temp: 0', 'spent · Gear · Ring: 5'),
+				gearOf(['Ring', true, 'hp.temp >= 5 when Worn']),
+			);
+			expect(temp?.value).toBe('0');
+			expect(temp?.parentElement?.classList.contains('sheetsmith-pool-temp-empty')).toBe(true);
+			expect(temp?.classList.contains('sheetsmith-pool-temp-granted')).toBe(true);
+		});
+
+		it('writes nothing for a focus and a blur that changed nothing', () => {
+			const { temp, onChange } = sheetOf(fence('current: 22', 'temp: 3'), gearOf(['Ring', true, 'hp.temp >= 10 when Worn']));
+			temp?.focus();
+			temp?.dispatchEvent(new Event('blur'));
+			expect(onChange).not.toHaveBeenCalled();
+		});
+
+		it('writes a value typed under a grant as the stored part, and says so under the pill', () => {
+			const { el, temp, onChange, status } = sheetOf(
+				fence('current: 22', 'temp: 5'),
+				gearOf(['Ring', true, 'hp.temp >= 10 when Worn']),
+			);
+			const sentence = 'HP temporary 10, granted by Gear · Ring; your own is now 3.';
+			if (temp === null) throw new Error('no pill');
+			temp.value = '3';
+			temp.dispatchEvent(new Event('input'));
+			temp.dispatchEvent(new Event('blur'));
+			expect(onChange).toHaveBeenCalledWith({ temp: '3' });
+			expect(temp.value).toBe('10');
+			const notice = el.querySelector<HTMLElement>('.sheetsmith-pool-temp-notice');
+			expect(notice?.textContent).toBe(sentence);
+			expect(temp.getAttribute('aria-describedby')).toBe(notice?.id);
+			expect(temp.hasAttribute('aria-invalid')).toBe(false);
+			expect(el.querySelector('.sheetsmith-pool-temp-refused')).toBeNull();
+			expect(status?.textContent).toBe(sentence);
+			// The next edit of the pill clears it.
+			temp.value = '4';
+			temp.dispatchEvent(new Event('input'));
+			expect(el.querySelector('.sheetsmith-pool-temp-notice')).toBeNull();
+		});
+
+		it('keeps the sentence across the rebuild its own write starts', () => {
+			const gearBody = gearOf(['Ring', true, 'hp.temp >= 10 when Worn']);
+			const first = sheetOf(fence('current: 22', 'temp: 5'), gearBody);
+			if (first.temp === null) throw new Error('no pill');
+			first.temp.value = '3';
+			first.temp.dispatchEvent(new Event('input'));
+			first.temp.dispatchEvent(new Event('blur'));
+			document.body.replaceChildren();
+			const rebuilt = sheetOf(fence('current: 22', 'temp: 3'), gearBody);
+			expect(rebuilt.el.querySelector('.sheetsmith-pool-temp-notice')?.textContent).toBe(
+				'HP temporary 10, granted by Gear · Ring; your own is now 3.',
+			);
+			// Not on another note of the same layout, whose own view holds none,
+			// though it stores the same value under the same grant.
+			document.body.replaceChildren();
+			const other = sheetOf(fence('current: 22', 'temp: 3'), gearBody, vi.fn(), hp, new Map());
+			expect(other.el.querySelector('.sheetsmith-pool-temp-notice')).toBeNull();
+			// And goes once the grant it is about has.
+			document.body.replaceChildren();
+			const ended = sheetOf(fence('current: 22', 'temp: 3'), gearOf(['Ring', false, 'hp.temp >= 10 when Worn']));
+			expect(ended.el.querySelector('.sheetsmith-pool-temp-notice')).toBeNull();
+		});
+
+		it('refuses 2.5 under a grant with the existing sentence, in the same slot', () => {
+			const { el, temp, onChange } = sheetOf(fence('current: 22', 'temp: 5'), gearOf(['Ring', true, 'hp.temp >= 10 when Worn']));
+			if (temp === null) throw new Error('no pill');
+			temp.value = '2.5';
+			temp.dispatchEvent(new Event('input'));
+			temp.dispatchEvent(new Event('blur'));
+			expect(onChange).not.toHaveBeenCalled();
+			expect(el.querySelector('.sheetsmith-pool > .sheetsmith-error')?.textContent).toBe(
+				'Not saved. Temporary points are a whole number of 0 or more, so "2.5" cannot be stored. Type a whole number, or clear the field.',
+			);
+			expect(temp.getAttribute('aria-invalid')).toBe('true');
+		});
+
+		it('previews a spend against the effective buffer', () => {
+			const { trigger, amount, preview } = sheetOf(fence('current: 22', 'temp: 0'), gearOf(['Ring', true, 'hp.temp >= 5 when Worn']));
+			pressDown(trigger);
+			if (amount === null) throw new Error('no amount');
+			amount.value = '7';
+			amount.dispatchEvent(new Event('input'));
+			expect(preview?.textContent).toBe('−7 → 20 · temp 0');
+		});
+	});
+
+	describe('the door', () => {
+		const doorText = (el: HTMLElement) =>
+			el.querySelector('.sheetsmith-pool-modifier-button')?.getAttribute('aria-describedby') === undefined
+				? null
+				: el.querySelector<HTMLElement>(
+						`#${el.querySelector('.sheetsmith-pool-modifier-button')?.getAttribute('aria-describedby') ?? ''}`,
+					)?.textContent;
+
+		it('opens the buffer’s account, its own first and what it draws last', () => {
+			const { el } = sheetOf(
+				fence('current: 22', 'temp: 5', 'spent · Gear · Bear: 3', 'spent · Gear · Ring: 2', 'spent · Gear · Old ring: 4'),
+				gearOf(['Bear', true, 'hp.temp >= 10 when Worn'], ['Ring', true, 'hp.temp >= 5 when Worn']),
+			);
+			expect(doorText(el)).toBe(
+				[
+					'Your own: 5',
+					'',
+					'Gear · Bear — grants 10, 7 left',
+					'Gear · Ring — grants 5, 3 left (not applied: a higher grant applies)',
+					'',
+					'Not granting now: Gear · Old ring, 4 spent',
+					'',
+					'Now 7',
+				].join('\n'),
+			);
+		});
+
+		it('keeps a refused grant’s amount, swaps its verdict for the sentence, and carries no remainder', () => {
+			const { el } = sheetOf(
+				fence('current: 22', 'temp: 0', 'spent · Gear · Ring: 1'),
+				gearOf(['Ring', true, 'hp.temp += 5 when Worn'], ['Charm', true, 'hp.temp >= 2.5 when Worn']),
+			);
+			expect(doorText(el)).toBe(
+				[
+					'Gear · Ring — grants 5 (not applied: Temporary points do not add up, so only the highest grant applies. Choose At least.)',
+					'Gear · Charm — grants 2.5 (not applied: "2.5" is not a whole number of points, so this row\'s own modifier grants nothing. Give it a whole number, for example with floor().)',
+					'',
+					'Now 0',
+				].join('\n'),
+			);
+		});
+
+		it('is drawn for a leftover alone, and the pill carries no mark', () => {
+			const { el, temp } = sheetOf(
+				fence('current: 22', 'temp: 3', 'spent · Gear · Old ring: 4'),
+				gearOf(['Ring', false, 'hp.temp >= 5 when Worn']),
+			);
+			expect(doorText(el)).toBe(['Not granting now: Gear · Old ring, 4 spent', '', 'Now 3'].join('\n'));
+			expect(temp?.classList.contains('sheetsmith-pool-temp-granted')).toBe(false);
+		});
+
+		it('opens on a refused buffer’s sentence (D11)', () => {
+			const { el } = sheetOf(fence('current: 22', 'temp: 4'), gearOf(['Ring', true, 'hp.temp >= nowhere']));
+			expect(doorText(el)).toMatch(/^Row "Ring": [^\n]*\n\nNow 4$/);
+		});
+
+		it('carries the ceiling and the buffer as two parts, one door, where both are pushed', () => {
+			const bounded: PoolConfig = { ...hp, max: '10 + mod.self' };
+			const { el } = sheetOf(
+				fence('current: 7', 'temp: 0'),
+				gearOf(['Ring', true, 'hp.temp >= 5 when Worn'], ['Amulet', true, 'hp.max += 4 as item']),
+				vi.fn(),
+				bounded,
+			);
+			expect(el.querySelectorAll('.sheetsmith-pool-modifier-button')).toHaveLength(1);
+			const text = doorText(el) ?? '';
+			expect(text.startsWith('Max\n')).toBe(true);
+			expect(text).toContain('\n\nTemporary\nYour own: 0\n\nGear · Ring — grants 5, 5 left\n\nNow 5');
+		});
+	});
+
+	describe('the data path', () => {
+		it('clears the stored points on buffer: clear and leaves every record', () => {
+			const read = pool.read(fence('current: 2', 'temp: 4', 'spent · Gear · Ring: 1'), hp);
+			if (!read.ok) throw new Error('read failed');
+			const reset = pool.applyReset?.(read.data, hp, { trigger: 'Long rest', buffer: 'clear' }, {
+				resolve: () => null,
+				explain: () => null,
+			});
+			expect(reset).toEqual({ ok: true, data: { temp: '0' } });
+		});
+
+		it('ends exactly the recorded grants it is handed, and answers null for none', () => {
+			const data: PoolData = { temp: '0', spent: { 'Gear · Ring': '1', 'Gear · Bear': '4' } };
+			expect(pool.endGrants?.(data, hp, ['Gear · Ring', 'Gear · Unrecorded'])).toEqual({
+				spent: { 'Gear · Ring': null },
+			});
+			expect(pool.endGrants?.(data, hp, ['Gear · Unrecorded'])).toBeNull();
+			expect(pool.endGrants?.(null, hp, ['Gear · Ring'])).toBeNull();
+			const body = fence('current: 22', 'temp: 0', 'spent · Gear · Ring: 1', 'spent · Gear · Bear: 4');
+			expect(pool.write({ spent: { 'Gear · Ring': null } }, body, hp)).toBe(
+				fence('current: 22', 'temp: 0', 'spent · Gear · Bear: 4'),
+			);
 		});
 	});
 });

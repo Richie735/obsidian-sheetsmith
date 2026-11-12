@@ -29,6 +29,7 @@ import {
 	ScopeEntry,
 	StateReader,
 } from '../types';
+import type { BufferLookup } from './modifier-buffers';
 import {
 	EMPTY_SCOPE,
 	evaluate,
@@ -98,6 +99,12 @@ export interface FormulaEnv {
 	 * reads as stored.
 	 */
 	states?: StateLookup;
+	/**
+	 * What has been granted at each buffer (`docs/features/granted-temporary-points.md`),
+	 * from the same walk as `modifiers`. Absent on an environment with no sheet,
+	 * where every buffer reads as stored.
+	 */
+	buffers?: BufferLookup;
 }
 
 /** The reader a component folds a level or a flag through, on this sheet. */

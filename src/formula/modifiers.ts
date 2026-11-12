@@ -57,11 +57,18 @@ import {
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
 import { isNoteOnly } from '../parse/modifier-cell';
 import {
+	called,
 	Contribution,
 	definitionTable,
 	Enrolment,
 	resolveEnrolments,
 } from './modifier-definitions';
+import {
+	aimsAtBuffer,
+	BufferLookup,
+	FoundGrant,
+	grantVerdict,
+} from './modifier-buffers';
 import {
 	addressOf,
 	StateLookup,
@@ -275,6 +282,15 @@ interface Walked {
 	/** A state refused, on `refused`'s terms: the first refusal names the row. */
 	stateRefused: Map<string, Refused>;
 	/**
+	 * The fourth reduction (`docs/features/granted-temporary-points.md`): every
+	 * change aimed at a buffer, keyed by its target, a grant of whole points or
+	 * the sentence it grants nothing with. It never reaches `applied`, so a grant
+	 * leaves `mod.<target>` and every slot's breakdown exactly as they were.
+	 */
+	granted: Map<string, FoundGrant[]>;
+	/** A buffer refused (D11), on `refused`'s terms: the first refusal names the row. */
+	grantRefused: Map<string, Refused>;
+	/**
 	 * The notes, kept apart from the arithmetic from the walk onward
 	 * (`docs/features/modifier-notes.md` E): only a change with an amount becomes a
 	 * `Contributor`, so the stacking rule and both of its zero skips never see a
@@ -320,7 +336,12 @@ export function buildModifierTables(
 	 * it did before states existed.
 	 */
 	shapes: StateShapes = new Map(),
-): { slots: ModifierLookup; states: StateLookup } {
+	/**
+	 * Every declared buffer a grant may raise, by name (`bufferTargets`). Empty
+	 * is a sheet with none, which walks exactly as it did before grants existed.
+	 */
+	bufferNames: ReadonlySet<string> = new Set(),
+): { slots: ModifierLookup; states: StateLookup; buffers: BufferLookup } {
 	const table = definitionTable(definitions);
 	/**
 	 * Every contribution by target, once the walk has produced a set nothing
@@ -369,6 +390,8 @@ export function buildModifierTables(
 		const noted = new Map<string, ModifierNote[]>();
 		const stated = new Map<string, Contributor[]>();
 		const stateRefused = new Map<string, Refused>();
+		const granted = new Map<string, FoundGrant[]>();
+		const grantRefused = new Map<string, Refused>();
 		for (const component of components) {
 			for (const push of component.pushes?.() ?? []) {
 				// A blank part enrols in nothing and is not an error: on an
@@ -437,6 +460,40 @@ export function buildModifierTables(
 					}
 					// A note-only change contributes nothing to the arithmetic.
 					if (found.kind === 'noted') continue;
+					/*
+					 * **A buffer, the fourth reduction.** A change aimed at a name
+					 * whose value is a buffer, with no column, is a grant: reduced by
+					 * target, never reaching the slot. A grant that cannot be one is
+					 * listed with its sentence and grants nothing (D2, D4, D5); only an
+					 * amount that will not resolve refuses the buffer (D11).
+					 */
+					if (aimsAtBuffer(bufferNames, target, found.fields.column)) {
+						if (found.kind === 'unreadable') {
+							if (isNoteOnly(found.fields)) continue;
+							if (!grantRefused.has(target)) {
+								grantRefused.set(target, { label: push.row.label, reason: found.reason });
+							}
+							continue;
+						}
+						const grant: FoundGrant = {
+							...grantVerdict(
+								found.fields.operator,
+								found.contribution.literal ?? found.contribution.amount,
+								called(found),
+								push.source,
+								push.row.label,
+							),
+							label: push.row.label,
+							source: push.source,
+							...(found.definition === null ? {} : { definition: found.definition.name }),
+							...(push.inPlay === true ? { inPlay: true } : {}),
+							...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+						};
+						const already = granted.get(target);
+						if (already === undefined) granted.set(target, [grant]);
+						else already.push(grant);
+						continue;
+					}
 					/*
 					 * **A level or a flag, the third reduction.** Where the change
 					 * names a column, or its target's own value is a state, it is
@@ -512,7 +569,7 @@ export function buildModifierTables(
 				}
 			}
 		}
-		return { applied, refused, noted, stated, stateRefused };
+		return { applied, refused, noted, stated, stateRefused, granted, grantRefused };
 	};
 
 	/**
@@ -529,7 +586,13 @@ export function buildModifierTables(
 		} finally {
 			walking = false;
 		}
-		if (found.refused.size === 0 && found.stateRefused.size === 0) held = found;
+		if (
+			found.refused.size === 0 &&
+			found.stateRefused.size === 0 &&
+			found.grantRefused.size === 0
+		) {
+			held = found;
+		}
 		return found;
 	};
 
@@ -596,7 +659,25 @@ export function buildModifierTables(
 		return result;
 	};
 
-	return { slots, states };
+	const buffers: BufferLookup = (name) => {
+		if (!bufferNames.has(name)) return null;
+		const found = walked();
+		if (found === null) {
+			/*
+			 * **The walk's own guard, in a buffer's words** (D13): the cold half of
+			 * the cycle case, naming what was read and the stored value to read
+			 * instead, which no grant changes, so it cannot loop.
+			 */
+			return {
+				error: `A modifier's own condition or amount reads "${name}", which a grant raises, and the modifiers on this sheet are still being worked out. Read the value as stored (${name}.value) instead.`,
+			};
+		}
+		const stopped = found.grantRefused.get(name);
+		if (stopped !== undefined) return { error: inRowMessage(stopped.label, stopped.reason) };
+		return { lines: found.granted.get(name) ?? [] };
+	};
+
+	return { slots, states, buffers };
 }
 
 /** One state contributor as a line, its verdict left to `foldState`. */
