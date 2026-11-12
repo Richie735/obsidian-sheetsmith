@@ -1234,3 +1234,93 @@ describe('a change carrying a note (docs/features/modifier-notes.md)', () => {
 		});
 	});
 });
+
+describe('a change that sets a level or a flag (docs/features/non-number-modifiers.md)', () => {
+	const TRAINING = {
+		flag: false,
+		positions: 3,
+		words: ['Untrained', 'Proficient', 'Expertise'],
+		label: 'Training',
+	};
+	const STATES: readonly ModifierTargetSource[] = [
+		{
+			id: 'abilities',
+			label: 'Abilities',
+			values: { named: { stealth: { states: { Training: TRAINING } } } },
+			formulas: ['stat + Training * pb + mod.self'],
+		},
+		{
+			id: 'skills',
+			label: 'Skills',
+			values: { named: { stealth: { value: 0, state: { ...TRAINING, column: 'Training' } } } },
+		},
+	];
+
+	function drawn(modifiers: Declared[]): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, layout(modifiers), {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources: STATES,
+		});
+		return container;
+	}
+
+	const valueSelect = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('select[aria-label*="value"], select[aria-label*="Value"]');
+
+	it('offers the state under Levels and flags, restricts the operator, and draws the legend', () => {
+		const el = drawn([
+			{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+		]);
+		const value = valueSelect(el);
+		expect(Array.from(el.querySelectorAll('optgroup')).map((group) => group.label)).toContain(
+			'Levels and flags',
+		);
+		expect(value?.selectedOptions[0]?.textContent).toBe('Abilities · stealth · Training');
+		const operator = el.querySelector<HTMLSelectElement>('select[aria-label*="perator"]');
+		expect(Array.from(operator?.options ?? []).map((one) => one.textContent)).toEqual(['Sets', 'At least']);
+		expect(el.textContent).toContain('0 Untrained · 1 Proficient · 2 Expertise');
+	});
+
+	it('writes the column straight after the target, and turns an Adds to into a Sets', () => {
+		const modifiers: Declared[] = [{ name: 'Cat Form', target: 'armour_class', amount: '1' }];
+		const el = drawn(modifiers);
+		const value = valueSelect(el) as HTMLSelectElement;
+		const option = Array.from(value.options).find((one) => one.textContent === 'Abilities · stealth · Training');
+		value.value = option?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(JSON.stringify(modifiers[0])).toBe(
+			'{"name":"Cat Form","target":"abilities.stealth","column":"Training","amount":"1","operator":"override"}',
+		);
+	});
+
+	it('reports an Adds to at a state and both stray columns, and nothing for a sound one', () => {
+		expect(
+			problems(
+				drawn([
+					{ name: 'Adds', target: 'abilities.stealth', column: 'Training', amount: '1' },
+					{ name: 'Typo', target: 'abilities.stealth', column: 'Trainig', operator: 'upgrade', amount: '1' },
+					{ name: 'Twice', target: 'skills.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+				]),
+			),
+		).toEqual([
+			'AddsAdds to cannot change a level or a flag. Choose Sets or At least.',
+			'TypoAbilities · stealth has no level or flag called "Trainig".',
+			'TwiceSkills · stealth already is "Training", so this change needs no column. Clear it.',
+		]);
+		expect(
+			problems(
+				drawn([
+					{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+				]),
+			),
+		).toEqual([]);
+	});
+});
