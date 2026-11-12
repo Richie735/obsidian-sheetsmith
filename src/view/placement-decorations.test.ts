@@ -19,8 +19,9 @@ import {
 	inPlayDecorations,
 	TAG_TEXT_ATTRIBUTE,
 	pickTagText,
+	stateLinesIn,
 } from './placement-decorations';
-import { modifierBreakdown } from '../components/modifier-breakdown';
+import { modifierBreakdown, stampStateHost } from '../components/modifier-breakdown';
 import { contrast } from '../ui/contrast';
 
 /*
@@ -947,5 +948,65 @@ describe('the tag text on a carrier no tinted box holds', () => {
 		);
 		pickTagText(page);
 		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('black');
+	});
+});
+
+describe('stateLinesIn: a ring a form in play set (docs/features/non-number-modifiers.md D11)', () => {
+	const line = {
+		label: 'Cat Form',
+		source: 'Wild Shape',
+		operator: 'upgrade' as const,
+		type: null,
+		amount: 1,
+		suppressed: null,
+		inPlay: true,
+		tint: 'green' as const,
+	};
+
+	/** A sheet holding one stamped ring, and what the context folded for it. */
+	function ringed() {
+		const root = document.createElement('div');
+		const cell = root.createDiv({ attr: { 'data-sheetsmith-component': 'checks' } });
+		const row = cell.createEl('table').createEl('tbody').createEl('tr');
+		row.createEl('th', { attr: { scope: 'row' }, text: 'Endurance' });
+		const ring = row.createEl('td').createEl('button');
+		stampStateHost(ring, 'checks.endurance', 'Prof', 0, row);
+		const asked: [string, string | null, unknown][] = [];
+		const modifiers = {
+			state: (name: string, column: string | null, stored: unknown) => {
+				asked.push([name, column, stored]);
+				return {
+					shape: { flag: false, positions: 2, words: ['Untrained', 'Proficient'], label: 'Prof' },
+					stored: 0,
+					drawn: 1,
+					lines: [line],
+					error: null,
+				};
+			},
+		};
+		return { root, row, asked, modifiers };
+	}
+
+	it('reads the stamped name, column and stored position, and hands back the folded lines', () => {
+		const { root, asked, modifiers } = ringed();
+		expect(stateLinesIn(root, modifiers)).toEqual([{ name: 'checks.endurance', lines: [line] }]);
+		expect(asked).toEqual([['checks.endurance', 'Prof', 0]]);
+	});
+
+	it('tints the ring\'s row in the form\'s colour, as a number it changed would be', () => {
+		const { root, row, modifiers } = ringed();
+		const decorations = inPlayDecorations([], () => ({ lines: [], override: null, total: 0 }), stateLinesIn(root, modifiers));
+		expect(decorations).toEqual([
+			{ kind: 'in-play', label: 'Cat Form', tint: 'green', names: ['checks.endurance'] },
+		]);
+		applyDecorations(root, decorations);
+		expect(row.classList.contains('sheetsmith-in-play')).toBe(true);
+		expect(row.getAttribute('data-sheetsmith-tint')).toBe('green');
+	});
+
+	it('finds nothing where the context has no states, or nothing is stamped', () => {
+		const { root } = ringed();
+		expect(stateLinesIn(root, {})).toEqual([]);
+		expect(stateLinesIn(document.createElement('div'), ringed().modifiers)).toEqual([]);
 	});
 });
