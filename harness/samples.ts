@@ -5706,3 +5706,116 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 			: []),
 	];
 }
+
+/**
+ * Which grant sheet a `pool-grant-*` state draws
+ * (`docs/features/granted-temporary-points.md`, Harness views).
+ */
+export const POOL_GRANT_VARIANTS = [
+	'form-active',
+	'form-ended',
+	'spell-active',
+	'spell-ended',
+	'item-active',
+	'item-ended',
+	'door',
+	'spent-below',
+] as const;
+export type PoolGrantVariant = (typeof POOL_GRANT_VARIANTS)[number];
+
+/**
+ * A Pool with temporary points beside the one component that grants them: a
+ * Stat block's form in play, a Record set's spell, or a Table's worn item.
+ * Each is drawn active and ended, so the pair shows the card holding its size
+ * while the grant comes and goes. `door` is the form and the item together over
+ * a record left by a ring no longer worn, whose account reads exactly as the
+ * spec's (`The account`): own 5, the bear's 10 with 3 spent, the ring's 5 with
+ * 2 spent and passed over, the old ring's 4 a leftover. `spent-below` is the
+ * bear spent down to 1 left beside the ring worn whole, so the smaller grant is
+ * the one in effect and the Gear row says so (the design review's pinned state).
+ */
+export function poolGrantSamples(variant: PoolGrantVariant): Sample[] {
+	const fence = (...lines: string[]) => ['```sheet', ...lines, '```'].join('\n');
+	const pool = (...lines: string[]): Sample => ({
+		config: {
+			id: 'hp',
+			type: 'pool',
+			label: 'HP',
+			position: { col: 1, row: 1, width: 3, height: 2 },
+			max: '30',
+			hasTemp: true,
+		} as ComponentConfig,
+		body: fence('current: 22', ...lines),
+	});
+	const wildShape = (active: boolean): Sample => ({
+		config: {
+			id: 'wild_shape',
+			type: 'stat-block',
+			label: 'Wild Shape',
+			position: { col: 4, row: 1, width: 6, height: 4 },
+			recordName: 'Form',
+			fields: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+			exclusive: 'Active',
+			zones: [{ key: 'vitals' }, { key: 'changes' }],
+		} as ComponentConfig,
+		body: ['### Brown Bear', fence(`Active: ${active ? 'yes' : 'no'}`, 'Modifiers: hp.temp >= 10')].join('\n'),
+	});
+	const gear = (worn: boolean, col = 4): Sample => ({
+		config: {
+			id: 'gear',
+			type: 'table',
+			label: 'Gear',
+			position: { col, row: col === 4 ? 1 : 5, width: 6, height: 2 },
+			rowHeader: 'Item',
+			openRows: true,
+			columns: [
+				{ key: 'Worn', type: 'toggle' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Item | Worn | Modifiers |',
+			'| --- | --- | --- |',
+			`| Ring of Vitality | ${worn ? 'yes' : 'no'} | hp.temp >= 5 when Worn |`,
+		].join('\n'),
+	});
+	if (variant === 'form-active') return [pool('temp: 3', 'spent · Wild Shape · Brown Bear: 4'), wildShape(true)];
+	if (variant === 'form-ended') return [pool('temp: 3'), wildShape(false)];
+	if (variant === 'item-active') return [pool('temp: 6'), gear(true)];
+	if (variant === 'item-ended') return [pool('temp: 6'), gear(false)];
+	if (variant === 'spent-below') {
+		return [
+			pool('temp: 0', 'spent · Wild Shape · Brown Bear: 9'),
+			wildShape(true),
+			{ ...gear(true), config: { ...gear(true).config, position: { col: 1, row: 5, width: 9, height: 2 } } },
+		];
+	}
+	if (variant === 'door') {
+		return [
+			pool('temp: 5', 'spent · Wild Shape · Brown Bear: 3', 'spent · Gear · Ring of Vitality: 2', 'spent · Gear · Old ring: 4'),
+			wildShape(true),
+			{ ...gear(true), config: { ...gear(true).config, position: { col: 1, row: 5, width: 9, height: 2 } } },
+		];
+	}
+	const active = variant === 'spell-active';
+	return [
+		pool('temp: 0'),
+		{
+			config: {
+				id: 'spells',
+				type: 'record-set',
+				label: 'Spells',
+				position: { col: 4, row: 1, width: 6, height: 3 },
+				recordName: 'Spell',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+			} as ComponentConfig,
+			body: ['### False Life', fence(`Active: ${active ? 'yes' : 'no'}`, 'Modifiers: hp.temp >= 8 when Active')].join('\n'),
+		},
+	];
+}
