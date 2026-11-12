@@ -15,7 +15,7 @@ import {
 } from '../formula/resolve';
 import { evaluate, Scope } from '../formula/expression';
 import { buildSheetEnv, buildSheetScope } from '../formula/sheet';
-import { buildModifierTable } from '../formula/modifiers';
+import { buildModifierTables } from '../formula/modifiers';
 import {
 	ModifierContext,
 	ModifierChangeView,
@@ -27,6 +27,9 @@ import { cellParts, parseModifierPart } from '../parse/modifier-cell';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { sampleOf } from '../test/sample';
 import { hoverClip, setClip } from '../test/clipped';
+
+/** The slot lookup of one walk, which is what these cases ask about. */
+const slotsOf = (...args: Parameters<typeof buildModifierTables>) => buildModifierTables(...args).slots;
 
 /*
  * A D&D skill list, which is what fixed rows exist for: the layout owns the
@@ -6914,7 +6917,7 @@ describe('the Conditions palette entry', () => {
 		expect(pushes[0]?.row.values.Active).toBe(true);
 		expect(pushes[1]?.row.values.Active).toBe(false);
 
-		const lookup = buildModifierTable(
+		const lookup = slotsOf(
 			[{ id: placed.id, pushes: () => pushes }],
 			[DISADVANTAGE],
 		);

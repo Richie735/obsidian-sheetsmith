@@ -2939,7 +2939,7 @@ describe('no two rules declare the same body', () => {
 		{
 			rules: [
 				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
-				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-pool-modifier-button, .sheetsmith-view .sheetsmith-note-mark',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-pool-modifier-button, .sheetsmith-view .sheetsmith-note-mark, .sheetsmith-view .sheetsmith-state-door',
 			],
 			reason: 'a glyph-only reset whose family is unruled',
 		},
@@ -5831,5 +5831,17 @@ describe('a stat block name is titled open or closed', () => {
 		expect(rule?.selector).toContain('.sheetsmith-record-name-input');
 		expect(rule?.selector).not.toContain('aria-expanded');
 		expect(rule?.selector).not.toContain(':has(');
+	});
+});
+
+
+describe('a Roster card strip\'s state floor (docs/features/non-number-modifiers.md)', () => {
+	it('keys on the layout\'s stamp, never on a drawn door, so a form in play moves no card', () => {
+		const rules = [...CSS_WITHOUT_COMMENTS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , body]) =>
+			/--sheetsmith-card-min:/.test(body ?? ''),
+		);
+		const selectors = rules.map(([, selector]) => (selector ?? '').trim());
+		expect(selectors).toContain('.sheetsmith-roster-cards.sheetsmith-roster-cards-stateful');
+		for (const selector of selectors) expect(selector, selector).not.toContain('sheetsmith-state-door');
 	});
 });

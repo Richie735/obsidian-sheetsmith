@@ -80,6 +80,32 @@ export const SETS = '=';
 export const AT_LEAST = '>=';
 
 /**
+ * The keyword a typed part's column clause starts with: ` in Training` after the
+ * amount names the level or flag on the target's row that the part sets
+ * (`docs/features/non-number-modifiers.md`).
+ */
+export const COLUMN_KEYWORD = 'in';
+
+/**
+ * Why a column a cell could not spell is refused, or null where it could.
+ *
+ * A cell spells the column as a clause, so a key holding the separator or one of
+ * the other clause words would be read back as something else. A definition can
+ * still name such a column, because JSON has no clause grammar — which is the
+ * fix the sentence names.
+ */
+export function unspellableColumn(key: string): string | null {
+	// ` in ` as well as the four the other clauses use: the column clause is
+	// found from the right, so a key holding it would lose its head to the amount.
+	const clashes =
+		holdsSeparator(key) ||
+		[' when ', ' as ', ' to ', ' in ', NOTE_CLAUSE].some((word) => key.includes(word));
+	return clashes
+		? `"${key}" cannot be set from a row's own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.`
+		: null;
+}
+
+/**
  * The one phase a cell ever spells.
  *
  * The value phase is the *absent* clause rather than the word `value`, so a cell
@@ -442,11 +468,29 @@ export function parseModifierPart(part: string): ModifierPart {
 		applies = 'result';
 		rest = rest.slice(0, to);
 	}
+	/*
+	 * **The column clause, found last** (`docs/features/non-number-modifiers.md`):
+	 * it sits straight after the amount, so every clause spelled after it is taken
+	 * off first and what is left after ` in ` is the column alone. ` in ` is no
+	 * token of the expression grammar, so a well-formed amount cannot hold it; the
+	 * one clash is an amount reading a column headed `in`, which `(in)` escapes —
+	 * the hazard ` as ` and ` when ` already carry. A cell with no ` in ` runs
+	 * exactly the path it ran before, which is what keeps its bytes and meaning.
+	 */
+	let column: string | undefined;
+	const within = clauseAt(` ${rest}`, COLUMN_KEYWORD);
+	if (within >= 0) {
+		// Scanned with a space in front, so a blank amount (`x >= in Training`)
+		// still has the keyword's leading space; the offset is one to the right.
+		column = rest.slice(within - 1 + ` ${COLUMN_KEYWORD} `.length).trim();
+		rest = rest.slice(0, Math.max(0, within - 1));
+	}
 
 	return {
 		kind: 'typed',
 		effect: {
 			target,
+			...(column !== undefined && column !== '' ? { column } : {}),
 			operator,
 			amount: rest.trim(),
 			...(applies !== undefined ? { applies } : {}),
@@ -479,6 +523,10 @@ export function spellTypedEffect(effect: TypedEffect): string {
 	];
 	const amount = effect.amount.trim();
 	if (amount !== '') said.push(amount);
+	// Only where there is one, so every cell written before columns existed keeps
+	// its bytes (Constraint 3).
+	const column = (effect.column ?? '').trim();
+	if (column !== '') said.push(COLUMN_KEYWORD, column);
 	/*
 	 * Spelled only for the result phase, and never on an override or an at least
 	 * — each already acts on the published number and so is in that phase by

@@ -68,8 +68,16 @@ import {
 	acceptingTargets,
 	ModifierTargetSource,
 	noteTargets,
+	stateTargets,
 } from '../formula/modifier-targets';
-import { fillTargetOptions } from '../components/modifier-form';
+import {
+	fillTargetOptions,
+	readTargetOption,
+	stateOf,
+	stateOptionValue,
+} from '../components/modifier-form';
+import { positionLegend } from '../components/modifier-breakdown';
+import { operatorOnto, operatorsAt } from '../formula/modifier-states';
 import { isNoteOnly, unspellableNote } from '../parse/modifier-cell';
 import {
 	addControls,
@@ -88,7 +96,6 @@ import {
 	ModifierDefinition,
 	ModifierOperator,
 	operatorOf,
-	OPERATORS,
 	phaseOf,
 } from '../types';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
@@ -102,6 +109,24 @@ type DefinitionEntry = Partial<ModifierDefinition> & Record<string, unknown>;
 
 /** One change as the editor handles one, on the same terms. */
 type ChangeEntry = Partial<ModifierChange> & Record<string, unknown>;
+
+/**
+ * Write a change's `column`, straight after its `target`, or clear it
+ * (`docs/features/non-number-modifiers.md`): the file then reads as the spec
+ * spells it, `"target": …, "column": …`, rather than gaining the key wherever
+ * the object happens to end. A change with no target takes it last.
+ */
+function putColumn(record: Record<string, unknown>, column: string | null): void {
+	delete record.column;
+	if (column === null || column.trim() === '') return;
+	const entries = Object.entries(record);
+	for (const [key] of entries) delete record[key];
+	for (const [key, value] of entries) {
+		record[key] = value;
+		if (key === 'target') record.column = column.trim();
+	}
+	if (!Object.hasOwn(record, 'column')) record.column = column.trim();
+}
 
 
 /**
@@ -199,6 +224,9 @@ export function renderModifierDefinitions(
 	// The values a note may be aimed at: **Notes only** offers the ones outside
 	// the accepting set, through the one derivation the report reads.
 	const notable = noteTargets(context.sources);
+	// The levels and flags a change may set, through the one derivation the
+	// sheet's form and the walk read (`docs/features/non-number-modifiers.md`).
+	const states = stateTargets(context.sources);
 	const bonusTypes = parseModifierTypes(layout).names;
 	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
@@ -550,8 +578,11 @@ export function renderModifierDefinitions(
 				attr: { 'aria-label': qualified(at, 'value') },
 			});
 			const storedTarget = String(change.target ?? '').trim();
+			const storedColumn = typeof change.column === 'string' ? change.column.trim() : '';
+			/** The level or flag this change sets, where it sets one. */
+			const aimed = stateOf(states, storedTarget, storedColumn === '' ? null : storedColumn);
 			value.createEl('option', { value: '', text: '—' });
-			fillTargetOptions(value, targets, notable);
+			fillTargetOptions(value, targets, notable, states);
 			/*
 			 * A stored target the picker does not offer, carried as its bare name.
 			 *
@@ -570,19 +601,43 @@ export function renderModifierDefinitions(
 			 */
 			if (
 				storedTarget !== '' &&
+				aimed === undefined &&
 				!targets.some((t) => t.name === storedTarget) &&
 				!notable.some((t) => t.name === storedTarget)
 			) {
+				// A column the target does not hold is carried the same way, with
+				// the column beside the name, and the report says why (D5).
 				value.createEl('option', {
-					value: storedTarget,
-					text: storedTarget,
+					value: storedColumn === '' ? storedTarget : stateOptionValue(storedTarget, storedColumn),
+					text: storedColumn === '' ? storedTarget : `${storedTarget} · ${storedColumn}`,
 				});
 			}
-			value.value = storedTarget;
+			value.value =
+				aimed === undefined
+					? storedColumn === ''
+						? storedTarget
+						: stateOptionValue(storedTarget, storedColumn)
+					: stateOptionValue(aimed.name, aimed.column ?? null);
 			titleChosen(value);
 			value.dataset.sheetsmithFocus = `modifier-${named}-${at}-target`;
 			value.addEventListener('change', () => {
-				setOptional(change, 'target', value.value);
+				const chosen = readTargetOption(value.value);
+				setOptional(change, 'target', chosen.target);
+				putColumn(change, chosen.column);
+				/*
+				 * **Onto a level or a flag, an Adds to becomes a Sets**: Adds to is
+				 * not offered there, since no amount could make it valid at a
+				 * position (D6), and a stored one would sit in a select that cannot
+				 * show it.
+				 */
+				const onto = operatorOnto(
+					stateOf(states, chosen.target, chosen.column) !== undefined,
+					operatorOf(change),
+				);
+				if (onto !== operatorOf(change)) {
+					change.operator = onto;
+					delete change.applies;
+				}
 				commit();
 				context.redraw();
 			});
@@ -614,14 +669,16 @@ export function renderModifierDefinitions(
 				cls: 'dropdown',
 				attr: { 'aria-label': qualified(at, 'operator') },
 			});
-			for (const id of OPERATORS) {
+			const effective: ModifierOperator = operatorOf(change);
+			// Sets and At least only, at a level or a flag; a stored Adds to is
+			// carried so the select can show it, and the report says why.
+			for (const id of operatorsAt(aimed !== undefined, effective)) {
 				operator.createEl('option', {
 					value: id,
 					text: OPERATOR_LABELS[id],
 				});
 			}
 			arithmeticOnly.push({ field: operatorField, select: operator });
-			const effective: ModifierOperator = operatorOf(change);
 			operator.value = effective;
 			titleChosen(operator);
 			operator.dataset.sheetsmithFocus = `modifier-${named}-${at}-operator`;
@@ -674,6 +731,17 @@ export function renderModifierDefinitions(
 			});
 			amount.value = String(change.amount ?? '');
 			amount.dataset.sheetsmithFocus = `modifier-${named}-${at}-amount`;
+			if (aimed !== undefined) {
+				// What each number means, on a line of its own under the field it is
+				// typed into: the **Shown when** legend's spelling, since a level is
+				// named by number. A line rather than a footnote inside the field,
+				// which stood the whole change line taller beside it.
+				const legend = createDiv({
+					cls: 'sheetsmith-entry-footnote sheetsmith-detail-legend',
+					text: positionLegend(aimed.shape),
+				});
+				amount.parentElement?.after(legend);
+			}
 			amount.addEventListener('change', () => {
 				setOptional(change, 'amount', amount.value);
 				commit();

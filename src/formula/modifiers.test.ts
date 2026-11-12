@@ -4,7 +4,7 @@ import { evaluate } from './expression';
 import { parseFunctions } from './functions';
 import { definitionView } from '../test/modifier-views';
 import {
-	buildModifierTable,
+	buildModifierTables,
 	Contributor,
 	MODIFIER_NAMESPACE,
 	modifierSlot,
@@ -26,6 +26,9 @@ import {
 	ModifierOperator,
 	ModifierPush,
 } from '../types';
+
+/** The slot lookup of one walk, which is what these cases ask about. */
+const slotsOf = (...args: Parameters<typeof buildModifierTables>) => buildModifierTables(...args).slots;
 
 /** One contribution at a target, with the fields a case is not about left alone. */
 function at(
@@ -639,7 +642,7 @@ describe('suppressionOf', () => {
 	});
 });
 
-describe('buildModifierTable', () => {
+describe('buildModifierTables', () => {
 	const definitions: ModifierDefinition[] = [
 		{
 			name: 'Belt',
@@ -657,7 +660,7 @@ describe('buildModifierTable', () => {
 	];
 
 	it('groups enrolments by the target their definition names', () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -680,7 +683,7 @@ describe('buildModifierTable', () => {
 	it('contributes nothing for a definition the layout does not declare', () => {
 		// §4.2's "rendered, not corrected": a stray reference is said at the row,
 		// which is where the reader is looking, and it is not an error anywhere.
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Ring of Nonexistence')] }],
 			definitions.map(define),
 		);
@@ -693,7 +696,7 @@ describe('buildModifierTable', () => {
 	});
 
 	it('is empty for a component that declares no enrolments at all', () => {
-		const table = buildModifierTable([{ id: 'speed' }], []);
+		const table = slotsOf([{ id: 'speed' }], []);
 		expect(table('speed')).toEqual({
 			override: null,
 			total: 0,
@@ -706,7 +709,7 @@ describe('buildModifierTable', () => {
 		// The amount is evaluated in the enrolling row's scope, so two rows in one
 		// definition get two different amounts — which is what makes a definition
 		// shared rather than copied.
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -740,7 +743,7 @@ describe('buildModifierTable', () => {
 describe('a push in play, and its colour', () => {
 	/** One row's push at Strength, carrying whatever `extra` says about the row. */
 	const lines = (extra: Partial<ModifierPush>) => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'forms', pushes: () => [{ ...enrol('Bear', 'Brown Bear'), ...extra }] }],
 			[define({ name: 'Bear', target: 'abilities.STR', amount: '4' })],
 		);
@@ -786,7 +789,7 @@ describe('a part typed on the row', () => {
 	];
 
 	const walked = (...parts: readonly string[]) =>
-		buildModifierTable(
+		slotsOf(
 			[{ id: 'items', pushes: () => parts.map((part) => enrol(part)) }],
 			definitions.map(define),
 		);
@@ -884,7 +887,7 @@ describe('a part typed on the row', () => {
 	});
 
 	it('reads a typed amount against the row that typed it', () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -903,7 +906,7 @@ describe('a part typed on the row', () => {
 	});
 
 	it('reads a typed condition off the row, in the same words a definition does', () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -962,7 +965,7 @@ describe("a definition's condition", () => {
 	];
 
 	it("applies where the row's flag is set, and changes nothing where it is not", () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -985,7 +988,7 @@ describe("a definition's condition", () => {
 	});
 
 	it('applies unconditionally where the definition carries no condition', () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Ring')] }],
 			[define({ name: 'Ring', target: 'armour_class', amount: '1' })],
 		);
@@ -1000,7 +1003,7 @@ describe("a definition's condition", () => {
 		 * number it is not touching. So the condition is evaluated first, and an
 		 * inactive row's amount is read tolerantly for the popover's sake only.
 		 */
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -1708,7 +1711,7 @@ describe('stackModifiers: the two phases', () => {
  * contributors from one definition are two contributors — so these cases exist to
  * hold that claim rather than to drive anything new.
  */
-describe('buildModifierTable over a definition naming several changes', () => {
+describe('buildModifierTables over a definition naming several changes', () => {
 	const RING = define({
 		name: 'Ring of Protection',
 		changes: [
@@ -1718,7 +1721,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 	});
 
 	it("stacks a definition's two changes independently at their own targets", () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -1766,7 +1769,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 		 * `parseModifierDefinitions` to be allowed to report a repeat and apply it
 		 * anyway.
 		 */
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Twice', 'A ring')] }],
 			[
 				define({
@@ -1807,7 +1810,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 		 * derived number, and each contests with whatever else is already in that
 		 * slot rather than with its own sibling.
 		 */
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -1867,7 +1870,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 		// The phase is the change's too, so a definition may raise the number behind
 		// a formula and the number the formula came to — two slots at one name,
 		// which contest separately because they are two different quantities.
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Both ways', 'A charm')] }],
 			[
 				define({
@@ -1908,7 +1911,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 		 * what makes reporting the repeated target and applying it anyway a true
 		 * statement rather than a shrug.
 		 */
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Both', 'A ring')] }],
 			[
 				define({
@@ -1940,7 +1943,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 		// The refusal is keyed by target, so a broken amount refuses its own change's
 		// slot and leaves the definition's other one alone. Blanking an unrelated
 		// card because of an unrelated expression is the failure this prevents.
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Half', 'A ring')] }],
 			[
 				define({
@@ -1960,7 +1963,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 	it('applies an override and an addition from one definition at two targets', () => {
 		// And the override carries no bonus type whatever the file says, which is
 		// the arithmetic's rule rather than the parser's report.
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('Plate and belt', 'A kit')] }],
 			[
 				define({
@@ -1989,7 +1992,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 	});
 
 	it('switches off every change of a definition whose condition is false', () => {
-		const table = buildModifierTable(
+		const table = slotsOf(
 			[
 				{
 					id: 'items',
@@ -2007,7 +2010,7 @@ describe('buildModifierTable over a definition naming several changes', () => {
 	});
 });
 
-describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () => {
+describe('buildModifierTables over notes (docs/features/modifier-notes.md)', () => {
 	const boots = define({
 		name: 'Boots of Elvenkind',
 		target: 'skills.stealth',
@@ -2019,7 +2022,7 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 		definitions = [boots],
 		name = 'skills.stealth',
 	) => {
-		const result = buildModifierTable(
+		const result = slotsOf(
 			[{ id: 'items', pushes: () => pushes }],
 			definitions,
 		)(name);
@@ -2048,7 +2051,7 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 		// contributor, so the stacking rule's two zero skips stay true unedited
 		// and the arithmetic is the empty result it always was — with the notes
 		// beside it.
-		const result = buildModifierTable(
+		const result = slotsOf(
 			[
 				{
 					id: 'items',
@@ -2084,7 +2087,7 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 	});
 
 	it('lists a note whose condition will not resolve as not applying, and refuses no slot', () => {
-		const result = buildModifierTable(
+		const result = slotsOf(
 			[
 				{
 					id: 'items',
@@ -2099,7 +2102,7 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 	});
 
 	it('refuses the slot for an amount whose condition fails, and its note says why', () => {
-		const result = buildModifierTable(
+		const result = slotsOf(
 			[
 				{
 					id: 'items',
@@ -2114,7 +2117,7 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 	});
 
 	it('keeps a note applying where only its amount will not resolve', () => {
-		const result = buildModifierTable(
+		const result = slotsOf(
 			[
 				{
 					id: 'items',
@@ -2128,7 +2131,7 @@ describe('buildModifierTable over notes (docs/features/modifier-notes.md)', () =
 	});
 
 	it('adds no notes key to a result with no note, so every old answer is the old object', () => {
-		const result = buildModifierTable(
+		const result = slotsOf(
 			[{ id: 'items', pushes: () => [enrol('armour_class += 2')] }],
 			[],
 		)('armour_class');

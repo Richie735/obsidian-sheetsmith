@@ -22,10 +22,22 @@
  * design, and would paint half a 5e sheet for one form.
  */
 
-import { ModifierBreakdown, TINT_ATTRIBUTE, TintColour } from '../types';
+import {
+	ModifierBreakdown,
+	ModifierContext,
+	ModifierLine,
+	TINT_ATTRIBUTE,
+	TintColour,
+} from '../types';
 import { contrast, over, readColour, Rgb } from '../ui/contrast';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
-import { BOX_ATTRIBUTE, NAME_ATTRIBUTE, TAG_BOX_ATTRIBUTE } from '../components/modifier-breakdown';
+import {
+	BOX_ATTRIBUTE,
+	NAME_ATTRIBUTE,
+	STATE_COLUMN_ATTRIBUTE,
+	STATE_STORED_ATTRIBUTE,
+	TAG_BOX_ATTRIBUTE,
+} from '../components/modifier-breakdown';
 
 /**
  * The class on the box a form changed — a card, a table row, a Roster card's
@@ -106,11 +118,21 @@ function agreed(tints: readonly TintColour[]): TintColour {
 export function inPlayDecorations(
 	names: Iterable<string>,
 	breakdown: (name: string) => ModifierBreakdown,
+	/**
+	 * The lines at each level or flag a ring on the sheet draws, already folded
+	 * against what its note stores (`stateLinesIn`), so a ring a form in play
+	 * set is tinted as a number it changed would be (D11). Absent is none.
+	 */
+	states: readonly { name: string; lines: readonly ModifierLine[] }[] = [],
 ): PlacementDecoration[] {
 	const byForm = new Map<string, { label: string; tint: TintColour; names: string[] }>();
-	for (const name of names) {
+	const read = [
+		...[...names].map((name) => ({ name, lines: breakdown(name).lines })),
+		...states,
+	];
+	for (const { name, lines } of read) {
 		const seen = new Set<string>();
-		for (const line of breakdown(name).lines) {
+		for (const line of lines) {
 			if (line.inPlay !== true || line.suppressed !== null) continue;
 			const tint = line.tint ?? 'accent';
 			// A row's label is one line, so a newline keys the pair without a collision.
@@ -123,6 +145,29 @@ export function inPlayDecorations(
 		}
 	}
 	return [...byForm.values()].map((form) => ({ kind: 'in-play', ...form }));
+}
+
+/**
+ * Every ring on the sheet a modifier set, with its lines folded against the
+ * position its note stores, read off the attributes the component stamped
+ * (`stampStateHost`) — so the pass learns no component, and the verdict an
+ * `already higher` floor carries is the one the ring's own door shows.
+ */
+export function stateLinesIn(
+	root: HTMLElement,
+	modifiers: Pick<ModifierContext, 'state'>,
+): { name: string; lines: readonly ModifierLine[] }[] {
+	if (modifiers.state === undefined) return [];
+	const found: { name: string; lines: readonly ModifierLine[] }[] = [];
+	for (const host of Array.from(root.querySelectorAll<HTMLElement>(`[${STATE_COLUMN_ATTRIBUTE}]`))) {
+		const name = host.getAttribute(NAME_ATTRIBUTE);
+		if (name === null) continue;
+		const column = host.getAttribute(STATE_COLUMN_ATTRIBUTE) ?? '';
+		const stored = Number(host.getAttribute(STATE_STORED_ATTRIBUTE) ?? '0');
+		const account = modifiers.state(name, column === '' ? null : column, stored);
+		if (account !== null) found.push({ name, lines: account.lines });
+	}
+	return found;
 }
 
 /** The cell a component was drawn into, by its id. */

@@ -62,6 +62,14 @@ import {
 	Enrolment,
 	resolveEnrolments,
 } from './modifier-definitions';
+import {
+	addressOf,
+	StateLookup,
+	StateResult,
+	StateShapes,
+	stateVerdict,
+} from './modifier-states';
+import { suppressionWording } from './suppression-wording';
 
 /**
  * The reserved top-level namespace every slot sits under.
@@ -210,7 +218,7 @@ const EMPTY: ModifierResult = {
  * own, a formula evaluated in a test. Every slot is empty, which is the truth
  * there — nothing pushes, because there is nothing to push.
  *
- * A constant rather than `buildModifierTable([])`, so this file never has to
+ * A constant rather than `buildModifierTables([], []).slots`, so this file never has to
  * reach for an environment it would then have to import `resolve.ts` for — and
  * `resolve.ts` imports this.
  */
@@ -258,6 +266,15 @@ interface Walked {
 	applied: Map<string, Contributor[]>;
 	refused: Map<string, Refused>;
 	/**
+	 * The third reduction (`docs/features/non-number-modifiers.md`): every change
+	 * aimed at a level or a flag, keyed by `stateKey`, its amount a position. It
+	 * never reaches `applied`, so a state push leaves `mod.<target>` and the
+	 * number's breakdown exactly as they were.
+	 */
+	stated: Map<string, Contributor[]>;
+	/** A state refused, on `refused`'s terms: the first refusal names the row. */
+	stateRefused: Map<string, Refused>;
+	/**
 	 * The notes, kept apart from the arithmetic from the walk onward
 	 * (`docs/features/modifier-notes.md` E): only a change with an amount becomes a
 	 * `Contributor`, so the stacking rule and both of its zero skips never see a
@@ -281,8 +298,13 @@ interface Walked {
  * two cycle guards wins a ring both could catch, and warming this table in a
  * fixed order before drawing would decide that by biasing it toward the name
  * table's guard. So a slot is entered exactly as any other published name is.
+ *
+ * **The slot lookup and the state lookup come from that one walk**
+ * (`docs/features/non-number-modifiers.md`): a change aimed at a level or a flag
+ * is keyed by its address and reduced apart from the arithmetic, so asking either
+ * lookup first warms both.
  */
-export function buildModifierTable(
+export function buildModifierTables(
 	components: readonly ModifierComponent[],
 	definitions: readonly ModifierDefinitionView[],
 	/**
@@ -292,7 +314,13 @@ export function buildModifierTable(
 	 * so this file stays upstream of `resolve.ts`.
 	 */
 	calls: FunctionEnv = {},
-): ModifierLookup {
+	/**
+	 * Every declared level and flag, by `stateKey`, read statically from the
+	 * layout (`stateTargets`). Empty is a sheet with none, which walks exactly as
+	 * it did before states existed.
+	 */
+	shapes: StateShapes = new Map(),
+): { slots: ModifierLookup; states: StateLookup } {
 	const table = definitionTable(definitions);
 	/**
 	 * Every contribution by target, once the walk has produced a set nothing
@@ -339,6 +367,8 @@ export function buildModifierTable(
 		const applied = new Map<string, Contributor[]>();
 		const refused = new Map<string, Refused>();
 		const noted = new Map<string, ModifierNote[]>();
+		const stated = new Map<string, Contributor[]>();
+		const stateRefused = new Map<string, Refused>();
 		for (const component of components) {
 			for (const push of component.pushes?.() ?? []) {
 				// A blank part enrols in nothing and is not an error: on an
@@ -407,6 +437,47 @@ export function buildModifierTable(
 					}
 					// A note-only change contributes nothing to the arithmetic.
 					if (found.kind === 'noted') continue;
+					/*
+					 * **A level or a flag, the third reduction.** Where the change
+					 * names a column, or its target's own value is a state, it is
+					 * reduced by address and never reaches the slot. A column the
+					 * target does not hold contributes nothing and refuses nothing:
+					 * §5's rule for a push at a name the sheet does not publish, said
+					 * at the row (D5).
+					 */
+					const verdict = stateVerdict(shapes, found);
+					if (verdict.kind === 'stray' || verdict.kind === 'quiet') continue;
+					if (verdict.kind === 'refused' && verdict.key !== null) {
+						if (!stateRefused.has(verdict.key)) {
+							stateRefused.set(verdict.key, { label: push.row.label, reason: verdict.reason });
+						}
+						continue;
+					}
+					if (verdict.kind === 'set' && found.kind === 'applies') {
+						const line: Contributor = {
+							...found.contribution,
+							amount: verdict.position,
+							label: push.row.label,
+							source: push.source,
+							...(push.inPlay === true ? { inPlay: true } : {}),
+							...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+							...(found.definition === null ? {} : { definition: found.definition.name }),
+						};
+						const already = stated.get(verdict.key);
+						if (already === undefined) stated.set(verdict.key, [line]);
+						else already.push(line);
+						continue;
+					}
+					/*
+					 * A boolean amount at a number: refused with the shipped sentence,
+					 * now that the target is known to be no level or flag (D6).
+					 */
+					if (verdict.kind === 'refused') {
+						if (!refused.has(target)) {
+							refused.set(target, { label: push.row.label, reason: verdict.reason });
+						}
+						continue;
+					}
 					if (found.kind === 'unreadable') {
 						// A note-only change never refuses a slot, even where its
 						// condition will not resolve: it moves no number, so it cannot
@@ -441,31 +512,40 @@ export function buildModifierTable(
 				}
 			}
 		}
-		return { applied, refused, noted };
+		return { applied, refused, noted, stated, stateRefused };
 	};
 
-	return (name) => {
+	/**
+	 * The walk's result, or null where it is already running. One entry for both
+	 * lookups, so the guard and the memo are one.
+	 */
+	const walked = (): Walked | null => {
+		if (held !== null) return held;
+		if (walking) return null;
+		walking = true;
+		let found: Walked;
+		try {
+			found = walk();
+		} finally {
+			walking = false;
+		}
+		if (found.refused.size === 0 && found.stateRefused.size === 0) held = found;
+		return found;
+	};
+
+	const slots: ModifierLookup = (name) => {
 		const done = stacked.get(name);
 		if (done !== undefined) return done;
-		let found = held;
+		const found = walked();
 		if (found === null) {
-			if (walking) {
-				// Says only what has been established. It used to assert that "one of
-				// them is waiting on the total it is part of", which is false
-				// whenever the amount read a *different* target's slot — the common
-				// shape of this refusal, and the one that sends a reader looking for
-				// a self-reference that is not there.
-				return {
-					error: `A modifier's own amount reads "${modifierSlot(name)}", and the modifiers on this sheet are still being worked out, so there is no total to give it yet. Give the amount a plain number, or read the value being modified rather than what was pushed at it.`,
-				};
-			}
-			walking = true;
-			try {
-				found = walk();
-			} finally {
-				walking = false;
-			}
-			if (found.refused.size === 0) held = found;
+			// Says only what has been established. It used to assert that "one of
+			// them is waiting on the total it is part of", which is false whenever
+			// the amount read a *different* target's slot — the common shape of
+			// this refusal, and the one that sends a reader looking for a
+			// self-reference that is not there.
+			return {
+				error: `A modifier's own amount reads "${modifierSlot(name)}", and the modifiers on this sheet are still being worked out, so there is no total to give it yet. Give the amount a plain number, or read the value being modified rather than what was pushed at it.`,
+			};
 		}
 		// Attached only where there are any, so every result on a sheet with no
 		// notes is the object it always was.
@@ -487,23 +567,53 @@ export function buildModifierTable(
 		stacked.set(name, result);
 		return result;
 	};
+
+	const states: StateLookup = (name, column) => {
+		const address = addressOf(shapes, name, column);
+		if (address.kind !== 'state') return null;
+		const { shape, key } = address;
+		const found = walked();
+		if (found === null) {
+			/*
+			 * **The walk's own guard, in a state's words**: `mod.<name>` names
+			 * nothing here, so the cold half of the cycle case says what was read
+			 * and what to read instead. The fix offered is the stored state, which
+			 * no push changes, so it cannot loop.
+			 */
+			return {
+				shape,
+				error:
+					column === null
+						? `A modifier's own condition or amount reads "${name}", which a modifier sets, and the modifiers on this sheet are still being worked out. Read the value as stored (${name}.value) instead.`
+						: `A modifier's own condition or amount reads ${column} on "${name}", which a modifier sets, and the modifiers on this sheet are still being worked out. Read a value no modifier sets instead.`,
+			};
+		}
+		const stopped = found.stateRefused.get(key);
+		if (stopped !== undefined) {
+			return { shape, error: inRowMessage(stopped.label, stopped.reason) };
+		}
+		const result: StateResult = { shape, lines: (found.stated.get(key) ?? []).map(stateLine) };
+		return result;
+	};
+
+	return { slots, states };
 }
 
-/** What a suppressed contributor's parenthetical says, in one place. */
-function suppressionWording(
-	kind: string,
-	tied: boolean,
-	/** "value" for an override, "size" for an amount that stacks. */
-	measure: 'value' | 'size',
-): string {
-	// Two wordings because only one of them is ever true. A tie is not a larger
-	// modifier, and telling a reader one applies would send them hunting for a
-	// number that is not there.
-	return tied
-		? `another ${kind} of the same ${measure} applies`
-		: measure === 'value'
-			? `a higher ${kind} applies`
-			: `a larger ${kind} applies`;
+/** One state contributor as a line, its verdict left to `foldState`. */
+function stateLine(entry: Contributor): ModifierLine {
+	const { label, source, definition, operator, amount, inPlay, tint } = entry;
+	return {
+		label,
+		source,
+		definition,
+		operator,
+		type: null,
+		amount,
+		applies: 'result',
+		suppressed: null,
+		...(inPlay === true ? { inPlay: true } : {}),
+		...(tint === undefined ? {} : { tint }),
+	};
 }
 
 /** What a typed contribution contests for: its type and its direction. */
@@ -736,8 +846,6 @@ export function withFloorVerdict(
 	return { ...result, lines };
 }
 
-/** Why the winning floor did not raise a number its formula already passed. */
-export const ALREADY_HIGHER = 'already higher';
 
 /**
  * Why one enrolment is not applying at its target, or null where it is.

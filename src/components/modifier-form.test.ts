@@ -213,3 +213,223 @@ describe('the operator a typed effect offers', () => {
 		body.remove();
 	});
 });
+
+describe('a change that sets a level or a flag (docs/features/non-number-modifiers.md)', () => {
+	const TRAINING = {
+		flag: false,
+		positions: 3,
+		words: ['Untrained', 'Proficient', 'Expertise'],
+		label: 'Training',
+	};
+	const STATES = [
+		{ name: 'abilities.stealth', column: 'Training', label: 'Abilities · stealth · Training', shape: TRAINING },
+		{
+			name: 'inspiration',
+			label: 'Inspiration',
+			shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' },
+		},
+	];
+
+	it('offers Levels and flags between the two groups, and a value\'s own state there alone', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(
+			select,
+			[...ACCEPTING, { name: 'inspiration', label: 'Inspiration' }],
+			NOTABLE,
+			STATES,
+		);
+		expect(
+			Array.from(select.querySelectorAll('optgroup')).map((group) => [
+				group.label,
+				Array.from(group.querySelectorAll('option')).map((one) => one.textContent),
+			]),
+		).toEqual([
+			['Takes modifiers', ['Armour class', 'Abilities · STR']],
+			['Levels and flags', ['Abilities · stealth · Training', 'Inspiration']],
+			['Notes only', ['Passive perception']],
+		]);
+	});
+
+	it('draws the existing groups unchanged where the layout has no states', () => {
+		const plain = document.createElement('select');
+		fillTargetOptions(plain, ACCEPTING, NOTABLE);
+		const empty = document.createElement('select');
+		fillTargetOptions(empty, ACCEPTING, NOTABLE, []);
+		expect(empty.innerHTML).toBe(plain.innerHTML);
+	});
+
+	/** The form open on one typed part aimed at Stealth's Training. */
+	function form(part = 'abilities.stealth >= 1 in Training', announced: string[] = [], written: string[][] = []) {
+		const body = document.body.createDiv();
+		const state = modifierFormState([part]);
+		state.open = 0;
+		const options: ModifierFormOptions = {
+			label: 'Cat Form',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({
+					typed: {
+						target: 'abilities.stealth',
+						column: 'Training',
+						operator: part.includes('+=') ? 'add' : 'upgrade',
+						amount: '1',
+					},
+					target: 'abilities.stealth',
+					targetLabel: 'Abilities · stealth · Training',
+					applies: true,
+					amount: 1,
+					state: TRAINING,
+				}),
+			],
+			definitions: [],
+			targets: ACCEPTING,
+			published: ACCEPTING,
+			states: STATES,
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		};
+		renderModifierForm(body, state, options);
+		return body;
+	}
+
+	/** The control under one field label. */
+	const control = (body: HTMLElement, label: string) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-field'))
+			.find((field) => field.querySelector('.sheetsmith-panel-field-label')?.textContent === label)
+			?.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | undefined;
+
+	it('shows the state chosen, Sets and At least only, no bonus type or phase, and the legend', () => {
+		const body = form();
+		const value = control(body, 'Value') as HTMLSelectElement;
+		expect(value.selectedOptions[0]?.textContent).toBe('Abilities · stealth · Training');
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['Sets', 'At least']);
+		expect(control(body, 'Bonus type')).toBeUndefined();
+		expect(control(body, 'Applies to')).toBeUndefined();
+		expect(body.querySelector('.sheetsmith-panel-legend')?.textContent).toBe(
+			'0 Untrained · 1 Proficient · 2 Expertise',
+		);
+	});
+
+	it('carries a stray column as written, never as the plain value it is not', () => {
+		const body = document.body.createDiv();
+		const part = 'abilities.stealth >= 1 in Trainig';
+		const state = modifierFormState([part]);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Cat Form',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'abilities.stealth', column: 'Trainig', operator: 'upgrade', amount: '1' },
+					target: 'abilities.stealth',
+					targetLabel: 'Abilities · stealth · Trainig',
+					suppressed: 'Abilities · stealth has no level or flag called "Trainig".',
+				}),
+			],
+			definitions: [],
+			targets: [{ name: 'abilities.stealth', label: 'Abilities · stealth' }],
+			published: [{ name: 'abilities.stealth', label: 'Abilities · stealth' }],
+			states: STATES,
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: () => undefined,
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: () => undefined,
+			onResize: () => undefined,
+		});
+		const value = control(body, 'Value') as HTMLSelectElement;
+		expect(value.selectedOptions[0]?.textContent).toBe('Abilities · stealth · Trainig');
+	});
+
+	it('says why an Adds to at a state does nothing, in the sentence every surface shows', () => {
+		const body = form('abilities.stealth += 1 in Training');
+		expect(
+			Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).map((one) => one.textContent),
+		).toContain('Adds to cannot change a level or a flag. Choose Sets or At least.');
+	});
+
+	it('switches an Adds to onto a state to Sets, says so, and writes the column clause', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = document.body.createDiv();
+		const state = modifierFormState(['armour_class += 2']);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Ring',
+			parts: ['armour_class += 2'],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'armour_class', operator: 'add', amount: '2' },
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					applies: true,
+					amount: 2,
+				}),
+			],
+			definitions: [],
+			targets: ACCEPTING,
+			published: ACCEPTING,
+			states: STATES,
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		const value = control(body, 'Value') as HTMLSelectElement;
+		const option = Array.from(value.options).find((one) => one.textContent === 'Abilities · stealth · Training');
+		value.value = option?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(announced).toContain('Operator Sets');
+		expect(written).toEqual([['abilities.stealth = 2 in Training']]);
+	});
+
+	it('refuses a column a cell could not spell, at the pick', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = document.body.createDiv();
+		const state = modifierFormState(['inspiration = true']);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Ring',
+			parts: ['inspiration = true'],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'inspiration', operator: 'override', amount: 'true' },
+					target: 'inspiration',
+					targetLabel: 'Inspiration',
+					applies: true,
+					amount: 1,
+				}),
+			],
+			definitions: [],
+			targets: [],
+			published: [],
+			states: [
+				...STATES,
+				{ name: 'skills.stealth', column: 'Skill in hand', label: 'Skills · stealth · Skill in hand', shape: TRAINING },
+			],
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		const value = control(body, 'Value') as HTMLSelectElement;
+		const option = Array.from(value.options).find((one) => one.textContent === 'Skills · stealth · Skill in hand');
+		value.value = option?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		const refusal =
+			'"Skill in hand" cannot be set from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.';
+		expect(announced).toContain(refusal);
+		expect(body.textContent).toContain(refusal);
+		expect(written).toEqual([]);
+	});
+});

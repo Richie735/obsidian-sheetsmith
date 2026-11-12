@@ -98,6 +98,33 @@ export interface RingControlOptions {
 	 * caller hears of it.
 	 */
 	note?: () => string | null;
+	/**
+	 * The level the ring draws for a stored one, where a modifier sets it
+	 * (`docs/features/non-number-modifiers.md`).
+	 *
+	 * **The ring draws the modified state and a press edits the stored one**,
+	 * which is the Card pill's rule (§4.2, "every gesture acts on the second")
+	 * applied to a control with no caret: the click cycles from the stored level,
+	 * the arrows step from it and `onSet` reports it, while the painter,
+	 * `aria-pressed` and the level's name in `aria-label` all take this. Absent,
+	 * the two are one level, which is every ring no modifier reaches.
+	 */
+	drawn?: (stored: number) => number;
+	/**
+	 * What the ring says about its stored level where it draws another, or null
+	 * where the two agree: the `aria-description`, and the `title`'s second line
+	 * so a long press reaches it too. Read on every paint, beside `drawn`.
+	 */
+	ownLevel?: (stored: number) => string | null;
+	/**
+	 * Run after a press whose outcome the ring does not plainly show: it left
+	 * the drawn level where it was, or it drew a level other than the one the
+	 * press set — Untrained pressed, Proficient drawn, under an At least. Just
+	 * before `onSet`, with the new stored level. The door's face already shows
+	 * it; this is the live region's half (§6, "a commit that changes nothing on
+	 * screen is announced").
+	 */
+	onUnshown?: (stored: number) => void;
 	/** Run when the level changes, and only then. */
 	onSet: (level: number) => void;
 	/**
@@ -159,10 +186,15 @@ export function bindRingControl(options: RingControlOptions): RingControl {
 		name,
 		nameOnScreen,
 		note,
+		drawn,
+		ownLevel,
+		onUnshown,
 		onSet,
 		onVertical,
 	} = options;
 	let level = options.level;
+	/** What the ring draws for the level it holds: the same, unless a modifier set it. */
+	const shownAt = (stored: number): number => drawn?.(stored) ?? stored;
 
 	/**
 	 * The word the ring is not already showing, or null where there is none.
@@ -171,15 +203,16 @@ export function bindRingControl(options: RingControlOptions): RingControl {
 	 * toggle shows a fill: neither has a word a tooltip could add.
 	 */
 	const word = (): string | null =>
-		graded && column.levels !== undefined ? levelName(column, level) : null;
+		graded && column.levels !== undefined ? levelName(column, shownAt(level)) : null;
 
 	const paint = (): void => {
+		const shown = shownAt(level);
 		// Everything a reader sees comes from the shared painter, so the layout
 		// editor's sample of this control cannot drift from the control. What is
 		// here is what the painter must not carry, because its other consumer
 		// names its own rings after a different fact (see the header): the
 		// naming, and the routes to a name the ring is not showing.
-		paintLevelRing(button, column, level, graded);
+		paintLevelRing(button, column, shown, graded);
 		if (count === 1) {
 			// Two states is a toggle button and ARIA has a word for it, which is
 			// the whole of what an unnamed flag says: `aria-pressed` carries the
@@ -187,24 +220,35 @@ export function bindRingControl(options: RingControlOptions): RingControl {
 			// one state, announced after the platform had already said it
 			// (`PATTERNS` §6, `SPEC` §13). More than two states is not a toggle
 			// button, so those carry the state in the name instead.
-			button.setAttribute('aria-pressed', String(level > 0));
+			button.setAttribute('aria-pressed', String(shown > 0));
 			button.setAttribute('aria-label', name);
 		} else {
-			button.setAttribute('aria-label', `${name}: ${levelName(column, level)}`);
+			button.setAttribute('aria-label', `${name}: ${levelName(column, shown)}`);
 		}
+		const own = ownLevel?.(level) ?? null;
+		if (own === null) button.removeAttribute('aria-description');
+		else button.setAttribute('aria-description', own);
 		// A tooltip repeating what is already legible is noise fired at every
 		// pass, as the card's label learned. Where the name is on screen the only
 		// thing that can be missing is the level's word; where it is not, the
 		// name is the first thing missing and the word is added to it.
-		const shown = word();
+		const spoken = word();
 		const named = nameOnScreen
-			? shown
-			: shown === null
+			? spoken
+			: spoken === null
 				? name
-				: `${name}: ${shown}`;
+				: `${name}: ${spoken}`;
 		const extra = level > 0 ? (note?.() ?? null) : null;
-		const said =
+		const noted =
 			extra === null ? named : named === null ? extra : `${named}\n${extra}`;
+		/*
+		 * **The stored level as a second line**, overriding the one-tooltip rule
+		 * in the one case that rule leaves room for: the ring is showing something
+		 * other than the note's value, which is a word the glyph cannot draw. A
+		 * long press reads this same attribute, so a finger reaches it as well.
+		 */
+		const said =
+			own === null ? noted : noted === null ? own : `${noted}\n${own}`;
 		if (said === null) button.removeAttribute('title');
 		else button.setAttribute('title', said);
 	};
@@ -228,7 +272,13 @@ export function bindRingControl(options: RingControlOptions): RingControl {
 
 	/** What a press does: move, paint, and then say so — only if it moved. */
 	const report = (next: number): void => {
-		if (place(next)) onSet(level);
+		const before = shownAt(level);
+		if (!place(next)) return;
+		const after = shownAt(level);
+		// Before the report, while the ring is still the one on screen: a host that
+		// rebuilds on the write replaces it, and the answer is anchored to it.
+		if (drawn !== undefined && (after === before || after !== level)) onUnshown?.(level);
+		onSet(level);
 	};
 
 	// A glyph is an abbreviation, and on a touch device `title` is not a route to

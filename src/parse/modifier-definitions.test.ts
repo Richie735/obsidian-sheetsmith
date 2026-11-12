@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Layout } from './layout';
+import { Layout, parseLayout } from './layout';
 import { parseModifierDefinitions } from './modifier-definitions';
 import { cellParts, parseModifierPart } from './modifier-cell';
 import { ModifierTargetSource } from '../formula/modifier-targets';
@@ -947,5 +947,97 @@ describe('parseModifierDefinitions: a change carrying a note (docs/features/modi
 		expect(report(shipped)).toEqual(
 			parseModifierDefinitions(layout(shipped), SOURCES),
 		);
+	});
+});
+
+describe('parseModifierDefinitions: a change that sets a level or a flag', () => {
+	const TRAINING = {
+		flag: false,
+		positions: 3,
+		words: ['Untrained', 'Proficient', 'Expertise'],
+		label: 'Training',
+	};
+	const STATES: readonly ModifierTargetSource[] = [
+		{
+			id: 'abilities',
+			label: 'Abilities',
+			values: { named: { stealth: { states: { Training: TRAINING } } } },
+			formulas: ['stat + Training * pb + mod.self'],
+		},
+		{
+			id: 'skills',
+			label: 'Skills',
+			values: { named: { stealth: { value: 0, state: { ...TRAINING, column: 'Training' } } } },
+		},
+		{
+			id: 'inspiration',
+			label: 'Inspiration',
+			values: { self: { value: false, state: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' } } },
+		},
+	];
+	const report = (modifiers: unknown[]) =>
+		parseModifierDefinitions(layout(modifiers), STATES).problems.map((problem) => problem.message);
+
+	it('carries `column` on a flat definition and on a `changes` entry', () => {
+		const parsed = parseModifierDefinitions(
+			layout([
+				{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+				{
+					name: 'Bless',
+					changes: [{ target: 'abilities.stealth', column: 'Training', operator: 'override', amount: '2' }],
+				},
+			]),
+			STATES,
+		);
+		expect(parsed.definitions.map((one) => one.changes[0]?.column)).toEqual(['Training', 'Training']);
+		expect(parsed.problems).toEqual([]);
+	});
+
+	it('round-trips a flat definition and a change carrying `column`, key order and all', () => {
+		const flat = { name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' };
+		const listed = { name: 'Bless', changes: [{ target: 'inspiration', column: 'Flag', operator: 'override', amount: 'true' }] };
+		const source = JSON.stringify({ name: 'L', components: [], modifiers: [flat, listed] });
+		const parsed = parseLayout(source);
+		expect(JSON.stringify(parsed.modifiers)).toBe(JSON.stringify([flat, listed]));
+	});
+
+	it('reports a flat `column` beside a `changes` list as ignored', () => {
+		expect(
+			report([
+				{
+					name: 'Cat Form',
+					column: 'Training',
+					changes: [{ target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' }],
+				},
+			]),
+		).toContain('"Cat Form" lists its changes, so "column" beside the list is ignored. Delete it, or delete the list.');
+	});
+
+	it('reports an Adds to aimed at a state, in the sentence every surface shows', () => {
+		expect(report([{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', amount: '1' }])).toEqual([
+			'Adds to cannot change a level or a flag. Choose Sets or At least.',
+		]);
+	});
+
+	it('reports a column the target does not hold, and one naming the state it already is', () => {
+		expect(
+			report([
+				{ name: 'Typo', target: 'abilities.stealth', column: 'Trainig', operator: 'upgrade', amount: '1' },
+				{ name: 'Twice', target: 'skills.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+			]),
+		).toEqual([
+			'Abilities · stealth has no level or flag called "Trainig".',
+			'Skills · stealth already is "Training", so this change needs no column. Clear it.',
+		]);
+	});
+
+	it('says nothing new about a definition with none of those', () => {
+		expect(
+			report([
+				{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+				{ name: 'Heroism', target: 'inspiration', operator: 'override', amount: 'true' },
+				{ name: 'Own', target: 'skills.stealth', operator: 'override', amount: '2' },
+			]),
+		).toEqual([]);
 	});
 });

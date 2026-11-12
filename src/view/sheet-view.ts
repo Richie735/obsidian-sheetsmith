@@ -65,7 +65,7 @@ import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
-import { applyDecorations, inPlayDecorations, pickTagText } from './placement-decorations';
+import { applyDecorations, inPlayDecorations, stateLinesIn, pickTagText } from './placement-decorations';
 import { revealWhenTruncated } from '../ui/truncation';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
@@ -747,7 +747,12 @@ export class SheetView extends TextFileView {
 		// own popovers open.
 		applyDecorations(
 			grid,
-			inPlayDecorations(marked, (name) => modifiers.breakdown(name)),
+			inPlayDecorations(
+			marked,
+			(name) => modifiers.breakdown(name),
+			// And every ring a modifier set, which needs no slot (D11).
+			stateLinesIn(grid, modifiers),
+		),
 			revealWhenTruncated,
 		);
 
