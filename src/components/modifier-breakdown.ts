@@ -66,9 +66,12 @@ import {
 	ModifierOperator,
 	ModifierPhase,
 	ModifierOutcome,
+	StateAccount,
+	StateShape,
 } from '../types';
 import { isNoteOnly } from '../parse/modifier-cell';
 import { roundSum } from '../formula/expression';
+import { positionWord } from '../formula/modifier-states';
 
 /**
  * The mark on a number something has been pushed at.
@@ -138,6 +141,34 @@ export function stampModifiedHost(
 	if (name !== undefined) host.setAttribute(NAME_ATTRIBUTE, name);
 	box?.setAttribute(BOX_ATTRIBUTE, '');
 	tagBox?.setAttribute(TAG_BOX_ATTRIBUTE, '');
+}
+
+/**
+ * The attributes on a ring a modifier set, beside `NAME_ATTRIBUTE`: which of
+ * the name's levels or flags it is, and the position the note stores
+ * (`docs/features/non-number-modifiers.md` D11). What lets the tint pass fold
+ * the state itself and find the ring's box, without knowing a component.
+ */
+export const STATE_COLUMN_ATTRIBUTE = 'data-sheetsmith-state-column';
+export const STATE_STORED_ATTRIBUTE = 'data-sheetsmith-state-stored';
+
+/**
+ * Say which level or flag a ring is and which box it belongs to, so a form in
+ * play that set it tints that box as it would a number it changed (D11).
+ * **No modified class**, since a ring has no number to underline: its door is
+ * its mark. `column` is null for a name whose own value is the state.
+ */
+export function stampStateHost(
+	host: HTMLElement,
+	name: string,
+	column: string | null,
+	stored: number,
+	box?: HTMLElement | null,
+): void {
+	host.setAttribute(NAME_ATTRIBUTE, name);
+	host.setAttribute(STATE_COLUMN_ATTRIBUTE, column ?? '');
+	host.setAttribute(STATE_STORED_ATTRIBUTE, String(stored));
+	box?.setAttribute(BOX_ATTRIBUTE, '');
 }
 
 /**
@@ -543,6 +574,91 @@ function change(line: {
 }
 
 /**
+ * What one change at a level or a flag did, as words: `sets to on`, `at least
+ * Proficient` (`docs/features/non-number-modifiers.md`). `change`'s own two
+ * verbs, with the position's word in place of the number — the words are the
+ * shape's, handed over by the caller, so this module learns no component's
+ * vocabulary (`MeasuredEffect.noun`'s rule).
+ */
+function stateChange(
+	line: { operator: ModifierOperator; amount: number },
+	shape: StateShape,
+): string {
+	const word = positionWord(shape, line.amount);
+	return line.operator === 'upgrade' ? `at least ${word}` : `sets to ${word}`;
+}
+
+/**
+ * A level or flag's account, as the door onto it opens it
+ * (`docs/features/non-number-modifiers.md`): where the note holds another
+ * position than the ring draws, `Your own: Untrained` first and a blank line,
+ * since that is what a reader opening the door on a ring that will not move is
+ * asking; then §9's line shape with a position word in place of a number, a
+ * blank line, and the drawn state where a number has its total, `Now
+ * Proficient`. Where the two agree there is no own line, which is the
+ * measured-effect rule's "an effect of zero adds nothing". The last line names
+ * the drawn state only, since the first already names the reader's own.
+ *
+ * A refused state starts with its sentence and never carries an own line: a
+ * refusal draws what the note stores (`foldState`), so there is no second
+ * position to name.
+ *
+ * **Each line names its source exactly as a number's account does**
+ * (`qualified`, `identity`): the component wherever the lines come from more
+ * than one, or wherever the ring is read inside a component with rows
+ * (`inRows`) — so one door carrying a ring's lines and a Total's spells each
+ * modifier one way, `Gear · Bulls strength` on both.
+ */
+export function stateAccountText(account: StateAccount, inRows?: boolean): string {
+	const now = `Now ${positionWord(account.shape, account.drawn)}`;
+	if (account.error !== null) return [account.error, '', now].join('\n');
+	const own =
+		account.drawn === account.stored
+			? []
+			: [`Your own: ${positionWord(account.shape, account.stored)}`, ''];
+	const qualify = qualified(account.lines, inRows);
+	const said = account.lines.map((line) => {
+		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
+		return `${identity(line, qualify)} — ${stateChange(line, account.shape)}${why}`;
+	});
+	return [...own, ...said, '', now].join('\n');
+}
+
+/**
+ * What a ring says beside its drawn state when the note holds another:
+ * `Set by a modifier; your own: Untrained`, or null where they agree. A word
+ * for the state that is *not* drawn, so `aria-pressed` still speaks alone for
+ * the one that is (SPEC §13).
+ */
+export function stateOwnDescription(account: StateAccount): string | null {
+	if (account.drawn === account.stored) return null;
+	return `Set by a modifier; your own: ${positionWord(account.shape, account.stored)}`;
+}
+
+/**
+ * What each position of a level or a flag means, in the amount a change writes
+ * for it: `0 Untrained · 1 Proficient · 2 Expertise`, `0 … 4` for an unnamed
+ * level, `true on · false off` for a flag. The **Shown when** legend's spelling
+ * (`docs/features/conditional-field-visibility.md`), read under a modifier's
+ * **Amount** in the sheet's form and in the layout editor alike.
+ */
+export function positionLegend(shape: StateShape): string {
+	if (shape.flag) {
+		return `true ${positionWord(shape, 1)} · false ${positionWord(shape, 0)}`;
+	}
+	if (shape.words.length === 0) return `0 … ${shape.positions - 1}`;
+	return shape.words.map((word, at) => `${at} ${word}`).join(' · ');
+}
+
+/**
+ * The first line of the popover a press opens when it moved what the note
+ * holds and not what the ring draws: `Your own is now Proficient`.
+ */
+export function ownNowLine(account: StateAccount): string {
+	return `Your own is now ${positionWord(account.shape, account.stored)}`;
+}
+
+/**
  * What one part's outcome does, in words: `sets to 4`, `item +2`, `at least +3`,
  * or its note — the outcome half every surface spells one way.
  *
@@ -577,7 +693,9 @@ export function outcomeWords(outcome: ModifierOutcome): string {
 	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
 	const noteOnly = isNoteOnly(moved ?? typed ?? {});
 	const arithmetic =
-		outcome.amount === null
+		outcome.amount !== null && outcome.state !== undefined
+			? stateChange({ operator, amount: outcome.amount }, outcome.state)
+			: outcome.amount === null
 			? operator === 'override'
 				? 'sets a value'
 				: operator === 'upgrade'

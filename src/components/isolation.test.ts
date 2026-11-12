@@ -171,6 +171,13 @@ const ALLOWED = [
 	// three consumers, which is §1's extraction line met exactly.
 	"import { renderNoteMark } from './note-mark';",
 	"import { renderNoteMark } from '../components/note-mark';",
+	// A ring a modifier set, shared by Table, Roster and Track: three consumers,
+	// §1's extraction line met exactly (`docs/features/non-number-modifiers.md`).
+	"import { stateRing } from './state-ring';",
+	"import { stateRing } from '../components/state-ring';",
+	// A row's levels and flags, shared by Table and Roster on §1's one-step tier.
+	"import { overlayRowStates } from './row-states';",
+	"import { overlayRowStates } from '../components/row-states';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",

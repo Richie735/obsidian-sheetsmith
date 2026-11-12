@@ -899,8 +899,63 @@ type ScopeEntrySource =
 			 * name is memoised and a cycle through one is caught rather than
 			 * recursed. Null or undefined publishes nothing.
 			 */
-			compute?: (resolve: FieldResolver) => FieldValue | null | undefined;
+			compute?: (
+				resolve: FieldResolver,
+				/**
+				 * The sheet's reader of a level or a flag a modifier may set
+				 * (`docs/features/non-number-modifiers.md`), for an entry whose
+				 * value is built from a row holding one. Absent where there is no
+				 * sheet, which reads every state as stored.
+				 */
+				state?: StateReader,
+			) => FieldValue | null | undefined;
 	  };
+
+/**
+ * What a stored choice a modifier may set looks like: how many positions it
+ * has, what each is called, and what a refusal calls it
+ * (`docs/features/non-number-modifiers.md`).
+ *
+ * **Only the component knows this**, which is why it travels on `ScopeEntry`:
+ * that a Table's `Training` column is a three-step level and its `Qty` a number
+ * is that component's configuration, and nothing outside it may read that.
+ */
+export interface StateShape {
+	/**
+	 * A flag, which is a level with two positions (off 0, on 1) whose amount is
+	 * written `true` or `false` (or `1` or `0`) rather than as a position.
+	 */
+	flag: boolean;
+	/** How many positions there are, none included: 2 for a flag. */
+	positions: number;
+	/**
+	 * A word per position, from none upwards, or empty where the positions have
+	 * no names — an unnamed level reads as its number. A flag's are `off` and
+	 * `on` unless a flag Track names its two levels.
+	 */
+	words: readonly string[];
+	/** What a sentence calls the state: a column's heading, or the value's label. */
+	label: string;
+	/**
+	 * On an entry whose own value is the state, the column that value is read
+	 * from, where it is one: so a change naming that column is told it needs none.
+	 */
+	column?: string;
+}
+
+/**
+ * A stored choice as the sheet reads it once modifiers have had their say, or
+ * the refusal thrown as a `FormulaError` (`docs/features/non-number-modifiers.md`).
+ *
+ * `column` is null for an entry whose own value is the state. `stored` is what
+ * the note holds as the row scope already types it — a level's number, a flag's
+ * boolean — and comes back exactly as given wherever nothing addresses it.
+ */
+export type StateReader = (
+	name: string,
+	column: string | null,
+	stored: FieldValue | undefined,
+) => FieldValue | undefined;
 
 /**
  * One name a component publishes to the rest of the sheet.
@@ -933,6 +988,21 @@ export type ScopeEntry = {
 	 * string or boolean — narrower on purpose, not out of laziness.
 	 */
 	left?: (resolve: FieldResolver) => number | undefined;
+	/**
+	 * That this entry's own value is a level or a flag a modifier may set, with
+	 * the target alone and no `column` (`docs/features/non-number-modifiers.md`).
+	 * The bare name then reads the modified state and `<name>.value` what the
+	 * note stores. Only on an entry that publishes its `value`, with neither
+	 * `display` nor `compute`.
+	 */
+	state?: StateShape;
+	/**
+	 * The levels and flags on this entry's row a modifier may set through a
+	 * change's `column`, by column key. The component's own row scope reads each
+	 * through the `StateReader` its `compute` is handed, so every reader of the
+	 * row sees one state.
+	 */
+	states?: Readonly<Record<string, StateShape>>;
 } & ScopeEntrySource;
 
 /**
@@ -1029,7 +1099,11 @@ export interface RowValues {
  * formula that reads the rest of the sheet, and the sheet is the thing being
  * built. Called at most once per sheet.
  */
-export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
+export type RowsSource = (
+	resolve: FieldResolver,
+	/** As `ScopeEntry.compute`'s: how a row reads a level or flag a modifier set. */
+	state?: StateReader,
+) => readonly RowValues[];
 
 /**
  * The three things a modifier definition can do to a number (SPEC §5).
@@ -1216,6 +1290,15 @@ export interface ModifierDefinition {
 	 * SPEC §10 applied to a hand-edited layout.
 	 */
 	target?: string;
+	/**
+	 * Which level or flag on the target's row this change sets, where it sets one
+	 * (`docs/features/non-number-modifiers.md`). Absent is the value itself, which
+	 * is what every definition written before this existed means.
+	 *
+	 * **An address only a modifier uses**, never a published name: `target` stays
+	 * the row's own name, so SPEC §5's names gain no third segment.
+	 */
+	column?: string;
 	/** Omitted for 'add', which is what a definition that says nothing is. */
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
@@ -1260,7 +1343,7 @@ export interface ModifierDefinition {
 }
 
 /**
- * The five members `ModifierChange` declares, as a list something can walk.
+ * The members `ModifierChange` declares, as a list something can walk.
  *
  * **One copy, because the only thing a test over two could assert is that they
  * still agree** (`PATTERNS.md` §1's one-step tier, which extracts a *set* on the
@@ -1278,6 +1361,7 @@ export interface ModifierDefinition {
  */
 export const MODIFIER_CHANGE_KEYS = [
 	'target',
+	'column',
 	'operator',
 	'amount',
 	'bonusType',
@@ -1305,6 +1389,8 @@ export const MODIFIER_CHANGE_KEYS = [
 export interface ModifierChange {
 	/** The published name this changes. */
 	target: string;
+	/** As `ModifierDefinition.column`: a level or flag on the target's row. */
+	column?: string;
 	/** Omitted for 'add', which is what a change that says nothing is. */
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
@@ -1345,6 +1431,12 @@ export interface ModifierChange {
 export interface TypedEffect {
 	/** The published name this changes. */
 	target: string;
+	/**
+	 * As `ModifierDefinition.column`, spelled in a cell as ` in <column>` after
+	 * the amount. Absent spells nothing, so every cell written before this keeps
+	 * its bytes.
+	 */
+	column?: string;
 	operator: ModifierOperator;
 	/**
 	 * An expression, evaluated on the row that typed it.
@@ -1856,6 +1948,13 @@ export interface ModifierOutcome {
 	 * from it either way.
 	 */
 	noteLine?: string;
+	/**
+	 * The shape of the level or flag this part sets, where it sets one
+	 * (`docs/features/non-number-modifiers.md`): `amount` is then a position, and
+	 * the words say it as `at least Proficient` rather than as a number. Absent
+	 * on every part aimed at a number, so such an outcome is the object it was.
+	 */
+	state?: StateShape;
 }
 
 /**
@@ -1913,6 +2012,26 @@ export interface ModifierContext {
 	/** The layout's bonus types, for the form's **Bonus type** select. */
 	bonusTypes: readonly string[];
 	/**
+	 * Every level and flag a modifier may set, for the form's **Value** select's
+	 * **Levels and flags** group (`docs/features/non-number-modifiers.md`).
+	 * Optional because a context built without a sheet has no layout to ask, and
+	 * absent offers none.
+	 */
+	states?: readonly StateTarget[];
+	/**
+	 * What has been pushed at one level or flag, folded onto what the note
+	 * stores, or null where no change addresses it — so a ring with nothing
+	 * pushed at it draws no door and no description.
+	 *
+	 * `stored` is the value as the component's row scope types it. Optional on
+	 * `notable`'s terms, and absent answers null.
+	 */
+	state?(
+		name: string,
+		column: string | null,
+		stored: FieldValue | undefined,
+	): StateAccount | null;
+	/**
 	 * What one part of one cell comes to on this row: **one outcome per change**
 	 * the part's modifier names, in the definition's own order.
 	 *
@@ -1966,6 +2085,42 @@ export interface ModifierContext {
 	 * The one asynchronous member on this context, because a vault write is.
 	 */
 	promote(name: string, effect: TypedEffect): Promise<PromoteResult>;
+}
+
+/**
+ * One level or flag a modifier may set, and what to show for it
+ * (`docs/features/non-number-modifiers.md`).
+ */
+export interface StateTarget {
+	/** The published name a change's `target` spells. */
+	name: string;
+	/** The change's `column`, or absent where the name's own value is the state. */
+	column?: string;
+	/** What a picker shows: `Abilities · stealth · Training`, or `Inspiration`. */
+	label: string;
+	shape: StateShape;
+}
+
+/**
+ * What a level or flag comes to once the changes aimed at it are folded onto
+ * what the note stores (`docs/features/non-number-modifiers.md`).
+ *
+ * Positions rather than stored spellings throughout, so one account serves a
+ * level and a flag alike: a flag's off is 0 and its on is 1.
+ */
+export interface StateAccount {
+	shape: StateShape;
+	/** The position the note stores. */
+	stored: number;
+	/** The position the sheet draws: the stored one, where the state is refused. */
+	drawn: number;
+	/**
+	 * Every change listed at this address, in walk order, its `amount` a
+	 * position and its `suppressed` the verdict against the stored position.
+	 */
+	lines: readonly ModifierLine[];
+	/** The refusal, where one change could not be read; null where none was. */
+	error: string | null;
 }
 
 /**
@@ -2101,6 +2256,13 @@ export interface RenderContext<TData = unknown> {
 	 * pushed at it.
 	 */
 	modifiers?: ModifierContext;
+	/**
+	 * How a formula on this component reads a level or flag a modifier may set,
+	 * the same reader the sheet's own names fold through
+	 * (`docs/features/non-number-modifiers.md`). Optional on `link`'s terms:
+	 * absent reads every state as stored, which is the truth with no sheet.
+	 */
+	readState?: StateReader;
 	/**
 	 * Draw markdown into an element, using the app's own renderer.
 	 *

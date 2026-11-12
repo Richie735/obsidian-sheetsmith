@@ -130,6 +130,22 @@ export function renderNotesAt(
 }
 
 /**
+ * The account of what was noted at a name, or null where nothing was — the
+ * text `renderNotesAt` would open, for a control that carries the notes in an
+ * account of its own instead of drawing a mark (a ring's state door, whose
+ * face is the reader's own level). Asks `notable` first, on `renderNotesAt`'s
+ * own argument.
+ */
+export function notesAt(
+	modifiers: ModifierContext | undefined,
+	name: string | undefined,
+): string | null {
+	if (name === undefined || modifiers?.notable?.(name) !== true) return null;
+	const account = modifierAccount(modifiers.breakdown(name), null, true);
+	return account.notes === 0 ? null : account.text;
+}
+
+/**
  * Draw the note mark for an account already in hand, where it lists any notes,
  * and answer whether it drew one.
  *
@@ -168,9 +184,20 @@ export function renderAccountNotes(
  * A cell spanning several columns — a Roster band head — is no column's, and is
  * covered by the bands class instead.
  */
-export function reserveNoteSlots(table: HTMLTableElement): void {
+export function reserveNoteSlots(
+	table: HTMLTableElement,
+	/**
+	 * Other controls that take the mark's slot: a Roster row's state door, which
+	 * sits where a note mark would and is the same box, so a column holding
+	 * either keeps one line-up.
+	 */
+	alike: readonly string[] = [],
+): void {
 	const holds = (cell: Element) =>
-		Array.from(cell.children).some((child) => child.classList.contains(NOTE_MARK_CLASS));
+		Array.from(cell.children).some(
+			(child) =>
+				child.classList.contains(NOTE_MARK_CLASS) || alike.some((cls) => child.classList.contains(cls)),
+		);
 	const noted = new Set<number>();
 	for (const row of Array.from(table.rows)) {
 		let at = 0;

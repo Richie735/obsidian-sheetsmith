@@ -37,7 +37,11 @@ import {
 	PromoteResult,
 	RowsSource,
 	ScopeEntry,
+	ModifierOutcome,
 	ScopeValues,
+	StateAccount,
+	StateReader,
+	StateTarget,
 	TypedEffect,
 } from '../types';
 import {
@@ -57,14 +61,24 @@ import {
 	ModifierTargetSource,
 	noteTargets,
 	publishedTargets,
+	stateTargets,
 } from './modifier-targets';
 import {
 	definitionTable,
+	Enrolment,
 	resolveEnrolments,
 	typedNoteTarget,
 } from './modifier-definitions';
 import {
-	buildModifierTable,
+	foldState,
+	NO_STATES,
+	shapesOf,
+	StateLookup,
+	stateVerdict,
+} from './modifier-states';
+import { suppressionWording } from './suppression-wording';
+import {
+	buildModifierTables,
 	enrolmentOutcome,
 	ModifierComponent,
 	ModifierResult,
@@ -78,6 +92,7 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
+	stateReaderFor,
 } from './resolve';
 import { buildRowTable, RowComponent } from './rows';
 
@@ -223,6 +238,7 @@ export function buildSheetEnv(
 		sheet: (name) => names(name),
 		rows: (id, caller) => rows(id, caller),
 		modifiers: (name) => slots(name),
+		states: (name, column) => states(name, column),
 		// One guard for the whole sheet build, on `FormulaEnv.selfGuard`'s own
 		// comment: the ring it catches crosses several separate `resolveField`
 		// calls, so it must not be reset per evaluation.
@@ -230,6 +246,9 @@ export function buildSheetEnv(
 		floors: new Map(),
 	};
 	const names = buildSheetScope(components, env);
+	// One reader for every row on the sheet, so an aggregate and a published
+	// name read one level or flag the same way (D10).
+	const readState = stateReaderFor(env);
 	const rows = buildRowTable(
 		components.map((component): RowComponent => {
 			const source = component.rows;
@@ -238,10 +257,10 @@ export function buildSheetEnv(
 			// same environment the name table's own entries are bound to: a
 			// column formula and a published cell must not resolve differently.
 			const resolve = component.resolver?.(env) ?? ((): null => null);
-			return { id: component.id, rows: () => source(resolve) };
+			return { id: component.id, rows: () => source(resolve, readState) };
 		}),
 	);
-	const slots = buildModifierTable(
+	const { slots, states } = buildModifierTables(
 		components.map((component): ModifierComponent => {
 			const source = component.modifiers;
 			if (source === undefined) return { id: component.id };
@@ -258,9 +277,11 @@ export function buildSheetEnv(
 		// the names to fall through to, and the row table an amount may aggregate
 		// over. Through `callsFrom`, which is the one conversion (`resolve.ts`).
 		callsFrom(env),
+		shapesOf(modifiers.states ?? []),
 	);
 	return env;
 }
+
 
 /**
  * The layout's half of the modifier machinery, assembled once.
@@ -351,6 +372,12 @@ export interface SheetModifiers {
 	 * and the outcome of a note aimed at one says so.
 	 */
 	notable?: ReadonlySet<string>;
+	/**
+	 * Every level and flag a modifier may set (`stateTargets`), which the walk
+	 * reduces apart from the slots and the form offers under **Levels and
+	 * flags**. Optional on `noteTargets`' terms, and absent means none.
+	 */
+	states?: readonly StateTarget[];
 }
 
 /** A layout with no modifiers, and the paths with no layout at all. */
@@ -363,6 +390,7 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	marked: new Set(),
 	noteTargets: [],
 	notable: new Set(),
+	states: [],
 };
 
 /**
@@ -405,6 +433,7 @@ export function sheetModifierInput(
 		marked: new Set(markedTargets(sources).map((target) => target.name)),
 		noteTargets: notes,
 		notable: new Set(notes.map((target) => target.name)),
+		states: stateTargets(sources),
 	};
 }
 
@@ -633,12 +662,82 @@ export function sheetModifiers(
 		if (target === '' || notable.has(target)) return null;
 		return `${label(target)} cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.`;
 	};
+	const shapes = shapesOf(modifiers.states ?? []);
+	const lookup: StateLookup = env.states ?? NO_STATES;
+	/**
+	 * What one part comes to where it is aimed at a level or a flag, or null
+	 * where it is aimed at a number (`docs/features/non-number-modifiers.md`).
+	 *
+	 * **Each verdict is the walk's**, read through the same address, position and
+	 * fold, so the row's popup and the ring cannot disagree about a refusal. One
+	 * thing it cannot say: whether an At least is already beaten by what the note
+	 * stores, because the row is not the state's — so the ring's own door is
+	 * where `already higher` against the note is said.
+	 */
+	const stateOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+	): ModifierOutcome | null => {
+		const { fields } = found;
+		// The walk's own verdict, through the one function both read.
+		const verdict = stateVerdict(shapes, found, label);
+		if (verdict.kind === 'number' || verdict.kind === 'quiet') return null;
+		const named = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: fields.target,
+			// The column goes on the label, so the row's popup says which ring.
+			targetLabel:
+				fields.column === null
+					? label(fields.target)
+					: `${label(fields.target)} · ${fields.column}`,
+			...(verdict.kind !== 'stray' && verdict.shape !== null ? { state: verdict.shape } : {}),
+		};
+		const refused = (suppressed: string, amount: number | null = null): ModifierOutcome => ({
+			...named,
+			applies: false,
+			amount,
+			condition: null,
+			suppressed,
+		});
+		if (verdict.kind !== 'set') return refused(verdict.reason);
+		if (found.kind !== 'applies') return null;
+		const result = lookup(fields.target, fields.column);
+		if (result !== null && 'error' in result) return refused(result.error, verdict.position);
+		/*
+		 * **Beaten only by a higher change of its own kind**: the row is not the
+		 * state's, so what the note stores is unknown here, and whether a floor is
+		 * already met is the ring's door's to say. A tie is not a loss — the two
+		 * rows are symmetric, as `suppressionOf` rules for a number.
+		 */
+		const { operator } = found.contribution;
+		const rivals = (result === null ? [] : result.lines).filter((line) => line.operator === operator);
+		const top = Math.max(verdict.position, ...rivals.map((line) => line.amount));
+		const suppressed =
+			verdict.position < top
+				? suppressionWording(operator === 'override' ? 'override' : 'at least', false, 'value')
+				: null;
+		return {
+			...named,
+			applies: suppressed === null,
+			amount: verdict.position,
+			condition: found.conditional ? true : null,
+			suppressed,
+		};
+	};
 	return {
 		definitions: modifiers.definitions,
 		targets: modifiers.targets,
 		published: modifiers.published,
 		noteTargets: modifiers.noteTargets ?? [],
 		bonusTypes: modifiers.bonusTypes,
+		states: modifiers.states ?? [],
+		state: (name, column, stored): StateAccount | null => {
+			const result = lookup(name, column);
+			if (result === null) return null;
+			const account = foldState(result, stored);
+			return account.error === null && account.lines.length === 0 ? null : account;
+		},
 		/*
 		 * **Bounded by the accepting set**, which is wider than `breakdown`'s
 		 * bound on purpose: a push at a name another component reads through
@@ -691,6 +790,11 @@ export function sheetModifiers(
 			// it. The gate below is per change for the same reason the walk's is:
 			// one of a definition's values may read no modifier while another does.
 			resolveEnrolments(table, part, row, calls).map((found) => {
+				if (found.kind !== 'unknown') {
+					// A level or a flag, or a boolean at a number, in the walk's words.
+					const stated = stateOutcome(found);
+					if (stated !== null) return stated;
+				}
 				/*
 				 * **A note's own verdict, beside the arithmetic's.** A note-only part
 				 * at a name that can show it applies — it needs no slot, so the
@@ -841,6 +945,14 @@ export function buildSheetScope(
 	};
 
 	const bound: FormulaEnv = env ?? { ...NO_ENV, sheet: scope };
+	/**
+	 * How a name built from a level or a flag reads it once modifiers have had
+	 * their say: the same reader the rows and the cards fold through. Built over
+	 * a closure, so it reaches the state lookup the environment holds by the time
+	 * anything is evaluated.
+	 */
+	const readState: StateReader = (name, column, stored) =>
+		stateReaderFor(bound)(name, column, stored);
 
 	/** Every name registered below, in declaration order, for the slot pass. */
 	const published: string[] = [];
@@ -878,7 +990,17 @@ export function buildSheetScope(
 				// A component with no resolver of its own still computes: what
 				// it is handed is a resolver that finds no field, which is what
 				// a component declaring no formula fields would have anyway.
-				thunks.set(name, () => worth(compute(resolve ?? (() => null))));
+				thunks.set(name, () => worth(compute(resolve ?? (() => null), readState)));
+				return;
+			}
+			/*
+			 * **A value that is itself a level or a flag folds here**, with no
+			 * component code involved: the bare name reads the modified state and
+			 * `.value`, registered above, what the note stores (D4). A refusal
+			 * throws out of the thunk with the row named, as a refused slot does.
+			 */
+			if (entry.state !== undefined) {
+				thunks.set(name, () => clean(readState(name, null, entry.value)));
 				return;
 			}
 			if (display === undefined || resolve === undefined) {

@@ -33,6 +33,7 @@
 .sheetsmith-view .sheetsmith-rich-text-rendered,
 .sheetsmith-view .sheetsmith-record-body-rendered,
 .sheetsmith-view .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-state-door,
 .sheetsmith-view .sheetsmith-pool-modifier-button,
 .sheetsmith-view .sheetsmith-track-modifier-button {
 	--no-tooltip: false;
@@ -3991,7 +3992,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button,
 .sheetsmith-view .sheetsmith-track-modifier-button,
 .sheetsmith-view .sheetsmith-pool-modifier-button,
-.sheetsmith-view .sheetsmith-note-mark {
+.sheetsmith-view .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-state-door {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -4013,7 +4015,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button .svg-icon,
 .sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
 .sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
-.sheetsmith-view .sheetsmith-note-mark .svg-icon {
+.sheetsmith-view .sheetsmith-note-mark .svg-icon,
+.sheetsmith-view .sheetsmith-state-door .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
@@ -4021,7 +4024,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button:hover,
 .sheetsmith-view .sheetsmith-track-modifier-button:hover,
 .sheetsmith-view .sheetsmith-pool-modifier-button:hover,
-.sheetsmith-view .sheetsmith-note-mark:hover {
+.sheetsmith-view .sheetsmith-note-mark:hover,
+.sheetsmith-view .sheetsmith-state-door:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
@@ -4029,7 +4033,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button:focus-visible,
 .sheetsmith-view .sheetsmith-track-modifier-button:focus-visible,
 .sheetsmith-view .sheetsmith-pool-modifier-button:focus-visible,
-.sheetsmith-view .sheetsmith-note-mark:focus-visible {
+.sheetsmith-view .sheetsmith-note-mark:focus-visible,
+.sheetsmith-view .sheetsmith-state-door:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
@@ -4052,7 +4057,8 @@ a.sheetsmith-notice-action {
    it, which is a smaller type rank than a picker's neighbours are. */
 .sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
 .sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
-.sheetsmith-view .sheetsmith-note-mark .svg-icon {
+.sheetsmith-view .sheetsmith-note-mark .svg-icon,
+.sheetsmith-view .sheetsmith-state-door .svg-icon {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
 }
@@ -4130,6 +4136,55 @@ a.sheetsmith-notice-action {
    the threshold width. */
 .sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark {
 	margin-inline-start: var(--size-4-2);
+}
+
+/* **A ring a modifier set carries its door straight after it**
+   (`components/state-ring.ts`, `docs/features/non-number-modifiers.md`): the
+   note mark's box, ink, hover and focus by the selector lists above, at the
+   note mark's size. A cell in the same column with no door holds an empty slot
+   of exactly that box and gap, so the rings stay in line down the column
+   whether or not a row is marked. Only a column holding a door gains a slot,
+   so a table nothing set a ring in is exactly as it was.
+
+   **A Roster row's door sits at the row's end instead**, after its last value
+   (`renderRowDoor`), in the note mark's own slot: its cell holds it as a noted
+   cell holds its mark, and `reserveNoteSlots` keeps the mark's slot in every
+   other cell of that column, so the rings, the Totals and the doors each line
+   up down a card whether or not a row has a door. After a number it is placed
+   as the note mark is, on the digits' centre and taking no height from the
+   line, by the rules below that name both.
+
+   **A 2px gap rather than the ring's 8px reach, with the door stacked over
+   it**: positioned, and later in the cell than the ring, so a press on the
+   door's first pixels lands on the door and not on the ring's outward hit
+   target. The reach-sized gap was what pushed a narrow Roster card's last
+   column past the card (`modifier-states-roster-card`). */
+.sheetsmith-view td > .sheetsmith-state-door,
+.sheetsmith-view td > .sheetsmith-state-slot {
+	display: inline-flex;
+	vertical-align: middle;
+	margin-inline-start: var(--size-2-1);
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-view td > .sheetsmith-state-door {
+	position: relative;
+}
+
+.sheetsmith-view td > .sheetsmith-state-slot {
+	width: var(--sheetsmith-inline-control, 1.6em);
+	height: 1px;
+}
+
+/* Stamped by the render on a cell holding either, rather than read off what
+   it holds (PATTERNS §5), and keeping the ring and its door on one line. */
+.sheetsmith-state-cell {
+	white-space: nowrap;
+}
+
+.sheetsmith-view .sheetsmith-state-cell > .sheetsmith-level-ring {
+	display: inline-flex;
+	vertical-align: middle;
 }
 
 /* **And the width the mark costs comes out of the name column.** A ring, its
@@ -4231,7 +4286,8 @@ a.sheetsmith-notice-action {
    block margins of half its height give it a margin box of no height at the
    point it is centred on: the box, its hit target and its glyph are where they
    were, and the line is the number's alone. */
-.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-state-door {
 	margin-block: calc(-0.5 * var(--sheetsmith-inline-control, 1.6em));
 }
 
@@ -4248,7 +4304,8 @@ a.sheetsmith-notice-action {
 		--sheetsmith-note-ex: 1ex;
 	}
 
-	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark,
+	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-state-door {
 		position: relative;
 		top: calc((var(--sheetsmith-note-ex) - var(--sheetsmith-note-cap)) / 2);
 	}
@@ -8597,6 +8654,24 @@ a.sheetsmith-notice-action {
 .sheetsmith-roster-cards {
 	--sheetsmith-card-min: 12rem;
 }
+
+/* **A strip the layout can set a level or flag in keeps a wider floor at
+   larger text** (`STATE_STRIP_CLASS`, `components/state-ring.ts`,
+   `docs/features/non-number-modifiers.md`). A row's door sits at its end, in
+   the note mark's slot, so in a card whose Total column already reserves that
+   slot it costs nothing; where it does not, the slot is new. Measured on
+   `modifier-states-roster-card` with its note taken out, the narrowest door
+   card at 12rem fits at Text default and scrolls sideways by 9px at 20 and
+   32px at 24. The door is fixed px and the rest of the card grows with the
+   sheet's `em`, so the need is a fixed part plus a part in `em`: 120px plus
+   5.75em is 212px at 16, 235px at 20 and 258px at 24 — under the 221px the
+   card has at default, so two cards still share a line there, and over its
+   need at 20 and 24, so each takes a line of its own. **Stamped from the
+   layout, not from a drawn door**, so the cards keep one width as a form comes
+   and goes. A strip no layout change reaches keeps the floor it had. */
+.sheetsmith-roster-cards.sheetsmith-roster-cards-stateful {
+	--sheetsmith-card-min: max(12rem, calc(120px + 5.75em));
+}
 .sheetsmith-roster-card-table {
 	/* `.sheetsmith-card` centres and shrink-wraps its children; a table needs
 	   the card's own width back and its own left-set text, or a row of
@@ -8682,6 +8757,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-modifier-button.sheetsmith-track-modifier-button,
 .sheetsmith-view .sheetsmith-pool-modifier-button.sheetsmith-pool-modifier-button,
 .sheetsmith-view .sheetsmith-note-mark.sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-state-door.sheetsmith-state-door,
 .sheetsmith-view .sheetsmith-passport-part-remove.sheetsmith-passport-part-remove,
 .sheetsmith-view .sheetsmith-passport-add.sheetsmith-passport-add,
 .sheetsmith-view .sheetsmith-record-group-toggle.sheetsmith-record-group-toggle,

@@ -469,6 +469,7 @@ describe('component registry', () => {
 		 */
 		expect(typed).toEqual([
 			'target',
+			'column',
 			'operator',
 			'amount',
 			'bonusType',

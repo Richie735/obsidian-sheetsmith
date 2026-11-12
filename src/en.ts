@@ -29,6 +29,16 @@ export const TEXT = {
 	 * header action and its pane menu entry (`view/sheet-view.ts`).
 	 */
 	openAsMarkdown: 'Open as Markdown',
+	/**
+	 * Why a change aimed at a level or a flag may not add to it: the sheet's row
+	 * popup, the modifier form and the layout editor's definitions report all
+	 * say it (`docs/features/non-number-modifiers.md` D6). The fault only: the
+	 * fix names two operators by their labels, which the lint reads as words
+	 * out of sentence case, so `formula/modifier-states.ts` composes it from
+	 * `OPERATOR_LABELS` as `STATE_REFUSES_ADD`, the one spelling every surface
+	 * shows.
+	 */
+	stateRefusesAdd: 'Adds to cannot change a level or a flag.',
 } as const;
 
 /**

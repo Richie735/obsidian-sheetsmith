@@ -61,9 +61,19 @@ import { effectiveReading, sameNumber } from './effective-value';
 import { fencedLinkRefusal } from './fenced-link';
 import { levelCount, levelName, levelOf } from './level-ring';
 import { paintLinkedText } from './linked-text';
-import { modifierAccount, stampModifiedHost } from './modifier-breakdown';
-import { renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
+import { ModifierAccount, modifierAccount, modifiersOnName, stampModifiedHost } from './modifier-breakdown';
+import { notesAt, renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
+import {
+	cellStateRing,
+	DoorPart,
+	layoutSetsStateIn,
+	renderRowDoor,
+	StateRing,
+	STATE_DOOR_CLASS,
+	STATE_STRIP_CLASS,
+} from './state-ring';
+import { columnState, overlayRowStates, refusalFirst, rowStateShapes } from './row-states';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
 import { boundedText, formatComputed, typedValue, typeOf } from './typed-value';
@@ -78,6 +88,7 @@ import {
 	ScopeEntry,
 	ScopeValues,
 	showsOwnLabel,
+	StateReader,
 } from '../types';
 
 /** Column kinds a roster's rows may take: character data, minus a name's cell. */
@@ -290,12 +301,21 @@ function rowScope(
 	view: RowView,
 	cell: CellReader,
 	statReading: (key: string) => { value: FieldValue | undefined; reading: FieldValue | null },
+	/**
+	 * Table's own two arguments, for its reason: a row with a published name
+	 * reads its levels and flags as modifiers leave them, and a refusal is
+	 * recorded and left out where `refusals` is given, thrown where it is not
+	 * (`docs/features/non-number-modifiers.md`).
+	 */
+	states?: { name: string; read: StateReader },
+	refusals?: Map<string, string>,
 ): Record<string, FieldValue> {
 	const scope: Record<string, FieldValue> = {};
 	for (const column of config.columns ?? []) {
 		if (typeOf(column) === 'computed') continue;
 		scope[column.key] = typedValue(column, cell(column));
 	}
+	overlayRowStates(scope, config.columns ?? [], states, refusals);
 	const statKey = (view.row.stat ?? '').trim();
 	if (statKey !== '') {
 		const { value, reading } = statReading(statKey);
@@ -303,6 +323,12 @@ function rowScope(
 		if (reading !== null) scope.stat = reading;
 	}
 	return scope;
+}
+
+/** The name a row's levels and flags are addressed by, where it has one. */
+function rowName(config: RosterConfig, view: RowView): string | undefined {
+	if (!(config.columns ?? []).some((column) => column.publish === true)) return undefined;
+	return publishedName(config, view);
 }
 
 /** The name this column's cell on this row publishes, where it publishes one. */
@@ -325,8 +351,18 @@ function rowValues(
 	cell: CellReader,
 	statReading: (key: string) => { value: FieldValue | undefined; reading: FieldValue | null },
 	resolve: FieldResolver,
+	/** The sheet's state reader, where the caller has one (`RowsSource`). */
+	state?: StateReader,
 ): RowValues {
-	const stored = rowScope(config, view, cell, statReading);
+	const name = rowName(config, view);
+	const stored = rowScope(
+		config,
+		view,
+		cell,
+		statReading,
+		name === undefined || state === undefined ? undefined : { name, read: state },
+		new Map(),
+	);
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.columns ?? []).forEach((column) => {
 		if (typeOf(column) !== 'computed') return;
@@ -443,10 +479,10 @@ function bandRows(
 	statReading: (key: string) => { value: FieldValue | undefined; reading: FieldValue | null },
 	statKey: string,
 ): RowsSource {
-	return (resolve) =>
+	return (resolve, state) =>
 		views
 			.filter((view) => (view.row.stat ?? '').trim() === statKey)
-			.map((view) => rowValues(config, view, cellOf(view), statReading, resolve));
+			.map((view) => rowValues(config, view, cellOf(view), statReading, resolve, state));
 }
 
 export const roster: ComponentDefinition<RosterConfig, RosterData> = {
@@ -678,18 +714,27 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			};
 		}
 
+		// The levels and flags a change may set on a named row by `column`, on
+		// Table's terms (D3): every one but the published column's.
+		const withStates = rowStateShapes(config.columns ?? []);
 		for (const column of config.columns ?? []) {
 			if (column.publish !== true) continue;
 			for (const view of views) {
 				const rowKey = (view.row.key ?? '').trim();
 				if (rowKey === '') continue;
 				const cell = storedCells(data, view);
+				const name = `${config.id}.${rowKey}`;
 				if (typeOf(column) !== 'computed') {
-					named[rowKey] = { value: typedValue(column, cell(column)) };
+					const own = columnState(column);
+					named[rowKey] = {
+						value: typedValue(column, cell(column)),
+						...(own === undefined ? {} : { state: { ...own, column: column.key } }),
+						...withStates,
+					};
 					continue;
 				}
 				named[rowKey] = {
-					compute: (resolve) =>
+					compute: (resolve, state) =>
 						resolve(
 							`columns.${columnIndex(config, column)}.formula`,
 							rowScope(
@@ -697,9 +742,11 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 								view,
 								cell,
 								statReadingFor(config, data, views, resolve),
+								state === undefined ? undefined : { name, read: state },
 							),
 							publishedNameFor(config, column, view),
 						),
+					...withStates,
 				};
 			}
 		}
@@ -711,7 +758,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		if (configError(config) !== null) return undefined;
 		const noteNames = rowNames(data);
 		const views = rowViews(config, noteNames);
-		return (resolve) =>
+		return (resolve, state) =>
 			views.map((view) =>
 				rowValues(
 					config,
@@ -719,6 +766,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 					storedCells(data, view),
 					statReadingFor(config, data, views, resolve),
 					resolve,
+					state,
 				),
 			);
 	},
@@ -984,7 +1032,7 @@ function renderShared(
 	}
 	// Once every band and row is drawn: a noted column, or noted bands, reserve
 	// the mark's slot where there is no mark, so readings line up.
-	reserveNoteSlots(grid);
+	reserveNoteSlots(grid, [STATE_DOOR_CLASS]);
 }
 
 /** This roster's own `stat`/`stat.value` reader, shared by every row scope. */
@@ -1359,10 +1407,27 @@ function drawRow(
 	const drafts = new Map<string, string>();
 	const cellText = (column: RosterColumn): string | undefined =>
 		drafts.get(column.key) ?? stored[column.key.toLowerCase()];
+	/** This row's addressable name and the sheet's reader, Table's pair. */
+	const named = rowName(config, view);
+	const readState = context.readState;
+	const states =
+		named === undefined || readState === undefined ? undefined : { name: named, read: readState };
+	/** Why a level or flag on this row was refused, by column key. */
+	const refusals = new Map<string, string>();
 	const scopeNow = (): Record<string, FieldValue> =>
-		rowScope(config, view, cellText, statReading);
+		rowScope(config, view, cellText, statReading, states, refusals);
 
 	const computed: { column: RosterColumn; el: HTMLElement; index: number }[] = [];
+	/*
+	 * **One door per row, at the row's end** (`docs/features/non-number-modifiers.md`,
+	 * "One door per row"): every ring on the row a modifier set, with the notes at
+	 * its own name, is gathered here as it is drawn, and each computed cell's
+	 * account beside it, so the door drawn once the row is complete carries them
+	 * all. A row with no such ring draws its computed cells' note marks where
+	 * they were.
+	 */
+	const rowStates: { set: StateRing; notes: string | null; heading: string }[] = [];
+	const rowAccounts: { td: HTMLElement; account: ModifierAccount | null; heading: string }[] = [];
 	const doc = tr.ownerDocument;
 	const winView = doc.defaultView;
 	let pending: number | undefined;
@@ -1394,11 +1459,16 @@ function drawRow(
 				el.setAttribute(
 					'title',
 					value === null
-						? (context.explainField?.(
-								`columns.${index}.formula`,
-								scope,
-								publishedNameFor(config, column, view),
-							) ?? 'The formula did not resolve.')
+						? refusalFirst(
+								refusals,
+								column.formula,
+								() =>
+									context.explainField?.(
+										`columns.${index}.formula`,
+										scope,
+										publishedNameFor(config, column, view),
+									) ?? 'The formula did not resolve.',
+							)
 						: (column.formula ?? ''),
 				);
 			});
@@ -1426,7 +1496,7 @@ function drawRow(
 			const name = publishedNameFor(config, column, view);
 			const shown = name === undefined || column.formula === undefined
 				? null
-				: rowValues(config, view, cellText, statReading, context.resolveField).values[
+				: rowValues(config, view, cellText, statReading, context.resolveField, readState).values[
 						column.key
 					];
 			const account =
@@ -1445,7 +1515,7 @@ function drawRow(
 				stampModifiedHost(cell, name, cell.closest('tr'));
 				cell.createSpan({ cls: 'sheetsmith-sr-only', text: pushed });
 			}
-			renderAccountNotes(td, account, 'sheetsmith-table-has-note');
+			rowAccounts.push({ td, account, heading: column.name ?? column.key });
 			if (column.formula !== undefined) {
 				cell.classList.add('sheetsmith-table-askable');
 				cell.addEventListener('click', () => {
@@ -1519,10 +1589,22 @@ function drawRow(
 
 			const button = td.createEl('button', { cls: 'sheetsmith-level-ring' });
 			button.type = 'button';
+			// A ring a modifier set, as on a Table (`state-ring.ts`).
+			const set = cellStateRing({
+				modifiers: context.modifiers,
+				name: named,
+				column,
+				stored: typedValue(column, raw),
+				button,
+				announce: (said) => {
+					status.textContent = said;
+				},
+			});
 			// Table's cell verbatim, and now literally so: this component's copy
 			// of the ARIA, the tooltip and the presses was the fourth spelling of
 			// one control (`ring-control.ts`).
 			bindRingControl({
+				...set.ring,
 				button,
 				column,
 				count,
@@ -1539,13 +1621,19 @@ function drawRow(
 				nameOnScreen: column.hideHeading !== true,
 				onSet: store,
 			});
-			// After the control, as the cell's door, as on a Table.
-			renderNotesAt(
-				td,
-				context.modifiers,
-				publishedNameFor(config, column, view),
-				'sheetsmith-table-has-note',
-			);
+			// The door goes at the row's end, so the ring's notes go into its
+			// account there; a ring nothing set keeps its own note mark.
+			const noteName = publishedNameFor(config, column, view);
+			if (set.set !== null) {
+				set.stamp(tr);
+				rowStates.push({
+					set: set.set,
+					notes: notesAt(context.modifiers, noteName),
+					heading: column.name ?? column.key,
+				});
+			} else {
+				renderNotesAt(td, context.modifiers, noteName, 'sheetsmith-table-has-note');
+			}
 			return;
 		}
 
@@ -1612,6 +1700,36 @@ function drawRow(
 		renderCell(entry);
 	}
 
+	const end = tr.lastElementChild as HTMLElement | null;
+	if (rowStates.length > 0 && end !== null) {
+		// Each ring's lines with the notes at its own name, then each computed
+		// cell's account, each its column's part of the one door.
+		const parts: DoorPart[] = [
+			...rowStates.map(({ set, notes, heading }) => ({
+				heading,
+				text: () => (notes === null ? set.text() : `${set.text()}\n\n${notes}`),
+			})),
+			...rowAccounts.flatMap(({ account, heading }) =>
+				account?.text === null || account?.text === undefined
+					? []
+					: [{ heading, text: () => account.text as string }],
+			),
+		];
+		// The row-end control's slot is the note mark's, so the column keeps one
+		// line-up whichever of the two a row holds (`reserveNoteSlots`).
+		end.classList.add('sheetsmith-table-has-note');
+		renderRowDoor(
+			end,
+			modifiersOnName(rowLabel(view.row.label)),
+			rowStates.map((state) => state.set),
+			parts,
+		);
+	} else {
+		for (const { td, account } of rowAccounts) {
+			renderAccountNotes(td, account, 'sheetsmith-table-has-note');
+		}
+	}
+
 	recompute(true);
 	return tr;
 }
@@ -1651,6 +1769,11 @@ function renderCards(
 	const statReading = statReadingFor(config, data, views, context.resolveField);
 
 	const strip = container.createDiv('sheetsmith-card-set sheetsmith-roster-cards');
+	// A wider card floor where the layout can set a level or flag in these
+	// cards, so a state door has room whether or not a form is in play.
+	if (layoutSetsStateIn(context.modifiers, (name) => name.startsWith(`${config.id}.`))) {
+		strip.classList.add(STATE_STRIP_CLASS);
+	}
 
 	for (const stat of stats) {
 		const key = (stat.key ?? '').trim();
@@ -1695,7 +1818,7 @@ function renderCards(
 				tr.classList.add('sheetsmith-roster-row-divider');
 			}
 		});
-		reserveNoteSlots(grid);
+		reserveNoteSlots(grid, [STATE_DOOR_CLASS]);
 	}
 }
 

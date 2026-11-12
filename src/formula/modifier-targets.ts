@@ -34,6 +34,7 @@ import {
 	ModifierTarget,
 	ScopeEntry,
 	ScopeValues,
+	StateTarget,
 } from '../types';
 import { referencesName } from './expression';
 import { modifierSlot, SELF_SLOT } from './modifiers';
@@ -228,6 +229,31 @@ export function noteTargets(
 	return publishedTargets(
 		components.filter((component) => component.drawsNotes === true),
 	);
+}
+
+/**
+ * Every level and flag a modifier may set, in declaration order
+ * (`docs/features/non-number-modifiers.md`).
+ *
+ * **Read statically from what the components declare**, `ScopeEntry.state` and
+ * `.states`, on the accepting set's own terms: no note is read, so the editor's
+ * picker, the sheet's form and the walk's shapes all reach one answer from the
+ * layout alone. A name's own state comes before the columns on its row, and a
+ * column is labelled after the name it sits on: `Abilities · stealth · Training`.
+ */
+export function stateTargets(
+	components: readonly ModifierTargetSource[],
+): readonly StateTarget[] {
+	const found: StateTarget[] = [];
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			if (entry.state !== undefined) found.push({ name, label, shape: entry.state });
+			for (const [column, shape] of Object.entries(entry.states ?? {})) {
+				found.push({ name, column, label: `${label} · ${column}`, shape });
+			}
+		}
+	}
+	return found;
 }
 
 /**

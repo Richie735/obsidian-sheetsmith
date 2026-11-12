@@ -94,6 +94,16 @@ export interface Contribution {
 	 * says nothing means what it has always meant.
 	 */
 	applies?: ModifierPhase;
+	/**
+	 * The boolean the amount came to, where it came to one; `amount` is then its
+	 * position, 1 or 0 (`docs/features/non-number-modifiers.md` D2). Only a Sets
+	 * or an At least carries one, and only a level or a flag can take it: the
+	 * walk refuses it at a number with `notNumber`, once it knows the target's
+	 * shape, so the target check is in one place.
+	 */
+	literal?: boolean;
+	/** The sentence a number refuses `literal` with: the shipped one, unchanged. */
+	notNumber?: string;
 }
 
 /**
@@ -122,7 +132,7 @@ export interface PartSource {
 }
 
 /**
- * The five facts one part holds, whichever tier it came from.
+ * The facts one part holds, whichever tier it came from.
  *
  * Carried on every case but `unknown`, because `ModifierOutcome` owes a target and
  * a label even where the row is changing nothing: the form's line for a stowed
@@ -130,6 +140,11 @@ export interface PartSource {
  */
 export interface PartFields {
 	target: string;
+	/**
+	 * The level or flag on the target's row this sets, or null where it changes
+	 * the value itself (`docs/features/non-number-modifiers.md`).
+	 */
+	column: string | null;
 	operator: ModifierOperator;
 	/** The amount as an expression, before it is evaluated. Blank is unfinished. */
 	amount: string;
@@ -242,8 +257,10 @@ function fieldsOfChange(
 	const bonusType = (change.bonusType ?? '').trim();
 	const when = (definition.when ?? '').trim();
 	const note = (change.note ?? '').trim();
+	const column = (change.column ?? '').trim();
 	return {
 		target: change.target.trim(),
+		column: column === '' ? null : column,
 		operator: operatorOf(change),
 		amount: (change.amount ?? '').trim(),
 		bonusType: bonusType === '' ? null : bonusType,
@@ -258,8 +275,10 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
 	const bonusType = (effect.bonusType ?? '').trim();
 	const when = (effect.when ?? '').trim();
 	const note = (effect.note ?? '').trim();
+	const column = (effect.column ?? '').trim();
 	return {
 		target: effect.target.trim(),
+		column: column === '' ? null : column,
 		operator: effect.operator,
 		amount: effect.amount.trim(),
 		bonusType: bonusType === '' ? null : bonusType,
@@ -276,7 +295,7 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
  * is spelled by *what it does* — "this row's modifier" — which is the same
  * substitution `modifier-breakdown.ts` makes wherever a name is missing.
  */
-function called(source: PartSource): string {
+export function called(source: PartSource): string {
 	return source.definition === null
 		? "this row's own modifier"
 		: `the modifier "${source.definition.name}"`;
@@ -509,12 +528,25 @@ function settle(
 			condition: false,
 		};
 	}
-	if (typeof amount.value !== 'number') {
+	const notNumber = `"${String(amount.value)}" is not a number, so ${called(source)} has no amount.`;
+	/*
+	 * **A boolean passes only for an operator that contests by value**, because
+	 * only a Sets or an At least can set a flag (D2). It is not yet known whether
+	 * the target is one, so it travels as a position with the shipped sentence
+	 * beside it, and the walk refuses it with that sentence at a number — which
+	 * keeps `"true" is not a number` byte for byte, and the target check in one
+	 * place.
+	 */
+	const literal =
+		typeof amount.value === 'boolean' && contestsByValue(fields.operator)
+			? amount.value
+			: undefined;
+	if (typeof amount.value !== 'number' && literal === undefined) {
 		return {
 			kind: 'unreadable',
 			...source,
 			fields,
-			reason: `"${String(amount.value)}" is not a number, so ${called(source)} has no amount.`,
+			reason: notNumber,
 			condition: false,
 		};
 	}
@@ -547,7 +579,8 @@ function settle(
 			 * the phase, and nothing would have said so until something read it.
 			 */
 			applies: contestsByValue(fields.operator) ? 'result' : fields.applies,
-			amount: amount.value,
+			amount: literal === undefined ? (amount.value as number) : literal ? 1 : 0,
+			...(literal === undefined ? {} : { literal, notNumber }),
 		},
 	};
 }

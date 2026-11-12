@@ -58,6 +58,7 @@ import {
 	ScopeEntry,
 	ScopeValues,
 	showsOwnLabel,
+	StateReader,
 } from '../types';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
@@ -83,8 +84,10 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
-import { renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
+import { notesAt, renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
+import { cellStateRing, reserveStateSlots } from './state-ring';
+import { columnState, overlayRowStates, refusalFirst, rowStateShapes, stateColumn } from './row-states';
 import { flagText } from './stored-flag';
 import {
 	AnchoredPanel,
@@ -442,6 +445,12 @@ type CellReader = (column: TableColumn) => string | undefined;
 interface TotalRow {
 	label: string;
 	cell: CellReader;
+	/**
+	 * How this row reads a level or a flag a modifier may set, where it has a
+	 * name a change can address: a total sums what the rest of the sheet reads,
+	 * so `total` and `sum()` cannot disagree (D10). Throws a refusal.
+	 */
+	state?: (column: TableColumn, stored: FieldValue) => FieldValue | undefined;
 }
 
 /**
@@ -460,12 +469,28 @@ function rowScope(
 	declared: number | null,
 	cell: CellReader,
 	resolve: FieldResolver,
+	/**
+	 * The row's published name and the sheet's state reader, where the row has a
+	 * name a change can address: each `level` and `toggle` cell is then read as
+	 * modifiers leave it (`docs/features/non-number-modifiers.md`), so every
+	 * reader of the row — its computed cells, its published name, an aggregate
+	 * over it, a total — sees one state.
+	 */
+	states?: { name: string; read: StateReader },
+	/**
+	 * Where a refused state is recorded and left out of the scope, rather than
+	 * thrown: an aggregate's row and a cell on screen take the first, so only an
+	 * expression reading that column fails. Absent, the refusal throws, which is
+	 * how a published name carries the sentence to the card reading it.
+	 */
+	refusals?: Map<string, string>,
 ): Record<string, FieldValue> {
 	const scope: Record<string, FieldValue> = {};
 	for (const column of config.columns ?? []) {
 		if (columnType(column) === 'computed') continue;
 		scope[column.key] = typedValue(column, cell(column));
 	}
+	overlayRowStates(scope, config.columns ?? [], states, refusals);
 	const row = declared === null ? undefined : config.rows?.[declared];
 	for (const name of Object.keys(row?.values ?? {})) {
 		const value = resolve(`rows.${declared}.values.${name}`, scope);
@@ -496,7 +521,16 @@ function columnTotal(
 ): ColumnTotal {
 	let sum = 0;
 	for (const view of rows) {
-		const value = typedValue(column, view.cell(column));
+		let value = typedValue(column, view.cell(column));
+		if (view.state !== undefined) {
+			try {
+				value = view.state(column, value) ?? value;
+			} catch {
+				// A refused state is not a number to add: the row is named, as a
+				// row holding prose in a number column is.
+				return { unreadable: rowLabel(view.label) };
+			}
+		}
 		if (typeof value === 'boolean') {
 			sum += value ? 1 : 0;
 		} else if (typeof value === 'number') {
@@ -506,6 +540,40 @@ function columnTotal(
 		}
 	}
 	return { sum: roundSum(sum) };
+}
+
+/**
+ * The name a row publishes, where it publishes one: a declared row carrying a
+ * `key` on a table with a published column. The one thing a change can address
+ * a row's levels and flags by, so a row with none has no state to set (D3's
+ * every-row cut).
+ */
+function rowName(config: TableConfig, view: RowView): string | undefined {
+	if (!(config.columns ?? []).some((column) => column.publish === true)) return undefined;
+	const key = (view.row?.key ?? '').trim();
+	if (view.declared === null || key === '') return undefined;
+	return `${config.id}.${key}`;
+}
+
+/**
+ * The rows a total sums, each reading its levels and flags through `state`
+ * where it has a name a change can address. One helper for publication and
+ * for the totals row under the card, so the number under a column and the name
+ * a formula reads are one sum.
+ */
+function stateRows(
+	config: TableConfig,
+	views: readonly RowView[],
+	rows: readonly TotalRow[],
+	state: StateReader,
+): TotalRow[] {
+	return rows.map((row, at) => {
+		const view = views[at];
+		const name = view === undefined ? undefined : rowName(config, view);
+		return name === undefined
+			? row
+			: { ...row, state: (column, stored) => state(name, stateColumn(column), stored) };
+	});
 }
 
 /** What the note holds for one row, whatever the card is showing for it. */
@@ -561,9 +629,21 @@ function rowValues(
 	data: TableData | null,
 	view: RowView,
 	resolve: FieldResolver,
+	/** The sheet's state reader, where the caller has one (`RowsSource`). */
+	state?: StateReader,
 ): RowValues {
 	const cell = storedCells(data, view);
-	const stored = rowScope(config, view.declared, cell, resolve);
+	const name = rowName(config, view);
+	// A refused state is left out of the row, so an expression reading it fails
+	// and the aggregate names the row, where a published name would throw.
+	const stored = rowScope(
+		config,
+		view.declared,
+		cell,
+		resolve,
+		name === undefined || state === undefined ? undefined : { name, read: state },
+		new Map(),
+	);
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.columns ?? []).forEach((column, at) => {
 		if (columnType(column) !== 'computed') return;
@@ -1160,38 +1240,77 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			// sum of the rows it could read (SPEC §5). The cell says which row
 			// stopped it.
 			if ('unreadable' in total) continue;
-			named[column.key] = { value: total.sum };
+			/*
+			 * **A total over a level or a flag sums what the sheet reads**, so a
+			 * row a modifier set counts as set (D10): computed through the state
+			 * reader, while `.value` keeps the stored sum. Only where some row
+			 * has a name a change can address; every other total is the plain
+			 * value it always was.
+			 */
+			const addressable =
+				columnState(column) !== undefined &&
+				views.some((view) => rowName(config, view) !== undefined);
+			named[column.key] = addressable
+				? {
+						value: total.sum,
+						compute: (_resolve, state) => {
+							if (state === undefined) return total.sum;
+							const read = columnTotal(column, stateRows(config, views, rows, state));
+							return 'sum' in read ? read.sum : null;
+						},
+					}
+				: { value: total.sum };
 		}
 
 		const at = columns.findIndex((column) => column.publish === true);
 		const published = columns[at];
 		if (published !== undefined) {
+			/*
+			 * The levels and flags on a named row a change may set by `column`
+			 * (D3): every `level` and `toggle` column but the published one, whose
+			 * state is the row's own value and is named by the target alone.
+			 */
+			const withStates = rowStateShapes(columns);
 			for (const view of views) {
 				const declared = view.declared;
 				const key = (view.row?.key ?? '').trim();
 				if (declared === null || key === '') continue;
 				const cell = storedCells(data, view);
+				const name = `${config.id}.${key}`;
 				if (columnType(published) !== 'computed') {
 					// A stored cell is its own answer, and it is the same answer
-					// the card shows, so the bare name and `.value` agree. A
-					// declared row the note has no row for reads as blank, which
-					// in a number column is zero — the number the card shows.
+					// the card shows, so the bare name and `.value` agree until a
+					// modifier sets it: a stored level or flag is then the row's own
+					// state, which the sheet folds and `.value` still reads as
+					// stored (D4). A declared row the note has no row for reads as
+					// blank, which in a number column is zero — the number the card
+					// shows.
+					const own = columnState(published);
 					named[key] = {
 						value: typedValue(published, cell(published)),
+						...(own === undefined ? {} : { state: { ...own, column: published.key } }),
+						...withStates,
 					};
 					continue;
 				}
 				// A computed column stores nothing, so there is no `.value` to
 				// publish: a formula reading one fails as an unknown name (§4.2).
 				named[key] = {
-					compute: (resolve) =>
+					compute: (resolve, state) =>
 						resolve(
 							`columns.${at}.formula`,
-							rowScope(config, declared, cell, resolve),
+							rowScope(
+								config,
+								declared,
+								cell,
+								resolve,
+								state === undefined ? undefined : { name, read: state },
+							),
 							// The name being published, so a `mod.self` in the
 							// column's formula reads this row's own slot.
 							publishedName(config, view, at),
 						),
+					...withStates,
 				};
 			}
 		}
@@ -1233,8 +1352,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		// number derived from a configuration nobody has agreed to yet.
 		if (configError(config) !== null) return undefined;
 		const views = rowViews(config, data);
-		return (resolve) =>
-			views.map((view) => rowValues(config, data, view, resolve));
+		return (resolve, state) =>
+			views.map((view) => rowValues(config, data, view, resolve, state));
 	},
 
 	/**
@@ -1952,7 +2071,30 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			 */
 			const cellText = (column: TableColumn): string | undefined =>
 				drafts.get(column.key) ?? stored[column.key.toLowerCase()];
-			counted.push({ label: rowView.label, cell: cellText });
+			/**
+			 * The name this row's levels and flags are addressed by, and the
+			 * sheet's reader for them, where the row has one: so the cells on
+			 * screen, the totals under them and the name a formula reads see one
+			 * state (`docs/features/non-number-modifiers.md`).
+			 */
+			const named = rowName(config, rowView);
+			const readState = context.readState;
+			const states =
+				named === undefined || readState === undefined
+					? undefined
+					: { name: named, read: readState };
+			counted.push({
+				label: rowView.label,
+				cell: cellText,
+				...(states === undefined
+					? {}
+					: {
+							state: (column: TableColumn, value: FieldValue) =>
+								states.read(states.name, stateColumn(column), value),
+						}),
+			});
+			/** Why a level or flag on this row was refused, by column key. */
+			const refusals = new Map<string, string>();
 			/**
 			 * The row's names as a computed cell sees them, rebuilt per
 			 * keystroke from the drafts so a value moves while the user is
@@ -1960,7 +2102,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			 * published row reads from the note.
 			 */
 			const scopeNow = (): Record<string, FieldValue> =>
-				rowScope(config, rowIndex, cellText, context.resolveField);
+				rowScope(config, rowIndex, cellText, context.resolveField, states, refusals);
 			/**
 			 * This row as the *note* gives it: its stored cells, its declared
 			 * values, and its computed columns over the top.
@@ -2048,11 +2190,16 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							// define. "Did not resolve" makes no next action
 							// obvious at all.
 							value === null
-								? (context.explainField?.(
-										`columns.${index}.formula`,
-										scope,
-										publishedName(config, rowView, index),
-									) ?? 'The formula did not resolve.')
+								? refusalFirst(
+										refusals,
+										column.formula,
+										() =>
+											context.explainField?.(
+												`columns.${index}.formula`,
+												scope,
+												publishedName(config, rowView, index),
+											) ?? 'The formula did not resolve.',
+									)
 								: column.formula,
 						);
 					});
@@ -2431,6 +2578,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							targets: context.modifiers?.targets ?? [],
 							published: context.modifiers?.published ?? [],
 							noteTargets: context.modifiers?.noteTargets ?? [],
+							states: context.modifiers?.states ?? [],
 							bonusTypes: context.modifiers?.bonusTypes ?? [],
 							// The one import from `obsidian` in this folder, passed on
 							// rather than taken again: the allowlist stays one name long.
@@ -2594,10 +2742,27 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						td,
 					);
 					button.type = 'button';
+					/*
+					 * **A ring a modifier set draws the modified state**, and a
+					 * press still edits the note's (`state-ring.ts`). Asked only on
+					 * a row with a name a change can address, so a table with no
+					 * such push is the DOM it always was.
+					 */
+					const set = cellStateRing({
+						modifiers: context.modifiers,
+						name: named,
+						column,
+						stored: typedValue(column, raw),
+						button,
+						announce: (said) => {
+							status.textContent = said;
+						},
+					});
 					// The ARIA, the tooltip, the touch route and the presses are
 					// `ring-control.ts`'s, so a cell and the same control on a card
 					// cannot come to disagree about what either of them says.
 					bindRingControl({
+						...set.ring,
 						button,
 						column,
 						count,
@@ -2622,14 +2787,15 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						nameOnScreen: column.hideHeading !== true,
 						onSet: store,
 					});
-					// After the control, as the cell's door: the ring's press is the
-					// ring's, so the notes need a control of their own.
-					renderNotesAt(
-						td,
-						context.modifiers,
-						publishedName(config, rowView, index),
-						'sheetsmith-table-has-note',
-					);
+					// The door, and the row as the box a form in play tints (D11).
+					// The door's face is the mark, so where a door is drawn the notes
+					// at this cell's name go into its account rather than a note mark
+					// of their own; elsewhere the notes take their own control, since
+					// the ring's press is the ring's.
+					const noteName = publishedName(config, rowView, index);
+					if (!set.finish(td, tr, rowLabel(rowView.label), notesAt(context.modifiers, noteName))) {
+						renderNotesAt(td, context.modifiers, noteName, 'sheetsmith-table-has-note');
+					}
 					return;
 				}
 
@@ -2936,7 +3102,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			paintTotals(true);
 		}
 		// Last, once every cell that will hold a mark holds it: a noted column
-		// reserves the mark's slot in its other cells, so its values line up.
+		// reserves the mark's slot in its other cells, so its values line up,
+		// and a column a modifier set a ring in keeps the door's slot the same way.
 		reserveNoteSlots(grid);
+		reserveStateSlots(grid);
 	},
 };

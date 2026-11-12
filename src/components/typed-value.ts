@@ -51,8 +51,10 @@
  * `ComponentDefinition`, imports nothing from `obsidian` and touches no file.
  */
 
+import { StateShape } from '../types';
+import { flagShape } from '../formula/modifier-states';
 import { ColumnType, DEFAULT_COLUMN_TYPE } from './column-types';
-import { LevelColumn, levelOf } from './level-ring';
+import { LevelColumn, levelCount, levelOf, parseLevel } from './level-ring';
 import { isFlagSet } from './stored-flag';
 
 /**
@@ -70,6 +72,29 @@ export interface TypedField extends LevelColumn {
 /** What a field with no declared type is, which the vocabulary decides. */
 export function typeOf(field: TypedField): ColumnType {
 	return field.type ?? DEFAULT_COLUMN_TYPE;
+}
+
+/**
+ * What a `level` or `toggle` field is as a state a modifier may set, or
+ * undefined for any other type (`docs/features/non-number-modifiers.md` D3) —
+ * the fourth rule, and here for the first's reason: Table and Roster both read
+ * a row's levels and flags through it, so two copies would disagree about how
+ * many grades a level has, in a refusal a reader cannot see the arithmetic of.
+ *
+ * **A `toggle` with leftover `levels` is still a flag**: it stores a boolean,
+ * and its names label nothing (`docs/features/level-list-reorder-report.md` §2).
+ * `label` is what a refusal calls it: its heading where it has one.
+ */
+export function typedState(field: TypedField, label: string): StateShape | undefined {
+	const type = typeOf(field);
+	if (type === 'toggle') return flagShape(label);
+	if (type !== 'level') return undefined;
+	return {
+		flag: false,
+		positions: levelCount(field) + 1,
+		words: field.levels?.map((level) => parseLevel(level).name) ?? [],
+		label,
+	};
 }
 
 /** What a stored value means to a formula. */
