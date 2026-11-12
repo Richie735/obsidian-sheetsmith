@@ -363,6 +363,9 @@ const PASTE_FRAME = '1500,18000';
  */
 const OPEN_MIXED_GLYPH =
 	"press=.sheetsmith-table-modifier-button%5Btitle*%3D'item%20%2B1%20%28changes%20nothing%29'%5D";
+/** One press on the cycle sheet's only Stealth ring. */
+const CYCLE_PRESS =
+	"press=%5Bdata-sheetsmith-component%3D'skills'%5D%20.sheetsmith-level-ring";
 const OPEN_MIXED_FORM = `${OPEN_MIXED_GLYPH}&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D`;
 
 /**
@@ -3703,6 +3706,199 @@ export const DEFAULTS = [
 		// the column ended at Reset triggers and no Note field was in frame.
 		name: 'editor-notes',
 		query: 'surface=editor&theme=light&state=notes',
+		size: '1500,2600',
+	},
+	/*
+	 * Rings a modifier set (`docs/features/non-number-modifiers.md`): on the
+	 * skills Table and the Checks Roster, one ring raised by At least, one
+	 * already higher, one set by Sets and one refused, beside one nothing
+	 * reaches; and the Inspiration flag turned on by a push, its door beside its
+	 * label. In each column the doors stand in line and the rings stay in line
+	 * whether or not a row is marked.
+	 */
+	{
+		name: 'modifier-states-light',
+		query: 'surface=sheet&theme=light&state=modifier-states',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-states-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-states-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-states',
+		size: '1400,1100',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-states-phone',
+		query: 'surface=sheet&theme=light&state=modifier-states',
+		size: '380,3200',
+		platform: 'phone',
+	},
+	// The same state at Text 20 and 24, where the doors keep their fixed-px box
+	// and the rings and their faces grow with the sheet's `em`.
+	{
+		name: 'modifier-states-text-20',
+		query: 'surface=sheet&theme=light&state=modifier-states&text=20',
+		size: '1400,1300',
+	},
+	{
+		name: 'modifier-states-text-24',
+		query: 'surface=sheet&theme=light&state=modifier-states&text=24',
+		size: '1400,1500',
+	},
+	/*
+	 * The Lore row's modifier form open on `skills.investigation = 2 in
+	 * Training`: Value, the Sets operator, and the position legend under Amount.
+	 */
+	{
+		name: 'modifier-states-form',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=.sheetsmith-table-modifier-button%5Btitle*%3D'investigation'%5D&press=.sheetsmith-panel-line",
+		size: '1400,1100',
+	},
+	/*
+	 * The Druid's Dexterity card in small, Cat Form in play: Stealth's door
+	 * beside a Proficient ring, a note mark after Acrobatics' Total, and the
+	 * strip's state floor, stamped from the layout, putting each card on a line
+	 * of its own where two would scroll sideways. Every Text size the harness
+	 * stages and a phone, in both palettes, and forced colors at default.
+	 */
+	{
+		name: 'modifier-states-roster-card-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-phone-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-20-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-24-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-phone-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+		flags: ['--force-high-contrast'],
+	},
+	/*
+	 * Stealth's door opened under Cat Form, stored Untrained (the test vault's
+	 * Thorne): the account opens on `Your own: Untrained`, then the line and the
+	 * drawn state.
+	 */
+	{
+		name: 'modifier-states-own-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Stealth'%5D",
+		size: '1400,900',
+	},
+	/*
+	 * A Roster row whose ring and Total a modifier both changed, its one door
+	 * at the row's end opened: Insight under Bulls strength, the ring's lines
+	 * first and then the Total's.
+	 */
+	{
+		name: 'modifier-states-row-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Insight'%5D",
+		size: '1400,1100',
+	},
+	/*
+	 * A refused state's door opened: Perception's Training, which the Cursed eye
+	 * sets to 3 on a list running 0 to 2, so the account opens on the refusal's
+	 * sentence over the stored level (UI.md §10, "Error text names the fix").
+	 */
+	{
+		name: 'modifier-states-refused-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Perception%20%C2%B7%20Training'%5D",
+		size: '1400,1100',
+	},
+	/*
+	 * An already-higher ring's door opened: Arcana, stored Expertise under the
+	 * Scholar's At least Proficient, so the account names the level it already
+	 * is, `already Expertise`.
+	 */
+	{
+		name: 'modifier-states-already-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Arcana%20%C2%B7%20Training'%5D",
+		size: '1400,1100',
+	},
+	/*
+	 * One Stealth ring, stored Untrained under Cat Form's At least Proficient,
+	 * pressed one, two and three times: the first press moves the note and not
+	 * the ring; the second moves the ring to Expertise; and the third wraps the
+	 * note to Untrained, which the ring draws as Proficient. No press opens a
+	 * popover, and the door is the `info` glyph throughout: the reader's own
+	 * level is in its account.
+	 */
+	{
+		name: 'modifier-states-cycle-1',
+		query: `surface=sheet&theme=light&state=modifier-states-cycle&bar=off&${CYCLE_PRESS}`,
+		size: '1400,700',
+	},
+	{
+		name: 'modifier-states-cycle-2',
+		query: `surface=sheet&theme=light&state=modifier-states-cycle&bar=off&${CYCLE_PRESS}&${CYCLE_PRESS}`,
+		size: '1400,700',
+	},
+	{
+		name: 'modifier-states-cycle-3',
+		query: `surface=sheet&theme=light&state=modifier-states-cycle&bar=off&${CYCLE_PRESS}&${CYCLE_PRESS}&${CYCLE_PRESS}`,
+		size: '1400,700',
+	},
+	/*
+	 * The editor opening on Cat Form's two changes, each aimed at a level: the
+	 * Value select on **Levels and flags**, the Operator offering Sets and At
+	 * least only, and the position legend under Amount.
+	 */
+	{
+		name: 'editor-modifier-states',
+		query: 'surface=editor&theme=light&state=modifier-states',
 		size: '1500,2600',
 	},
 	{
