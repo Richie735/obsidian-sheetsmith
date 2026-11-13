@@ -69,10 +69,13 @@ import {
 	StateAccount,
 	StateShape,
 	BufferAccount,
+	ChoiceAccount,
+	ChoiceShape,
 } from '../types';
 import { isNoteOnly } from '../parse/modifier-cell';
 import { roundSum } from '../formula/expression';
 import { positionWord } from '../formula/modifier-states';
+import { optionWord } from '../formula/modifier-choices';
 
 /**
  * The mark on a number something has been pushed at.
@@ -169,6 +172,17 @@ export function stampStateHost(
 	host.setAttribute(NAME_ATTRIBUTE, name);
 	host.setAttribute(STATE_COLUMN_ATTRIBUTE, column ?? '');
 	host.setAttribute(STATE_STORED_ATTRIBUTE, String(stored));
+	box?.setAttribute(BOX_ATTRIBUTE, '');
+}
+
+/**
+ * Say which dropdown a menu is and which box it belongs to, so a form in play
+ * that chose its option tints that box as it would a number it changed
+ * (`docs/features/text-value-modifiers.md` D12). **No modified class**: the
+ * menu's press edits, so it takes no underline, and its rule is its own.
+ */
+export function stampChoiceHost(host: HTMLElement, name: string, box?: HTMLElement | null): void {
+	host.setAttribute(NAME_ATTRIBUTE, name);
 	box?.setAttribute(BOX_ATTRIBUTE, '');
 }
 
@@ -625,6 +639,58 @@ export function stateAccountText(account: StateAccount, inRows?: boolean): strin
 	return [...own, ...said, '', now].join('\n');
 }
 
+/** What a dropdown's value is called in its account: its label, or `nothing chosen`. */
+function choiceWord(shape: ChoiceShape, value: string): string {
+	return value === '' ? 'nothing chosen' : optionWord(shape, value);
+}
+
+/**
+ * A dropdown's account, as the door onto it opens it
+ * (`docs/features/text-value-modifiers.md` D11):
+ *
+ * ```
+ * Your own: Medium
+ *
+ * Wild Shape · Brown bear — sets to Large
+ *
+ * Now Large
+ * ```
+ *
+ * The state account's shape, with the option's label as its word. The own line
+ * is left out where the two agree, and a refused choice opens on its sentence
+ * with no own line, since it draws what the note stores. **Every line names its
+ * component**, as a grant's does, so the account and the disagreement sentence
+ * (D5) name a source one way.
+ */
+export function choiceAccountText(account: ChoiceAccount): string {
+	const now = `Now ${choiceWord(account.shape, account.drawn)}`;
+	if (account.error !== null) return [account.error, '', now].join('\n');
+	const own =
+		account.drawn === account.stored ? [] : [`Your own: ${choiceWord(account.shape, account.stored)}`, ''];
+	const said = account.lines.map((line) => {
+		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
+		return `${identity(line, true)} — sets to ${optionWord(account.shape, line.option)}${why}`;
+	});
+	return [...own, ...said, '', now].join('\n');
+}
+
+/**
+ * What a dropdown says beside its drawn option when the note holds another:
+ * `Set by a modifier; your own: Medium`, or null where they agree (D9).
+ */
+export function choiceOwnDescription(account: ChoiceAccount): string | null {
+	if (account.drawn === account.stored) return null;
+	return `Set by a modifier; your own: ${choiceWord(account.shape, account.stored)}`;
+}
+
+/**
+ * What the live region says when a choice moved what the note holds and not
+ * what the card draws: `Your own is now Small` (D9), the precedent's sentence.
+ */
+export function choiceOwnNowLine(account: ChoiceAccount): string {
+	return `Your own is now ${choiceWord(account.shape, account.stored)}`;
+}
+
 /**
  * A buffer's account, as one block of text: what a Pool's door opens for its
  * temporary points (`docs/features/granted-temporary-points.md`).
@@ -780,7 +846,9 @@ export function outcomeWords(outcome: ModifierOutcome): string {
 	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
 	const noteOnly = isNoteOnly(moved ?? typed ?? {});
 	const arithmetic =
-		outcome.grant === true
+		outcome.choice !== undefined
+			? `sets to ${optionWord(outcome.choice.shape, outcome.choice.option)}`
+			: outcome.grant === true
 			? outcome.amount === null
 				? 'grants temporary points'
 				: `grants ${outcome.amount}`

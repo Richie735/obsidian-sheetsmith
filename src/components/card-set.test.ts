@@ -2,7 +2,21 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardSet, CardSetConfig } from './card-set';
 import { outcomeView } from '../test/modifier-views';
-import { FieldValue, ModifierOutcome, RenderContext } from '../types';
+import {
+	FieldValue,
+	ModifierDefinitionView,
+	ModifierOutcome,
+	RenderContext,
+} from '../types';
+import {
+	buildSheetEnv,
+	publishedComponent,
+	PublishedComponent,
+	sheetModifierInput,
+	sheetModifiers,
+} from '../formula/sheet';
+import { modifierTargetSource } from '../formula/modifier-targets';
+import { modifierBreakdown } from './modifier-breakdown';
 import { sampleOf } from '../test/sample';
 
 const config: CardSetConfig = {
@@ -968,5 +982,75 @@ describe('cardSet.render: an effective value over a stored one', () => {
 		expect(input.classList.contains('sheetsmith-card-input-effective')).toBe(
 			false,
 		);
+	});
+});
+
+/*
+ * The speed pattern (`docs/features/text-value-modifiers.md`, B): a speed line
+ * is a Card set with one numeric entry per movement type, and a grant is an At
+ * least on one entry. No code serves it; this pins it, so a change that breaks
+ * it fails here.
+ */
+describe('cardSet: a speed grant on an entry', () => {
+	const speed: CardSetConfig = {
+		id: 'speed',
+		type: 'card-set',
+		label: 'Speed',
+		position: { col: 1, row: 1, width: 8, height: 1 },
+		entries: [{ key: 'walk' }, { key: 'climb' }, { key: 'fly' }, { key: 'swim' }],
+		derived: 'value + mod.self',
+		signed: false,
+	};
+
+	function sheetOf(parts: readonly string[], definitions: readonly ModifierDefinitionView[] = []) {
+		const published: PublishedComponent[] = [
+			publishedComponent({
+				config: speed,
+				component: cardSet,
+				data: { values: { walk: '30', climb: '0', fly: '0', swim: '0' } },
+				error: null,
+			}),
+			{
+				id: 'gear',
+				values: {},
+				modifiers: () =>
+					parts.map((part, at) => ({
+						part,
+						source: 'Gear',
+						row: { label: at === 0 ? 'Ring' : `Boots ${at}`, values: { Worn: true } },
+					})),
+			},
+		];
+		const sources = [
+			modifierTargetSource(speed, cardSet),
+			{ id: 'gear', label: 'Gear', values: {} },
+		];
+		const input = sheetModifierInput(definitions, sources);
+		const env = buildSheetEnv(published, undefined, input);
+		return { env, modifiers: sheetModifiers(input, env) };
+	}
+
+	it('grants a climb with an At least, which the account explains', () => {
+		const { env, modifiers } = sheetOf(['speed.climb >= 10 when Worn']);
+		expect(env.sheet('speed.climb')).toBe(10);
+		expect(env.sheet('speed.climb.value')).toBe(0);
+		expect(modifierBreakdown(modifiers.breakdown('speed.climb'), 10)).toBe(
+			'Ring — at least +10\n\nTotal 10',
+		);
+	});
+
+	it('takes the higher of two grants, listing the lower as not applied', () => {
+		const { env, modifiers } = sheetOf(['speed.climb >= 10 when Worn', 'speed.climb >= 20 when Worn']);
+		expect(env.sheet('speed.climb')).toBe(20);
+		expect(modifiers.breakdown('speed.climb').lines.map((line) => line.suppressed)).toEqual([
+			'a higher at least applies',
+			null,
+		]);
+	});
+
+	it('gives a climb equal to a modified walk, which is no cycle', () => {
+		const { env } = sheetOf(['speed.walk += 10', 'speed.climb >= speed.walk']);
+		expect(env.sheet('speed.walk')).toBe(40);
+		expect(env.sheet('speed.climb')).toBe(40);
 	});
 });

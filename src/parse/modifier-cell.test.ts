@@ -11,6 +11,7 @@ import {
 	unspellableColumn,
 	unspellableName,
 	unspellableNote,
+	unspellableOption,
 	withoutPart,
 } from './modifier-cell';
 import { TypedEffect } from '../types';
@@ -773,5 +774,48 @@ describe('the column clause (docs/features/non-number-modifiers.md)', () => {
 		}
 		expect(unspellableColumn('Training')).toBeNull();
 		expect(unspellableColumn('Proficiency bonus')).toBeNull();
+	});
+});
+
+describe('the option literal (docs/features/text-value-modifiers.md)', () => {
+	it('parses `option: Large` in the amount\'s place, and spells it back to the same bytes', () => {
+		const text = 'size = option: Large';
+		expect(typed(text)).toEqual({ target: 'size', operator: 'override', amount: '', option: 'Large' });
+		expect(spellTypedEffect(typed(text))).toBe(text);
+	});
+
+	it('round-trips an option change with a condition and a note', () => {
+		const text = 'size = option: Large when Wild note: Beast form';
+		expect(typed(text)).toEqual({
+			target: 'size',
+			operator: 'override',
+			amount: '',
+			option: 'Large',
+			when: 'Wild',
+			note: 'Beast form',
+		});
+		expect(spellTypedEffect(typed(text))).toBe(text);
+	});
+
+	it('keeps the space inside a literal', () => {
+		expect(typed('alignment = option: Chaotic good').option).toBe('Chaotic good');
+	});
+
+	it('reads `option:` alone as an unfinished option change, and spells it back', () => {
+		expect(typed('size = option:')).toEqual({ target: 'size', operator: 'override', amount: '', option: '' });
+		expect(spellTypedEffect(typed('size = option:'))).toBe('size = option:');
+	});
+
+	it('leaves every amount without the keyword at its head as it was', () => {
+		expect(typed('armour_class += option + 1')).toEqual({ target: 'armour_class', operator: 'add', amount: 'option + 1' });
+		expect(typed('armour_class = 18').option).toBeUndefined();
+	});
+
+	it('refuses a literal a cell could not spell, and takes one it could', () => {
+		expect(unspellableOption('Size in feet')).toBe(
+			'"Size in feet" cannot be chosen from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.',
+		);
+		expect(unspellableOption('a;b')).not.toBeNull();
+		expect(unspellableOption('Chaotic good')).toBeNull();
 	});
 });

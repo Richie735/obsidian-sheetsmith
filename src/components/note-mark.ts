@@ -26,11 +26,9 @@
  * and places the parent.
  */
 
-import { setIcon } from 'obsidian';
 import { ModifierContext } from '../types';
-import { showPopover } from '../ui/popover';
+import { renderAccountDoor } from './account-door';
 import {
-	ACCOUNT_GLYPH,
 	ModifierAccount,
 	modifierAccount,
 } from './modifier-breakdown';
@@ -45,17 +43,10 @@ export const NOTE_MARK_CLASS = 'sheetsmith-note-mark';
 export const NOTE_COLUMN_CLASS = 'sheetsmith-note-column';
 export const NOTE_BANDS_CLASS = 'sheetsmith-note-bands';
 
-/** Ids for the twins, unique across every sheet this window draws. */
-let twins = 0;
-
 /**
- * Draw the note mark into `parent`: the button, then its `.sheetsmith-sr-only`
- * twin holding the whole account.
- *
- * **The twin is the Track door's spelling**: the button's `aria-describedby`
- * points at it, so the popover and what a screen reader is told are one string
- * from one builder. The button's own name is the count — `1 note`, `3 notes` —
- * because its visible mark is not words (`docs/UI.md` §6).
+ * Draw the note mark into `parent`: a door onto the whole account, named by
+ * its count — `1 note`, `3 notes` — because its visible mark is not words
+ * (`docs/UI.md` §6).
  */
 export function renderNoteMark(
 	parent: HTMLElement,
@@ -64,31 +55,11 @@ export function renderNoteMark(
 	/** How many notes it lists. */
 	count: number,
 ): HTMLButtonElement {
-	const button = parent.createEl('button', { cls: NOTE_MARK_CLASS });
-	button.type = 'button';
-	button.setAttribute('aria-label', count === 1 ? '1 note' : `${count} notes`);
-	/*
-	 * **Straight into the button, as the Track door's glyph is, and not into a
-	 * span inside it.** The button centres its children as a flex box; a span
-	 * there is a line box, and the SVG inside it is inline, so it sat on that
-	 * line's baseline with the descender's room below it — 1.5px above the
-	 * centre of the number or the ring it follows. The button's `aria-label`
-	 * names it, so the SVG needs no `aria-hidden` of its own.
-	 */
-	setIcon(button, ACCOUNT_GLYPH);
-	const twin = parent.createSpan({ cls: 'sheetsmith-sr-only', text: account });
-	twin.id = `sheetsmith-note-account-${++twins}`;
-	// The shared popover points the button at itself while it is open and puts
-	// this back when it closes, so the twin survives a press.
-	button.setAttribute('aria-describedby', twin.id);
-	button.addEventListener('click', (event) => {
-		// A press on the mark is the mark's, never the card's or the cell's that
-		// holds it: a card routes a press to its nearest field, and a computed
-		// cell opens its own popover on the same press.
-		event.stopPropagation();
-		showPopover(button, account);
-	});
-	return button;
+	return renderAccountDoor(parent, {
+		cls: NOTE_MARK_CLASS,
+		name: count === 1 ? '1 note' : `${count} notes`,
+		text: () => account,
+	}).button;
 }
 
 /**

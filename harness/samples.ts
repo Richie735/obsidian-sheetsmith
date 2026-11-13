@@ -5819,3 +5819,113 @@ export function poolGrantSamples(variant: PoolGrantVariant): Sample[] {
 		},
 	];
 }
+
+/**
+ * The layout definition the dropdowns sheet enrols in through its form: Beast
+ * shape chooses Creature type's option (`docs/features/text-value-modifiers.md`).
+ */
+export const OPTION_DEFINITIONS = [
+	{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Beast' },
+];
+
+/**
+ * Dropdowns a modifier chose (`docs/features/text-value-modifiers.md`): Size,
+ * chosen Large by the Brown bear form in play through a typed part; Creature
+ * type, chosen Beast by the layout's Beast shape, which the same form enrols;
+ * Alignment, aimed at by a worn Gear row whose literal misses on case alone, so
+ * D4 refuses it; Lifestyle, which nothing aims at, as the control; and Speed,
+ * the B pattern, a Card set whose climb the form floors.
+ */
+export function modifierOptionsSamples(): Sample[] {
+	const dropdown = (
+		id: string,
+		label: string,
+		col: number,
+		values: readonly string[],
+		stored: string,
+	): Sample => ({
+		config: {
+			id,
+			type: 'card',
+			label,
+			position: { col, row: 1, width: 3, height: 1 },
+			options: values.map((value) => ({ value })),
+			hideNote: true,
+		} as ComponentConfig,
+		body: ['```sheet', `value: ${stored}`, '```'].join('\n'),
+	});
+	return [
+		dropdown('size', 'Size', 1, ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'], 'Medium'),
+		dropdown(
+			'creature_type',
+			'Creature type',
+			4,
+			['Aberration', 'Beast', 'Celestial', 'Construct', 'Dragon', 'Elemental', 'Fey', 'Fiend', 'Giant', 'Humanoid', 'Monstrosity', 'Ooze', 'Plant', 'Undead'],
+			'Humanoid',
+		),
+		dropdown(
+			'alignment',
+			'Alignment',
+			7,
+			['Lawful good', 'Neutral good', 'Chaotic good', 'Lawful neutral', 'Neutral', 'Chaotic neutral', 'Lawful evil', 'Neutral evil', 'Chaotic evil'],
+			'Neutral good',
+		),
+		dropdown('lifestyle', 'Lifestyle', 10, ['Poor', 'Modest', 'Comfortable', 'Wealthy'], 'Modest'),
+		{
+			config: {
+				id: 'speed',
+				type: 'card-set',
+				label: 'Speed',
+				// Two units wide at fixed sizing, so its four cards sit two to a
+				// row at every width, a phone's included, rather than 3 + 1.
+				position: { col: 1, row: 2, width: 2, height: 2 },
+				sizing: 'fixed',
+				entries: [{ key: 'walk' }, { key: 'climb' }, { key: 'fly' }, { key: 'swim' }],
+				derived: 'value + mod.self',
+				signed: false,
+			} as ComponentConfig,
+			body: ['```sheet', 'walk: 30', 'climb: 0', 'fly: 0', 'swim: 0', '```'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 3, row: 2, width: 10, height: 1 },
+				rowHeader: 'Item',
+				columns: [
+					{ key: 'Worn', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+				rows: [{ label: 'Cursed amulet' }],
+			} as ComponentConfig,
+			body: [
+				'| Item | Worn | Modifiers |',
+				'| --- | --- | --- |',
+				'| Cursed amulet | yes | alignment = option: Chaotic Evil when Worn |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 1, row: 4, width: 12, height: 5 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: [
+				'### Brown bear',
+				'```sheet',
+				'Active: yes',
+				'Modifiers: size = option: Large; Beast shape; speed.walk = 40; speed.climb >= 30',
+				'```',
+			].join('\n'),
+		},
+	];
+}

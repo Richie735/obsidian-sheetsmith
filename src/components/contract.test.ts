@@ -476,6 +476,7 @@ describe('component registry', () => {
 			'column',
 			'operator',
 			'amount',
+			'option',
 			'bonusType',
 			'applies',
 			'when',

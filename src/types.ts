@@ -908,6 +908,14 @@ type ScopeEntrySource =
 				 * sheet, which reads every state as stored.
 				 */
 				state?: StateReader,
+				/**
+				 * The sheet's reader of a dropdown's chosen option
+				 * (`docs/features/text-value-modifiers.md`), for an entry declaring
+				 * `choice` whose value is built from the chosen option — a Card's
+				 * `derived`. Absent where there is no sheet, which reads every
+				 * choice as stored.
+				 */
+				choice?: ChoiceReader,
 			) => FieldValue | null | undefined;
 	  };
 
@@ -954,6 +962,36 @@ export interface StateShape {
 export type StateReader = (
 	name: string,
 	column: string | null,
+	stored: FieldValue | undefined,
+) => FieldValue | undefined;
+
+/**
+ * What a Card dropdown a modifier may choose an option of looks like: its
+ * options in list order and what a sentence calls it
+ * (`docs/features/text-value-modifiers.md`).
+ *
+ * **Only the component knows this**, `StateShape`'s argument: that a Card is a
+ * dropdown, and which options it offers, is that component's configuration.
+ */
+export interface ChoiceShape {
+	/** What a sentence calls the dropdown: the card's label, `Size`. */
+	label: string;
+	/**
+	 * Every option, in the order the layout lists them, its `label` the word the
+	 * card shows (the value where it has none). The order is only ever the order
+	 * a sentence lists them in: nothing here reads one option as above another.
+	 */
+	options: readonly { value: string; label: string }[];
+}
+
+/**
+ * A dropdown's chosen option as the sheet reads it once modifiers have had
+ * their say, or the refusal thrown as a `FormulaError`
+ * (`docs/features/text-value-modifiers.md`). `stored` is what the note holds,
+ * and comes back exactly as given wherever nothing chooses for it.
+ */
+export type ChoiceReader = (
+	name: string,
 	stored: FieldValue | undefined,
 ) => FieldValue | undefined;
 
@@ -1011,6 +1049,20 @@ export type ScopeEntry = {
 	 * `display` nor `compute`; a component declaring one implements `endGrants`.
 	 */
 	buffer?: BufferShape;
+	/**
+	 * That this entry's value is a dropdown's chosen option, which a change
+	 * carrying `option` may choose (`docs/features/text-value-modifiers.md`).
+	 * The bare name then reads the chosen option and `<name>.value` what the
+	 * note stores. Only on an entry that publishes its `value`, and in one of
+	 * two pairings: alone, with neither `display` nor `compute`, where the name
+	 * table folds it; or with `compute`, which is handed the `ChoiceReader` and
+	 * folds it itself — a Card whose `derived` reads the chosen option.
+	 *
+	 * **Reached only by a change carrying `option`** (D1), never by the target
+	 * alone, which is why it is not a `state`: every change already aimed at the
+	 * card with an amount keeps its meaning.
+	 */
+	choice?: ChoiceShape;
 } & ScopeEntrySource;
 
 /**
@@ -1331,6 +1383,17 @@ export interface ModifierDefinition {
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
 	amount?: string;
+	/**
+	 * Which of a Card dropdown's options this change chooses, by its value
+	 * (`docs/features/text-value-modifiers.md`). Absent is an ordinary change,
+	 * which is what every definition written before this existed means.
+	 *
+	 * **A literal and never an expression**: the language has no strings, so no
+	 * amount could name `Large`. It is an address the way `column` is, read by
+	 * nothing but the modifier walk, and it publishes no name. Present, the
+	 * amount is ignored, and only Sets may carry one.
+	 */
+	option?: string;
 	/** One of the layout's `modifierTypes`. Absent is untyped. */
 	bonusType?: string;
 	/**
@@ -1392,6 +1455,7 @@ export const MODIFIER_CHANGE_KEYS = [
 	'column',
 	'operator',
 	'amount',
+	'option',
 	'bonusType',
 	'applies',
 	'note',
@@ -1423,6 +1487,8 @@ export interface ModifierChange {
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
 	amount: string;
+	/** As `ModifierDefinition.option`: a dropdown's option, by its value. */
+	option?: string;
 	/** One of the layout's `modifierTypes`. Absent is untyped. */
 	bonusType?: string;
 	/**
@@ -1476,6 +1542,13 @@ export interface TypedEffect {
 	 * not blank a card while the reader is still typing.
 	 */
 	amount: string;
+	/**
+	 * As `ModifierDefinition.option`, spelled in a cell in the amount's place as
+	 * `option: Large`. Absent spells nothing, so every cell written before this
+	 * keeps its bytes; present and blank is an unfinished option change, which
+	 * keeps the address while the reader has not chosen yet.
+	 */
+	option?: string;
 	/**
 	 * One of the layout's `modifierTypes`. Absent is untyped.
 	 *
@@ -1989,6 +2062,13 @@ export interface ModifierOutcome {
 	 * points, and the words say it as `grants 10`. Absent on every other part.
 	 */
 	grant?: true;
+	/**
+	 * The dropdown this part chooses an option of, and the option it names
+	 * (`docs/features/text-value-modifiers.md`): the words then say it as `sets
+	 * to Large`, in the option's label. Absent on every other part, so such an
+	 * outcome is the object it was.
+	 */
+	choice?: { shape: ChoiceShape; option: string };
 }
 
 /**
@@ -2086,6 +2166,22 @@ export interface ModifierContext {
 		stored: string | undefined,
 		spent: Readonly<Record<string, string>>,
 	): BufferAccount | null;
+	/**
+	 * Every dropdown a modifier may choose an option of, for the form's
+	 * **Value** select's **Dropdowns** group
+	 * (`docs/features/text-value-modifiers.md`). Optional on `states`' terms,
+	 * and absent offers none.
+	 */
+	choices?: readonly ChoiceTarget[];
+	/**
+	 * What the changes choosing one dropdown's option come to, folded onto what
+	 * the note stores, or null where no change addresses it — so a dropdown
+	 * nothing chooses for draws no door, no rule and no description.
+	 *
+	 * `stored` is the note's own text for the value. Optional on `state`'s
+	 * terms, and absent answers null.
+	 */
+	choice?(name: string, stored: string | undefined): ChoiceAccount | null;
 	/**
 	 * What one part of one cell comes to on this row: **one outcome per change**
 	 * the part's modifier names, in the definition's own order.
@@ -2185,6 +2281,59 @@ export interface StateAccount {
 	 */
 	lines: readonly ModifierLine[];
 	/** The refusal, where one change could not be read; null where none was. */
+	error: string | null;
+}
+
+/**
+ * One dropdown a modifier may choose an option of, and what to show for it
+ * (`docs/features/text-value-modifiers.md`).
+ */
+export interface ChoiceTarget {
+	/** The published name a change's `target` spells. */
+	name: string;
+	/** What a picker shows: the component's label, `Size`. */
+	label: string;
+	shape: ChoiceShape;
+}
+
+/**
+ * One change listed at a dropdown, as the account words it
+ * (`docs/features/text-value-modifiers.md`). `ModifierLine`'s identifying
+ * half, with the option it chooses in place of an amount.
+ */
+export interface ChoiceLine {
+	/** The row as a reader sees it. */
+	label: string;
+	/** The component the row lives on. */
+	source: string;
+	/** The modifier, as the layout names it, or absent for one typed on the row. */
+	definition?: string;
+	/** The option's value, as the literal names it. */
+	option: string;
+	/** Null where this line applies, the reason it does not where it ties. */
+	suppressed: string | null;
+	/** The push's own `inPlay`, which the tint reads (D12). */
+	inPlay?: boolean;
+	/** The push's own `tint`, carried beside `inPlay` and never without it. */
+	tint?: TintColour;
+}
+
+/**
+ * What a dropdown comes to once the changes choosing its option are folded
+ * onto what the note stores (`docs/features/text-value-modifiers.md`).
+ *
+ * Option values throughout, the stored one as the note spells it: a stray
+ * stored value stays itself, and nothing stored is the empty string.
+ */
+export interface ChoiceAccount {
+	shape: ChoiceShape;
+	/** The value the note stores, `''` where it stores none. */
+	stored: string;
+	/** The value the card draws: the stored one, where the choice is refused. */
+	drawn: string;
+	/** Every change listed at the dropdown, in walk order. */
+	lines: readonly ChoiceLine[];
+	/** The refusal, where a change could not be read or two disagree; null where none. */
 	error: string | null;
 }
 

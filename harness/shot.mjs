@@ -3901,6 +3901,78 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&state=modifier-states',
 		size: '1500,2600',
 	},
+	/*
+	 * Dropdowns a modifier chose (`docs/features/text-value-modifiers.md`): Size
+	 * chosen Large by the Brown bear form in play, Creature type chosen Beast by
+	 * the layout's Beast shape, Alignment refused on case alone, Lifestyle with
+	 * nothing aimed at it, and the Speed set's climb floored by the form. The
+	 * door sits at the label line's end on each modified card, and the dotted
+	 * rule is under the three modified selects and not under Lifestyle's.
+	 */
+	{
+		name: 'modifier-options-light',
+		query: 'surface=sheet&theme=light&state=modifier-options',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-options-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-options',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-options-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-options',
+		size: '1400,1100',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-options-phone',
+		query: 'surface=sheet&theme=light&state=modifier-options',
+		size: '380,3200',
+		platform: 'phone',
+	},
+	// Size's door open: its own choice, the form's line, and what it draws.
+	{
+		name: 'modifier-options-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-options&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Size'%5D",
+		size: '1400,1100',
+	},
+	// Alignment's door open on D4's sentence, over the stored choice.
+	{
+		name: 'modifier-options-refused-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-options&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Alignment'%5D",
+		size: '1400,1100',
+	},
+	// Size focused by code: the stored Medium, the dotted rule still under it.
+	{
+		name: 'modifier-options-focus',
+		query:
+			"surface=sheet&theme=light&state=modifier-options&bar=off&focus=%5Bdata-sheetsmith-component%3D'size'%5D%20.sheetsmith-card-select",
+		size: '1400,1100',
+	},
+	// Brown bear's row form open on its size part: Value Size, Operator Sets,
+	// Option Large.
+	{
+		name: 'modifier-options-form',
+		query:
+			'surface=sheet&theme=light&state=modifier-options&bar=off&press=.sheetsmith-stat-block-change-glyph%20button&press=.sheetsmith-panel-line',
+		size: '1400,1100',
+	},
+	// The form tint on Size and Creature type, with one tag per placement.
+	{
+		name: 'modifier-options-tint',
+		query: 'surface=sheet&theme=light&state=modifier-options&tint=green',
+		size: '1400,1100',
+	},
+	// The editor's definitions list holding Beast shape: Value Creature type,
+	// Operator Sets, Option Beast.
+	{
+		name: 'editor-modifier-options',
+		query: 'surface=editor&theme=light&state=modifier-options',
+		size: '1500,2600',
+	},
 	{
 		name: 'sheet-text-groups-collapsed',
 		query:

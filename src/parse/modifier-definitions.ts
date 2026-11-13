@@ -36,11 +36,13 @@ import {
 	publishedTargets,
 	stateTargets,
 	bufferTargets,
+	choiceTargets,
 } from '../formula/modifier-targets';
+import { choiceShapesOf, storedChoiceFaults } from '../formula/modifier-choices';
 import { shapesOf, storedStateFault } from '../formula/modifier-states';
 import { aimsAtBuffer, BUFFER_TAKES_AT_LEAST } from '../formula/modifier-buffers';
 import { Layout } from './layout';
-import { isNoteOnly, unspellableName, unspellableNote } from './modifier-cell';
+import { isNoteOnly, isOptionChange, unspellableName, unspellableNote } from './modifier-cell';
 import { series, spelled } from './spelled';
 import {
 	contestsByValue,
@@ -177,6 +179,9 @@ export function parseModifierDefinitions(
 	// and both pickers read (`docs/features/non-number-modifiers.md`).
 	const shapes = shapesOf(stateTargets(sources));
 	const buffers = new Set(bufferTargets(sources).map((buffer) => buffer.name));
+	// The dropdowns a change may choose an option of, the walk's own derivation
+	// (`docs/features/text-value-modifiers.md`).
+	const choiceShapes = choiceShapesOf(choiceTargets(sources));
 	// Read as a shape rather than as the declared type: `parseLayout` checked that
 	// each entry is an object and nothing more, so every member here is still a
 	// free `unknown` and a hand-edited file may hold a number where a name goes.
@@ -267,6 +272,10 @@ export function parseModifierDefinitions(
 				...(column !== '' ? { column } : {}),
 				operator,
 				amount: text(one, 'amount'),
+				// Present wherever the file holds a string, blank included: a blank
+				// option is a change aimed at a dropdown and not yet given its
+				// option, which keeps its address (`text-value-modifiers.md`).
+				...(typeof one.option === 'string' ? { option: one.option.trim() } : {}),
 				...(bonusType !== '' ? { bonusType } : {}),
 				// Absent where blank, as every optional member is (PATTERNS §8). Held
 				// as written, line breaks and all: the sheet draws a break as a space,
@@ -317,6 +326,31 @@ export function parseModifierDefinitions(
 			 * Sets aimed at one is told so, in the sheet's own sentence
 			 * (`docs/features/granted-temporary-points.md` D2).
 			 */
+			/*
+			 * **A change carrying an option needs no slot either**: it is told the
+			 * faults that make it choose nothing, in the sheet's own sentences and
+			 * order — a stray, an operator, a literal naming no option — and that
+			 * an amount beside it is ignored (D3, D4, D7).
+			 */
+			if (isOptionChange(change) && target !== '') {
+				const faults =
+					storedChoiceFaults(
+						choiceShapes,
+						change,
+						`the modifier "${name}"`,
+						(one) => published.get(one) ?? one,
+					) ?? [];
+				for (const message of faults) problems.push({ definition: name, message });
+				if ((change.option ?? '') === '' && choiceShapes.has(target) && faults.length === 0) {
+					problems.push({
+						definition: name,
+						message: several
+							? `"${name}" has no option for "${target}", so that change does nothing. Choose one under Option.`
+							: `"${name}" has no option, so it changes nothing. Choose one under Option.`,
+					});
+				}
+				continue;
+			}
 			if (aimsAtBuffer(buffers, target, change.column)) {
 				if (operatorOf(change) !== 'upgrade' && !noteOnly(change)) {
 					problems.push({ definition: name, message: BUFFER_TAKES_AT_LEAST });
@@ -394,8 +428,10 @@ export function parseModifierDefinitions(
 			 */
 			if (several && target === '') continue;
 			// A note with no amount is a complete change: it moves no number, so
-			// there is no amount for it to be missing.
+			// there is no amount for it to be missing. Nor has an option change,
+			// whose literal is its amount.
 			if (noteOnly(change)) continue;
+			if (isOptionChange(change)) continue;
 			if (amount === '') {
 				problems.push({
 					definition: name,

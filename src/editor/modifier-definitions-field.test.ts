@@ -1392,3 +1392,97 @@ describe('a change that grants temporary points (docs/features/granted-temporary
 		expect(el.querySelector('optgroup')).toBeNull();
 	});
 });
+
+describe('a change that chooses a dropdown\'s option (docs/features/text-value-modifiers.md)', () => {
+	const TYPES = ['Aberration', 'Beast', 'Humanoid'];
+	const SOURCES: readonly ModifierTargetSource[] = [
+		{
+			id: 'creature_type',
+			label: 'Creature type',
+			values: { self: { value: 'Humanoid', choice: { label: 'Creature type', options: TYPES.map((value) => ({ value, label: value })) } } },
+		},
+		{ id: 'armour_class', label: 'Armour class', values: { self: { display: { field: 'derived', scope: {} } } }, formulas: ['10 + mod.self'] },
+	];
+
+	function drawn(modifiers: Declared[], sources = SOURCES): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, layout(modifiers), {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources,
+		});
+		return container;
+	}
+
+	const valueSelect = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('select[aria-label*="value"], select[aria-label*="Value"]');
+	const optionSelect = (el: HTMLElement) => el.querySelector<HTMLSelectElement>('select[aria-label*="option"]');
+
+	it('offers the dropdown under Dropdowns, Sets only, and Option in Amount\'s place', () => {
+		const el = drawn([{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Beast' }]);
+		expect(Array.from(el.querySelectorAll('optgroup')).map((group) => group.label)).toContain('Dropdowns');
+		expect(valueSelect(el)?.selectedOptions[0]?.textContent).toBe('Creature type');
+		const operator = el.querySelector<HTMLSelectElement>('select[aria-label*="perator"]');
+		expect(Array.from(operator?.options ?? []).map((one) => one.textContent)).toEqual(['Sets']);
+		expect(el.querySelector('input[aria-label*="amount"]')).toBeNull();
+		expect(Array.from(optionSelect(el)?.options ?? []).map((one) => one.textContent)).toEqual(['—', ...TYPES]);
+		expect(optionSelect(el)?.value).toBe('Beast');
+	});
+
+	it('turns a change moved onto a dropdown into a Sets with a blank option, and writes the option chosen', () => {
+		const modifiers: Declared[] = [{ name: 'Beast shape', target: 'armour_class', amount: '5' }];
+		const el = drawn(modifiers);
+		const value = valueSelect(el) as HTMLSelectElement;
+		value.value = Array.from(value.options).find((one) => one.textContent === 'Creature type')?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(modifiers[0]).toEqual({ name: 'Beast shape', target: 'creature_type', operator: 'override', option: '' });
+		const again = drawn(modifiers);
+		const picker = optionSelect(again) as HTMLSelectElement;
+		picker.value = 'Beast';
+		picker.dispatchEvent(new Event('change'));
+		expect(modifiers[0]?.option).toBe('Beast');
+	});
+
+	it('reports the operator, the literal and the stray, and nothing for a sound one', () => {
+		expect(
+			problems(
+				drawn([
+					{ name: 'Adds', target: 'creature_type', option: 'Beast' },
+					{ name: 'Floor', target: 'creature_type', operator: 'upgrade', option: 'Beast' },
+					{ name: 'Case', target: 'creature_type', operator: 'override', option: 'beast' },
+					{ name: 'Stray', target: 'armour_class', operator: 'override', option: 'Beast' },
+					{ name: 'Column', target: 'creature_type', column: 'Kind', operator: 'override', option: 'Beast' },
+					{ name: 'Both', target: 'creature_type', operator: 'override', amount: '3', option: 'Beast' },
+				]),
+			),
+		).toEqual([
+			'AddsAdds to cannot choose an option. Choose Sets.',
+			'FloorAt least cannot choose an option. Choose Sets.',
+			'Case"beast" is not an option of Creature type, so the modifier "Case" chooses nothing. Choose Aberration, Beast or Humanoid.',
+			'StrayArmour class shows no options, so this change has none to choose. Give it an amount instead.',
+			'ColumnCreature type is a dropdown, so this change needs no column. Clear it.',
+			'BothThis change has both an amount and an option, so the amount is ignored. Clear one.',
+		]);
+		expect(problems(drawn([{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Beast' }]))).toEqual([]);
+	});
+
+	it('carries a literal naming no option as a titled last line, as the sheet form does', () => {
+		const el = drawn([{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Dragon' }]);
+		const picker = optionSelect(el) as HTMLSelectElement;
+		const last = picker.options[picker.options.length - 1];
+		expect(last?.textContent).toBe('Dragon');
+		expect(last?.title).toBe("Not one of this dropdown's options. The change keeps it until something else is chosen.");
+		expect(picker.value).toBe('Dragon');
+	});
+
+	it('draws today’s groups for a layout with no dropdown', () => {
+		const el = drawn([{ name: 'Ring', target: 'armour_class', amount: '1' }], [SOURCES[1] as ModifierTargetSource]);
+		expect(el.querySelector('optgroup')).toBeNull();
+	});
+});

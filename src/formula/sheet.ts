@@ -46,6 +46,9 @@ import {
 	TypedEffect,
 	BufferAccount,
 	BufferTarget,
+	ChoiceAccount,
+	ChoiceReader,
+	ChoiceTarget,
 } from '../types';
 import {
 	FormulaError,
@@ -66,6 +69,7 @@ import {
 	publishedTargets,
 	stateTargets,
 	bufferTargets,
+	choiceTargets,
 } from './modifier-targets';
 import {
 	called,
@@ -82,6 +86,13 @@ import {
 	stateVerdict,
 } from './modifier-states';
 import { suppressionWording } from './suppression-wording';
+import {
+	ChoiceLookup,
+	choiceShapesOf,
+	choiceVerdict,
+	foldChoice,
+	NO_CHOICES,
+} from './modifier-choices';
 import {
 	aimsAtBuffer,
 	BufferLookup,
@@ -106,6 +117,7 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
+	choiceReaderFor,
 	stateReaderFor,
 } from './resolve';
 import { buildRowTable, RowComponent } from './rows';
@@ -253,6 +265,7 @@ export function buildSheetEnv(
 		rows: (id, caller) => rows(id, caller),
 		modifiers: (name) => slots(name),
 		states: (name, column) => states(name, column),
+		choices: (name) => choices(name),
 		// What the walk found, with what the note stores of the buffer beside it.
 		buffers: (name) => {
 			const result = buffers(name);
@@ -290,7 +303,7 @@ export function buildSheetEnv(
 			return { id: component.id, rows: () => source(resolve, readState) };
 		}),
 	);
-	const { slots, states, buffers } = buildModifierTables(
+	const { slots, states, buffers, choices } = buildModifierTables(
 		components.map((component): ModifierComponent => {
 			const source = component.modifiers;
 			if (source === undefined) return { id: component.id };
@@ -309,6 +322,7 @@ export function buildSheetEnv(
 		callsFrom(env),
 		shapesOf(modifiers.states ?? []),
 		new Set((modifiers.buffers ?? []).map((target) => target.name)),
+		choiceShapesOf(modifiers.choices ?? []),
 	);
 	return env;
 }
@@ -415,6 +429,12 @@ export interface SheetModifiers {
 	 * Optional on `states`' terms, and absent means none.
 	 */
 	buffers?: readonly BufferTarget[];
+	/**
+	 * Every dropdown a change may choose an option of (`choiceTargets`), which
+	 * the walk reduces apart from the slots and the form offers under
+	 * **Dropdowns**. Optional on `states`' terms, and absent means none.
+	 */
+	choices?: readonly ChoiceTarget[];
 }
 
 /** A layout with no modifiers, and the paths with no layout at all. */
@@ -429,6 +449,7 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	notable: new Set(),
 	states: [],
 	buffers: [],
+	choices: [],
 };
 
 /**
@@ -473,6 +494,7 @@ export function sheetModifierInput(
 		notable: new Set(notes.map((target) => target.name)),
 		states: stateTargets(sources),
 		buffers: bufferTargets(sources),
+		choices: choiceTargets(sources),
 	};
 }
 
@@ -764,6 +786,73 @@ export function sheetModifiers(
 			suppressed,
 		};
 	};
+	const choiceShapes = choiceShapesOf(modifiers.choices ?? []);
+	const chosen: ChoiceLookup = env.choices ?? NO_CHOICES;
+	/**
+	 * What one part comes to where it carries an option, or null where it does
+	 * not (`docs/features/text-value-modifiers.md`).
+	 *
+	 * **Each verdict is the walk's**, through `choiceVerdict` and the fold, so the
+	 * row's popup and the card's door cannot disagree about a refusal: a stray
+	 * (D7), an operator (D3), a literal naming no option (D4), and two rows
+	 * disagreeing (D5) all reach the row in the door's own sentence.
+	 */
+	const choiceOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+		row: RowValues,
+		/** The row's component, as its pushes name it. */
+		source: string,
+	): ModifierOutcome | null => {
+		const { fields } = found;
+		const verdict = choiceVerdict(choiceShapes, found, label);
+		if (verdict.kind === 'none') return null;
+		const named = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: fields.target,
+			targetLabel: label(fields.target),
+			...(verdict.kind === 'stray' || fields.option === null
+				? {}
+				: { choice: { shape: verdict.shape, option: fields.option } }),
+		};
+		const refused = (suppressed: string): ModifierOutcome => ({
+			...named,
+			applies: false,
+			amount: null,
+			condition: null,
+			suppressed,
+		});
+		if (verdict.kind === 'stray' || verdict.kind === 'refused') return refused(verdict.reason);
+		if (verdict.kind === 'quiet') {
+			// A false condition still says what the row would choose, as an
+			// inactive number says what it would add.
+			return found.kind === 'inactive'
+				? { ...named, applies: false, amount: null, condition: false, suppressed: null }
+				: null;
+		}
+		if (found.kind !== 'applies') return null;
+		const result = chosen(fields.target);
+		if (result !== null && 'error' in result) return refused(result.error);
+		const account = result === null ? null : foldChoice(result, undefined);
+		if (account !== null && account.error !== null) return refused(account.error);
+		/*
+		 * **A tie is listed as the walk lists it**: the first line naming the
+		 * option applies and the rest say another override of the same value
+		 * applies. This row's own line is the one with its component and its
+		 * label; a miss reads as applying, since nothing beat it.
+		 */
+		const first = account?.lines[0];
+		const isFirst =
+			first === undefined || (first.source === source && first.label === row.label);
+		return {
+			...named,
+			applies: isFirst,
+			amount: null,
+			condition: found.conditional ? true : null,
+			suppressed: isFirst ? null : suppressionWording('override', true, 'value'),
+		};
+	};
 	const bufferNames = new Set((modifiers.buffers ?? []).map((target) => target.name));
 	const grants: BufferLookup = env.buffers ?? NO_BUFFERS;
 	/**
@@ -854,6 +943,13 @@ export function sheetModifiers(
 			const account = foldState(result, stored);
 			return account.error === null && account.lines.length === 0 ? null : account;
 		},
+		choices: modifiers.choices ?? [],
+		choice: (name, stored): ChoiceAccount | null => {
+			const result = chosen(name);
+			if (result === null) return null;
+			const account = foldChoice(result, stored);
+			return account.error === null && account.lines.length === 0 ? null : account;
+		},
 		buffers: modifiers.buffers ?? [],
 		buffer: (name, stored, spent): BufferAccount | null => {
 			const result = grants(name);
@@ -921,6 +1017,9 @@ export function sheetModifiers(
 			// one of a definition's values may read no modifier while another does.
 			resolveEnrolments(table, part, row, calls).map((found) => {
 				if (found.kind !== 'unknown') {
+					// A dropdown's option, in the walk's words; never arithmetic.
+					const option = choiceOutcome(found, row, source);
+					if (option !== null) return option;
 					// A grant at a buffer, in the walk's words.
 					const granted = bufferOutcome(found, row, source);
 					if (granted !== null) return granted;
@@ -1086,6 +1185,8 @@ export function buildSheetScope(
 	 */
 	const readState: StateReader = (name, column, stored) =>
 		stateReaderFor(bound)(name, column, stored);
+	/** How a name built from a dropdown reads its chosen option, on the same terms. */
+	const readChoice: ChoiceReader = (name, stored) => choiceReaderFor(bound)(name, stored);
 
 	/** Every name registered below, in declaration order, for the slot pass. */
 	const published: string[] = [];
@@ -1123,7 +1224,20 @@ export function buildSheetScope(
 				// A component with no resolver of its own still computes: what
 				// it is handed is a resolver that finds no field, which is what
 				// a component declaring no formula fields would have anyway.
-				thunks.set(name, () => worth(compute(resolve ?? (() => null), readState)));
+				thunks.set(name, () =>
+					worth(compute(resolve ?? (() => null), readState, readChoice)),
+				);
+				return;
+			}
+			/*
+			 * **A dropdown's chosen option folds here**, with no component code
+			 * involved, where the entry has no `compute` of its own: the bare name
+			 * reads the chosen option and `.value`, registered above, what the note
+			 * stores (`docs/features/text-value-modifiers.md` D6). A refusal throws
+			 * with its sentence, as a refused slot does.
+			 */
+			if (entry.choice !== undefined) {
+				thunks.set(name, () => clean(readChoice(name, entry.value)));
 				return;
 			}
 			/*

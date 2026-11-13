@@ -333,6 +333,17 @@ export default defineConfig(
 								 */
 								'!./note-mark',
 								/*
+								 * **A door onto a value's read-only account**: the `info`
+								 * button, its twin and its popover, with the class, the
+								 * name and the words the caller's. Shared by the note mark,
+								 * a ring's state door and a dropdown's door, three
+								 * consumers, which is PATTERNS §1's extraction line met
+								 * exactly (`docs/features/text-value-modifiers.md`). In no
+								 * registry, declaring no `ComponentDefinition`, touching no
+								 * file, and taking only `setIcon` from `obsidian`.
+								 */
+								'!./account-door',
+								/*
 								 * **A ring a modifier set**: the drawn mapping, its words
 								 * for the stored level, the popover a press that moves
 								 * nothing on screen opens, and the door onto the account
@@ -429,6 +440,7 @@ export default defineConfig(
 								'!../components/picture-frame',
 								'!../components/ring-control',
 								'!../components/note-mark',
+								'!../components/account-door',
 								'!../components/state-ring',
 								'!../components/row-states',
 								'!../components/record-line-fit',

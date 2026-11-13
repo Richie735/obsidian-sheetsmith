@@ -29,16 +29,14 @@
  * extraction line met exactly: the drawn mapping, the description, the live
  * line and the door are one behaviour on three surfaces. It knows no caller: the
  * caller hands over the account, the door's name, where the door goes, and how
- * to announce. In no registry, declaring no `ComponentDefinition`, taking only
- * `setIcon` from `obsidian` and touching no file.
+ * to announce. In no registry, declaring no `ComponentDefinition`, taking
+ * nothing from `obsidian` — its door is `account-door.ts`'s — and touching no file.
  */
 
-import { setIcon } from 'obsidian';
 import { FieldValue, ModifierContext, StateAccount } from '../types';
 import { refold, stateKey } from '../formula/modifier-states';
-import { showPopover } from '../ui/popover';
+import { AccountDoor, renderAccountDoor } from './account-door';
 import {
-	ACCOUNT_GLYPH,
 	modifiersOnName,
 	ownNowLine,
 	stampStateHost,
@@ -90,9 +88,6 @@ export function layoutSetsStateIn(
 		definition.changes.some((change) => states.has(stateKey(change.target, change.column ?? null))),
 	);
 }
-
-/** Ids for the twins, unique across every sheet this window draws. */
-let twins = 0;
 
 /** What a caller keeps of a ring a modifier set. */
 export interface StateRing {
@@ -169,6 +164,16 @@ export interface DoorPart {
 }
 
 /**
+ * A door's account from its parts: each headed by its column's name where there
+ * is more than one, a blank line between. One spelling for a Roster row's door
+ * and a dropdown's (`card.ts`), which carry parts the same way.
+ */
+export function doorText(parts: readonly DoorPart[]): string {
+	const headed = parts.length > 1;
+	return parts.map((part) => (headed ? `${part.heading}\n${part.text()}` : part.text())).join('\n\n');
+}
+
+/**
  * Draw one door onto several accounts: a Roster row's, whose door sits at the
  * row's end and carries every ring on the row a modifier set, in column order,
  * then the row's computed accounts (`docs/features/non-number-modifiers.md`,
@@ -186,18 +191,10 @@ export function renderRowDoor(
 	parts: readonly DoorPart[],
 	place: { cls?: string; reserved?: boolean } = {},
 ): HTMLButtonElement {
-	const headed = parts.length > 1;
-	const text = () =>
-		parts.map((part) => (headed ? `${part.heading}\n${part.text()}` : part.text())).join('\n\n');
-	const { button, twin } = renderStateDoor(parent, name, text, place);
-	const describe = () => {
-		const own = sets.map((set) => set.own()).find((said) => said !== null) ?? null;
-		if (own === null) button.removeAttribute('aria-description');
-		else button.setAttribute('aria-description', own);
-		twin.textContent = text();
-	};
-	describe();
-	for (const set of sets) set.watch(describe);
+	const text = () => doorText(parts);
+	const own = () => sets.map((set) => set.own()).find((said) => said !== null) ?? null;
+	const { button, refresh } = renderStateDoor(parent, name, text, place, own);
+	for (const set of sets) set.watch(refresh);
 	return button;
 }
 
@@ -262,10 +259,9 @@ export function cellStateRing(options: {
 }
 
 /**
- * Draw the door into `parent`: the glyph button, then a `.sheetsmith-sr-only`
- * twin holding the account, which the button's `aria-describedby` points at —
- * the note mark's spelling, so the popover and what a screen reader hears are
- * one string. `name` is the whole of what a listener hears on the glyph.
+ * Draw the door into `parent`, through the one door there is
+ * (`account-door.ts`'s `renderAccountDoor`), stamping the cell where its column
+ * keeps the door's slot.
  */
 function renderStateDoor(
 	parent: HTMLElement,
@@ -280,22 +276,10 @@ function renderStateDoor(
 		 */
 		reserved?: boolean;
 	} = {},
-): { button: HTMLButtonElement; twin: HTMLElement } {
-	const button = parent.createEl('button', { cls: place.cls ?? STATE_DOOR_CLASS });
-	button.type = 'button';
-	button.setAttribute('aria-label', name);
-	setIcon(button, ACCOUNT_GLYPH);
+	description?: () => string | null,
+): AccountDoor {
 	if (place.reserved === true) parent.classList.add(STATE_CELL_CLASS);
-	const twin = parent.createSpan({ cls: 'sheetsmith-sr-only', text: text() });
-	twin.id = `sheetsmith-state-account-${++twins}`;
-	button.setAttribute('aria-describedby', twin.id);
-	button.addEventListener('click', (event) => {
-		// The door's press is the door's, never the cell's or the card's.
-		event.stopPropagation();
-		twin.textContent = text();
-		showPopover(button, text());
-	});
-	return { button, twin };
+	return renderAccountDoor(parent, { cls: place.cls ?? STATE_DOOR_CLASS, name, text, description });
 }
 
 /**

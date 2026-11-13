@@ -63,7 +63,7 @@ import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
-import { applyDecorations, bufferLinesIn, inPlayDecorations, stateLinesIn, pickTagText } from './placement-decorations';
+import { applyDecorations, bufferLinesIn, choiceLinesIn, inPlayDecorations, stateLinesIn, pickTagText } from './placement-decorations';
 import { revealWhenTruncated } from '../ui/truncation';
 import { grantEndEdits, RecordedGrants, recordedActiveGrants } from './grant-ends';
 import { readComponents } from './read-components';
@@ -761,7 +761,11 @@ export class SheetView extends TextFileView {
 			(name) => modifiers.breakdown(name),
 			// And every ring a modifier set, which needs no slot (D11), and every
 			// buffer a form in play's grant is drawing (granted-temporary-points D12).
-			[...stateLinesIn(grid, modifiers), ...bufferLinesIn(prepared, modifiers)],
+			[
+				...stateLinesIn(grid, modifiers),
+				...bufferLinesIn(prepared, modifiers),
+				...choiceLinesIn(prepared, modifiers),
+			],
 		),
 			revealWhenTruncated,
 		);

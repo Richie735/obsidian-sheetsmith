@@ -1041,3 +1041,87 @@ describe('parseModifierDefinitions: a change that sets a level or a flag', () =>
 		).toEqual([]);
 	});
 });
+
+describe('parseModifierDefinitions: a change that chooses a dropdown\'s option', () => {
+	const SIZE = {
+		label: 'Size',
+		options: ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'].map((value) => ({ value, label: value })),
+	};
+	const CHOICES: readonly ModifierTargetSource[] = [
+		{ id: 'size', label: 'Size', values: { self: { value: 'Medium', choice: SIZE } } },
+		{ id: 'speed', label: 'Speed', values: { self: { value: '30' } } },
+	];
+	const report = (modifiers: unknown[]) =>
+		parseModifierDefinitions(layout(modifiers), CHOICES).problems.map((problem) => problem.message);
+
+	it('carries `option` on a flat definition and on a `changes` entry', () => {
+		const parsed = parseModifierDefinitions(
+			layout([
+				{ name: 'Bear', target: 'size', operator: 'override', option: 'Large' },
+				{ name: 'Giant', changes: [{ target: 'size', operator: 'override', option: 'Huge' }] },
+			]),
+			CHOICES,
+		);
+		expect(parsed.definitions.map((one) => one.changes[0]?.option)).toEqual(['Large', 'Huge']);
+		expect(parsed.problems).toEqual([]);
+	});
+
+	it('round-trips a flat definition and a change carrying `option`, byte for byte', () => {
+		const flat = { name: 'Bear', target: 'size', operator: 'override', option: 'Large' };
+		const listed = { name: 'Giant', changes: [{ target: 'size', operator: 'override', option: 'Huge' }] };
+		const source = JSON.stringify({ name: 'L', components: [], modifiers: [flat, listed] });
+		expect(JSON.stringify(parseLayout(source).modifiers)).toBe(JSON.stringify([flat, listed]));
+	});
+
+	it('reports a flat `option` beside a `changes` list as ignored', () => {
+		expect(
+			report([{ name: 'Bear', option: 'Large', changes: [{ target: 'size', operator: 'override', option: 'Large' }] }]),
+		).toContain('"Bear" lists its changes, so "option" beside the list is ignored. Delete it, or delete the list.');
+	});
+
+	it('reports an amount beside an option, and reads the change as an option change (D7)', () => {
+		expect(report([{ name: 'Bear', target: 'size', operator: 'override', amount: '3', option: 'Large' }])).toEqual([
+			'This change has both an amount and an option, so the amount is ignored. Clear one.',
+		]);
+	});
+
+	it('reports the operator, the literal and the stray in the sheet\'s sentences (D3, D4, D7)', () => {
+		expect(
+			report([
+				{ name: 'Add', target: 'size', option: 'Large' },
+				{ name: 'Floor', target: 'size', operator: 'upgrade', option: 'Large' },
+				{ name: 'Case', target: 'size', operator: 'override', option: 'large' },
+				{ name: 'Stray', target: 'speed', operator: 'override', option: 'Fast' },
+			]),
+		).toEqual([
+			'Adds to cannot choose an option. Choose Sets.',
+			'At least cannot choose an option. Choose Sets.',
+			'"large" is not an option of Size, so the modifier "Case" chooses nothing. Choose Tiny, Small, Medium, Large, Huge or Gargantuan.',
+			'Speed shows no options, so this change has none to choose. Give it an amount instead.',
+		]);
+	});
+
+	it('reports an option change not yet given its option', () => {
+		expect(report([{ name: 'Bear', target: 'size', operator: 'override', option: '' }])).toEqual([
+			'"Bear" has no option, so it changes nothing. Choose one under Option.',
+		]);
+	});
+
+	it('leaves a renamed option value\'s literal as written, and reports it (D8)', () => {
+		const renamed: readonly ModifierTargetSource[] = [
+			{
+				id: 'size',
+				label: 'Size',
+				values: { self: { value: 'Medium', choice: { ...SIZE, options: SIZE.options.map((one) => (one.value === 'Large' ? { value: 'large', label: 'large' } : one)) } } },
+			},
+		];
+		const parsed = parseModifierDefinitions(
+			layout([{ name: 'Bear', target: 'size', operator: 'override', option: 'Large' }]),
+			renamed,
+		);
+		expect(parsed.definitions[0]?.changes[0]?.option).toBe('Large');
+		expect(parsed.problems.map((one) => one.message)).toEqual([
+			'"Large" is not an option of Size, so the modifier "Bear" chooses nothing. Choose Tiny, Small, Medium, large, Huge or Gargantuan.',
+		]);
+	});
+});
