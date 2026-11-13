@@ -4657,14 +4657,30 @@ export function modifierStatesSamples(variant: 'all' | 'cycle' = 'all'): Sample[
 /**
  * Cat Form as the test vault's 5e Druid layout declares it: a definition, so the
  * Roster card strip it reaches is stamped from the layout and keeps one width
- * with the form in play or not.
+ * with the form in play or not. It raises the Training of each row named:
+ * Stealth as the vault has it, and for the views that move the changed row off
+ * the card's last line, Acrobatics alone (the bottom-corner tag under untinted
+ * rows) or Acrobatics and Stealth (one tag for two rows in one card).
  */
-export const ROSTER_CARD_DEFINITIONS = [
-	{
-		name: 'Cat Form',
-		changes: [{ target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' }],
-	},
-];
+export function rosterCardDefinitions(rows: readonly string[]): {
+	name: string;
+	changes: { target: string; column: string; operator: string; amount: string }[];
+}[] {
+	return [
+		{
+			name: 'Cat Form',
+			changes: rows.map((row) => ({ target: `abilities.${row}`, column: 'Training', operator: 'upgrade', amount: '1' })),
+		},
+	];
+}
+
+/** Which rows of the Dexterity card each Roster card state's Cat Form changes. */
+export const ROSTER_CARD_FORM_ROWS = {
+	'modifier-states-roster-card': ['stealth'],
+	'modifier-states-roster-band': ['stealth'],
+	'modifier-states-roster-card-middle': ['acrobatics'],
+	'modifier-states-roster-card-two': ['acrobatics', 'stealth'],
+} as const;
 
 /**
  * The Druid's Dexterity card in small, as the test vault draws it: a Roster in
@@ -4673,17 +4689,24 @@ export const ROSTER_CARD_DEFINITIONS = [
  * the stored Untrained under a pushed Proficient — and a note at
  * Acrobatics, so a door sits after a number in the same narrow card
  * (`docs/features/non-number-modifiers.md`).
+ *
+ * `band` draws the same Roster as one table in a placement two columns wide,
+ * so its name cells are as narrow as a card's. Stealth's tag stays in its name
+ * cell there and covers the label: a known gap, `docs/BACKLOG.md`'s row on a
+ * tag over a name cell with no room set aside, which `measure-form-tag.mjs`
+ * reports without failing.
  */
-export function rosterCardStateSamples(): Sample[] {
+export function rosterCardStateSamples(layout: 'cards' | 'band' = 'cards'): Sample[] {
+	const band = layout === 'band';
 	return [
 		{
 			config: {
 				id: 'abilities',
 				type: 'roster',
 				label: 'Abilities',
-				position: { col: 1, row: 1, width: 4, height: 6 },
+				position: { col: 1, row: 1, width: band ? 2 : 4, height: 6 },
 				hideLabel: true,
-				cardLayout: true,
+				cardLayout: !band,
 				hideColumnHeadings: true,
 				signed: true,
 				stats: [

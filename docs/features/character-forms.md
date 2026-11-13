@@ -596,9 +596,21 @@ line is reserved for it — a box is the same size with the form on as off:
     corner**: the pill comes first in reading order, and the row carries only
     its tint.
   - **Row first** — a form that pushes a row and no score before it — **the tag
-    stays in that row's name cell**, the Table rule, as today (the owner's
-    decision: on the card's corner a row-only change would put the tag beside
-    an untinted score, and read as the score having moved).
+    rides the card's bottom corner, opposite the score** (amended 2026-11-13,
+    the owner's ruling). It had stayed in that row's name cell, the Table rule,
+    but a card's name cell is as narrow as the card, so the tag laid over its
+    inline end covered the label: Cat Form setting Stealth's ring in the
+    Druid's Dexterity card read "Stea[Cat Form]", 22px of the label covered at
+    the default size and 23px at Text 20 in a 700px sheet, where the card is
+    its 235px floor wide. **This keeps the rule this bullet was written for**:
+    the concern was a row-only change
+    reading as the score having moved, and the bottom corner is the card's end
+    away from the score, so it cannot; the tinted row still says which row
+    changed. **A requirement, not a placement detail: a row's tag never goes on
+    the corner beside the score.** `styles.test.ts` ("never moves a card's tag
+    to the top") holds that no rule lifts a card's tag there, and
+    `harness/measure-form-tag.mjs` measures the tag below the score pill
+    (`score`) on a last row, a middle row and two rows of one card.
   - **Not on the pill**: the pill is about 4em of score and its padding,
     narrower than the tag's 12ch, and its bottom padding is 2px where the tag's
     geometry puts a card's 10px inside, so the tag would cover the score and,
@@ -606,10 +618,12 @@ line is reserved for it — a box is the same size with the form on as off:
   - **The carrier is stamped, not inferred and not `:has()`**:
     `stampModifiedHost` takes a fourth argument, `tagBox`, written as
     `data-sheetsmith-tag-box` and declared beside `data-sheetsmith-box` in
-    `modifier-breakdown.ts`, so the one route to the mark stays one. Roster
-    passes the card for its score and its reading. The pass puts the tag on a
-    first box that is a row in its name cell, and otherwise on
-    `first.closest('[data-sheetsmith-tag-box]') ?? first`.
+    `modifier-breakdown.ts`, so the route to the mark stays in one module.
+    Roster passes the card for its score and its reading, and stamps it for a
+    row once the row is drawn and stamped as a box through `stampRowTagBox`
+    (2026-11-13), the one other writer of the attribute and in the same
+    module. The pass puts the tag on what the component named, inside the first box or
+    holding it, then on a row's name cell, and otherwise on the box itself.
   - **No stylesheet rule is added**, `container-type` included: the tag takes a
     card's existing placement, its room already reserved; `pickTagText` reads
     the card's own surface, which wears no tint layer; the pill takes
@@ -622,7 +636,10 @@ line is reserved for it — a box is the same size with the form on as off:
   between the name and the numbers that the name cell takes by design. A name
   long enough to fill its cell runs under it. A Roster's table layout keeps
   this rule for its rows; its band head has no name cell and takes the bullet
-  below.
+  below. A Roster card's rows no longer take it (2026-11-13, "Row first"
+  above). In a narrow placement the name cell has no slack and the tag covers
+  the label, in a Table and a Roster table alike: `docs/BACKLOG.md`'s row on a
+  tag over a name cell with no room set aside, which wants a respec.
 - **A Roster's band head** (amended after the owner found it on 2026-11-11, in
   a table-layout Roster on a copy of the 5e druid layout, and again after the
   design review): **the tag rides the inline start of the band's second line,
@@ -1144,8 +1161,10 @@ tag after the owner's review of the build)
       its name and the card as its box; a computed row's box is still its `tr`;
       in the table layout the score's box is still the band's `tr` (*marks the
       value field and names the row*, unchanged). The card carries
-      `data-sheetsmith-tag-box`, written through `stampModifiedHost`'s `tagBox`
-      and no other path (the `isolation.test.ts` scan).
+      `data-sheetsmith-tag-box`, written through `stampModifiedHost`'s `tagBox`,
+      or for a row through `stampRowTagBox` (2026-11-13), both in
+      `modifier-breakdown.ts` and no other module (the `isolation.test.ts`
+      scan).
 - [ ] `view/placement-decorations.test.ts`, on a card-layout Roster with a
       form pushing at one stat's score and at that card's last row, and at a
       second stat's score alone: the two pills and the row carry
@@ -1154,7 +1173,8 @@ tag after the owner's review of the build)
       the one tag** (one tag, at the card's corner, with the row tinted and
       untagged), and neither pill nor the second card a tag. A form pushing only
       at a score tags that score's card; a form pushing only at a row tags that
-      row's name cell. A Roster with no `effective`, whose push moves only the
+      row's card at its bottom corner (amended 2026-11-13; it was the row's name
+      cell). A Roster with no `effective`, whose push moves only the
       reading, tints the card, as today.
 - [ ] A test pins the `=` claim under "Deliberately not doing": an `=` push on
       a Roster stat with `effective` declared moves the reading and not the
@@ -1436,11 +1456,15 @@ Items for `/release` to carry, recorded here so they are not re-derived:
   - **A box for a `hideValue` card's reading.** That card keeps the card as its
     box, as today; its reading has no chrome to fill, and giving it some is a
     new surface.
-  - **Moving a tinted row's tag on a Roster card to the card's corner**, so a
-    card had one place for its tag whatever was tinted. The owner's decision:
-    a row's tag stays in its name cell, as a Table's does, because on the
-    card's corner a row-only change would put the tag beside an untinted score
-    and read as the score having moved.
+  - **A tinted row's tag on a Roster card's corner beside the score** (its top
+    corner). First recorded as moving a row's tag to the card's corner at all,
+    so a card had one place for its tag whatever was tinted, and ruled out by
+    the owner: a row's tag stayed in its name cell, as a Table's does, because
+    on the card's corner a row-only change would put the tag beside an
+    untinted score and read as the score having moved. Since 2026-11-13 the
+    row's tag takes the card's bottom corner, opposite the score ("Row
+    first"), which that reason does not reach; the corner beside the score is
+    what stays ruled out.
   - **A card-layout Roster with no `effective`, where a push moves only the
     reading**: the card is still tinted whole. Fixing it needs a box that does
     not contain its value, which means changing the shared box lookup Card,
@@ -1462,8 +1486,10 @@ Items for `/release` to carry, recorded here so they are not re-derived:
     Roster's table layout** beyond its band head's tag (below).
 - **From the band-head amendment**:
   - **A Roster card's score pill and its tag at the card's corner, and a table
-    row's tag in its name cell**: unchanged; the pass's look-down reaches a
-    `tr` with no row name alone.
+    row's tag in its name cell**: unchanged. Since 2026-11-13 every row looks
+    for a carrier its component named, down into the row (a band's tag line)
+    and then up (a Roster card holding it), and only a row with neither takes
+    its name cell, which is a Table's row and a Roster table's.
   - **A wrapper round a band head's name**, which a tag beside the name's text
     would need; the card layout draws the same heading.
   - **A Stat block without a picker taking a reading face, the layout canvas

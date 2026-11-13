@@ -741,6 +741,42 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		return el;
 	}
 
+	/** Two stat cards, each with a row whose Total publishes, and no `effective`, so only a row can be a box. */
+	const rowCards = (base: RosterConfig): RosterConfig => {
+		const { effective: _effective, ...rest } = base;
+		return {
+			...rest,
+			cardLayout: true,
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+			],
+			columns: [{ key: 'Total', type: 'computed', formula: 'stat + mod.self', publish: true }],
+		};
+	};
+	const cardsIn = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-card'));
+
+	it('names the card holding a pushed row as what carries its tag, never as a box, and no other card', () => {
+		const el = drawn(rowCards, 'abilities.stealth += 2 as item');
+		const [strength, dexterity] = cardsIn(el);
+		expect(dexterity?.querySelector('tr[data-sheetsmith-box]')).not.toBeNull();
+		expect(dexterity?.hasAttribute('data-sheetsmith-tag-box')).toBe(true);
+		expect(dexterity?.hasAttribute('data-sheetsmith-box')).toBe(false);
+		expect(strength?.hasAttribute('data-sheetsmith-tag-box')).toBe(false);
+		expect(strength?.hasAttribute('data-sheetsmith-box')).toBe(false);
+	});
+
+	it('names no card as a carrier where nothing reached any of its rows', () => {
+		const el = drawn(rowCards, 'elsewhere += 1');
+		expect(cardsIn(el)).toHaveLength(2);
+		expect(el.querySelector('[data-sheetsmith-box]')).toBeNull();
+		expect(el.querySelector('[data-sheetsmith-tag-box]')).toBeNull();
+	});
+
 	it('names its score pill as the box in the card layout, and the card as what carries the tag', () => {
 		const el = drawn((base) => ({ ...base, cardLayout: true, derived: 'mod(value + mod.self)' }));
 		const card = el.querySelector<HTMLElement>('.sheetsmith-card');

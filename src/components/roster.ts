@@ -61,7 +61,13 @@ import { effectiveReading, sameNumber } from './effective-value';
 import { fencedLinkRefusal } from './fenced-link';
 import { levelCount, levelName, levelOf } from './level-ring';
 import { paintLinkedText } from './linked-text';
-import { ModifierAccount, modifierAccount, modifiersOnName, stampModifiedHost } from './modifier-breakdown';
+import {
+	ModifierAccount,
+	modifierAccount,
+	modifiersOnName,
+	stampModifiedHost,
+	stampRowTagBox,
+} from './modifier-breakdown';
 import { notesAt, renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
 import {
@@ -1810,6 +1816,11 @@ function renderCards(
 		const body = grid.createEl('tbody');
 		rowsOfStat.forEach((view, index) => {
 			const tr = drawRow(body, config, data, view, order, context, status, statReading);
+			// The card carries a row's tag at its bottom corner, opposite the
+			// score: the row's name cell is as narrow as the card, and a tag laid
+			// over it covered the label (`docs/features/character-forms.md`,
+			// "Row first").
+			stampRowTagBox(tr, card);
 			// Suppressed on the card's own last row: a rule under nothing is
 			// against the card's own bottom edge, not a division between two
 			// things — the table's own last-row rule, read one level up.
