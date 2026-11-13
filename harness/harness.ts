@@ -38,7 +38,7 @@ import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
-import { applyDecorations, bufferLinesIn, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
+import { applyDecorations, bufferLinesIn, choiceLinesIn, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
 import { revealWhenTruncated } from '../src/ui/truncation';
 import { closePopover } from '../src/ui/popover';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
@@ -79,6 +79,8 @@ import {
 	poolGrantSamples,
 	PoolGrantVariant,
 	POOL_GRANT_VARIANTS,
+	modifierOptionsSamples,
+	OPTION_DEFINITIONS,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { installStandInRenderer } from './stand-in-markdown';
@@ -128,6 +130,7 @@ type StateName =
 	| 'modifier-states'
 	| 'modifier-states-cycle'
 	| 'modifier-states-roster-card'
+	| 'modifier-options'
 	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
@@ -205,6 +208,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'modifier-states') return modifierStatesSamples('all');
 	if (name === 'modifier-states-cycle') return modifierStatesSamples('cycle');
 	if (name === 'modifier-states-roster-card') return rosterCardStateSamples();
+	if (name === 'modifier-options') return modifierOptionsSamples();
 	if (name.startsWith('pool-grant-')) {
 		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
 	}
@@ -234,6 +238,14 @@ function layoutFor(name: StateName): Layout {
 		return {
 			...built,
 			modifiers: [...STATE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+		};
+	}
+	// The dropdowns sheet's form enrols in Beast shape, which goes ahead of the
+	// layout's own so the editor opens on a change choosing an option.
+	if (name === 'modifier-options') {
+		return {
+			...built,
+			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
 		};
 	}
 	if (name === 'modifier-states-roster-card') {
@@ -711,7 +723,7 @@ function renderSheet(into: HTMLElement): void {
 			(name) => modifiers.breakdown(name),
 			// And every ring a modifier set, which needs no slot (D11), and every
 			// buffer a form in play's grant is drawing.
-			[...stateLinesIn(grid, modifiers), ...bufferLinesIn(live, modifiers)],
+			[...stateLinesIn(grid, modifiers), ...bufferLinesIn(live, modifiers), ...choiceLinesIn(live, modifiers)],
 		),
 		revealWhenTruncated,
 	);
@@ -1113,6 +1125,7 @@ function applyQuery(): void {
 			wanted === 'modifier-states' ||
 			wanted === 'modifier-states-cycle' ||
 			wanted === 'modifier-states-roster-card' ||
+			wanted === 'modifier-options' ||
 			POOL_GRANT_STATES.includes(wanted ?? '')
 			? (wanted as StateName)
 			: 'populated',
