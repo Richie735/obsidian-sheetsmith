@@ -1104,6 +1104,8 @@ describe('the changes list', () => {
 			'abilities.STR': 'Abilities · STR',
 			'abilities.DEX': 'Abilities · DEX',
 			'skills.perception': 'Skills · Perception',
+			'speed.walk': 'Speed · walk',
+			'speed.climb': 'Speed · climb',
 			armour_class: 'Armour class',
 		};
 		return {
@@ -1173,6 +1175,17 @@ describe('the changes list', () => {
 		expect(lines(el).join(' ')).not.toContain('Armour class');
 		// An `=` on one entry of a set, and an at-least, stay in the list.
 		expect(lines(el)).toEqual(['STR sets to 4', 'Perception at least 3']);
+	});
+
+	it('reads a Sets and an At least on a sub-entry unsigned, so neither reads as an add', () => {
+		// Walk's own value may be a total (30 under a Walk of 40): a signed `+40`
+		// reads as 70, so a set says the word and a floor carries no sign.
+		const body = BODY.replace(
+			'Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3',
+			'Modifiers: speed.walk = 40; speed.climb >= 30',
+		);
+		const { el } = render(body, {}, { modifiers: labelled() });
+		expect(lines(el)).toEqual(['walk sets to 40 · climb at least 30']);
 	});
 
 	it('reads an option change as a vital tile in the option\'s label, and keeps a refused one in the list with its reason', () => {
