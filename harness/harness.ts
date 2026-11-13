@@ -75,7 +75,8 @@ import {
 	modifierStatesSamples,
 	rosterCardStateSamples,
 	STATE_DEFINITIONS,
-	ROSTER_CARD_DEFINITIONS,
+	ROSTER_CARD_FORM_ROWS,
+	rosterCardDefinitions,
 	poolGrantSamples,
 	PoolGrantVariant,
 	POOL_GRANT_VARIANTS,
@@ -130,6 +131,9 @@ type StateName =
 	| 'modifier-states'
 	| 'modifier-states-cycle'
 	| 'modifier-states-roster-card'
+	| 'modifier-states-roster-band'
+	| 'modifier-states-roster-card-middle'
+	| 'modifier-states-roster-card-two'
 	| 'modifier-options'
 	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
@@ -208,6 +212,10 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'modifier-states') return modifierStatesSamples('all');
 	if (name === 'modifier-states-cycle') return modifierStatesSamples('cycle');
 	if (name === 'modifier-states-roster-card') return rosterCardStateSamples();
+	if (name === 'modifier-states-roster-band') return rosterCardStateSamples('band');
+	if (name === 'modifier-states-roster-card-middle' || name === 'modifier-states-roster-card-two') {
+		return rosterCardStateSamples();
+	}
 	if (name === 'modifier-options') return modifierOptionsSamples();
 	if (name.startsWith('pool-grant-')) {
 		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
@@ -248,10 +256,11 @@ function layoutFor(name: StateName): Layout {
 			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
 		};
 	}
-	if (name === 'modifier-states-roster-card') {
+	if (name in ROSTER_CARD_FORM_ROWS) {
+		const rows = ROSTER_CARD_FORM_ROWS[name as keyof typeof ROSTER_CARD_FORM_ROWS];
 		return {
 			...built,
-			modifiers: [...ROSTER_CARD_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+			modifiers: [...rosterCardDefinitions(rows), ...(built.modifiers ?? [])] as Layout['modifiers'],
 		};
 	}
 	if (name !== 'notes') return built;
@@ -1125,6 +1134,9 @@ function applyQuery(): void {
 			wanted === 'modifier-states' ||
 			wanted === 'modifier-states-cycle' ||
 			wanted === 'modifier-states-roster-card' ||
+			wanted === 'modifier-states-roster-band' ||
+			wanted === 'modifier-states-roster-card-middle' ||
+			wanted === 'modifier-states-roster-card-two' ||
 			wanted === 'modifier-options' ||
 			POOL_GRANT_STATES.includes(wanted ?? '')
 			? (wanted as StateName)

@@ -3825,6 +3825,106 @@ export const DEFAULTS = [
 		flags: ['--force-high-contrast'],
 	},
 	/*
+	 * The card's bottom-corner tag for a row that is not the card's last:
+	 * Cat Form raising Acrobatics, a middle row, and then Acrobatics with
+	 * Stealth, two rows and one tag, so a review can judge whether the tag
+	 * still reads as the changed row's (`docs/features/character-forms.md`,
+	 * "Row first"). Every Text size the harness stages and a phone.
+	 */
+	{
+		name: 'modifier-states-roster-card-middle-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-phone-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-phone-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
+	 * Text 20 in a 700px frame, which keeps each card at its 235px floor
+	 * where the 1400 frame's Text 20 cards are about 450px wide and give the
+	 * name cell slack: the width at which Stealth's tag covered 23px of its
+	 * label (`measure-form-tag.mjs`'s Text 20 at 700 run). The cards stack one
+	 * to a line here too; what this frame holds is their narrow width.
+	 */
+	{
+		name: 'modifier-states-roster-card-text-20-700-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&text=20&width=700',
+		size: '700,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-text-20-700-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off&text=20&width=700',
+		size: '700,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-text-20-700-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off&text=20&width=700',
+		size: '700,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
+	 * The same Roster as one table two columns wide, Cat Form on Stealth's
+	 * ring: the row's name cell has no slack and the tag, which stays there,
+	 * covers the label. A known gap (`docs/BACKLOG.md`, "A form's tag covers a
+	 * name in a Table's or a Roster table's row"), shot so it stays seen.
+	 */
+	{
+		name: 'modifier-states-roster-band-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-band-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
 	 * Stealth's door opened under Cat Form, stored Untrained (the test vault's
 	 * Thorne): the account opens on `Your own: Untrained`, then the line and the
 	 * drawn state.
