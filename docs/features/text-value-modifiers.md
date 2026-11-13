@@ -75,7 +75,7 @@ are what the pattern below says:
 
 - **The entry's formula has to be `derived: value + mod.self`.** With it, the
   pattern works. `speed.climb >= 10` draws 10 over a stored 0, and the entry's
-  account reads `Ring — at least +10`, then `Total 10`. The published
+  account reads `Ring — at least 10`, then `Total 10`. The published
   `speed.climb` is 10. Two grants of 10 and 20 give 20, and the 10's line reads
   `(not applied: a higher at least applies)`. `speed.walk += 10;
   speed.climb >= speed.walk` gives a walk of 40 and a climb of 40. A climb that
@@ -89,7 +89,7 @@ are what the pattern below says:
 - **An entry left blank does not take the grant.** When `climb` stores nothing,
   the derived draws `—` (§4.2's rule that a formula reading an empty `value` is
   blank), `speed.climb` does not resolve, and a formula reading it draws `?`.
-  **The account under that `—` still says `Ring — at least +10`, then `Total
+  **The account under that `—` still says `Ring — at least 10`, then `Total
   0`**, which contradicts the face. So the pattern needs **0 stored for each
   movement type the character does not have**. The contradictory account is a
   defect in a surface that already exists, and this spec does not fix it. It goes
@@ -806,7 +806,7 @@ The harness and the vault:
            to the modified walk. Turn off Boots of speed, and Climb follows the
            walk down to 30.
         3. Turn the Blank climb row's Worn on. Blank's climb draws `—`, and its
-           account reads `at least +30`, then `Total 0`. That is the defect the
+           account reads `at least 30`, then `Total 0`. That is the defect the
            BACKLOG row records. Store `climb: 0` and it draws 30.
 - [x] `npm run lint` (0 warnings), `npm test`, `npm run build`, `npm run harness`
       and `npm run harness:shot` pass.

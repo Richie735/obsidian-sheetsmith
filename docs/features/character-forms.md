@@ -252,18 +252,19 @@ Items 3 to 6 are the default order; a layout reorders and re-heads them with
    label for a bare one — published names have no labels of their own yet (the
    owner deferred that contract change; it is a BACKLOG row at land):
    - a named entry is its key and its outcome, grouped under its component:
-     *STR +4 · DEX +0 · CON +3*;
+     *STR sets to 4 · DEX sets to 0 · CON sets to 3*;
    - a bare component is its label — though an `=` on one is a vital (item 3), so
      the list holds a bare label only for an addition or an at least;
-   - a set number is signed on a named entry and plain on a bare one, on the
-     reading that an entry of a set is a modifier and a component's own number a
-     total; an addition and an at least keep the outcome's own words (*item +2*,
-     *at least +3*);
+   - every change keeps the outcome's own words, the ones the breakdown, the
+     title and the accessible name say (*sets to 4*, *item +2*, *at least 3*): a
+     set and an at least are unsigned, since a sign reads as an add and a
+     target's own number may be a total (`docs/UI.md` §9; this replaced signing
+     a set on a named entry, which drew *walk +40* over a walk of 30);
    - a part that is not applying — an at least the number is already past — is
      drawn muted, and the list states the reason in words beside it, *(already
      higher)*, so it is never colour alone; the breakdown says it too.
-   In the harness sample Brown Bear's lines read *STR +4 · DEX +0 · CON +3*,
-   *perception at least +3 (already higher) · stealth at least +3* and *CON +5*
+   In the harness sample Brown Bear's lines read *STR sets to 4 · DEX sets to 0 · CON sets to 3*,
+   *perception at least 3 (already higher) · stealth at least 3* and *CON sets to 5*
    (its Constitution save), its armour class a
    tile. Where every change a field makes is a tile, the section keeps
    its heading and glyph and draws no *No changes*. **Where it
@@ -271,7 +272,9 @@ Items 3 to 6 are the default order; a layout reorders and re-heads them with
    *Perception at least +3*): the bare label is the component's whole label,
    *Armour class* rather than *AC*, and a Table row is its key, lower case,
    *perception* rather than *Perception*, because the row's label is not
-   published. Both close with the deferred labels. A value the character's sheet
+   published. Both close with the deferred labels. Where it differs by
+   decision rather than falling short, a set or an at least reads unsigned, by
+   `docs/UI.md` §9's ruling. A value the character's sheet
    does not take a modifier for — speed, in the 5e starter — is a `text` or
    `number` field of the form instead, and changes nothing outside the panel.
 5. **The actions**, where `actions` declares columns: a section headed
@@ -762,7 +765,7 @@ form's values alone, as scoped above (the docs commit below).
 **The breakdown stays the detail behind it.** Its lines already carry the row's
 label, so a line from a form names the form — *Brown Bear — sets to 4* — and the
 press on the number is unchanged. An at least that did not raise the number is
-listed with its reason, *Brown Bear — at least +3 (not applied: already
+listed with its reason, *Brown Bear — at least 3 (not applied: already
 higher)*, which is the
 "own, higher" of the sketch, stated where the stacking rule's other reasons
 already are, and that value stays untinted.
@@ -1148,7 +1151,7 @@ label that a Record set wrote reads as records with no preamble fence, which is
       for it; forced colors rules a tinted row at both ends as well as top and
       bottom.
 - [x] A breakdown line from a form names the form, and an unraised at least reads
-      *Brown Bear — at least +3 (not applied: already higher)*.
+      *Brown Bear — at least 3 (not applied: already higher)*.
 
 **The tint on a Roster card** (amended after the owner's 5e druid test, and its
 tag after the owner's review of the build)
@@ -1319,7 +1322,7 @@ repository by `AGENTS.md`'s rule, so the recipe is here:
       armour class tinted with **Brown Bear**, speed showing the druid's 30 untinted
       while the panel reads *40 ft., climb 30 ft.*, initiative's item bonus
       drawing the underline alone, Perception untinted
-      with *Brown Bear — at least +3 (not applied: already higher)* in its
+      with *Brown Bear — at least 3 (not applied: already higher)* in its
       breakdown (own 6 against at least 3), and
       Athletics moved by the new STR but untinted; choose **Wolf** and watch the
       tint leave STR, CON and armour class, and DEX and Stealth (own 2

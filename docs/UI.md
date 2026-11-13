@@ -1238,6 +1238,21 @@ Forcing the identifying half to one shape would put four tokens on every line
 where the reader needs two, and the token it added would be the one they are
 already looking at.
 
+**An add is signed; a set and an at least are not, on every surface**
+[judgement]. An add reads `item +2`; a set reads `sets to 40` and an at least
+reads `at least 30` — on a breakdown line, a row's popup and `title`, an
+accessible name, a Stat block's form list and a Card set's breakdown alike, since
+all of them take the outcome from the one helper. A set or a floor is a value the
+number becomes, not an amount added to it, and a sign on one reads as an add: a
+form list once drew `walk +40` under a Walk of 40 whose own value is 30, which a
+reader summed to 70. Signing by target was the reasoning it replaced, on the
+argument that an entry of a set is a modifier and a component's own number a
+total; but a target's own number may be a total either way, as Walk's is, and
+the published name carries no sign to read instead. A level or flag already read
+this way, `at least Proficient`. **A Stat block's vitals strip is a different
+surface**: a tile shows the number a set leaves, bare, because the tile is the
+value rather than a line about a change.
+
 **Where the formula transforms the slot, the total states the push and then what
 it did** [judgement]. `count: 'floor((3 + mod.self) / 2)'` with a `+2` draws one
 granted segment, so `Total +2` alone states one push at two magnitudes on one

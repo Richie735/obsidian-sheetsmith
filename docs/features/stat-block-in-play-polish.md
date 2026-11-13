@@ -158,7 +158,7 @@ left* (character-forms.md, kept as it is).
     dash: a brief tells one form from another, and `Speed —` says nothing.
     **In play's own tiles keep their spacing**: only the brief's face changes;
   - **the changes as one line in In play's wording**, every change that is not
-    a tile, ` · ` between (`STR +4 · DEX +0 · CON +3 · stealth at least +3`),
+    a tile, ` · ` between (`STR sets to 4 · DEX sets to 0 · CON sets to 3 · stealth at least 3`),
     `--font-ui-smaller` muted and clamped to two lines with an ellipsis, in the
     prefixed form Chromium draws the ellipsis for (`display: -webkit-box`,
     `-webkit-box-orient: vertical`, `-webkit-line-clamp: 2`, `overflow: hidden`)
