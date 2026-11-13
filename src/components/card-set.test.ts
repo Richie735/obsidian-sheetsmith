@@ -1035,7 +1035,7 @@ describe('cardSet: a speed grant on an entry', () => {
 		expect(env.sheet('speed.climb')).toBe(10);
 		expect(env.sheet('speed.climb.value')).toBe(0);
 		expect(modifierBreakdown(modifiers.breakdown('speed.climb'), 10)).toBe(
-			'Ring — at least +10\n\nTotal 10',
+			'Ring — at least 10\n\nTotal 10',
 		);
 	});
 

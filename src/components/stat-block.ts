@@ -2347,10 +2347,11 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 
 		/**
 		 * A modifier field as compact items grouped by the component each reaches —
-		 * `STR +4 · DEX +0 · CON +3`, `Armour class 11` — under a heading that is
-		 * the field's own name, with the glyph that edits them beside it. The
-		 * heading is the glyph's visible label: its accessible name, `Brown Bear
-		 * Modifiers: …`, contains it, so a voice command naming it reaches it.
+		 * `STR sets to 4 · DEX sets to 0`, `Perception at least 3` — under a
+		 * heading that is the field's own name, with the glyph that edits them
+		 * beside it. The heading is the glyph's visible label: its accessible
+		 * name, `Brown Bear Modifiers: …`, contains it, so a voice command naming
+		 * it reaches it.
 		 */
 		function drawPlayChanges(
 			into: HTMLElement,
@@ -2479,26 +2480,23 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 };
 
 /**
- * A number as a modifier reads, signed: `6` reads `+6` and `0` reads `+0`, the
- * way a 5e sheet prints a modifier of nothing. Text that is not a number, or
- * already carries a sign, is left as written.
- */
-function signedText(text: string): string {
-	const value = Number(text);
-	if (text.trim() === '' || !Number.isFinite(value) || /^[+-]/.test(text)) return text;
-	return value >= 0 ? `+${text}` : text;
-}
-
-/**
  * One change as a compact item, and the component it is grouped under.
  *
  * The target's published label is `Abilities · STR` for a component's named
  * entry and `Armour class` for a bare one, which is all the sheet publishes:
  * a named entry is drawn by its key and grouped under its component, a bare
- * one by its label. **A set number is signed for a named entry and plain for a
- * bare one** — `STR +4`, `Armour class 11` — on the reading that an entry of a
- * set is a modifier and a component's own number is a total; the published
- * name carries no sign of its own to read instead.
+ * one by its label.
+ *
+ * **What it says is `outcomeWords`, on every operator**, so the list's words are
+ * the cell title's, the popover's and the accessible name's: `STR sets to 4`,
+ * `walk sets to 40`, `climb at least 30`, `STR item +2`. A set and an at least
+ * are unsigned because they are a value the number becomes, not an amount added
+ * to it, and a sign reads as one: `walk +40` under a Walk of 40 whose own value
+ * is 30 read as 70. Signing a set aimed at a named entry, on the reading that an
+ * entry of a set is a modifier and a component's own number a total, is the
+ * rule this replaced — a target's own number may be a total either way, as
+ * Walk's is, and the published name carries no sign to read instead
+ * (`docs/UI.md` §9).
  */
 function compactChange(
 	part: string,
@@ -2508,13 +2506,7 @@ function compactChange(
 	const at = outcome.targetLabel.indexOf(' · ');
 	const group = at < 0 ? outcome.targetLabel : outcome.targetLabel.slice(0, at);
 	const lead = at < 0 ? outcome.targetLabel : outcome.targetLabel.slice(at + 3);
-	const operator = outcome.change?.operator ?? outcome.typed?.operator ?? 'add';
-	const said =
-		operator === 'override' && outcome.amount !== null
-			? at < 0
-				? String(outcome.amount)
-				: signedText(String(outcome.amount))
-			: outcomeWords(outcome);
+	const said = outcomeWords(outcome);
 	// A grant leads with the buffer's whole label, `HP · temp grants 10`: its
 	// short half names no pool, and two pools' temporary points would read alike
 	// (`docs/features/granted-temporary-points.md`).
@@ -2534,7 +2526,7 @@ interface FormChange {
 	group: string;
 	/** The target's published label, which heads it in the strip. */
 	label: string;
-	/** What it says: `STR +4` in the list, the bare number in the strip. */
+	/** What it says: `STR sets to 4` in the list, the bare number in the strip. */
 	text: string;
 	applies: boolean;
 	/** Why it is not applying, in words, or null. */
@@ -2630,7 +2622,10 @@ function numberReading(field: RecordField, raw: string): { value: string; ceilin
 	return { value: entry.value.trim(), ceiling };
 }
 
-/** What a change says, with why it is not applying where it is not: `STR +4`, `CON +3 (already higher)`. */
+/**
+ * What a change says, with why it is not applying where it is not: `STR sets
+ * to 4`, `Perception at least 3 (already higher)`.
+ */
 function changeText(change: FormChange): string {
 	return change.why === null ? change.text : `${change.text} (${change.why})`;
 }
