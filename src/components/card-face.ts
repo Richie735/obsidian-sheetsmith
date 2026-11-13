@@ -16,8 +16,10 @@ import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { sameNumber } from './effective-value';
-import { ModifierAccount, stampModifiedHost } from './modifier-breakdown';
+import { ModifierAccount, stampChoiceHost, stampModifiedHost } from './modifier-breakdown';
+import { renderAccountDoor } from './account-door';
 import { renderAccountNotes } from './note-mark';
+import { STATE_DOOR_CLASS } from './state-ring';
 
 /**
  * What nothing stored looks like in the value slot (SPEC §4.2). One constant
@@ -51,6 +53,34 @@ export interface CardFaceDerived {
 	 * resolve" is a status. Omitted where the caller has no explainer.
 	 */
 	reason?: string | null;
+}
+
+/**
+ * A dropdown a modifier chose an option for, as the face draws it. Each member
+ * takes the stored value as it stands now, since a choice moves it before the
+ * sheet rebuilds.
+ */
+export interface CardFaceChoice {
+	/** The option the menu draws at rest: the chosen one, or the stored one where refused. */
+	drawn: (stored: string) => string;
+	/** `Set by a modifier; your own: Medium`, or null where the two agree. */
+	own: (stored: string) => string | null;
+	/** What the live region says after a choice the face does not plainly show, or null. */
+	unshown: (stored: string) => string | null;
+}
+
+/**
+ * A door onto a value's whole account at the label line's end, in the note
+ * mark's slot, where the card draws one in its place
+ * (`docs/features/text-value-modifiers.md` D10).
+ */
+export interface CardFaceDoor {
+	/** What a listener hears on the glyph: `Modifiers on Size`. */
+	name: string;
+	/** The account the door opens, against what the note now stores. */
+	text: (stored: string) => string;
+	/** The door's description against what the note now stores, or null. */
+	description: (stored: string) => string | null;
 }
 
 export interface CardFaceOptions {
@@ -104,6 +134,15 @@ export interface CardFaceOptions {
 		 * computed reading would be a word the list does not contain.
 		 */
 		options?: readonly { value: string; label?: string }[];
+		/**
+		 * What a modifier chose for a dropdown, where one did
+		 * (`docs/features/text-value-modifiers.md` D9). **The Card pill's rule
+		 * on a menu**: at rest the menu draws the chosen option, and the moment a
+		 * hand reaches for it — a press, a key, focus — it shows the stored choice,
+		 * so the menu opens on the reader's own and a choice writes the reader's
+		 * own. Absent is the menu it has always been.
+		 */
+		choice?: CardFaceChoice;
 		onCommit: (next: string) => void;
 	};
 	/**
@@ -159,6 +198,12 @@ export interface CardFaceOptions {
 	 * Merging them would make one field show words the note does not store.
 	 */
 	notes?: ModifierAccount;
+	/**
+	 * A door onto the value's account, drawn in the note mark's place; the
+	 * caller then hands no `notes`, since its account carries them
+	 * (`docs/features/text-value-modifiers.md` D10).
+	 */
+	door?: CardFaceDoor;
 }
 
 /**
@@ -233,6 +278,12 @@ function renderDropdown(
 		 * and the chevron is what says the pill is still a menu.
 		 */
 		quietEmpty: boolean;
+		/** What a modifier chose, where one did (D9). */
+		choice?: CardFaceChoice;
+		/** Say a line to the card's live region. */
+		say: (text: string) => void;
+		/** Run after a choice moves what the note holds, with what it now holds. */
+		moved: (stored: string) => void;
 	},
 ): HTMLSelectElement {
 	const select = slot.createEl('select', 'sheetsmith-card-select');
@@ -266,25 +317,78 @@ function renderDropdown(
 	 * Last rather than first, so the layout's own list keeps the shape its
 	 * author gave it and the anomaly is not the first thing the eye meets.
 	 */
-	const stray =
+	let stray =
 		current !== '' && !options.some((option) => option.value === current)
 			? line(current, current)
 			: null;
-	select.value = current;
-	// Adds to the name rather than replacing it, because the control's visible
-	// content is words (docs/UI.md §6). No status colour and no "?": that glyph
-	// is for a value that did not resolve, and this one resolved fine — it is
-	// exactly what the note says.
-	if (stray) select.setAttribute('title', STRAY_TITLE);
+	/** What the note holds, which a choice moves before the sheet rebuilds. */
+	let stored = current;
+	const { choice } = on;
+	/*
+	 * **The words a dropdown a modifier chose carries** (D9): the title keeps the
+	 * stray's sentence first where the stored value is one, and the reader's own
+	 * as a description where it differs from what is drawn. Adds to the name
+	 * rather than replacing it, because the control's visible content is words
+	 * (docs/UI.md §6). No status colour and no "?": that glyph is for a value
+	 * that did not resolve, and this one resolved fine — it is exactly what the
+	 * note says.
+	 */
+	const describe = () => {
+		const own = choice?.own(stored) ?? null;
+		const title = [...(stray ? [STRAY_TITLE] : []), ...(own === null ? [] : [own])];
+		if (title.length === 0) select.removeAttribute('title');
+		else select.setAttribute('title', title.join('\n'));
+		if (own === null) select.removeAttribute('aria-description');
+		else select.setAttribute('aria-description', own);
+	};
+	describe();
+	select.value = choice === undefined ? current : choice.drawn(current);
+	if (choice !== undefined) {
+		select.classList.add('sheetsmith-card-select-chosen');
+		/*
+		 * **The swap, the pill's rule and not the ring's** (D9). A closed
+		 * `<select>` takes arrow keys in some browsers and changes value without
+		 * opening, so left on the chosen option one arrow press would write the
+		 * option after it as the reader's own — the pill's own data argument. So
+		 * every way a hand reaches the menu puts the stored choice in it first: a
+		 * press (before the browser opens its menu, which then opens on the
+		 * reader's own, a phone's picker included), a key (before its default
+		 * moves the value), and focus. Leaving it, and making a choice, put the
+		 * chosen option back, so a picker that closes on the choice shows what the
+		 * modifier holds again.
+		 */
+		const toOwn = () => {
+			select.value = stored;
+		};
+		const toDrawn = () => {
+			select.value = choice.drawn(stored);
+		};
+		select.addEventListener('pointerdown', toOwn);
+		select.addEventListener('keydown', toOwn);
+		select.addEventListener('focus', toOwn);
+		select.addEventListener('blur', toDrawn);
+		select.addEventListener('change', () => {
+			// After the commit below, which reads the stored choice off the menu.
+			queueMicrotask(() => {
+				if (choice.drawn(stored) !== stored) toDrawn();
+			});
+		});
+	}
 
 	select.addEventListener('change', () => {
 		if (stray && select.value !== stray.value) {
 			stray.remove();
-			select.removeAttribute('title');
+			stray = null;
 		}
+		stored = select.value;
+		describe();
+		on.moved(stored);
 		// Painted before the change is reported (docs/PATTERNS.md §5).
 		on.showDerived(select.value);
 		on.onCommit(select.value);
+		// A choice the face does not plainly show is said (docs/UI.md §6).
+		const unshown = choice?.unshown(stored) ?? null;
+		if (unshown !== null) on.say(unshown);
 	});
 
 	return select;
@@ -387,6 +491,16 @@ export function renderCardFace(
 			? createDiv({ cls: 'sheetsmith-sr-only', attr: { 'aria-live': 'polite' } })
 			: null;
 
+	/**
+	 * What the note stores, as a choice in the menu moves it before the sheet
+	 * rebuilds: the one value the door's words are read against, handed over
+	 * rather than held in a closure the door and the menu would both have to
+	 * keep in step.
+	 */
+	let held = options.value?.current ?? '';
+	/** Refreshes the door's words; set below where the card draws one. */
+	let door: (() => void) | null = null;
+
 	// Every control the card holds, in top-to-bottom order: the click routing
 	// below aims at the nearest one, and a menu is as much a target as a field.
 	const controls: (HTMLInputElement | HTMLSelectElement)[] = [];
@@ -410,14 +524,21 @@ export function renderCardFace(
 		// would mean a colour of this plugin's own (docs/UI.md §1).
 		value.classList.add('sheetsmith-card-dropdown');
 		const compute = options.derived?.compute;
-		controls.push(
-			renderDropdown(
+		const menu = renderDropdown(
 				value,
 				options.title,
 				options.value.current,
 				options.value.options,
 				{
 					onCommit: options.value.onCommit,
+					choice: options.value.choice,
+					say: (text) => {
+						if (status) status.textContent = text;
+					},
+					moved: (stored) => {
+						held = stored;
+						door?.();
+					},
 					// A menu has no draft, so the display is never held back:
 					// the choice is settled the moment it is made, and the pill
 					// under it must not lag the word above it (PATTERNS §5).
@@ -429,8 +550,12 @@ export function renderCardFace(
 					// the same nothing twice.
 					quietEmpty: options.derived !== undefined,
 				},
-			),
-		);
+			);
+		// A menu a modifier chose for is the card's box for the form tint (D12).
+		if (options.value.choice !== undefined && options.publishes !== undefined) {
+			stampChoiceHost(menu, options.publishes, container);
+		}
+		controls.push(menu);
 	} else if (options.value) {
 		const compute = options.derived?.compute;
 		const value = valueSlot();
@@ -656,6 +781,24 @@ export function renderCardFace(
 	 * the door onto what was noted at it.
 	 */
 	renderAccountNotes(container, options.notes, 'sheetsmith-card-has-note');
+	/*
+	 * **The door onto the value's account, in the note mark's corner**
+	 * (`docs/features/text-value-modifiers.md` D10): the one door there is
+	 * (`renderAccountDoor`), in the state door's class so it is the same box,
+	 * ink, hover and focus as every other door on a sheet, and the note mark's
+	 * corner by the holding class. Its words are read against what the note
+	 * stores now, so a choice in the menu re-reads them.
+	 */
+	const cardDoor = options.door;
+	if (cardDoor !== undefined) {
+		container.classList.add('sheetsmith-card-has-note');
+		door = renderAccountDoor(container, {
+			cls: STATE_DOOR_CLASS,
+			name: cardDoor.name,
+			text: () => cardDoor.text(held),
+			description: () => cardDoor.description(held),
+		}).refresh;
+	}
 
 	if (status) container.appendChild(status);
 

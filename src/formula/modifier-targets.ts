@@ -36,6 +36,7 @@ import {
 	ScopeValues,
 	StateTarget,
 	BufferTarget,
+	ChoiceTarget,
 } from '../types';
 import { referencesName } from './expression';
 import { modifierSlot, SELF_SLOT } from './modifiers';
@@ -274,6 +275,26 @@ export function bufferTargets(
 	for (const component of components) {
 		for (const { name, label, entry } of publishedEntries(component)) {
 			if (entry.buffer !== undefined) found.push({ name, label, called: entry.buffer.label });
+		}
+	}
+	return found;
+}
+
+/**
+ * Every dropdown a modifier may choose an option of, in publication order
+ * (`docs/features/text-value-modifiers.md`).
+ *
+ * **Read statically from what the components declare**, `ScopeEntry.choice`,
+ * on `stateTargets`' terms. Labelled with the component's own label, since a
+ * dropdown is a Card's bare name: `Size`.
+ */
+export function choiceTargets(
+	components: readonly ModifierTargetSource[],
+): readonly ChoiceTarget[] {
+	const found: ChoiceTarget[] = [];
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			if (entry.choice !== undefined) found.push({ name, label, shape: entry.choice });
 		}
 	}
 	return found;

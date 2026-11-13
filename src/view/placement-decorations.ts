@@ -31,6 +31,7 @@ import {
 } from '../types';
 import { contrast, over, readColour, Rgb } from '../ui/contrast';
 import { bufferEntries, storedBuffer } from '../formula/modifier-buffers';
+import { publishedEntries } from '../formula/modifier-targets';
 import type { ReadComponent } from '../formula/sheet';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
 import {
@@ -210,6 +211,49 @@ export function bufferLinesIn(
 						...(grant.tint === undefined ? {} : { tint: grant.tint }),
 					},
 				],
+			});
+		}
+	}
+	return found;
+}
+
+/**
+ * The option chosen at each dropdown on the sheet, as the one line the tint
+ * reads (`docs/features/text-value-modifiers.md` D12): a form in play whose
+ * Sets chose the option the card draws changed that card directly, so its card
+ * is tinted as a number the form changed would be. A tie's second line and a
+ * refused choice changed nothing and list nothing.
+ *
+ * Read off the components as the sheet read them, `bufferLinesIn`'s way, since
+ * the account needs what the note stores.
+ */
+export function choiceLinesIn(
+	prepared: readonly ReadComponent[],
+	modifiers: Pick<ModifierContext, 'choice'>,
+): { name: string; lines: readonly ModifierLine[] }[] {
+	if (modifiers.choice === undefined) return [];
+	const found: { name: string; lines: readonly ModifierLine[] }[] = [];
+	for (const { config, component, data, error } of prepared) {
+		if (component === undefined || error !== null) continue;
+		const values = component.scopeValues?.(data, config) ?? {};
+		for (const { name, entry } of publishedEntries({ id: config.id, values })) {
+			if (entry.choice === undefined) continue;
+			const stored = entry.value === undefined ? undefined : String(entry.value);
+			const account = modifiers.choice(name, stored);
+			if (account === null || account.error !== null) continue;
+			found.push({
+				name,
+				lines: account.lines.map((line) => ({
+					label: line.label,
+					source: line.source,
+					operator: 'override',
+					type: null,
+					amount: 0,
+					applies: 'result',
+					suppressed: line.suppressed,
+					...(line.inPlay === true ? { inPlay: true } : {}),
+					...(line.tint === undefined ? {} : { tint: line.tint }),
+				})),
 			});
 		}
 	}

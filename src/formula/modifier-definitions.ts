@@ -39,7 +39,7 @@
  * from `modifiers.ts` — stays downstream of both.
  */
 
-import { isNoteOnly, parseModifierPart } from '../parse/modifier-cell';
+import { isNoteOnly, isOptionChange, parseModifierPart } from '../parse/modifier-cell';
 import {
 	contestsByValue,
 	ModifierChangeView,
@@ -104,6 +104,13 @@ export interface Contribution {
 	literal?: boolean;
 	/** The sentence a number refuses `literal` with: the shipped one, unchanged. */
 	notNumber?: string;
+	/**
+	 * The option a change chooses, by its value, where it chooses one
+	 * (`docs/features/text-value-modifiers.md`); `amount` is then 0 and never
+	 * read. The walk checks it against the dropdown's options, since that is
+	 * where the target's shape is known.
+	 */
+	option?: string;
 }
 
 /**
@@ -148,6 +155,12 @@ export interface PartFields {
 	operator: ModifierOperator;
 	/** The amount as an expression, before it is evaluated. Blank is unfinished. */
 	amount: string;
+	/**
+	 * The option a change chooses, trimmed, or null where it carries none
+	 * (`docs/features/text-value-modifiers.md`). Blank is an option change not
+	 * yet given its option. Present, `amount` is never evaluated.
+	 */
+	option: string | null;
 	bonusType: string | null;
 	/**
 	 * Which phase an addition lands in (SPEC §5). Never null: absent storage
@@ -263,6 +276,7 @@ function fieldsOfChange(
 		column: column === '' ? null : column,
 		operator: operatorOf(change),
 		amount: (change.amount ?? '').trim(),
+		option: isOptionChange(change) ? (change.option ?? '').trim() : null,
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(change),
 		when: when === '' ? null : when,
@@ -281,6 +295,7 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
 		column: column === '' ? null : column,
 		operator: effect.operator,
 		amount: effect.amount.trim(),
+		option: isOptionChange(effect) ? (effect.option ?? '').trim() : null,
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(effect),
 		when: when === '' ? null : when,
@@ -492,6 +507,40 @@ function settle(
 				'value' in amount && typeof amount.value === 'number'
 					? amount.value
 					: null,
+		};
+	}
+
+	/*
+	 * **An option change is never evaluated: the literal is the amount**
+	 * (`docs/features/text-value-modifiers.md`). Whether it names one of the
+	 * dropdown's options, and whether its operator may choose one, are the
+	 * walk's to say, where the target's shape is known. A blank option keeps the
+	 * blank amount's two meanings: unfinished on a row, missing on a definition.
+	 */
+	if (fields.option !== null) {
+		if (fields.option === '') {
+			if (source.typed !== null) return { kind: 'unfinished', ...source, fields };
+			return {
+				kind: 'unreadable',
+				...source,
+				fields,
+				reason: `${called(source)} has no option.`,
+				condition: false,
+			};
+		}
+		return {
+			kind: 'applies',
+			...source,
+			fields,
+			conditional: verdict.kind === 'holds',
+			contribution: {
+				target: fields.target,
+				operator: fields.operator,
+				type: null,
+				applies: 'result',
+				amount: 0,
+				option: fields.option,
+			},
 		};
 	}
 

@@ -43,6 +43,7 @@
  */
 
 import {
+	ChoiceLine,
 	ModifierDefinitionView,
 	ModifierLine,
 	ModifierNote,
@@ -76,6 +77,7 @@ import {
 	StateShapes,
 	stateVerdict,
 } from './modifier-states';
+import { ChoiceLookup, ChoiceShapes, choiceVerdict } from './modifier-choices';
 import { suppressionWording } from './suppression-wording';
 
 /**
@@ -291,6 +293,15 @@ interface Walked {
 	/** A buffer refused (D11), on `refused`'s terms: the first refusal names the row. */
 	grantRefused: Map<string, Refused>;
 	/**
+	 * The fifth reduction (`docs/features/text-value-modifiers.md`): every change
+	 * carrying `option` aimed at a dropdown, keyed by its target, the option it
+	 * names. It never reaches `applied`, so a choice leaves `mod.<target>` and
+	 * every slot's breakdown exactly as they were (D1).
+	 */
+	chosen: Map<string, ChoiceLine[]>;
+	/** A choice refused (D3, D4), on `refused`'s terms: the first refusal names the row. */
+	choiceRefused: Map<string, Refused>;
+	/**
 	 * The notes, kept apart from the arithmetic from the walk onward
 	 * (`docs/features/modifier-notes.md` E): only a change with an amount becomes a
 	 * `Contributor`, so the stacking rule and both of its zero skips never see a
@@ -341,7 +352,13 @@ export function buildModifierTables(
 	 * is a sheet with none, which walks exactly as it did before grants existed.
 	 */
 	bufferNames: ReadonlySet<string> = new Set(),
-): { slots: ModifierLookup; states: StateLookup; buffers: BufferLookup } {
+	/**
+	 * Every declared dropdown a change may choose an option of, by name
+	 * (`choiceTargets`). Empty is a sheet with none, which walks exactly as it
+	 * did before choices existed.
+	 */
+	choiceShapes: ChoiceShapes = new Map(),
+): { slots: ModifierLookup; states: StateLookup; buffers: BufferLookup; choices: ChoiceLookup } {
 	const table = definitionTable(definitions);
 	/**
 	 * Every contribution by target, once the walk has produced a set nothing
@@ -392,6 +409,8 @@ export function buildModifierTables(
 		const stateRefused = new Map<string, Refused>();
 		const granted = new Map<string, FoundGrant[]>();
 		const grantRefused = new Map<string, Refused>();
+		const chosen = new Map<string, ChoiceLine[]>();
+		const choiceRefused = new Map<string, Refused>();
 		for (const component of components) {
 			for (const push of component.pushes?.() ?? []) {
 				// A blank part enrols in nothing and is not an error: on an
@@ -460,6 +479,36 @@ export function buildModifierTables(
 					}
 					// A note-only change contributes nothing to the arithmetic.
 					if (found.kind === 'noted') continue;
+					/*
+					 * **A dropdown's option, the fifth reduction**, taken first: a
+					 * change carrying `option` is never arithmetic, whatever it is
+					 * aimed at. One aimed at no dropdown, or naming a column, changes
+					 * nothing and refuses nothing (D7); an operator other than Sets, a
+					 * condition that will not resolve and a literal naming no option
+					 * refuse the choice (D3, D4).
+					 */
+					const choice = choiceVerdict(choiceShapes, found);
+					if (choice.kind !== 'none') {
+						if (choice.kind === 'refused') {
+							if (!choiceRefused.has(target)) {
+								choiceRefused.set(target, { label: push.row.label, reason: choice.reason });
+							}
+						} else if (choice.kind === 'set') {
+							const line: ChoiceLine = {
+								label: push.row.label,
+								source: push.source,
+								...(found.definition === null ? {} : { definition: found.definition.name }),
+								option: choice.option,
+								suppressed: null,
+								...(push.inPlay === true ? { inPlay: true } : {}),
+								...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+							};
+							const already = chosen.get(target);
+							if (already === undefined) chosen.set(target, [line]);
+							else already.push(line);
+						}
+						continue;
+					}
 					/*
 					 * **A buffer, the fourth reduction.** A change aimed at a name
 					 * whose value is a buffer, with no column, is a grant: reduced by
@@ -569,7 +618,7 @@ export function buildModifierTables(
 				}
 			}
 		}
-		return { applied, refused, noted, stated, stateRefused, granted, grantRefused };
+		return { applied, refused, noted, stated, stateRefused, granted, grantRefused, chosen, choiceRefused };
 	};
 
 	/**
@@ -589,7 +638,8 @@ export function buildModifierTables(
 		if (
 			found.refused.size === 0 &&
 			found.stateRefused.size === 0 &&
-			found.grantRefused.size === 0
+			found.grantRefused.size === 0 &&
+			found.choiceRefused.size === 0
 		) {
 			held = found;
 		}
@@ -677,7 +727,27 @@ export function buildModifierTables(
 		return { lines: found.granted.get(name) ?? [] };
 	};
 
-	return { slots, states, buffers };
+	const choices: ChoiceLookup = (name) => {
+		const shape = choiceShapes.get(name);
+		if (shape === undefined) return null;
+		const found = walked();
+		if (found === null) {
+			/*
+			 * **The walk's own guard, in the state's words** (D14): the cold half of
+			 * the cycle case, naming what was read and the stored choice to read
+			 * instead, which no change moves, so it cannot loop.
+			 */
+			return {
+				shape,
+				error: `A modifier's own condition or amount reads "${name}", which a modifier sets, and the modifiers on this sheet are still being worked out. Read the value as stored (${name}.value) instead.`,
+			};
+		}
+		const stopped = found.choiceRefused.get(name);
+		if (stopped !== undefined) return { shape, error: inRowMessage(stopped.label, stopped.reason) };
+		return { shape, lines: found.chosen.get(name) ?? [] };
+	};
+
+	return { slots, states, buffers, choices };
 }
 
 /** One state contributor as a line, its verdict left to `foldState`. */

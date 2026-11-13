@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { getComponent, listComponentTypes } from './index';
+import { publishedEntries } from '../formula/modifier-targets';
 import {
+	ChoiceAccount,
 	ComponentConfig,
 	ComponentDefinition,
 	ModifierContext,
@@ -65,14 +67,15 @@ const SETTING: ModifierContext = {
 	promote: () => Promise.resolve({ error: 'No layout here.' }),
 };
 
+/** Every published name and its entry, through the one walk over `ScopeValues`. */
+function entriesOf(id: string, values: ScopeValues) {
+	return publishedEntries({ id, values });
+}
+
 /** Every address a published name declares: its own state, and its columns'. */
 function addresses(id: string, values: ScopeValues): { name: string; column: string | null }[] {
 	const found: { name: string; column: string | null }[] = [];
-	const entries = [
-		...(values.self === undefined ? [] : [[id, values.self] as const]),
-		...Object.entries(values.named ?? {}).map(([key, entry]) => [`${id}.${key}`, entry] as const),
-	];
-	for (const [name, entry] of entries) {
+	for (const { name, entry } of entriesOf(id, values)) {
 		if (entry.state !== undefined) found.push({ name, column: null });
 		for (const column of Object.keys(entry.states ?? {})) found.push({ name, column });
 	}
@@ -181,5 +184,65 @@ describe('a component declaring a level or a flag draws the door onto it', () =>
 			},
 		} as ComponentDefinition;
 		expect(undrawn(forced, { ...bareConfig('pool'), ...(pool.example ?? {}) })).not.toEqual([]);
+	});
+});
+
+/*
+ * **A component that declares a dropdown a modifier may choose for draws the
+ * door onto it** (`docs/features/text-value-modifiers.md`), the same rule read
+ * for `ScopeEntry.choice`: every registered configuration declaring one is
+ * drawn with an account pushed at it, and its DOM must carry the account.
+ */
+const CHOOSING: ModifierContext = {
+	...SETTING,
+	state: undefined,
+	choice: (name, stored): ChoiceAccount => ({
+		shape: { label: name, options: [{ value: 'A', label: 'A' }] },
+		stored: stored ?? '',
+		drawn: 'A',
+		lines: [{ label: `Chosen at ${name}`, source: 'Items', option: 'A', suppressed: null }],
+		error: null,
+	}),
+};
+
+/** The names a configuration declares a choice on. */
+function choices(id: string, values: ScopeValues): string[] {
+	return entriesOf(id, values)
+		.filter(({ entry }) => entry.choice !== undefined)
+		.map(({ name }) => name);
+}
+
+function dataOf(component: ComponentDefinition, config: ComponentConfig): unknown {
+	const body = component.sample?.(config) ?? null;
+	const read = body === null ? null : component.read(body, config);
+	return read !== null && read.ok ? read.data : null;
+}
+
+const choosing = listComponentTypes().flatMap((type) => {
+	const component = getComponent(type) as ComponentDefinition;
+	return configurations(component, type)
+		.filter((config) => choices(config.id, component.scopeValues?.(dataOf(component, config), config) ?? {}).length > 0)
+		.map((config) => [type, config] as const);
+});
+
+describe('a component declaring a dropdown a modifier may choose for draws the door onto it', () => {
+	it('finds configurations that declare one', () => {
+		expect([...new Set(choosing.map(([type]) => type))]).toEqual(['card']);
+	});
+
+	it.each(choosing)('"%s" draws a door wherever a change reaches a choice', (type, config) => {
+		const component = getComponent(type) as ComponentDefinition;
+		const data = dataOf(component, config);
+		const container = document.createElement('div');
+		component.render(container, config, data, {
+			resolved: {},
+			resolveField: () => null,
+			onChange: () => {},
+			modifiers: CHOOSING,
+		});
+		const text = container.textContent ?? '';
+		for (const name of choices(config.id, component.scopeValues?.(data, config) ?? {})) {
+			expect(text).toContain(`Chosen at ${name}`);
+		}
 	});
 });

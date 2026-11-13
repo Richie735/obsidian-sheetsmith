@@ -48,6 +48,15 @@ export const TEXT = {
 	 */
 	bufferRefusesOperator: 'Temporary points do not add up, so only the highest grant applies.',
 	/**
+	 * Why an Adds to or an At least may not choose a dropdown's option: the row
+	 * popup, the modifier form and the layout editor's definitions report all
+	 * say it (`docs/features/text-value-modifiers.md` D3). The faults only, on
+	 * `stateRefusesAdd`'s terms: `formula/modifier-choices.ts` composes the fix
+	 * from `OPERATOR_LABELS`.
+	 */
+	choiceRefusesAdd: 'Adds to cannot choose an option.',
+	choiceRefusesAtLeast: 'At least cannot choose an option.',
+	/**
 	 * What a grant's amount means, under the field it is typed into: the sheet's
 	 * modifier form and the layout editor's definitions field
 	 * (`docs/features/granted-temporary-points.md`), in the position legend's

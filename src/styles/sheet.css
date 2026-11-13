@@ -794,6 +794,21 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* **A dropdown a modifier chose an option for** (`docs/features/text-value-modifiers.md`
+   D9): the ceiling's own mark, a 2px dotted rule in `--text-muted` under the
+   chosen option, and never the underline, since the menu's press edits — the
+   Pool temp pill's ruling. Drawn wherever a Sets line is listed, applied or
+   refused, so it does not come and go with a tie, and kept while the menu is
+   focused, since the door is still what explains it. The negative margin hands
+   back the rule's 2px, so a card is the same height with a form on as off. A
+   border's style and width survive forced colors. At (0,3,0), past the
+   select's own `border: none`. */
+.sheetsmith-view .sheetsmith-card-select.sheetsmith-card-select-chosen {
+	border-bottom: 2px dotted var(--text-muted);
+	border-radius: 0;
+	margin-bottom: -2px;
+}
+
 /* The chevron, which is the whole of what says this value is a menu and not a
    field: with Obsidian's dropdown background taken off, a bare select is a
    piece of text.
@@ -918,6 +933,7 @@
 				.sheetsmith-sr-only,
 				.sheetsmith-card-note,
 				.sheetsmith-note-mark,
+				.sheetsmith-state-door,
 				.sheetsmith-in-play-mark
 			)
 	) {
@@ -4134,6 +4150,7 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-state-door,
 .sheetsmith-view .sheetsmith-pool-has-door > .sheetsmith-pool-modifier-button {
 	position: absolute;
 	/* One step in from the half-padding corner, so the focus ring's 2px offset

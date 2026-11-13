@@ -28,8 +28,10 @@ import {
 	RowsSource,
 	ScopeEntry,
 	StateReader,
+	ChoiceReader,
 } from '../types';
 import type { BufferLookup } from './modifier-buffers';
+import { ChoiceLookup, choiceReaderOf, READ_CHOICE_AS_STORED } from './modifier-choices';
 import {
 	EMPTY_SCOPE,
 	evaluate,
@@ -105,11 +107,22 @@ export interface FormulaEnv {
 	 * where every buffer reads as stored.
 	 */
 	buffers?: BufferLookup;
+	/**
+	 * What has been chosen at each dropdown (`docs/features/text-value-modifiers.md`),
+	 * from the same walk as `modifiers`. Absent on an environment with no sheet,
+	 * where every choice reads as stored.
+	 */
+	choices?: ChoiceLookup;
 }
 
 /** The reader a component folds a level or a flag through, on this sheet. */
 export function stateReaderFor(env: FormulaEnv): StateReader {
 	return env.states === undefined ? READ_AS_STORED : stateReaderOf(env.states);
+}
+
+/** The reader a name or a Card's `derived` folds a dropdown's choice through. */
+export function choiceReaderFor(env: FormulaEnv): ChoiceReader {
+	return env.choices === undefined ? READ_CHOICE_AS_STORED : choiceReaderOf(env.choices);
 }
 
 /**
