@@ -78,6 +78,7 @@ import {
 	ZoneSpec,
 } from '../parse/zones';
 import { cellParts } from '../parse/modifier-cell';
+import { optionWord } from '../formula/modifier-choices';
 import {
 	joinRecords,
 	RecordSection,
@@ -2306,11 +2307,12 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					const why = outcome.applies
 						? null
 						: (outcome.suppressed ?? (outcome.condition === false ? 'its condition does not hold now' : null));
-					const vital = setsOneNumber(outcome);
+					const option = choosesOneOption(outcome);
+					const vital = setsOneNumber(outcome) || option !== null;
 					said.push({
 						group: item.group,
 						label: outcome.targetLabel,
-						text: vital ? String(outcome.amount) : item.text,
+						text: option ?? (vital ? String(outcome.amount) : item.text),
 						applies: outcome.applies,
 						why,
 						vital,
@@ -2557,6 +2559,18 @@ function setsOneNumber(outcome: ModifierOutcome): boolean {
 		outcome.target !== '' &&
 		!outcome.targetLabel.includes(' · ')
 	);
+}
+
+/**
+ * The option an outcome chooses for a dropdown, in its label, where it chooses
+ * one and is not refused (`docs/features/text-value-modifiers.md` D13): Size is
+ * one of a beast's stats, as HP and Speed are, so it is a tile, `Size` over
+ * `Large`, on `setsOneNumber`'s argument. A refused option change stays in the
+ * list with its reason, as a refused number change does.
+ */
+function choosesOneOption(outcome: ModifierOutcome): string | null {
+	if (outcome.choice === undefined || outcome.suppressed !== null) return null;
+	return optionWord(outcome.choice.shape, outcome.choice.option);
 }
 
 /**

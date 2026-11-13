@@ -5,6 +5,7 @@ import { ModifierPush, RenderContext } from '../types';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { parseModifierPart } from '../parse/modifier-cell';
 import { outcomeView } from '../test/modifier-views';
+import { outcomeWords } from './modifier-breakdown';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { formsSamples } from '../../harness/samples';
 import { sampleOf } from '../test/sample';
@@ -1172,6 +1173,53 @@ describe('the changes list', () => {
 		expect(lines(el).join(' ')).not.toContain('Armour class');
 		// An `=` on one entry of a set, and an at-least, stay in the list.
 		expect(lines(el)).toEqual(['STR +4', 'Perception at least +3']);
+	});
+
+	it('reads an option change as a vital tile in the option\'s label, and keeps a refused one in the list with its reason', () => {
+		const SIZE = {
+			label: 'Size',
+			options: ['Small', 'Medium', 'Large'].map((value) => ({ value, label: value })),
+		};
+		const ALIGNMENT = { label: 'Alignment', options: [{ value: 'Neutral good', label: 'Neutral good' }] };
+		const refusal = '"large" is not an option of Alignment, so this row\'s own modifier chooses nothing. Choose Neutral good.';
+		const base = labelled();
+		const choosing = {
+			...base,
+			outcomes: (part: string, row: Parameters<typeof base.outcomes>[1]) => {
+				const typed = parseModifierPart(part);
+				if (typed.kind !== 'typed' || typed.effect.option === undefined) return base.outcomes(part, row, '');
+				const size = typed.effect.target === 'size';
+				return [
+					outcomeView({
+						typed: typed.effect,
+						target: typed.effect.target,
+						targetLabel: size ? 'Size' : 'Alignment',
+						applies: size,
+						suppressed: size ? null : refusal,
+						choice: { shape: size ? SIZE : ALIGNMENT, option: typed.effect.option },
+					}),
+				];
+			},
+		};
+		const body = BODY.replace(
+			'Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3',
+			'Modifiers: size = option: Large; alignment = option: large',
+		);
+		const { el } = render(body, {}, { modifiers: choosing });
+		const tile = Array.from(el.querySelectorAll('.sheetsmith-stat-block-vital-set')).find(
+			(one) => one.querySelector('.sheetsmith-stat-block-vital-label')?.textContent === 'Size',
+		);
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-value')?.textContent).toBe('Large');
+		expect(lines(el)).toEqual([`Alignment sets to large (${refusal})`]);
+		// The words the list and the row's own popup say for an option change.
+		expect(
+			outcomeWords(
+				outcomeView({
+					typed: { target: 'size', operator: 'override', amount: '', option: 'Large' },
+					choice: { shape: SIZE, option: 'Large' },
+				}),
+			),
+		).toBe('sets to Large');
 	});
 
 	it('says why a set number is not applying, beside it in the strip', () => {

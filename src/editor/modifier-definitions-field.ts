@@ -70,17 +70,21 @@ import {
 	noteTargets,
 	stateTargets,
 	bufferTargets,
+	choiceTargets,
 } from '../formula/modifier-targets';
 import { aimsAtBuffer } from '../formula/modifier-buffers';
 import {
+	choiceOptionValue,
+	fillOptionChoices,
 	fillTargetOptions,
+	readChoiceOption,
 	readTargetOption,
 	stateOf,
 	stateOptionValue,
 } from '../components/modifier-form';
 import { positionLegend } from '../components/modifier-breakdown';
 import { operatorOnto, operatorsAt } from '../formula/modifier-states';
-import { isNoteOnly, unspellableNote } from '../parse/modifier-cell';
+import { isNoteOnly, isOptionChange, unspellableNote } from '../parse/modifier-cell';
 import {
 	addControls,
 	addControlSpacers,
@@ -232,6 +236,9 @@ export function renderModifierDefinitions(
 	// The buffers a grant may raise, through the one derivation the sheet's form
 	// and the walk read (`docs/features/granted-temporary-points.md`).
 	const buffers = bufferTargets(context.sources);
+	// The dropdowns a change may choose an option of, the same way
+	// (`docs/features/text-value-modifiers.md`).
+	const choices = choiceTargets(context.sources);
 	const bonusTypes = parseModifierTypes(layout).names;
 	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
@@ -587,7 +594,14 @@ export function renderModifierDefinitions(
 			/** The level or flag this change sets, where it sets one. */
 			const aimed = stateOf(states, storedTarget, storedColumn === '' ? null : storedColumn);
 			value.createEl('option', { value: '', text: '—' });
-			fillTargetOptions(value, targets, notable, states, buffers);
+			fillTargetOptions(value, targets, notable, states, buffers, choices);
+			/**
+			 * Whether this change chooses a dropdown's option: it carries `option`,
+			 * so Sets is its one operator and **Option** takes **Amount**'s place
+			 * (`docs/features/text-value-modifiers.md`).
+			 */
+			const choosing = isOptionChange(change);
+			const dropdown = choosing ? choices.find((one) => one.name === storedTarget) : undefined;
 			/** Whether this change grants temporary points: At least is then its one operator. */
 			const granting = aimsAtBuffer(buffers, storedTarget, storedColumn === '' ? null : storedColumn);
 			/*
@@ -606,7 +620,12 @@ export function renderModifierDefinitions(
 			 * ones: every offered option is a label like `Abilities · STR`, and a bare
 			 * identifier among them does not read as a choice this layout made.
 			 */
-			if (
+			if (choosing && dropdown === undefined && storedTarget !== '') {
+				// An option change at a name that shows none, carried as written; the
+				// report says why (D7).
+				value.createEl('option', { value: choiceOptionValue(storedTarget), text: storedTarget });
+			} else if (
+				!choosing &&
 				storedTarget !== '' &&
 				aimed === undefined &&
 				!granting &&
@@ -620,8 +639,9 @@ export function renderModifierDefinitions(
 					text: storedColumn === '' ? storedTarget : `${storedTarget} · ${storedColumn}`,
 				});
 			}
-			value.value =
-				aimed === undefined
+			value.value = choosing
+				? choiceOptionValue(storedTarget)
+				: aimed === undefined
 					? storedColumn === ''
 						? storedTarget
 						: stateOptionValue(storedTarget, storedColumn)
@@ -629,6 +649,23 @@ export function renderModifierDefinitions(
 			titleChosen(value);
 			value.dataset.sheetsmithFocus = `modifier-${named}-${at}-target`;
 			value.addEventListener('change', () => {
+				/*
+				 * **Onto a dropdown, a Sets with no amount and an option not yet
+				 * chosen** (D3); off one, the option goes.
+				 */
+				const toDropdown = readChoiceOption(value.value);
+				if (toDropdown !== null) {
+					setOptional(change, 'target', toDropdown);
+					putColumn(change, null);
+					change.operator = 'override';
+					delete change.applies;
+					delete change.amount;
+					change.option = '';
+					commit();
+					context.redraw();
+					return;
+				}
+				delete change.option;
 				const chosen = readTargetOption(value.value);
 				setOptional(change, 'target', chosen.target);
 				putColumn(change, chosen.column);
@@ -684,7 +721,10 @@ export function renderModifierDefinitions(
 			// Sets and At least only, at a level or a flag; a stored Adds to is
 			// carried so the select can show it, and the report says why.
 			// At least only, at a buffer, a stored other one carried on the same terms.
-			const offered: readonly ModifierOperator[] = granting
+			// Sets only, on a change choosing a dropdown's option (D3).
+			const offered: readonly ModifierOperator[] = choosing
+				? ['override', ...(effective === 'override' ? [] : [effective])]
+				: granting
 				? ['upgrade', ...(effective === 'upgrade' ? [] : [effective])]
 				: operatorsAt(aimed !== undefined, effective);
 			for (const id of offered) {
@@ -746,6 +786,31 @@ export function renderModifierDefinitions(
 			});
 			amount.value = String(change.amount ?? '');
 			amount.dataset.sheetsmithFocus = `modifier-${named}-${at}-amount`;
+			if (choosing) {
+				/*
+				 * **Option, in Amount's place**: the dropdown's options by label,
+				 * storing each one's value, `—` first for one not yet chosen, and a
+				 * stored literal naming no option carried as a last line, raw. A
+				 * definition may name any value, since JSON has no clause grammar.
+				 */
+				const optionField = labelled(detail, 'Option');
+				optionField.addClass('sheetsmith-detail-field-wide');
+				const picker = optionField.createEl('select', {
+					cls: 'dropdown',
+					attr: { 'aria-label': qualified(at, 'option') },
+				});
+				// The sheet form's own list, through the one helper.
+				fillOptionChoices(picker, dropdown, String(change.option ?? '').trim());
+				titleChosen(picker);
+				picker.dataset.sheetsmithFocus = `modifier-${named}-${at}-option`;
+				picker.addEventListener('change', () => {
+					change.option = picker.value;
+					commit();
+					context.redraw();
+				});
+				amount.parentElement?.after(optionField);
+				amount.parentElement?.remove();
+			}
 			if (aimed !== undefined) {
 				// What each number means, on a line of its own under the field it is
 				// typed into: the **Shown when** legend's spelling, since a level is
@@ -980,7 +1045,11 @@ export function renderModifierDefinitions(
 				note.dataset.sheetsmithFocus = `modifier-${named}-${at}-note`;
 				/** Disable the arithmetic's controls while this change is note-only. */
 				const paintNoteOnly = () => {
-					const noteOnly = isNoteOnly({ amount: amount.value, note: note.value });
+					const noteOnly = isNoteOnly({
+						amount: amount.value,
+						note: note.value,
+						...(choosing ? { option: String(change.option ?? '') } : {}),
+					});
 					for (const { field, select } of arithmeticOnly) {
 						select.disabled = noteOnly;
 						field.toggleClass('sheetsmith-detail-field-disabled', noteOnly);

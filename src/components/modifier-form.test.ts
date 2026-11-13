@@ -537,3 +537,144 @@ describe('a change that grants temporary points (docs/features/granted-temporary
 		body.remove();
 	});
 });
+
+describe('a change that chooses a dropdown\'s option (docs/features/text-value-modifiers.md)', () => {
+	const SIZE = {
+		name: 'size',
+		label: 'Size',
+		shape: {
+			label: 'Size',
+			options: ['Small', 'Medium', 'Large'].map((value) => ({ value, label: value })).concat([
+				{ value: 'Size in feet', label: 'Feet' },
+			]),
+		},
+	};
+	const ACCEPT = [
+		{ name: 'armour_class', label: 'Armour class' },
+		{ name: 'size', label: 'Size' },
+	];
+
+	it('offers Dropdowns before the notes, keeping a dropdown that reads its slot under Takes modifiers', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(select, ACCEPT, [{ name: 'passive', label: 'Passive perception' }], [], [], [SIZE]);
+		expect(Array.from(select.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+			'Takes modifiers',
+			'Dropdowns',
+			'Notes only',
+		]);
+		expect(select.querySelector('optgroup[label="Takes modifiers"]')?.textContent).toContain('Size');
+		expect(select.querySelector('optgroup[label="Dropdowns"] option')?.textContent).toBe('Size');
+	});
+
+	it('draws today\'s list where the layout has no dropdown', () => {
+		const plain = document.createElement('select');
+		fillTargetOptions(plain, ACCEPT, []);
+		const none = document.createElement('select');
+		fillTargetOptions(none, ACCEPT, [], [], [], []);
+		expect(none.innerHTML).toBe(plain.innerHTML);
+	});
+
+	function form(effect: { target: string; operator: 'add' | 'override' | 'upgrade'; amount: string; option?: string }, announced: string[] = [], written: string[][] = []) {
+		const body = document.body.createDiv();
+		const part = 'part';
+		const state = modifierFormState([part]);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Brown bear',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({ typed: effect, target: effect.target, targetLabel: effect.target === 'size' ? 'Size' : 'Armour class', applies: true }),
+			],
+			definitions: [],
+			targets: ACCEPT,
+			published: ACCEPT,
+			choices: [SIZE],
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		return body;
+	}
+
+	const control = (body: HTMLElement, label: string) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-field'))
+			.find((one) => one.querySelector('.sheetsmith-panel-field-label')?.textContent === label)
+			?.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | undefined;
+
+	it('offers Sets only, hides bonus type and phase, and puts Option in the amount\'s place', () => {
+		const body = form({ target: 'size', operator: 'override', amount: '', option: 'Large' });
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['Sets']);
+		expect(control(body, 'Bonus type')).toBeUndefined();
+		expect(control(body, 'Applies to')).toBeUndefined();
+		expect(control(body, 'Amount')).toBeUndefined();
+		const picker = control(body, 'Option') as HTMLSelectElement;
+		expect(Array.from(picker.options).map((one) => one.textContent)).toEqual(['—', 'Small', 'Medium', 'Large', 'Feet']);
+		expect(picker.value).toBe('Large');
+		body.remove();
+	});
+
+	it('draws a literal naming no option as a stray last line', () => {
+		const body = form({ target: 'size', operator: 'override', amount: '', option: 'Huge' });
+		const picker = control(body, 'Option') as HTMLSelectElement;
+		const last = picker.options[picker.options.length - 1];
+		expect(last?.textContent).toBe('Huge');
+		expect(last?.title).toBe("Not one of this dropdown's options. The change keeps it until something else is chosen.");
+		expect(picker.value).toBe('Huge');
+		body.remove();
+	});
+
+	it('keeps a stored Adds to in the list and says why it chooses nothing', () => {
+		const body = form({ target: 'size', operator: 'add', amount: '', option: 'Large' });
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['Sets', 'Adds to']);
+		expect(body.textContent).toContain('Adds to cannot choose an option. Choose Sets.');
+		body.remove();
+	});
+
+	it('moves a change onto a dropdown as a Sets with no option yet, and says so', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = form({ target: 'armour_class', operator: 'add', amount: '2' }, announced, written);
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = Array.from(value.options).find((one) => one.parentElement?.getAttribute('label') === 'Dropdowns')?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(announced).toContain('Operator Sets');
+		expect(written).toEqual([['size = option:']]);
+		body.remove();
+	});
+
+	it('writes the chosen option, and refuses a value a cell could not spell', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = form({ target: 'size', operator: 'override', amount: '', option: '' }, announced, written);
+		const picker = control(body, 'Option') as HTMLSelectElement;
+		picker.value = 'Large';
+		picker.dispatchEvent(new Event('change'));
+		expect(written).toEqual([['size = option: Large']]);
+		picker.value = 'Size in feet';
+		picker.dispatchEvent(new Event('change'));
+		const refusal =
+			'"Size in feet" cannot be chosen from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.';
+		expect(announced).toContain(refusal);
+		expect(written).toHaveLength(1);
+		// A second refused pick replaces the sentence rather than stacking it.
+		picker.value = 'Size in feet';
+		picker.dispatchEvent(new Event('change'));
+		expect(Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).filter((one) => one.textContent === refusal)).toHaveLength(1);
+		body.remove();
+	});
+
+	it('moves a change off a dropdown without its option', () => {
+		const written: string[][] = [];
+		const body = form({ target: 'size', operator: 'override', amount: '', option: 'Large' }, [], written);
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = 'armour_class';
+		value.dispatchEvent(new Event('change'));
+		expect(written).toEqual([['armour_class =']]);
+		body.remove();
+	});
+});

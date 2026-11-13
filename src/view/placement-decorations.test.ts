@@ -21,6 +21,7 @@ import {
 	pickTagText,
 	stateLinesIn,
 	bufferLinesIn,
+	choiceLinesIn,
 } from './placement-decorations';
 import { modifierBreakdown, stampStateHost } from '../components/modifier-breakdown';
 import { contrast } from '../ui/contrast';
@@ -1093,5 +1094,110 @@ Modifiers: hp.temp >= 10
 		const { root, lines } = drawn(note(12));
 		expect(lines).toEqual([]);
 		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_BOX}`)).toBeNull();
+	});
+});
+
+describe('choiceLinesIn: a dropdown a form in play chose (docs/features/text-value-modifiers.md D12, D13)', () => {
+	const CHOICES = {
+		name: 'Choices fixture',
+		columns: 12,
+		components: [
+			{
+				id: 'size',
+				type: 'card',
+				label: 'Size',
+				options: [{ value: 'Small' }, { value: 'Medium' }, { value: 'Large' }],
+				hideNote: true,
+				position: { col: 1, row: 1, width: 3, height: 1 },
+			},
+			{
+				id: 'lifestyle',
+				type: 'card',
+				label: 'Lifestyle',
+				options: [{ value: 'Modest' }, { value: 'Wealthy' }],
+				hideNote: true,
+				position: { col: 1, row: 2, width: 3, height: 1 },
+			},
+			{
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				position: { col: 4, row: 1, width: 6, height: 4 },
+			},
+		],
+	};
+	const note = (active: boolean) => `---
+sheet-layout: Choices fixture
+---
+
+## Size
+\`\`\`sheet
+value: Medium
+\`\`\`
+
+## Lifestyle
+\`\`\`sheet
+value: Modest
+\`\`\`
+
+## Wild Shape
+
+### Brown bear
+\`\`\`sheet
+Active: ${active ? 'yes' : 'no'}
+Modifiers: size = option: Large
+\`\`\`
+`;
+
+	function drawn(source: string) {
+		const layout = parseLayout(JSON.stringify(CHOICES));
+		const parsed = parseCharacter(source);
+		const walk = walkLayout(layout.components);
+		const prepared = walk.map(({ config }) => {
+			const component = getComponent(config.type);
+			if (component === undefined) throw new Error(config.type);
+			const section = getSection(parsed, config.label);
+			const result = section ? component.read(section.body, config) : null;
+			return { config, component, error: null, data: result?.ok === true ? result.data : null };
+		});
+		const { env, modifiers, marked } = buildSheet(layout, prepared);
+		const root = document.createElement('div');
+		root.className = 'sheetsmith-view';
+		document.body.appendChild(root);
+		renderGrid(root, walk, prepared, ({ config, component, data }) => ({
+			...formulaContext(component, config, data, env),
+			modifiers,
+			onChange: () => undefined,
+		}));
+		applyDecorations(
+			root,
+			inPlayDecorations(marked, (name) => modifiers.breakdown(name), choiceLinesIn(prepared, modifiers)),
+		);
+		return { root, lines: choiceLinesIn(prepared, modifiers) };
+	}
+
+	it('tints the card whose option the form in play chose, and no other', () => {
+		const { root, lines } = drawn(note(true));
+		expect(lines.map((one) => [one.name, one.lines[0]?.label, one.lines[0]?.inPlay])).toEqual([
+			['size', 'Brown bear', true],
+		]);
+		expect(cellOf(root, 'size').querySelector(`.${IN_PLAY_BOX}`)).not.toBeNull();
+		expect(cellOf(root, 'size').querySelector(`.${IN_PLAY_MARK}`)?.textContent).toBe('Brown bear');
+		expect(cellOf(root, 'lifestyle').querySelector(`.${IN_PLAY_BOX}`)).toBeNull();
+	});
+
+	it('reads the option change as one of the form\'s vitals, in the option\'s label', () => {
+		const { root } = drawn(note(true));
+		const tiles = Array.from(cellOf(root, 'wild_shape').querySelectorAll('.sheetsmith-stat-block-vital')).map(
+			(tile) => tile.textContent,
+		);
+		expect(tiles).toContain('SizeLarge');
+		expect(cellOf(root, 'wild_shape').textContent).not.toContain('option:');
 	});
 });
