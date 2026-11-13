@@ -261,7 +261,7 @@ describe('the in-play tint', () => {
 		expect(cellOf(root, 'perception').querySelector('.sheetsmith-modified')).toBeNull();
 		// And the breakdown says why, from the same fact.
 		expect(modifierBreakdown(modifiers.breakdown('perception'), 6)).toContain(
-			'Brown Bear — at least +3 (not applied: already higher)',
+			'Brown Bear — at least 3 (not applied: already higher)',
 		);
 	});
 

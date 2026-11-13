@@ -1127,7 +1127,7 @@ describe('the changes list', () => {
 		const { el } = render(BODY, {}, { modifiers: labelled() });
 		toLibrary(el);
 		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
-		expect(lines(detail)).toEqual(['STR +4', 'Perception at least +3']);
+		expect(lines(detail)).toEqual(['STR sets to 4', 'Perception at least 3']);
 		expect(vitals(detail)).toContain('Armour class11');
 		const glyph = detail.querySelector('.sheetsmith-stat-block-edit-changes');
 		expect(glyph?.textContent).toBe('Edit changes');
@@ -1140,7 +1140,7 @@ describe('the changes list', () => {
 			'Modifiers: abilities.STR = 4; abilities.DEX = 0; skills.perception >= 3',
 		);
 		const { el } = render(body, {}, { modifiers: labelled() });
-		expect(lines(el)).toEqual(['STR +4 · DEX +0', 'Perception at least +3']);
+		expect(lines(el)).toEqual(['STR sets to 4 · DEX sets to 0', 'Perception at least 3']);
 
 		// A part that changes nothing says why in words, not by colour alone.
 		const base = labelled();
@@ -1156,7 +1156,7 @@ describe('the changes list', () => {
 		document.body.replaceChildren();
 		const again = render(body, {}, { modifiers: idle });
 		const item = again.el.querySelector('.sheetsmith-stat-block-change-idle');
-		expect(item?.textContent).toBe('Perception at least +3 (already higher)');
+		expect(item?.textContent).toBe('Perception at least 3 (already higher)');
 		// The glyph that edits them sits beside the section's heading, its label.
 		const head = again.el.querySelector('.sheetsmith-stat-block-section-head');
 		expect(head?.textContent).toContain('Modifiers');
@@ -1172,7 +1172,7 @@ describe('the changes list', () => {
 		expect(set?.querySelector('.sheetsmith-stat-block-vital-value')?.textContent).toBe('11');
 		expect(lines(el).join(' ')).not.toContain('Armour class');
 		// An `=` on one entry of a set, and an at-least, stay in the list.
-		expect(lines(el)).toEqual(['STR +4', 'Perception at least +3']);
+		expect(lines(el)).toEqual(['STR sets to 4', 'Perception at least 3']);
 	});
 
 	it('reads an option change as a vital tile in the option\'s label, and keeps a refused one in the list with its reason', () => {

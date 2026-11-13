@@ -576,7 +576,10 @@ export function modifierAccount(
  *
  * **An override line reads "sets to" rather than a signed amount**, because an
  * override is not an addend, and a bonus type is never on one — overrides do not
- * contest by type, so the line carries none either.
+ * contest by type, so the line carries none either. **An upgrade's floor is
+ * unsigned for the same reason**, `at least 3`: a floor is a value the number
+ * is raised to, a sign reads as an add, and `stateChange`'s `at least
+ * Proficient` already says it so (`docs/UI.md` §9).
  *
  * The type, where the definition declared one. An untyped modifier says nothing
  * rather than saying "untyped": every modifier is untyped on a layout that has
@@ -598,7 +601,7 @@ function change(line: {
 	amount: number;
 }): string {
 	if (line.operator === 'override') return `sets to ${line.amount}`;
-	if (line.operator === 'upgrade') return `at least ${signed(line.amount)}`;
+	if (line.operator === 'upgrade') return `at least ${line.amount}`;
 	const said = `${line.type === null ? '' : `${line.type} `}${signed(line.amount)}`;
 	return line.applies === 'result' ? `${said} to the derived number` : said;
 }
@@ -827,7 +830,7 @@ export function ownNowLine(account: StateAccount): string {
 }
 
 /**
- * What one part's outcome does, in words: `sets to 4`, `item +2`, `at least +3`,
+ * What one part's outcome does, in words: `sets to 4`, `item +2`, `at least 3`,
  * or its note — the outcome half every surface spells one way.
  *
  * **Exported for a Stat block's changes list**, which draws each part as
