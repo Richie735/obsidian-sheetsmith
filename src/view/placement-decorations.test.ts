@@ -539,9 +539,10 @@ describe('the tag text picked against the fill', () => {
 /*
  * A Roster drawn as stat cards, whose rows each move on their own: a form
  * tints a stat's score pill and each row it changed, never the card, and the
- * card carries the tag for its pill where a score comes first; where only a
- * row moved, the tag is in that row's name cell
- * (`docs/features/character-forms.md`, "Where a decoration lands" and "The
+ * card carries the tag for its pill and its rows alike, at its bottom corner,
+ * opposite the score: a card's name cell is as narrow as the card, so a tag
+ * laid over it covered the label (`docs/features/character-forms.md`, "Where
+ * a decoration lands" and "The
  * text mark", Roster). Cat adds to its scores, as the owner's
  * druid's Cat Form does, so `mod.self` moves the score where `effective` reads
  * it; an `=` sets the published reading and leaves the score alone.
@@ -702,14 +703,24 @@ describe('the in-play tint on a Roster card', () => {
 		expect(insight?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
 	});
 
-	it('tags a row\'s name cell where a form pushed only at that row', () => {
+	it('tags the card at its corner where a form pushed only at one of its rows, never the row\'s name', () => {
+		// A card's name cell is as narrow as the card, so a tag laid over its
+		// inline end covered the label: Stealth read "Stea[Cat Form]".
 		const { root } = draw(ROSTER_NOTE('no', 'yes'), ROSTER(true));
+		const [strength, dexterity, wisdom] = cardsOf(root);
 		const insight = Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr'))[3];
 		expect(insight?.classList.contains(IN_PLAY_BOX)).toBe(true);
-		const tag = insight?.querySelector(`th[scope="row"] .${IN_PLAY_MARK_INLINE}`);
-		expect(tag?.textContent).toBe('Owl');
-		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
-		for (const card of cardsOf(root)) expect(card.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		expect(insight?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
+		const tags = tagsIn(cellOf(root, 'checks'));
+		expect(tags).toHaveLength(1);
+		expect(tags[0]?.parentElement).toBe(wisdom);
+		expect(tags[0]?.textContent).toBe('Owl');
+		// On the card itself, as its score's tag is — never inside the score's
+		// pill or along a row's line — so the stylesheet's bottom corner places it.
+		expect(tags[0]?.classList.contains(IN_PLAY_MARK_INLINE)).toBe(false);
+		expect(wisdom?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		for (const card of [strength, dexterity]) expect(card?.classList.contains(IN_PLAY_MARKED)).toBe(false);
 	});
 
 	it('tints the card whole where only the reading moved, with no effective', () => {

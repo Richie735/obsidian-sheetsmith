@@ -115,10 +115,11 @@ export const BOX_ATTRIBUTE = 'data-sheetsmith-box';
  * The attribute on the element that carries the form's tag where the box a
  * value belongs to cannot (`docs/features/character-forms.md`, "The text
  * mark"). Outside the box or inside it: a Roster card holds its score pill,
- * which has no room for the tag, while a Roster band's name sits inside its
- * `tr`, which has no name cell for it. The carrier takes the tag and no fill or
- * outline of its own. Written by the component, which alone knows which
- * element carries which box's tag and why.
+ * which has no room for the tag, and its rows, whose name cells are as narrow
+ * as the card (`stampRowTagBox`), while a Roster band's tag line sits inside
+ * its `tr`, which has no name cell for it. The carrier takes the tag and no
+ * fill or outline of its own. Written by the component, which alone knows
+ * which element carries which box's tag and why.
  */
 export const TAG_BOX_ATTRIBUTE = 'data-sheetsmith-tag-box';
 
@@ -127,11 +128,13 @@ export const TAG_BOX_ATTRIBUTE = 'data-sheetsmith-tag-box';
  * say which box it belongs to, and say what carries the tag where that box
  * cannot.
  *
- * **The one route to the mark**, so the name cannot be missing where the mark is
- * — a scan in `components/isolation.test.ts` holds every other spelling of
- * these attributes to none. `name` is absent where the caller publishes no name,
- * or where another value already carries it, which leaves the mark alone and
- * nothing for the tint to find. `box` is the card, pill or row the value sits
+ * **The one route to the mark**, so the name cannot be missing where the mark
+ * is. The attributes are written in this module alone, here and by
+ * `stampRowTagBox` for a row's carrier — a scan in
+ * `components/isolation.test.ts` holds every other spelling of them to none.
+ * `name` is absent where the caller publishes no name, or where another value
+ * already carries it, which leaves the mark alone and nothing for the tint to
+ * find. `box` is the card, pill or row the value sits
  * in: absent or null, the value is its own box. `tagBox` is what carries the
  * tag where `box` is the first one tinted: absent, the box carries it.
  */
@@ -145,6 +148,18 @@ export function stampModifiedHost(
 	if (name !== undefined) host.setAttribute(NAME_ATTRIBUTE, name);
 	box?.setAttribute(BOX_ATTRIBUTE, '');
 	tagBox?.setAttribute(TAG_BOX_ATTRIBUTE, '');
+}
+
+/**
+ * Name `tagBox` as what carries the form's tag for `row`, once a value or a
+ * ring in the row has stamped it as its box: a Roster's stat card, whose rows'
+ * name cells are as narrow as the card, so a tag laid over one covered the
+ * label (`docs/features/character-forms.md`, "Row first"). Called after the
+ * row is drawn, since its stamps are made by whichever cell a modifier
+ * reached, a ring's by `state-ring.ts`.
+ */
+export function stampRowTagBox(row: HTMLElement, tagBox: HTMLElement): void {
+	if (row.hasAttribute(BOX_ATTRIBUTE)) tagBox.setAttribute(TAG_BOX_ATTRIBUTE, '');
 }
 
 /**

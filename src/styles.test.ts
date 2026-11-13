@@ -5404,6 +5404,21 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		const host = tint.find((rule) => rule.selector === '.sheetsmith-view .sheetsmith-in-play-marked:not(tr)');
 		expect(host?.body).toMatch(/position:\s*relative/);
 	});
+
+	it('never moves a card\'s tag to the top, beside the score', () => {
+		// A Roster card carries the tag for its rows as for its score, and at
+		// the bottom corner the tag cannot read as the score having moved
+		// (`docs/features/character-forms.md`, "Row first"). Only a row's tag,
+		// which rides its line, and a Pool's, whose bottom holds the bar, may
+		// set a top inset.
+		const tops = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) => rule.selector.includes('.sheetsmith-in-play-mark') && /inset-block-start\s*:/.test(rule.body),
+		);
+		expect(tops.length).toBeGreaterThan(1);
+		for (const rule of tops) {
+			expect(rule.selector).toMatch(/\.sheetsmith-in-play-mark-inline|\.sheetsmith-pool\s*>/);
+		}
+	});
 });
 
 describe('stat block zones\' small fixes (docs/features/stat-block-zones.md)', () => {
