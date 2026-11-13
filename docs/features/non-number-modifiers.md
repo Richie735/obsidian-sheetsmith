@@ -512,6 +512,17 @@ So it cannot loop.
   and 24 and at phone width, each in light and dark, and in forced colors at
   default: the door, the Total and the ring sit inside the card and the card
   does not scroll sideways.
+- **`modifier-states-roster-card-middle`** and **`modifier-states-roster-card-two`**:
+  `modifier-states-roster-card` with Cat Form raising Acrobatics, a middle row,
+  and Acrobatics with Stealth, so the card's bottom-corner tag can be judged
+  against a changed row that is not the last, and against two in one card
+  (`docs/features/character-forms.md`, "Row first"). Shot at Text default, 20,
+  24 and phone width in light, and measured by `harness/measure-form-tag.mjs`.
+- **`modifier-states-roster-band`**: the same Roster as one table two columns
+  wide, where Stealth's tag stays in its name cell and covers the label, a
+  known gap (`docs/BACKLOG.md`); `measure-form-tag.mjs` reports it without
+  failing. Shot as `modifier-states-roster-band-light.png` and
+  `modifier-states-roster-band-text-24-light.png`.
 - **`modifier-states-own-door`**: Stealth's door opened on
   `modifier-states-roster-card`, stored Untrained under Cat Form (Thorne's
   state), the account opening on `Your own: Untrained`.
