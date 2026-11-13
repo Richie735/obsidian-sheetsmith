@@ -171,6 +171,10 @@ const ALLOWED = [
 	// three consumers, which is §1's extraction line met exactly.
 	"import { renderNoteMark } from './note-mark';",
 	"import { renderNoteMark } from '../components/note-mark';",
+	// A door onto a value's read-only account, shared by the note mark, a ring's
+	// state door and a dropdown's door: three consumers, §1's extraction line.
+	"import { renderAccountDoor } from './account-door';",
+	"import { renderAccountDoor } from '../components/account-door';",
 	// A ring a modifier set, shared by Table, Roster and Track: three consumers,
 	// §1's extraction line met exactly (`docs/features/non-number-modifiers.md`).
 	"import { stateRing } from './state-ring';",
