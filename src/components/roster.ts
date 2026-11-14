@@ -62,20 +62,19 @@ import { fencedLinkRefusal } from './fenced-link';
 import { levelCount, levelName, levelOf } from './level-ring';
 import { paintLinkedText } from './linked-text';
 import {
-	ModifierAccount,
 	modifierAccount,
 	modifiersOnName,
 	stampModifiedHost,
 	stampRowTagBox,
 } from './modifier-breakdown';
-import { notesAt, renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
+import { notesAt, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
 import {
 	cellStateRing,
-	DoorPart,
+	finishRowDoor,
 	layoutSetsStateIn,
-	renderRowDoor,
-	StateRing,
+	RowAccount,
+	RowState,
 	STATE_DOOR_CLASS,
 	STATE_STRIP_CLASS,
 } from './state-ring';
@@ -1432,8 +1431,8 @@ function drawRow(
 	 * all. A row with no such ring draws its computed cells' note marks where
 	 * they were.
 	 */
-	const rowStates: { set: StateRing; notes: string | null; heading: string }[] = [];
-	const rowAccounts: { td: HTMLElement; account: ModifierAccount | null; heading: string }[] = [];
+	const rowStates: RowState[] = [];
+	const rowAccounts: RowAccount[] = [];
 	const doc = tr.ownerDocument;
 	const winView = doc.defaultView;
 	let pending: number | undefined;
@@ -1706,35 +1705,15 @@ function drawRow(
 		renderCell(entry);
 	}
 
-	const end = tr.lastElementChild as HTMLElement | null;
-	if (rowStates.length > 0 && end !== null) {
-		// Each ring's lines with the notes at its own name, then each computed
-		// cell's account, each its column's part of the one door.
-		const parts: DoorPart[] = [
-			...rowStates.map(({ set, notes, heading }) => ({
-				heading,
-				text: () => (notes === null ? set.text() : `${set.text()}\n\n${notes}`),
-			})),
-			...rowAccounts.flatMap(({ account, heading }) =>
-				account?.text === null || account?.text === undefined
-					? []
-					: [{ heading, text: () => account.text as string }],
-			),
-		];
-		// The row-end control's slot is the note mark's, so the column keeps one
-		// line-up whichever of the two a row holds (`reserveNoteSlots`).
-		end.classList.add('sheetsmith-table-has-note');
-		renderRowDoor(
-			end,
-			modifiersOnName(rowLabel(view.row.label)),
-			rowStates.map((state) => state.set),
-			parts,
-		);
-	} else {
-		for (const { td, account } of rowAccounts) {
-			renderAccountNotes(td, account, 'sheetsmith-table-has-note');
-		}
-	}
+	// The row's one door at its end, or its Totals' note marks where no ring
+	// on it was set (`finishRowDoor`).
+	finishRowDoor(
+		tr.lastElementChild as HTMLElement | null,
+		modifiersOnName(rowLabel(view.row.label)),
+		rowStates,
+		rowAccounts,
+		'sheetsmith-table-has-note',
+	);
 
 	recompute(true);
 	return tr;

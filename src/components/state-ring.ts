@@ -21,9 +21,16 @@
  * its own". Drawn wherever the address lists a line, applied or not, or is
  * refused; a change whose condition is false lists nothing and draws none.
  *
- * **Where the door goes is the caller's**: after the ring in a Table cell,
- * beside a Track's label, and at a Roster row's end, one door for the whole row
- * (`renderRowDoor`).
+ * **Where the door goes is the caller's**: beside a Track's label, and at a
+ * Table's or a Roster's row end, one door for the whole row.
+ *
+ * **It also closes a row onto that one door** (`finishRowDoor`), which is the
+ * same job read at the row: a ring's door at the row's end carries the row's
+ * computed accounts with it, so whether a Total's notes take a mark of their
+ * own or go into the door depends on whether a ring on the row was set. That
+ * decision is the door's placement rule, so the no-ring fallback — each
+ * computed cell's note mark where it was — is decided here, beside the door it
+ * stands in for, rather than in each row that would otherwise ask it twice.
  *
  * **Shared by Table, Roster and Track**, three consumers, which is §1's
  * extraction line met exactly: the drawn mapping, the description, the live
@@ -37,27 +44,18 @@ import { FieldValue, ModifierContext, StateAccount } from '../types';
 import { refold, stateKey } from '../formula/modifier-states';
 import { AccountDoor, renderAccountDoor } from './account-door';
 import {
-	modifiersOnName,
+	ModifierAccount,
 	ownNowLine,
 	stampStateHost,
 	stateAccountText,
 	stateOwnDescription,
 } from './modifier-breakdown';
+import { renderAccountNotes } from './note-mark';
 import { RingControlOptions } from './ring-control';
 import { StateColumn, stateColumn } from './row-states';
 
 /** The door's class, which the stylesheet's glyph-button selector list names. */
 export const STATE_DOOR_CLASS = 'sheetsmith-state-door';
-
-/**
- * The empty box a ring cell holds in place of a door, in a column where some
- * other cell holds one, so a column of rings stays in line whether or not a
- * row is marked (`reserveNoteSlots`' argument).
- */
-export const STATE_SLOT_CLASS = 'sheetsmith-state-slot';
-
-/** The class a cell holding a door or a slot takes, for its own layout. */
-export const STATE_CELL_CLASS = 'sheetsmith-state-cell';
 
 /**
  * The class a Roster card strip takes when the layout can set a level or flag
@@ -107,7 +105,7 @@ export interface StateRing {
 	door: (
 		parent: HTMLElement,
 		name: string,
-		place?: { cls?: string; reserved?: boolean; notes?: string | null },
+		place?: { cls?: string; notes?: string | null },
 	) => HTMLButtonElement;
 }
 
@@ -165,8 +163,9 @@ export interface DoorPart {
 
 /**
  * A door's account from its parts: each headed by its column's name where there
- * is more than one, a blank line between. One spelling for a Roster row's door
- * and a dropdown's (`card.ts`), which carry parts the same way.
+ * is more than one, a blank line between. One spelling for a row's door, a
+ * Table's or a Roster's (`finishRowDoor`), and a dropdown's (`card.ts`), which
+ * carry parts the same way.
  */
 export function doorText(parts: readonly DoorPart[]): string {
 	const headed = parts.length > 1;
@@ -174,22 +173,22 @@ export function doorText(parts: readonly DoorPart[]): string {
 }
 
 /**
- * Draw one door onto several accounts: a Roster row's, whose door sits at the
- * row's end and carries every ring on the row a modifier set, in column order,
- * then the row's computed accounts (`docs/features/non-number-modifiers.md`,
- * "One door per row"). **Where it carries more than one part, each opens with
- * its column's name** — `Training`, `Total` — as the number account heads its
- * notes with `Notes`, so a reader can tell whose `Now Proficient` and whose
- * `Total +1` each is; a door of one part needs no heading and has none. The
- * description is the first ring's own where one differs, so a reader is told
- * of a ring the note and the sheet disagree on wherever the door is.
+ * Draw one door onto several accounts: a row's, whose door sits at the row's
+ * end and carries every ring on the row a modifier set, in column order, then
+ * the row's computed accounts (`docs/features/non-number-modifiers.md`, "One
+ * door per row"). **Where it carries more than one part, each opens with its
+ * column's name** — `Training`, `Total` — as the number account heads its notes
+ * with `Notes`, so a reader can tell whose `Now Proficient` and whose `Total +1`
+ * each is; a door of one part needs no heading and has none. The description is
+ * the first ring's own where one differs, so a reader is told of a ring the note
+ * and the sheet disagree on wherever the door is.
  */
-export function renderRowDoor(
+function renderRowDoor(
 	parent: HTMLElement,
 	name: string,
 	sets: readonly StateRing[],
 	parts: readonly DoorPart[],
-	place: { cls?: string; reserved?: boolean } = {},
+	place: { cls?: string } = {},
 ): HTMLButtonElement {
 	const text = () => doorText(parts);
 	const own = () => sets.map((set) => set.own()).find((said) => said !== null) ?? null;
@@ -198,13 +197,74 @@ export function renderRowDoor(
 	return button;
 }
 
+/** A ring on a row that a modifier set, gathered as the row is drawn. */
+export interface RowState {
+	set: StateRing;
+	/** The account of what was noted at the ring's own name, or null. */
+	notes: string | null;
+	/** Its column's name, the key where the column has none. */
+	heading: string;
+}
+
+/** A computed cell on a row, with the account its own press opens. */
+export interface RowAccount {
+	td: HTMLElement;
+	account: ModifierAccount | null;
+	/** Its column's name, the key where the column has none. */
+	heading: string;
+}
+
+/**
+ * Close a row once every cell is drawn: **one door at the row's end where any
+ * ring on it was set**, carrying each set ring's lines with the notes at its own
+ * name, then each computed cell's account; and **where none was, each computed
+ * cell's note mark where it was**, after its number.
+ *
+ * Table's row and Roster's row, which put a ring's door in the same place
+ * (Table's once sat beside the ring, in its cell). One spelling, because what goes into the
+ * door, in what order and under which heading is the whole of the rule: two
+ * copies could only be tested for still agreeing (`PATTERNS` §1). The end cell
+ * takes `holding`, the noted cell's own class, since the door sits in the note
+ * mark's slot and the column keeps one line-up whichever of the two a row holds
+ * — the caller's `reserveNoteSlots`, with `STATE_DOOR_CLASS` counted alike.
+ */
+export function finishRowDoor(
+	end: HTMLElement | null,
+	name: string,
+	states: readonly RowState[],
+	accounts: readonly RowAccount[],
+	holding: string,
+): void {
+	if (states.length === 0 || end === null) {
+		for (const { td, account } of accounts) renderAccountNotes(td, account, holding);
+		return;
+	}
+	const parts: DoorPart[] = [
+		...states.map(({ set, notes, heading }) => ({
+			heading,
+			text: () => (notes === null ? set.text() : `${set.text()}\n\n${notes}`),
+		})),
+		...accounts.flatMap(({ account, heading }) =>
+			account?.text === null || account?.text === undefined
+				? []
+				: [{ heading, text: () => account.text as string }],
+		),
+	];
+	end.classList.add(holding);
+	renderRowDoor(
+		end,
+		name,
+		states.map((state) => state.set),
+		parts,
+	);
+}
+
 /**
  * A ring in a row's cell, as a modifier may have set it: the options to hand
- * `bindRingControl`, and what to draw once it is bound — the door after the
- * ring, and the stamp the form tint reads on the row (D11). Table's cell and
- * Roster's cell are one control, so this is one spelling of it; a row with no
- * name a change can address, or nothing pushed at it, gets no options and
- * draws nothing.
+ * `bindRingControl`, the account the row's door carries, and the stamp the form
+ * tint reads on the row (D11). Table's cell and Roster's cell are one control,
+ * so this is one spelling of it; a row with no name a change can address, or
+ * nothing pushed at it, gets no options and no account.
  */
 export function cellStateRing(options: {
 	modifiers: ModifierContext | undefined;
@@ -218,17 +278,8 @@ export function cellStateRing(options: {
 }): {
 	ring: Partial<StateRing['ring']>;
 	/**
-	 * Draw the door and stamp the row, and answer whether a door was drawn.
-	 * `notes` is the account of what was noted at the cell's own name: where the
-	 * cell has a door, it goes into the door's account rather than a note mark
-	 * of its own, since two `info` glyphs side by side in one cell would be two
-	 * doors onto one value's account.
-	 */
-	finish: (cell: HTMLElement, row: HTMLElement, rowLabel: string, notes?: string | null) => boolean;
-	/**
-	 * The account's ring, for a caller that draws the door elsewhere — a Roster
-	 * row's, at the row's end — or null where nothing was pushed; `stamp` marks
-	 * the row for the form tint without drawing a door.
+	 * The account's ring, for the row's door at its end (`finishRowDoor`), or
+	 * null where nothing was pushed; `stamp` marks the row for the form tint.
 	 */
 	set: StateRing | null;
 	stamp: (row: HTMLElement) => void;
@@ -237,86 +288,26 @@ export function cellStateRing(options: {
 	const at = stateColumn(column);
 	const account = name === undefined ? null : (modifiers?.state?.(name, at, stored) ?? null);
 	if (account === null || name === undefined) {
-		return { ring: {}, finish: () => false, set: null, stamp: () => undefined };
+		return { ring: {}, set: null, stamp: () => undefined };
 	}
 	const set = stateRing(account, announce, true);
 	const stamp = (row: HTMLElement) => stampStateHost(button, name, at, account.stored, row);
-	return {
-		ring: set.ring,
-		set,
-		stamp,
-		finish: (cell, row, rowLabel, notes) => {
-			// After the ring, as the cell's door onto why it reads as it does:
-			// the ring's press is the ring's.
-			set.door(cell, modifiersOnName(`${rowLabel} · ${column.name ?? column.key}`), {
-				reserved: true,
-				notes: notes ?? null,
-			});
-			stamp(row);
-			return true;
-		},
-	};
+	return { ring: set.ring, set, stamp };
 }
 
 /**
  * Draw the door into `parent`, through the one door there is
- * (`account-door.ts`'s `renderAccountDoor`), stamping the cell where its column
- * keeps the door's slot.
+ * (`account-door.ts`'s `renderAccountDoor`).
  */
 function renderStateDoor(
 	parent: HTMLElement,
 	name: string,
 	text: () => string,
 	place: {
-		/** The door's class: the cell door's own, or a caller's door it borrows. */
+		/** The door's class: the row door's own, or a caller's door it borrows. */
 		cls?: string;
-		/**
-		 * That the door sits in a cell whose column keeps its slot in every other
-		 * ring cell (`reserveStateSlots`), so the cell is stamped for that layout.
-		 */
-		reserved?: boolean;
 	} = {},
 	description?: () => string | null,
 ): AccountDoor {
-	if (place.reserved === true) parent.classList.add(STATE_CELL_CLASS);
 	return renderAccountDoor(parent, { cls: place.cls ?? STATE_DOOR_CLASS, name, text, description });
-}
-
-/**
- * Keep the door's slot in every ring cell of a column that holds a state door
- * anywhere, so the stylesheet can give it the door's box and the rings line up.
- *
- * **An element rather than a pseudo-element**, which is where it differs from
- * `reserveNoteSlots`: a ring cell may owe both slots at once, a door's and a
- * note mark's, and a cell has one `::after`. The slot goes straight after the
- * ring, where the door would be. Walked once after the rows are drawn, by
- * column position; a table with no door gains nothing.
- */
-export function reserveStateSlots(table: HTMLTableElement): void {
-	const holds = (cell: Element) =>
-		Array.from(cell.children).some((child) => child.classList.contains(STATE_DOOR_CLASS));
-	const doored = new Set<number>();
-	for (const row of Array.from(table.rows)) {
-		let at = 0;
-		for (const cell of Array.from(row.cells)) {
-			if (cell.colSpan === 1 && holds(cell)) doored.add(at);
-			at += cell.colSpan;
-		}
-	}
-	if (doored.size === 0) return;
-	for (const row of Array.from(table.rows)) {
-		let at = 0;
-		for (const cell of Array.from(row.cells)) {
-			const ring = Array.from(cell.children).find((child) =>
-				child.classList.contains('sheetsmith-level-ring'),
-			);
-			if (cell.colSpan === 1 && doored.has(at) && ring !== undefined && !holds(cell)) {
-				const slot = createSpan({ cls: STATE_SLOT_CLASS });
-				slot.setAttribute('aria-hidden', 'true');
-				ring.after(slot);
-				cell.classList.add(STATE_CELL_CLASS);
-			}
-			at += cell.colSpan;
-		}
-	}
 }

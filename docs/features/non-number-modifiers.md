@@ -272,8 +272,9 @@ So it cannot loop.
   applied to a control with no caret.
 - **The mark is the account door.** It is the `info` glyph button already used for
   reading one value's account: a Track's breakdown door, a Pool's ceiling door,
-  the note mark (`docs/UI.md` §9). It is drawn beside the ring and opens the
-  shared popover with the account. A ring has no text to underline, and its press
+  the note mark (`docs/UI.md` §9). It is drawn at the row's end on a Table or
+  Roster row and beside the label on a Track (below), and opens the shared
+  popover with the account. A ring has no text to underline, and its press
   is already taken by editing, so the door here is the mark itself. This is the
   same argument the Pool ceiling made ("a door rather than a press on the number,
   because the numeral has no press of its own"). The door is drawn wherever the
@@ -282,11 +283,7 @@ So it cannot loop.
   - **On a Track flag**, the door is the Track's own
     `.sheetsmith-track-modifier-button`, named `Modifiers on Inspiration`
     (`modifiersOnName`).
-  - **In a Table cell**, the door is the glyph button inside the cell,
-    after the ring. The column reserves its slot, the way `reserveNoteSlots` keeps
-    a note column's values in line. That way a column of rings stays aligned
-    whether or not a row is marked. It is named `Modifiers on Stealth · Training`.
-  - **In a Roster row, the door sits at the row's end**, after the last value,
+  - **In a Table row and a Roster row alike, the door sits at the row's end**, after the last value,
     in the note mark's slot, and there is **one door per row**. It is named for
     the row, `Modifiers on Stealth`. Its account is every ring on the row a
     modifier set, in column order — `Your own: Untrained`, its lines, `Now
@@ -306,9 +303,13 @@ So it cannot loop.
     reached both ways there: the press is the number's (it says the formula,
     which the door does not), the door is the row's. The column keeps the slot
     in every other row's last cell (`reserveNoteSlots`, the door counted as a
-    note mark), so the rings, the Totals and the doors each line up down a card
-    whether or not a row has a door. Table keeps its door beside the ring for
-    now; the 5e `skills` table draws it there.
+    note mark), so the rings, the Totals and the doors each line up down a table
+    or a card whether or not a row has a door. On a Table with character rows
+    the row's end is its last value, before the delete control's cell. The 5e
+    `skills` table draws the door after the Total. Both rows close through one
+    helper, `state-ring.ts`'s `finishRowDoor`. Table's door once sat beside the
+    ring in its cell, named `Modifiers on Stealth · Training`, and moved here so
+    a ring's door has one placement.
 - **The screen reader hears the drawn state, and is told the stored one when they
   differ.** `aria-pressed` (for a flag) or the level name in `aria-label` gives the
   drawn state. When the stored state differs, the button carries an
@@ -331,15 +332,17 @@ So it cannot loop.
   stored level: a second mark was tried beside the ring and then as the door's
   face, and was withdrawn because it reads as a second toggle that does nothing.
   The door is the `info` glyph, always, and keeps its accessible name, `Modifiers
-  on Stealth · Training`; while the two differ its `aria-description` reads `Set
+  on Stealth`; while the two differ its `aria-description` reads `Set
   by a modifier; your own: Untrained`, the ring's own sentence, and is left off
-  where they agree. The ring keeps its own description and `title` line. The door
-  sits 2px after the ring and is positioned over the ring's outward hit reach,
-  so a press on its first pixels is the door's. Table's, Roster's and Track's
+  where they agree. The ring keeps its own description and `title` line. Where
+  the row's last value is a ring, the door sits 2px after it and is positioned
+  over the ring's outward hit reach, so a press on its first pixels is the door's. Table's, Roster's and Track's
   doors all carry it.
-  - **A note at the cell's own name goes into the door's account**, after a blank
-    line, and the cell draws no note mark: two `info` glyphs side by side in one
-    cell would be two doors onto one value's account.
+  - **A note at a set ring's own name goes into the door's account**, after a
+    blank line, and the ring's cell draws no note mark: the row's door already
+    opens that note, so a mark in the ring's cell would be a second `info` glyph
+    on one row onto the same account. A ring nothing set has no door, so its
+    note keeps its own mark.
   - **A Roster card strip the layout can set a level or flag in keeps a floor of
     `max(12rem, calc(120px + 5.75em))`** rather than 12rem (`STATE_STRIP_CLASS`).
     With the door at the row's end, in the note mark's slot, it costs nothing in
@@ -429,8 +432,8 @@ So it cannot loop.
   each declared column. Every reader of the row then sees one state: its computed
   cells on screen and in the draft, its published name, its row values, an
   aggregate over it, and a column `total` (D10). The total reads its rows through
-  the same reader, so `total` and `sum()` cannot disagree. The ring cell draws the
-  door.
+  the same reader, so `total` and `sum()` cannot disagree. The row draws one door
+  at its end, as a Roster row does.
 - **Roster**: the same, through its own `rowScope`. This covers band rows and the
   `cardLayout` face.
 - **Record set, Stat block, Card, Card set, Pool**: unchanged. They declare no
@@ -669,9 +672,12 @@ The face, as tests:
       the drawn one — a name, a position on an unnamed list, `on`/`off` for a
       flag — and its last line is the drawn state alone. A refused account has
       no own line. The door's `aria-description` says the stored level while it
-      differs. A note at a door cell's own name is in the door's account and
-      draws no note mark. A Roster row draws one door, in its last cell after
-      the Total, named `Modifiers on Stealth`, whose account is the ring's lines
+      differs. A note at a set ring's own name is in the door's account and
+      draws no note mark. A Table row and a Roster row each draw one door, in
+      the row's last value cell (after the Total in the 5e `skills` table and
+      the Druid's Roster) and never beside the ring, named
+      `Modifiers on Stealth`; a Table row with two rings set draws one door
+      whose parts open on `Training` and `Advantage`. A Roster row's door's account is the ring's lines
       under `Training` then the Total's arithmetic and notes under `Total`, and
       a door of one part carries no heading; one gear row giving both a ring's
       line and the Total's is spelled `Gear · Cat Form` on both, with the first set ring's

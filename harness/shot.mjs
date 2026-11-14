@@ -3947,14 +3947,14 @@ export const DEFAULTS = [
 		size: '1400,1100',
 	},
 	/*
-	 * A refused state's door opened: Perception's Training, which the Cursed eye
+	 * A refused state's door opened: Perception's row, whose Training the Cursed eye
 	 * sets to 3 on a list running 0 to 2, so the account opens on the refusal's
 	 * sentence over the stored level (UI.md §10, "Error text names the fix").
 	 */
 	{
 		name: 'modifier-states-refused-door',
 		query:
-			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Perception%20%C2%B7%20Training'%5D",
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Perception'%5D",
 		size: '1400,1100',
 	},
 	/*
@@ -3965,7 +3965,7 @@ export const DEFAULTS = [
 	{
 		name: 'modifier-states-already-door',
 		query:
-			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Arcana%20%C2%B7%20Training'%5D",
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Arcana'%5D",
 		size: '1400,1100',
 	},
 	/*

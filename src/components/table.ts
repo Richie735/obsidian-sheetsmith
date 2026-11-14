@@ -68,6 +68,7 @@ import {
 	stampModifiedHost,
 	applying,
 	modifierAccount,
+	modifiersOnName,
 	modifierRowName,
 	modifierRowText,
 	rowModifiers,
@@ -84,9 +85,9 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
-import { notesAt, renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
+import { notesAt, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
-import { cellStateRing, reserveStateSlots } from './state-ring';
+import { cellStateRing, finishRowDoor, RowAccount, RowState, STATE_DOOR_CLASS } from './state-ring';
 import { columnState, overlayRowStates, refusalFirst, rowStateShapes, stateColumn } from './row-states';
 import { flagText } from './stored-flag';
 import {
@@ -2128,6 +2129,15 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				el: HTMLElement;
 				index: number;
 			}[] = [];
+			/*
+			 * **One door per row, at the row's end**, as a Roster row has
+			 * (`docs/features/non-number-modifiers.md`, "One door per row"): every
+			 * ring on the row a modifier set, with the notes at its own name, and
+			 * each computed cell's account beside it, gathered as the cells are
+			 * drawn so the door drawn once the row is complete carries them all.
+			 */
+			const rowStates: RowState[] = [];
+			const rowAccounts: RowAccount[] = [];
 			const view = doc.defaultView;
 			let pending: number | undefined;
 			/**
@@ -2285,7 +2295,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 * **The whole account opens on the cell's press; the underline
 					 * and the in-cell twin follow the arithmetic alone**, so a
 					 * note-only cell underlines no number nothing moved. Its notes
-					 * have their own mark and twin after the number, below.
+					 * go into the row's door where a ring on the row was set, and
+					 * have their own mark and twin after the number where none was
+					 * (`finishRowDoor`, below).
 					 */
 					const pushed = account?.text ?? null;
 					if (account?.arithmetic === true && pushed !== null) {
@@ -2322,7 +2334,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						 */
 						element('span', 'sheetsmith-sr-only', td, pushed);
 					}
-					renderAccountNotes(td, account, 'sheetsmith-table-has-note');
+					// Its notes go into the row's door where a ring on the row
+					// was set, and take their own mark after the number where
+					// none was (`finishRowDoor`).
+					rowAccounts.push({ td, account, heading: column.name ?? column.key });
 					if (column.formula !== undefined) {
 						// The title says this on a desktop and says nothing on a
 						// phone. A read-only cell has no other use for a tap, so
@@ -2789,13 +2804,20 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						nameOnScreen: column.hideHeading !== true,
 						onSet: store,
 					});
-					// The door, and the row as the box a form in play tints (D11).
-					// The door's face is the mark, so where a door is drawn the notes
-					// at this cell's name go into its account rather than a note mark
-					// of their own; elsewhere the notes take their own control, since
-					// the ring's press is the ring's.
+					// The row as the box a form in play tints (D11), and the ring's
+					// part of the row's door at its end, so the notes at this
+					// cell's name go into that account rather than a mark of their
+					// own; a ring nothing set keeps its own note mark, since the
+					// ring's press is the ring's.
 					const noteName = publishedName(config, rowView, index);
-					if (!set.finish(td, tr, rowLabel(rowView.label), notesAt(context.modifiers, noteName))) {
+					if (set.set !== null) {
+						set.stamp(tr);
+						rowStates.push({
+							set: set.set,
+							notes: notesAt(context.modifiers, noteName),
+							heading: column.name ?? column.key,
+						});
+					} else {
 						renderNotesAt(td, context.modifiers, noteName, 'sheetsmith-table-has-note');
 					}
 					return;
@@ -2970,6 +2992,15 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				}
 				renderCell(entry);
 			}
+			// The last value's cell, before the delete control's: the door is
+			// onto the row's values, and the trailing cell is the row's removal.
+			finishRowDoor(
+				tr.lastElementChild as HTMLElement | null,
+				modifiersOnName(rowLabel(rowView.label)),
+				rowStates,
+				rowAccounts,
+				'sheetsmith-table-has-note',
+			);
 			if (open) renderRemove(tr, rowView);
 
 			recompute(true);
@@ -3105,8 +3136,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		}
 		// Last, once every cell that will hold a mark holds it: a noted column
 		// reserves the mark's slot in its other cells, so its values line up,
-		// and a column a modifier set a ring in keeps the door's slot the same way.
-		reserveNoteSlots(grid);
-		reserveStateSlots(grid);
+		// and the row-end column holding a ring's door keeps the door's slot
+		// the same way, the door being the note mark's box.
+		reserveNoteSlots(grid, [STATE_DOOR_CLASS]);
 	},
 };
