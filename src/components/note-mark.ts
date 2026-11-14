@@ -158,8 +158,8 @@ export function renderAccountNotes(
 export function reserveNoteSlots(
 	table: HTMLTableElement,
 	/**
-	 * Other controls that take the mark's slot: a Roster row's state door, which
-	 * sits where a note mark would and is the same box, so a column holding
+	 * Other controls that take the mark's slot: a Table or Roster row's state
+	 * door, which sits where a note mark would and is the same box, so a column holding
 	 * either keeps one line-up.
 	 */
 	alike: readonly string[] = [],

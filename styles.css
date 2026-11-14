@@ -4921,53 +4921,29 @@ a.sheetsmith-notice-action {
 	margin-inline-start: var(--size-4-2);
 }
 
-/* **A ring a modifier set carries its door straight after it**
-   (`components/state-ring.ts`, `docs/features/non-number-modifiers.md`): the
-   note mark's box, ink, hover and focus by the selector lists above, at the
-   note mark's size. A cell in the same column with no door holds an empty slot
-   of exactly that box and gap, so the rings stay in line down the column
-   whether or not a row is marked. Only a column holding a door gains a slot,
-   so a table nothing set a ring in is exactly as it was.
+/* **A ring a modifier set has its door at the row's end**
+   (`components/state-ring.ts`'s `finishRowDoor`,
+   `docs/features/non-number-modifiers.md`), on a Table row and a Roster row
+   alike, after the row's last value: the note mark's box, ink, hover and focus
+   by the selector lists above, at the note mark's size, in the note mark's own
+   slot. Its cell holds it as a noted cell holds its mark, and
+   `reserveNoteSlots` keeps the mark's slot in every other cell of that column,
+   so the rings, the Totals and the doors each line up down a table whether or
+   not a row has a door. After a number it is placed as the note mark is, on
+   the digits' centre and taking no height from the line, by the rules below
+   that name both.
 
-   **A Roster row's door sits at the row's end instead**, after its last value
-   (`renderRowDoor`), in the note mark's own slot: its cell holds it as a noted
-   cell holds its mark, and `reserveNoteSlots` keeps the mark's slot in every
-   other cell of that column, so the rings, the Totals and the doors each line
-   up down a card whether or not a row has a door. After a number it is placed
-   as the note mark is, on the digits' centre and taking no height from the
-   line, by the rules below that name both.
-
-   **A 2px gap rather than the ring's 8px reach, with the door stacked over
-   it**: positioned, and later in the cell than the ring, so a press on the
-   door's first pixels lands on the door and not on the ring's outward hit
-   target. The reach-sized gap was what pushed a narrow Roster card's last
+   **A 2px gap rather than a ring's 8px reach**: where the last value is a
+   ring, the door is positioned and later in the cell than the ring, so a press
+   on the door's first pixels lands on the door and not on the ring's outward
+   hit target. The reach-sized gap was what pushed a narrow Roster card's last
    column past the card (`modifier-states-roster-card`). */
-.sheetsmith-view td > .sheetsmith-state-door,
-.sheetsmith-view td > .sheetsmith-state-slot {
+.sheetsmith-view td > .sheetsmith-state-door {
 	display: inline-flex;
+	position: relative;
 	vertical-align: middle;
 	margin-inline-start: var(--size-2-1);
 	font-size: var(--font-ui-small);
-}
-
-.sheetsmith-view td > .sheetsmith-state-door {
-	position: relative;
-}
-
-.sheetsmith-view td > .sheetsmith-state-slot {
-	width: var(--sheetsmith-inline-control, 1.6em);
-	height: 1px;
-}
-
-/* Stamped by the render on a cell holding either, rather than read off what
-   it holds (PATTERNS §5), and keeping the ring and its door on one line. */
-.sheetsmith-state-cell {
-	white-space: nowrap;
-}
-
-.sheetsmith-view .sheetsmith-state-cell > .sheetsmith-level-ring {
-	display: inline-flex;
-	vertical-align: middle;
 }
 
 /* **And the width the mark costs comes out of the name column.** A ring, its
