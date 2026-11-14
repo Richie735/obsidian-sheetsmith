@@ -337,6 +337,66 @@ describe('the starter rule: skills.stealth >= 1 in Training on a modifier row', 
 			expect(ring.classList.contains('sheetsmith-note-column')).toBe(false);
 		}
 	});
+
+	it('draws one door for a row with two rings set, its parts headed by column', () => {
+		const skills = starterSkills();
+		// A second ring before the Total, a flag the same row's modifiers set.
+		const columns = [...(skills.columns ?? [])];
+		columns.splice(1, 0, { key: 'Advantage', type: 'toggle' });
+		const both: TableConfig = { ...skills, columns };
+		const body = ['| Skill | Training | Advantage | Ability |', '|---|---|---|---|', '| Stealth |  |  | DEX |'].join('\n');
+		const el = sheetOf(
+			[
+				{ config: both, component: table, body },
+				{ config: ABILITIES, component: roster, body: '```sheet\nDEX: 14\n```' },
+				gear(['skills.stealth >= 1 in Training; skills.stealth = on in Advantage']),
+			],
+			[],
+			['mod(score) = floor((score - 10) / 2)', 'prof = 2'],
+		).draw(0);
+		const stealth = Array.from(el.querySelectorAll('tbody tr')).find((tr) =>
+			tr.textContent?.includes('Stealth'),
+		) as HTMLElement;
+		const doors = stealth.querySelectorAll(`.${STATE_DOOR_CLASS}`);
+		expect(doors).toHaveLength(1);
+		expect(doors[0]?.parentElement).toBe(stealth.lastElementChild);
+		const { door, text } = doorOf(stealth);
+		expect(door?.getAttribute('aria-label')).toBe('Modifiers on Stealth');
+		// The first set ring's own level is the description.
+		expect(door?.getAttribute('aria-description')).toBe('Set by a modifier; your own: Untrained');
+		const said = text ?? '';
+		// Two parts, each opening on its column's name, in column order.
+		expect(said.startsWith('Training\nYour own: Untrained\n')).toBe(true);
+		expect(said).toContain('\n\nAdvantage\n');
+		expect(said.indexOf('Training\n')).toBeLessThan(said.indexOf('\n\nAdvantage\n'));
+	});
+
+	it('draws the door in the last value\'s cell on a table with character rows, never in the delete control\'s', () => {
+		// Character rows draw a trailing delete cell on every row, the layout's
+		// own rows included (empty there), so the row's end is not its last cell.
+		const open: TableConfig = { ...starterSkills(), openRows: true };
+		const body = ['| Skill | Training | Ability |', '|---|---|---|', '| Stealth |  | DEX |'].join('\n');
+		const el = sheetOf(
+			[
+				{ config: open, component: table, body },
+				{ config: ABILITIES, component: roster, body: '```sheet\nDEX: 14\n```' },
+				gear(['skills.stealth >= 1 in Training']),
+			],
+			[],
+			['mod(score) = floor((score - 10) / 2)', 'prof = 2'],
+		).draw(0);
+		const stealth = Array.from(el.querySelectorAll('tbody tr')).find((tr) =>
+			tr.textContent?.includes('Stealth'),
+		) as HTMLElement;
+		const remove = stealth.lastElementChild as HTMLElement;
+		expect(remove.classList.contains('sheetsmith-table-remove')).toBe(true);
+		expect(remove.querySelector(`.${STATE_DOOR_CLASS}`)).toBeNull();
+		const doors = stealth.querySelectorAll(`.${STATE_DOOR_CLASS}`);
+		expect(doors).toHaveLength(1);
+		const end = remove.previousElementSibling as HTMLElement;
+		expect(end.classList.contains('sheetsmith-table-computed')).toBe(true);
+		expect(doors[0]?.parentElement).toBe(end);
+	});
 });
 
 describe('a Track flag a modifier set', () => {
