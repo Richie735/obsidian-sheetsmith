@@ -98,6 +98,7 @@ import {
 	BufferLookup,
 	bufferEntries,
 	foldBuffer,
+	grantAsked,
 	grantVerdict,
 	NO_BUFFERS,
 	storedBuffer,
@@ -872,7 +873,11 @@ export function sheetModifiers(
 	): ModifierOutcome | null => {
 		const { fields } = found;
 		if (!aimsAtBuffer(bufferNames, fields.target, fields.column)) return null;
-		if (found.kind !== 'applies') return null;
+		// Text is known and judged here, as the walk judges it (D4); what nothing
+		// knows falls through to the row's own unreadable line, as it refuses the
+		// buffer (D11).
+		const asked = grantAsked(found);
+		if (asked === null) return null;
 		const named = {
 			definition: found.definition,
 			change: found.change,
@@ -891,7 +896,7 @@ export function sheetModifiers(
 		// The walk's own verdict, through the one function both read.
 		const verdict = grantVerdict(
 			fields.operator,
-			found.contribution.literal ?? found.contribution.amount,
+			asked,
 			called(found),
 			source,
 			row.label,
@@ -926,7 +931,7 @@ export function sheetModifiers(
 			...named,
 			applies: suppressed === null,
 			amount: verdict.amount,
-			condition: found.conditional ? true : null,
+			condition: found.kind === 'applies' && found.conditional ? true : null,
 			suppressed,
 		};
 	};

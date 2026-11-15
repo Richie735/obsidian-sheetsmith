@@ -68,6 +68,7 @@ import {
 	aimsAtBuffer,
 	BufferLookup,
 	FoundGrant,
+	grantAsked,
 	grantVerdict,
 } from './modifier-buffers';
 import {
@@ -513,13 +514,17 @@ export function buildModifierTables(
 					 * **A buffer, the fourth reduction.** A change aimed at a name
 					 * whose value is a buffer, with no column, is a grant: reduced by
 					 * target, never reaching the slot. A grant that cannot be one is
-					 * listed with its sentence and grants nothing (D2, D4, D5); only an
-					 * amount that will not resolve refuses the buffer (D11).
+					 * listed with its sentence and grants nothing (D2, D4, D5), text
+					 * among them; only an amount that will not resolve refuses the
+					 * buffer (D11).
 					 */
 					if (aimsAtBuffer(bufferNames, target, found.fields.column)) {
-						if (found.kind === 'unreadable') {
-							if (isNoteOnly(found.fields)) continue;
-							if (!grantRefused.has(target)) {
+						const asked = grantAsked(found);
+						if (asked === null) {
+							// Only an unreadable change asks nothing (`grantAsked`): an
+							// applying one always carries its amount, so the kind check
+							// narrows the type rather than skipping a grant.
+							if (found.kind === 'unreadable' && !isNoteOnly(found.fields) && !grantRefused.has(target)) {
 								grantRefused.set(target, { label: push.row.label, reason: found.reason });
 							}
 							continue;
@@ -527,7 +532,7 @@ export function buildModifierTables(
 						const grant: FoundGrant = {
 							...grantVerdict(
 								found.fields.operator,
-								found.contribution.literal ?? found.contribution.amount,
+								asked,
 								called(found),
 								push.source,
 								push.row.label,

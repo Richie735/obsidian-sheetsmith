@@ -37,6 +37,8 @@ import {
 import { OPERATOR_LABELS, TEXT } from '../en';
 import { fencedKeyProblem } from '../parse/fenced';
 import { ALREADY_HIGHER, suppressionWording } from './suppression-wording';
+import type { Value } from './expression';
+import type { Enrolment } from './modifier-definitions';
 
 /**
  * Why a change aimed at a buffer may only be an At least (D2): the fault from
@@ -93,6 +95,21 @@ export function aimsAtBuffer(
 }
 
 /**
+ * What a change aimed at a buffer asked to grant, or null where nothing knows:
+ * its amount would not resolve, or its condition would not, which refuses the
+ * buffer (D11). **An amount that resolved to something other than a number is
+ * known** and is judged as a grant, so text is refused for that grant alone by
+ * `grantPoints`' sentence, as `2.5` is (D4), rather than zeroing every other
+ * grant at the buffer. One reading for the walk and the row's popup, so the two
+ * cannot disagree about which refusal it is.
+ */
+export function grantAsked(found: Enrolment): Value | null {
+	if (found.kind === 'applies') return found.contribution.literal ?? found.contribution.amount;
+	if (found.kind === 'unreadable') return found.resolved ?? null;
+	return null;
+}
+
+/**
  * What one change aimed at a buffer grants on one row, or why it grants nothing
  * (D2, D4, D5), in that order: the operator, then the key, then the points.
  * **The one verdict the walk and the row's popup both read**, so the two cannot
@@ -100,11 +117,11 @@ export function aimsAtBuffer(
  */
 export function grantVerdict(
 	operator: string,
-	amount: number | boolean,
+	amount: Value,
 	called: string,
 	source: string,
 	row: string,
-): { key: string | null; amount: number | null; asked: number | boolean; refused: string | null } {
+): { key: string | null; amount: number | null; asked: Value; refused: string | null } {
 	const keyProblem = grantKeyProblem(source, row);
 	const key = keyProblem === null ? grantKey(source, row) : null;
 	if (operator !== 'upgrade') return { key, amount: null, asked: amount, refused: BUFFER_TAKES_AT_LEAST };
@@ -141,10 +158,13 @@ export function wholePoints(text: string | undefined): number | null {
  * rule that a negative buffer is clamped to 0: the amount is an expression, and
  * `level - 3` at level 1 is a grant of nothing rather than an error.
  */
-export function grantPoints(amount: number | boolean, called: string): { points: number } | { reason: string } {
+export function grantPoints(amount: Value, called: string): { points: number } | { reason: string } {
 	if (typeof amount === 'number' && Number.isInteger(amount)) return { points: Math.max(0, amount) };
+	// The floor() hint only where floor() is the fix: a fraction. Text or a
+	// yes/no has nothing to round.
+	const hint = typeof amount === 'number' ? ' Give it a whole number, for example with floor().' : '';
 	return {
-		reason: `"${String(amount)}" is not a whole number of points, so ${called} grants nothing. Give it a whole number, for example with floor().`,
+		reason: `"${String(amount)}" is not a whole number of points, so ${called} grants nothing.${hint}`,
 	};
 }
 
@@ -162,7 +182,7 @@ export interface FoundGrant {
 	 * still says what it asked for (D5: its amount is known). Absent reads as
 	 * `amount`.
 	 */
-	asked?: number | boolean;
+	asked?: Value;
 	/** The refusal, where the grant grants nothing. */
 	refused: string | null;
 	inPlay?: boolean;
