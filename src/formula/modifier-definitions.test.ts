@@ -394,6 +394,30 @@ describe('resolveEnrolments over a part the row typed itself', () => {
 		);
 	});
 
+	it('keeps what an amount came to where it resolved to something not a number', () => {
+		/*
+		 * **Two kinds of unreadable amount, told apart by `resolved`**: one that
+		 * came to text is known, and a grant at a buffer refuses itself alone with
+		 * it (D4); one nothing can evaluate is not, and refuses the buffer (D11,
+		 * `docs/features/granted-temporary-points.md`). Everywhere else the two
+		 * refuse a slot alike, through the same reason.
+		 */
+		const text = only(DEFINITIONS, 'armour_class += Kind', row('A row', { Kind: 'lucky' }), {});
+		expect(text.kind === 'unreadable' ? [text.reason, text.resolved] : null).toEqual([
+			'"lucky" is not a number, so this row\'s own modifier has no amount.',
+			'lucky',
+		]);
+		const unknown = only(DEFINITIONS, 'armour_class += ability', row('A row'), {});
+		expect(unknown.kind).toBe('unreadable');
+		expect(unknown.kind === 'unreadable' ? unknown.resolved : null).toBeUndefined();
+		// A condition that will not resolve is never known, whatever the amount.
+		const condition = only(DEFINITIONS, 'armour_class += 2 when nowhere', row('A row'), {});
+		expect(condition.kind === 'unreadable' ? [condition.condition, condition.resolved] : null).toEqual([
+			true,
+			undefined,
+		]);
+	});
+
 	it('reads a comparison as a stray name rather than as an effect', () => {
 		// The negative lookahead, at the seam where it matters: a mistake the reader
 		// can see, rather than an effect nothing can resolve.

@@ -166,7 +166,7 @@ function pushesOf(parts: readonly (string | [string, string])[], source = 'Gear'
 	return (): readonly ModifierPush[] =>
 		parts.map((entry, at) => {
 			const [part, label] = typeof entry === 'string' ? [entry, `Row ${at + 1}`] : entry;
-			return { part, source, row: { label, values: { Worn: true } } };
+			return { part, source, row: { label, values: { Worn: true, Points: 'lots' } } };
 		});
 }
 
@@ -269,6 +269,38 @@ describe('the walk: a grant is a fourth reduction', () => {
 		expect(env.sheet('hp.temp')).toBe(0);
 	});
 
+	it('refuses a text amount for that grant alone, and a second grant still applies (D4)', () => {
+		const { env, modifiers } = sheetOf([['hp.temp >= Points', 'Charm'], ['hp.temp >= 6', 'Ring']], '2');
+		const account = modifiers.buffer?.('hp.temp', '2', {});
+		expect(account?.error).toBeNull();
+		expect(account?.grants.map((line) => [line.label, line.asked, line.suppressed])).toEqual([
+			[
+				'Charm',
+				'lots',
+				'"lots" is not a whole number of points, so this row\'s own modifier grants nothing.',
+			],
+			['Ring', undefined, null],
+		]);
+		expect(env.sheet('hp.temp')).toBe(6);
+		expect(env.sheet('hp.temp.value')).toBe(2);
+	});
+
+	it('refuses a yes/no amount under Adds to or Sets for that grant alone, and another still applies (D2)', () => {
+		const { env, modifiers } = sheetOf(
+			[['hp.temp += Worn', 'Charm'], ['hp.temp = Worn', 'Amulet'], ['hp.temp >= 6', 'Ring']],
+			'2',
+		);
+		const account = modifiers.buffer?.('hp.temp', '2', {});
+		expect(account?.error).toBeNull();
+		expect(account?.grants.map((line) => [line.label, line.asked, line.suppressed])).toEqual([
+			['Charm', true, BUFFER_TAKES_AT_LEAST],
+			['Amulet', true, BUFFER_TAKES_AT_LEAST],
+			['Ring', undefined, null],
+		]);
+		expect(env.sheet('hp.temp')).toBe(6);
+		expect(env.sheet('hp.temp.value')).toBe(2);
+	});
+
 	it('refuses a grant from a row whose label cannot key a record (D5)', () => {
 		const { env, modifiers } = sheetOf([['hp.temp >= 5', 'Ring: Vitality']], '1');
 		const account = modifiers.buffer?.('hp.temp', '1', {});
@@ -296,6 +328,20 @@ describe('the walk: a grant is a fourth reduction', () => {
 		expect(beaten[0]).toMatchObject({ applies: false, suppressed: 'already higher' });
 		const [refused] = modifiers.outcomes('hp.temp += 4', row, 'Gear');
 		expect(refused).toMatchObject({ applies: false, suppressed: BUFFER_TAKES_AT_LEAST });
+	});
+
+	it('words a text amount on the row’s popup as the door does, and an unresolved one as the walk refuses it', () => {
+		const { modifiers } = sheetOf(['hp.temp >= Points', 'hp.temp >= 6']);
+		const row = { label: 'Row 1', values: { Worn: true, Points: 'lots' } };
+		const [text] = modifiers.outcomes('hp.temp >= Points', row, 'Gear');
+		expect(text).toMatchObject({
+			grant: true,
+			applies: false,
+			suppressed:
+				'"lots" is not a whole number of points, so this row\'s own modifier grants nothing.',
+		});
+		const [unknown] = modifiers.outcomes('hp.temp >= nowhere', row, 'Gear');
+		expect(unknown).toMatchObject({ applies: false, suppressed: 'Unknown name "nowhere".' });
 	});
 });
 
