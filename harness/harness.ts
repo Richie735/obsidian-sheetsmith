@@ -75,6 +75,8 @@ import {
 	modifierStatesSamples,
 	rosterCardStateSamples,
 	STATE_DEFINITIONS,
+	RING_END_DEFINITIONS,
+	ringEndSamples,
 	ROSTER_CARD_FORM_ROWS,
 	rosterCardDefinitions,
 	poolGrantSamples,
@@ -134,6 +136,8 @@ type StateName =
 	| 'modifier-states-roster-band'
 	| 'modifier-states-roster-card-middle'
 	| 'modifier-states-roster-card-two'
+	| 'modifier-states-ring-end'
+	| 'modifier-states-ring-end-off'
 	| 'modifier-options'
 	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
@@ -216,6 +220,8 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'modifier-states-roster-card-middle' || name === 'modifier-states-roster-card-two') {
 		return rosterCardStateSamples();
 	}
+	if (name === 'modifier-states-ring-end') return ringEndSamples(true);
+	if (name === 'modifier-states-ring-end-off') return ringEndSamples(false);
 	if (name === 'modifier-options') return modifierOptionsSamples();
 	if (name.startsWith('pool-grant-')) {
 		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
@@ -254,6 +260,13 @@ function layoutFor(name: StateName): Layout {
 		return {
 			...built,
 			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+		};
+	}
+	// The ring-end sheets enrol in Cat Form, whether or not it is in play.
+	if (name === 'modifier-states-ring-end' || name === 'modifier-states-ring-end-off') {
+		return {
+			...built,
+			modifiers: [...RING_END_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
 		};
 	}
 	if (name in ROSTER_CARD_FORM_ROWS) {
@@ -1137,6 +1150,8 @@ function applyQuery(): void {
 			wanted === 'modifier-states-roster-band' ||
 			wanted === 'modifier-states-roster-card-middle' ||
 			wanted === 'modifier-states-roster-card-two' ||
+			wanted === 'modifier-states-ring-end' ||
+			wanted === 'modifier-states-ring-end-off' ||
 			wanted === 'modifier-options' ||
 			POOL_GRANT_STATES.includes(wanted ?? '')
 			? (wanted as StateName)

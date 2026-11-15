@@ -4691,10 +4691,11 @@ export const ROSTER_CARD_FORM_ROWS = {
  * (`docs/features/non-number-modifiers.md`).
  *
  * `band` draws the same Roster as one table in a placement two columns wide,
- * so its name cells are as narrow as a card's. Stealth's tag stays in its name
- * cell there and covers the label: a known gap, `docs/BACKLOG.md`'s row on a
- * tag over a name cell with no room set aside, which `measure-form-tag.mjs`
- * reports without failing.
+ * so its name cells are as narrow as a card's. Stealth's tag sits in the lane
+ * the table sets aside at the row's end, after the door, and the narrow table
+ * scrolls sideways to reach it rather than laying it over the label
+ * (`docs/features/table-row-end-room.md`); `measure-form-tag.mjs` holds it
+ * clear of the name, the value, the ring and the door.
  */
 export function rosterCardStateSamples(layout: 'cards' | 'band' = 'cards'): Sample[] {
 	const band = layout === 'band';
@@ -4768,6 +4769,153 @@ export function rosterCardStateSamples(layout: 'cards' | 'band' = 'cards'): Samp
 				'Active: yes',
 				'Modifiers: Cat Form; abilities.acrobatics += note: Intuitive Motion: add 1d6 to the check',
 				'```',
+			].join('\n'),
+		},
+	];
+}
+
+/**
+ * Cat Form for the `modifier-states-ring-end` states: it raises Stealth's ring
+ * in each of the three tables — the published level, so addressed by the row's
+ * name alone, with no column — the row the Boots already raise, so the form
+ * turned on changes the row's tint, its tag and the table's lane and nothing
+ * else (`docs/features/table-row-end-room.md`, "Harness").
+ */
+export const RING_END_DEFINITIONS = [
+	{
+		name: 'Cat Form',
+		changes: [
+			{ target: 'skills.stealth', operator: 'upgrade', amount: '1' },
+			{ target: 'checks.stealth', operator: 'upgrade', amount: '1' },
+			{ target: 'names.stealth', operator: 'upgrade', amount: '1' },
+		],
+	},
+];
+
+/**
+ * Three tables ending on a ring (`docs/features/table-row-end-room.md`): a
+ * Table whose ring column is totalled, so its foot holds a value under the
+ * slot, a Roster table, and a Table whose name column is
+ * drawn last. In each, Stealth's ring is raised by the Boots, so a door
+ * follows it; Arcana's (Insight's on the Roster) nothing reaches, so an empty
+ * slot follows it; and Perception's (Medicine's) has a note at its own name
+ * and nothing set, so a mark follows it. Cat Form, in play from a Stat block,
+ * raises Stealth too, so each table holds one tagged row and sets the tag's
+ * lane aside. `inPlay: false` is the same sheet with the form not in play: no
+ * tint, no tag, no lane, and every door, mark and slot where it was, which is
+ * the before of the lane's reflow.
+ */
+export function ringEndSamples(inPlay = true): Sample[] {
+	const training = ['Untrained', 'Proficient:', 'Expertise:E'];
+	const tableRows = [
+		{ label: 'Stealth', key: 'stealth' },
+		{ label: 'Arcana', key: 'arcana' },
+		{ label: 'Perception', key: 'perception' },
+	];
+	return [
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				columns: [
+					{ key: 'Bonus', type: 'number' },
+					{ key: 'Training', type: 'level', levels: training, publish: true, total: true },
+				],
+				rows: tableRows,
+			} as ComponentConfig,
+			body: [
+				'| Skill | Bonus | Training |',
+				'| --- | --- | --- |',
+				'| Stealth | 1 | 0 |',
+				'| Arcana | 0 | 0 |',
+				'| Perception | 2 | 0 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 7, row: 1, width: 6, height: 2 },
+				rowHeader: 'Check',
+				stats: [{ key: 'WIS', name: 'Wisdom' }],
+				derived: 'mod(value)',
+				signed: true,
+				columns: [
+					{ key: 'Total', type: 'computed', formula: 'stat + Prof * 2', signed: true },
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], publish: true },
+				],
+				rows: [
+					{ label: 'Stealth', stat: 'WIS', key: 'stealth' },
+					{ label: 'Insight', stat: 'WIS', key: 'insight' },
+					{ label: 'Medicine', stat: 'WIS', key: 'medicine' },
+				],
+			} as ComponentConfig,
+			body: [
+				'```sheet',
+				'WIS: 14',
+				'```',
+				'',
+				'| Check | Prof |',
+				'| --- | --- |',
+				'| Stealth | 0 |',
+				'| Insight | 0 |',
+				'| Medicine | 0 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'names',
+				type: 'table',
+				label: 'Name last',
+				position: { col: 1, row: 3, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [{ key: 'Training', type: 'level', levels: training, publish: true }],
+				rows: tableRows,
+			} as ComponentConfig,
+			body: [
+				'| Skill | Training |',
+				'| --- | --- |',
+				'| Stealth | 0 |',
+				'| Arcana | 0 |',
+				'| Perception | 0 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 7, row: 3, width: 6, height: 3 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: ['### Cat Form', '```sheet', `Active: ${inPlay ? 'yes' : 'no'}`, 'Modifiers: Cat Form', '```'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 1, row: 6, width: 12, height: 1 },
+				rowHeader: 'Item',
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+				rows: [{ label: 'Boots' }, { label: 'Lore' }],
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				'| Boots | skills.stealth >= 1; checks.stealth >= 1; names.stealth >= 1 |',
+				'| Lore | skills.perception += note: Advantage on checks about lore; checks.medicine += note: Advantage on checks about lore; names.perception += note: Advantage on checks about lore |',
 			].join('\n'),
 		},
 	];
