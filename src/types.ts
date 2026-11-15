@@ -2371,8 +2371,8 @@ export interface GrantLine {
 	 * what it asked for where that is whole, and grants none of it.
 	 */
 	amount: number;
-	/** What a refused grant's amount came to, as it was judged (D4: `2.5`). */
-	asked?: number | boolean;
+	/** What a refused grant's amount came to, as it was judged (D4: `2.5`, or text). */
+	asked?: number | boolean | string;
 	/** What the record says has been spent of it, 0 where there is none. */
 	spent: number;
 	/** What is left of it: `max(0, amount − spent)`. */

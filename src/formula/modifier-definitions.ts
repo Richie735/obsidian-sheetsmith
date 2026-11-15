@@ -57,6 +57,7 @@ import {
 	FormulaError,
 	FunctionEnv,
 	Scope,
+	Value,
 } from './expression';
 
 /** The layout's definitions by name, which is how a cell addresses one. */
@@ -194,12 +195,20 @@ export type Enrolment =
 	 * `condition` says which: true where the condition is what failed, which is
 	 * the one case a note on the same change is listed as not applying. Where the
 	 * amount failed under a condition that holds, the note shows.
+	 *
+	 * `resolved` is what the amount came to where it **did** resolve and is not
+	 * a number, and absent where it would not resolve at all. The walk needs the
+	 * two apart only at a buffer: a text amount is that grant's own mistake and
+	 * refuses that grant alone (D4), where one nothing can evaluate refuses the
+	 * buffer (D11, `docs/features/granted-temporary-points.md`). Everywhere else
+	 * both refuse the slot exactly alike.
 	 */
 	| ({
 			kind: 'unreadable';
 			fields: PartFields;
 			reason: string;
 			condition: boolean;
+			resolved?: Value;
 	  } & PartSource)
 	/**
 	 * A note and no amount, with its condition holding: a **note-only change**.
@@ -597,6 +606,7 @@ function settle(
 			fields,
 			reason: notNumber,
 			condition: false,
+			resolved: amount.value,
 		};
 	}
 

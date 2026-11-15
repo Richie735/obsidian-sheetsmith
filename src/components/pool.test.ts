@@ -3120,14 +3120,15 @@ describe('temporary points a modifier grants', () => {
 		onChange = vi.fn(),
 		poolConfig: PoolConfig = hp,
 		notices: Map<string, string> = held,
+		gearConfig: TableConfig = gear,
 	) => {
 		const poolRead = pool.read(poolBody, poolConfig);
-		const gearRead = table.read(gearBody, gear);
+		const gearRead = table.read(gearBody, gearConfig);
 		if (!poolRead.ok || !gearRead.ok) throw new Error('read failed');
-		const layout: Layout = { name: 'Test', components: [poolConfig, gear] };
+		const layout: Layout = { name: 'Test', components: [poolConfig, gearConfig] };
 		const prepared: ReadComponent[] = [
 			{ config: poolConfig, component: pool, data: poolRead.data, error: null },
-			{ config: gear, component: table, data: gearRead.data, error: null },
+			{ config: gearConfig, component: table, data: gearRead.data, error: null },
 		];
 		const { env, modifiers } = buildSheet(layout, prepared);
 		const el = document.createElement('div');
@@ -3397,6 +3398,29 @@ describe('temporary points a modifier grants', () => {
 					'Gear · Charm — grants 2.5 (not applied: "2.5" is not a whole number of points, so this row\'s own modifier grants nothing. Give it a whole number, for example with floor().)',
 					'',
 					'Now 0',
+				].join('\n'),
+			);
+		});
+
+		it('refuses a text amount for that grant alone, and the next grant still raises the pill (D4)', () => {
+			// A text column for the amount to read, which the shared table lacks.
+			const kinds: TableConfig = { ...gear, columns: [...(gear.columns ?? []), { key: 'Kind', type: 'text' }] };
+			const body = [
+				'| Item | Worn | Modifiers | Kind |',
+				'| --- | --- | --- | --- |',
+				'| Charm | yes | hp.temp >= Kind when Worn | lucky |',
+				'| Ring | yes | hp.temp >= 5 when Worn | plain |',
+			].join('\n');
+			const { el, temp } = sheetOf(fence('current: 22', 'temp: 1'), body, vi.fn(), hp, held, kinds);
+			expect(temp?.value).toBe('5');
+			expect(doorText(el)).toBe(
+				[
+					'Your own: 1',
+					'',
+					'Gear · Charm — grants lucky (not applied: "lucky" is not a whole number of points, so this row\'s own modifier grants nothing.)',
+					'Gear · Ring — grants 5, 5 left',
+					'',
+					'Now 5',
 				].join('\n'),
 			);
 		});

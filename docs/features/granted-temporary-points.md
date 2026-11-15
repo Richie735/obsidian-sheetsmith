@@ -155,7 +155,10 @@ what the sheet shows, the clear on deactivation, the key's precedent and what
 - **D4. A grant's amount is a whole number of points.** The amount is an
   expression like any other. A fraction or a non-number is refused for that grant
   with `"2.5" is not a whole number of points, so <called> grants nothing. Give it
-  a whole number, for example with floor().`, through `inRowMessage`. A negative
+  a whole number, for example with floor().`, through `inRowMessage`. The floor()
+  hint is for a number alone: text or a yes/no has nothing to round, so its
+  sentence ends at the refusal, `"lucky" is not a whole number of points, so
+  <called> grants nothing.`. A negative
   grants nothing and is not refused, which is the pill's own rule that a negative
   is clamped to 0 (`docs/features/pool-temp-refuses.md`). An amount that will not
   resolve refuses the buffer on §5's rule (D11).
