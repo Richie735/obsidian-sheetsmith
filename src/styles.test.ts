@@ -5162,6 +5162,35 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 	});
 });
 
+describe('a table row\'s tag lane (docs/features/table-row-end-room.md)', () => {
+	it('declares the lane once, in the tag\'s own size token', () => {
+		const declared = rules(CSS_WITHOUT_COMMENTS).filter((rule) => /--sheetsmith-tag-lane:/.test(rule.body));
+		expect(declared).toHaveLength(1);
+		expect(declared[0]?.body).toMatch(/--sheetsmith-tag-lane:\s*calc\([\d.]+ \* var\(--font-ui-smaller\)\)/);
+	});
+
+	it('sets the lane aside on a row-end cell only under the stamped table class', () => {
+		const lanes = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) => rule.selector.includes('.sheetsmith-row-end') && /padding-inline-end:[^;]*--sheetsmith-tag-lane/.test(rule.body),
+		);
+		expect(lanes.length).toBeGreaterThan(0);
+		for (const rule of lanes) {
+			for (const selector of selectorList(rule.selector)) {
+				expect(selector).toMatch(/^\.sheetsmith-view \.sheetsmith-in-play-lane > \* > tr > \.sheetsmith-row-end/);
+			}
+		}
+	});
+
+	it('clips a row-end tag at the lane, under the pinned name', () => {
+		const tag = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.selector.includes('.sheetsmith-row-end') && rule.selector.includes('.sheetsmith-in-play-mark-inline'),
+		);
+		expect(declarations(tag?.body ?? '')).toEqual(
+			expect.arrayContaining(['max-width: var(--sheetsmith-tag-lane)', 'z-index: auto']),
+		);
+	});
+});
+
 describe('the form tint (docs/features/character-forms.md)', () => {
 	const tint = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
 		rule.selector.includes('.sheetsmith-in-play'),

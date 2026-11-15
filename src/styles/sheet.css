@@ -10307,6 +10307,19 @@ a.sheetsmith-notice-action {
    `styles.test.ts` holds the list and these rules to each other. */
 :where(.sheetsmith-view) {
 	--sheetsmith-tint: var(--interactive-accent);
+	/* The width a table row's tag lane sets aside, and the most a row's tag
+	   draws: 12ch of the tag's own `--font-ui-smaller`, its whole box, which
+	   is the cap a tag already clipped at (90.7px at 12px). In px tokens and
+	   not `ch`, because the lane is cell padding and `ch` there would be the
+	   cell's font (`docs/features/table-row-end-room.md`, "The lane's
+	   width"). One token for both, so a theme moving the tag's size moves the
+	   lane with it. */
+	--sheetsmith-tag-lane: calc(7.56 * var(--font-ui-smaller));
+	/* The gap before that lane, wider than the gap a ring's door keeps from
+	   its ring in a column no heading widens (9.6px at the default size,
+	   17.7px at Text 24, on a Roster), so a row's door reads as its value's
+	   and not as the tag's own button. */
+	--sheetsmith-tag-gap: var(--size-4-5);
 }
 
 .sheetsmith-view [data-sheetsmith-tint='accent'] {
@@ -10703,8 +10716,8 @@ a.sheetsmith-notice-action {
    accent, its words are the only thing saying which forms it means, and at
    12ch *Brown Bear, Wolf* read *Brown Bear, …*. It stays clear of content by
    geometry whatever its width, since only the bottom padding is inside the box.
-   Not on a row, where it is laid over the name cell and a wider tag would cover
-   the name the row is read by; the reveal answers a clipped one there. */
+   Not on a row, whose tag clips at the lane its table sets aside, a width
+   every row of the table shares; the reveal answers a clipped one there. */
 .sheetsmith-view
 	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-several:not(.sheetsmith-in-play-mark-inline)[aria-hidden='true'] {
 	max-width: calc(100% - 2 * var(--size-4-2));
@@ -10734,19 +10747,62 @@ a.sheetsmith-notice-action {
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where
-   the table has one), its end the value. So on a row the pill rides the name
-   cell's inline end, centred on the row, in the slack between the name and the
-   numbers that the name cell takes by design — over the cell, still taking no
-   room. The pinned name cell is `position: sticky`, so it is the pill's
-   containing block already. */
+   the table has one), its end the value. So on a row the pill rides one line,
+   centred on the row: in the lane its table sets aside at the row's end
+   (below), or on a band head's tag line. Where neither applies — a row with
+   no value cell — it falls back to the name cell's inline end, which is
+   `position: sticky` and so the pill's containing block already. */
 .sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
-	/* A row's tag is centred over its name cell, so it hangs into no gap and
-	   takes the same room for its 2px edge a card's makes. */
+	/* A row's tag is centred on its line, so it hangs into no gap and takes
+	   the same room for its 2px edge a card's makes. */
 	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	inset-block-start: 50%;
 	inset-block-end: auto;
 	inset-inline-end: var(--size-2-2);
 	transform: translateY(-50%);
+}
+
+/* **On a Table's or a Roster table's row the tag sits in a lane at the row's
+   end** (`docs/features/table-row-end-room.md`): after the value and its
+   slot, `--sheetsmith-tag-gap` and `--sheetsmith-tag-lane` set aside as the end cell's
+   padding, on every row of a table holding such a tag — head and foot
+   included, so the end column's heading and total stay over its values — and
+   on none while no form is in play. `placement-decorations.ts` stamps the
+   table (`sheetsmith-in-play-lane`) only where the tag's host is a row-end
+   cell, so a band head's tag, which rides its own line, sets no lane aside.
+   The slot keeps its place, since the lane comes after it: no door or mark
+   moves relative to its value when a form turns on. */
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > .sheetsmith-row-end {
+	padding-inline-end: calc(var(--size-4-2) + var(--sheetsmith-tag-gap) + var(--sheetsmith-tag-lane));
+}
+
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > .sheetsmith-row-end.sheetsmith-note-column,
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > .sheetsmith-row-end.sheetsmith-table-has-note {
+	padding-inline-end: calc(
+		var(--size-4-2) + var(--sheetsmith-row-slot) + var(--sheetsmith-tag-gap) + var(--sheetsmith-tag-lane)
+	);
+}
+
+/* **A band head's line ends where the values do**, short of the lane: the
+   band spans every column, so with the lane set aside its score and reading
+   would end over the lane, past what a narrow table shows, where with the
+   form off they end over the value columns. Padding on top of the line's own
+   `--size-4-1`, not a margin, so its hairline still runs the band's width. */
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > td > .sheetsmith-roster-band-inner {
+	padding-inline-end: calc(var(--size-4-1) + var(--sheetsmith-tag-gap) + var(--sheetsmith-tag-lane));
+}
+
+/* The tag at the lane's inline start, clipped at the lane, its ellipsis and
+   the reveal answering a longer name. Under the pinned name cell rather than
+   over it, which a `z-index` would put it, since on a table that scrolls
+   sideways the end cell passes under the name. */
+.sheetsmith-view
+	.sheetsmith-row-end
+	> .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
+	inset-inline-start: calc(100% - var(--size-4-2) - var(--sheetsmith-tag-lane));
+	inset-inline-end: auto;
+	z-index: auto;
+	max-width: var(--sheetsmith-tag-lane);
 }
 
 /* **On a Roster's band head the tag rides the reading's line at its inline
