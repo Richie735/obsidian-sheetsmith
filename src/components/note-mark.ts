@@ -44,6 +44,13 @@ export const NOTE_COLUMN_CLASS = 'sheetsmith-note-column';
 export const NOTE_BANDS_CLASS = 'sheetsmith-note-bands';
 
 /**
+ * The class a slotted column's heading cell takes: the slot's room and nothing
+ * drawn in it, so the heading stays centred over the values beside their slot
+ * (`docs/features/table-row-end-room.md`, "The heading and the foot").
+ */
+export const NOTE_HEADING_CLASS = 'sheetsmith-note-heading';
+
+/**
  * Draw the note mark into `parent`: a door onto the whole account, named by
  * its count — `1 note`, `3 notes` — because its visible mark is not words
  * (`docs/UI.md` §6).
@@ -140,16 +147,22 @@ export function renderAccountNotes(
 }
 
 /**
- * Mark every cell of a column that holds a note mark anywhere, and a table whose
- * band heads hold one, so the stylesheet reserves the mark's slot in the cells
- * that have none and a column of numbers or rings stays lined up.
+ * Mark every cell of a column that holds a note mark (or a door counted
+ * alike) anywhere, its heading and its foot, and a table whose band heads hold
+ * one, so the stylesheet sets the slot aside as inline-end padding on every
+ * cell of that column, heading and foot included, and its values, doors and
+ * marks line up down it whatever each value's width
+ * (`docs/features/table-row-end-room.md`). A band head keeps an empty box
+ * instead, its line being a flex line rather than a column.
  *
  * **Decided by the render, after the rows are drawn, rather than by `:has()`.**
  * A column is a position across rows, and no selector can say "every cell at
  * this index of a table where some cell at this index holds a mark" without one
  * rule per index. The render already knows: a cell holding a mark is one this
- * file drew into. So this walks the finished table once, by column position, and
- * the stylesheet reads one class. A table with no mark gains no class at all,
+ * file drew into. So this walks the finished table by column position, once to
+ * find the slotted columns and again to stamp their cells (the body and foot,
+ * then the heading, which takes its class only where a cell below it
+ * reserves), and the stylesheet reads one class. A table with no mark gains no class at all,
  * which is what keeps a sheet with no notes exactly as it was.
  *
  * A cell spanning several columns — a Roster band head — is no column's, and is
@@ -189,12 +202,33 @@ export function reserveNoteSlots(
 				child.classList.contains('sheetsmith-table-value') ||
 				child.classList.contains('sheetsmith-level-ring'),
 		);
+	/*
+	 * **A foot cell is stamped whether or not it holds a value**: a Totals cell
+	 * is a value, and an empty foot cell under a slotted column still keeps the
+	 * line-up. **A heading cell takes the heading's class** where a body cell
+	 * below it reserves, so it is centred over the values rather than over the
+	 * values and their slot; over a column of fields, which reserve nothing, it
+	 * stays as it was. Head and foot are walked like the body, by position.
+	 */
+	const section = (row: HTMLTableRowElement) => row.parentElement?.tagName ?? '';
+	const reserving = new Set<number>();
 	for (const row of Array.from(table.rows)) {
+		if (section(row) === 'THEAD') continue;
+		const foot = section(row) === 'TFOOT';
 		let at = 0;
 		for (const cell of Array.from(row.cells)) {
-			if (cell.colSpan === 1 && noted.has(at) && reservable(cell)) {
+			if (cell.colSpan === 1 && noted.has(at) && (foot || reservable(cell))) {
 				cell.classList.add(NOTE_COLUMN_CLASS);
+				if (!foot) reserving.add(at);
 			}
+			at += cell.colSpan;
+		}
+	}
+	for (const row of Array.from(table.rows)) {
+		if (section(row) !== 'THEAD') continue;
+		let at = 0;
+		for (const cell of Array.from(row.cells)) {
+			if (cell.colSpan === 1 && reserving.has(at)) cell.classList.add(NOTE_HEADING_CLASS);
 			at += cell.colSpan;
 		}
 	}

@@ -1595,3 +1595,45 @@ describe('a roster something has noted (docs/features/modifier-notes.md)', () =>
 		);
 	});
 });
+
+/*
+ * The row's end, as a Table's (`docs/features/table-row-end-room.md`): a Roster
+ * row's last value cell, never its name, wherever `namePosition` puts it, and
+ * the heading row's too.
+ */
+describe('a roster marks each row\'s end', () => {
+	const ROW_END = 'sheetsmith-row-end';
+	const drawnWith = (over: RosterConfig) => {
+		const result = roster.read(BODY, over);
+		if (!result.ok) throw new Error(result.error);
+		const el = document.createElement('div');
+		roster.render(el, over, result.data, contextFor(result.data, over));
+		return el;
+	};
+	const rows = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll<HTMLElement>('thead tr, tbody tr')).filter(
+			(tr) => tr.querySelector('th.sheetsmith-table-name') !== null,
+		);
+
+	it('marks the last value cell of its heading row and each row', () => {
+		const el = drawnWith(config);
+		const marked = rows(el);
+		expect(marked.length).toBeGreaterThan(2);
+		for (const tr of marked) {
+			const ends = Array.from(tr.children).filter((cell) => cell.classList.contains(ROW_END));
+			expect(ends).toEqual([tr.lastElementChild]);
+		}
+	});
+
+	it('marks the cell before the name on a name-last roster, and never the name', () => {
+		const el = drawnWith({ ...config, namePosition: 2 });
+		const marked = rows(el);
+		expect(marked.length).toBeGreaterThan(2);
+		for (const tr of marked) {
+			const name = tr.lastElementChild as HTMLElement;
+			expect(name.classList.contains('sheetsmith-table-name')).toBe(true);
+			expect(name.classList.contains(ROW_END)).toBe(false);
+			expect(name.previousElementSibling?.classList.contains(ROW_END)).toBe(true);
+		}
+	});
+});

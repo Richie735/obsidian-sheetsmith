@@ -11,8 +11,8 @@ import { buildSheet, ReadComponent } from '../formula/sheet';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, ComponentDefinition, StateAccount, StateShape } from '../types';
 import { closePopover } from '../ui/popover';
-import { STATE_DOOR_CLASS, STATE_STRIP_CLASS } from './state-ring';
-import { stateAccountText } from './modifier-breakdown';
+import { finishRowDoor, lastValueCell, STATE_DOOR_CLASS, STATE_STRIP_CLASS } from './state-ring';
+import { ROW_END_CLASS, stateAccountText } from './modifier-breakdown';
 
 /*
  * A ring a modifier set, through the real sheet: the acceptance cases of
@@ -325,6 +325,9 @@ describe('the starter rule: skills.stealth >= 1 in Training on a modifier row', 
 		expect(end.classList.contains('sheetsmith-table-computed')).toBe(true);
 		expect(doors[0]?.parentElement).toBe(end);
 		expect(doors[0]?.getAttribute('aria-label')).toBe('Modifiers on Stealth');
+		// Every row's end is marked, the door's and the rest alike.
+		expect(end.classList.contains(ROW_END_CLASS)).toBe(true);
+		for (const tr of rows) expect(tr.lastElementChild?.classList.contains(ROW_END_CLASS)).toBe(true);
 		expect(stealth.querySelector(`.sheetsmith-table-level .${STATE_DOOR_CLASS}`)).toBeNull();
 		// Seventeen other skills, each reserving the door's slot after its Total
 		// as a cell beside a note mark does, and no ring cell reserving any.
@@ -836,5 +839,42 @@ describe('a Roster card strip the layout can set a level in', () => {
 		expect(strip([''], [])?.classList.contains(STATE_STRIP_CLASS)).toBe(false);
 		// A change typed in a note is the reader's, and comes and goes with an edit.
 		expect(strip(['abilities.stealth >= 1 in Training'], [])?.classList.contains(STATE_STRIP_CLASS)).toBe(false);
+	});
+});
+
+/*
+ * The row's end, stamped by the helper that closes the row
+ * (`docs/features/table-row-end-room.md`): on every row, whether or not a ring
+ * on it was set, since the form's tag and its lane sit there either way.
+ */
+describe('finishRowDoor marks the row\'s end', () => {
+	const cellIn = () => document.body.createEl('table').createEl('tbody').createEl('tr').createEl('td');
+
+	it('stamps the cell it is handed on a row where no ring was set', () => {
+		const end = cellIn();
+		finishRowDoor(end, 'Modifiers on Stealth', [], [], 'sheetsmith-table-has-note');
+		expect(end.classList.contains(ROW_END_CLASS)).toBe(true);
+		// Nothing else: no door, and no note mark where no account was handed.
+		expect(end.children).toHaveLength(0);
+		expect(end.classList.contains('sheetsmith-table-has-note')).toBe(false);
+	});
+
+	it('stamps nothing where the row has no value cell', () => {
+		const row = cellIn().parentElement as HTMLElement;
+		row.replaceChildren();
+		finishRowDoor(null, 'Modifiers on Stealth', [], [], 'sheetsmith-table-has-note');
+		expect(document.body.querySelector(`.${ROW_END_CLASS}`)).toBeNull();
+	});
+
+	it('finds the last value cell, skipping the name and an open table\'s delete cell', () => {
+		const row = cellIn().parentElement as HTMLElement;
+		row.replaceChildren();
+		const value = row.createEl('td', { cls: 'sheetsmith-table-level' });
+		row.createEl('th', { cls: 'sheetsmith-table-name' });
+		row.createEl('td', { cls: 'sheetsmith-table-remove' });
+		expect(lastValueCell(row)).toBe(value);
+		const nameOnly = document.body.createEl('tr');
+		nameOnly.createEl('th', { cls: 'sheetsmith-table-name' });
+		expect(lastValueCell(nameOnly)).toBeNull();
 	});
 });

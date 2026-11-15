@@ -37,6 +37,7 @@ import type { ReadComponent } from '../formula/sheet';
 import {
 	BOX_ATTRIBUTE,
 	NAME_ATTRIBUTE,
+	ROW_END_CLASS,
 	STATE_COLUMN_ATTRIBUTE,
 	STATE_STORED_ATTRIBUTE,
 	TAG_BOX_ATTRIBUTE,
@@ -61,10 +62,19 @@ export const IN_PLAY_MARKED = 'sheetsmith-in-play-marked';
 export const IN_PLAY_MARK = 'sheetsmith-in-play-mark';
 
 /**
- * The pill's class where it rides one line of a row — its name cell, or a
- * Roster band's name — rather than a box's corner.
+ * The pill's class where it rides one line of a row — its row-end cell's
+ * lane, or a Roster band's tag line — rather than a box's corner.
  */
 export const IN_PLAY_MARK_INLINE = 'sheetsmith-in-play-mark-inline';
+
+/**
+ * The class on a table whose row's tag sits in its row-end cell, which the
+ * stylesheet reads to set the tag's lane aside at the end of every row of it,
+ * head and foot included (`docs/features/table-row-end-room.md`). Stamped
+ * only where the tag's host is a row-end cell: a band head's tag rides its own
+ * line and needs no lane.
+ */
+export const IN_PLAY_LANE = 'sheetsmith-in-play-lane';
 
 /**
  * The pill's class where it names more than one form. Its words are the only
@@ -300,10 +310,13 @@ function boxOf(host: HTMLElement): HTMLElement {
  * over the box and takes no room: on a card-like box in its bottom inline-end
  * corner, inside by exactly the box's bottom padding so it can reach no
  * content in any font, where no note mark, door, score or value sits; on a
- * table row over the name cell's inline end, since a row's two ends hold its
- * name and its value; on a Roster's band head, a row with no name cell, at the
- * inline start of the tag line its component named to carry it (`carrierOf`).
- * The CSS places it; this only says which box and which cell carry it.
+ * table row in its row-end cell, in a lane the table sets aside after the
+ * row's last value and its slot while such a tag is drawn (`IN_PLAY_LANE`,
+ * `docs/features/table-row-end-room.md`), since a row's name cell has no room
+ * that is its own to give; on a Roster's band head, a row with no name cell,
+ * at the inline start of the tag line its component named to carry it
+ * (`carrierOf`). The CSS places it; this only says which box and which cell
+ * carry it.
  */
 export function applyDecorations(
 	root: HTMLElement,
@@ -315,7 +328,7 @@ export function applyDecorations(
 	// still names: a Stat block's head, its name rows, its briefs and its Tint
 	// swatch carry the attribute too, and are not this pass's to clear.
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_BOX}`))) el.removeAttribute(TINT_ATTRIBUTE);
-	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED]) {
+	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED, IN_PLAY_LANE]) {
 		for (const el of Array.from(root.querySelectorAll(`.${cls}`))) el.classList.remove(cls);
 	}
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_MARK}`))) el.remove();
@@ -362,14 +375,18 @@ export function applyDecorations(
 		const row = first.tagName === 'TR';
 		// What the component named to carry the tag — the card holding a score
 		// pill or a row, a band's own tag line — takes it, and no fill or
-		// outline (`carrierOf`). Otherwise a row takes it in
-		// its name cell, unmarked, since that is the pinned cell and a carrier's
-		// `position: relative` would unpin it; a row with no name cell, in its
-		// first cell.
+		// outline (`carrierOf`). Otherwise a row takes it in its row-end cell,
+		// in the lane set aside after its value and slot; a row with none, in
+		// its name cell, unmarked, since that is the pinned cell and a
+		// carrier's `position: relative` would unpin it; a row with no name
+		// cell either, in its first cell.
 		const carrier = carrierOf(first, row);
-		const rowName = carrier === null ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
+		const rowEnd = carrier === null && row ? rowEndOf(first) : null;
+		const rowName =
+			carrier === null && rowEnd === null ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
 		const firstCell = first.firstElementChild;
-		const marked = carrier ?? (rowName === null && firstCell instanceof HTMLElement ? firstCell : null);
+		const marked =
+			carrier ?? rowEnd ?? (rowName === null && firstCell instanceof HTMLElement ? firstCell : null);
 		const host = rowName ?? marked;
 		// A row with no cell has nowhere a tag may go; the spoken twin still does.
 		if (host === null) {
@@ -377,6 +394,9 @@ export function applyDecorations(
 			continue;
 		}
 		marked?.classList.add(IN_PLAY_MARKED);
+		// Every row of the table sets the lane aside, so the slots stay in one
+		// place down it; only where the tag is in a row's end cell.
+		if (rowEnd !== null) rowEnd.closest('table')?.classList.add(IN_PLAY_LANE);
 		// A tag inside a row rides one line, wherever in the row that line is;
 		// one a card carries for its row takes the card's bottom corner.
 		const inline = host.closest('tr') !== null;
@@ -400,7 +420,7 @@ export function applyDecorations(
  * What carries the tag for the first tinted box: what its component named
  * (`TAG_BOX_ATTRIBUTE`), or a box that is not a row itself. Null for a row its
  * component named nothing for — a Table's, a Roster table's — which takes the
- * tag in a cell.
+ * tag in its row-end cell.
  *
  * **A carrier holds its box from outside or sits inside it**: a Roster card
  * holds its score's pill and its rows, and a Roster band's `tr`, which has no
@@ -419,6 +439,17 @@ function carrierOf(first: HTMLElement, row: boolean): HTMLElement | null {
 	const named = `[${TAG_BOX_ATTRIBUTE}]`;
 	if (!row) return first.closest<HTMLElement>(named) ?? first;
 	return first.querySelector<HTMLElement>(named) ?? first.closest<HTMLElement>(named);
+}
+
+/**
+ * A row's end cell, as its component stamped it (`ROW_END_CLASS`): the row's
+ * last value cell, never its name cell, or null on a row with none.
+ */
+function rowEndOf(row: HTMLElement): HTMLElement | null {
+	for (const cell of Array.from(row.children)) {
+		if (cell.instanceOf(HTMLElement) && cell.classList.contains(ROW_END_CLASS)) return cell;
+	}
+	return null;
 }
 
 /** The two text colours a tag may be written in, as the stylesheet's words map them. */

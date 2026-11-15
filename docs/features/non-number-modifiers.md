@@ -522,9 +522,11 @@ So it cannot loop.
   (`docs/features/character-forms.md`, "Row first"). Shot at Text default, 20,
   24 and phone width in light, and measured by `harness/measure-form-tag.mjs`.
 - **`modifier-states-roster-band`**: the same Roster as one table two columns
-  wide, where Stealth's tag stays in its name cell and covers the label, a
-  known gap (`docs/BACKLOG.md`); `measure-form-tag.mjs` reports it without
-  failing. Shot as `modifier-states-roster-band-light.png` and
+  wide, where Stealth's tag stayed in its name cell and covered the label until
+  `docs/features/table-row-end-room.md` moved it to a lane at the row's end;
+  `measure-form-tag.mjs` now holds it clear of the row's text and controls.
+  Shot as `modifier-states-roster-band-light.png`,
+  `modifier-states-roster-band-text-20-light.png` and
   `modifier-states-roster-band-text-24-light.png`.
 - **`modifier-states-own-door`**: Stealth's door opened on
   `modifier-states-roster-card`, stored Untrained under Cat Form (Thorne's

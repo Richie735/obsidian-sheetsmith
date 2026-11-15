@@ -626,7 +626,8 @@ line is reserved for it — a box is the same size with the form on as off:
     row once the row is drawn and stamped as a box through `stampRowTagBox`
     (2026-11-13), the one other writer of the attribute and in the same
     module. The pass puts the tag on what the component named, inside the first box or
-    holding it, then on a row's name cell, and otherwise on the box itself.
+    holding it, then on a row's row-end cell (since `table-row-end-room.md`; a
+    row's name cell before it), and otherwise on the box itself.
   - **No stylesheet rule is added**, `container-type` included: the tag takes a
     card's existing placement, its room already reserved; `pickTagText` reads
     the card's own surface, which wears no tint layer; the pill takes
@@ -635,14 +636,15 @@ line is reserved for it — a box is the same size with the form on as off:
     outline, the focus rule being the more specific, and keeps its fill.
 - **Table, and a Roster's row**: a row has no free corner — its start holds the
   name (and a ring, where the table has one) and its end the value — so the pill
-  is laid over the name cell's inline end, centred on the row, in the slack
-  between the name and the numbers that the name cell takes by design. A name
-  long enough to fill its cell runs under it. A Roster's table layout keeps
-  this rule for its rows; its band head has no name cell and takes the bullet
-  below. A Roster card's rows no longer take it (2026-11-13, "Row first"
-  above). In a narrow placement the name cell has no slack and the tag covers
-  the label, in a Table and a Roster table alike: `docs/BACKLOG.md`'s row on a
-  tag over a name cell with no room set aside, which wants a respec.
+  sits in a lane the table sets aside at the row's end, after the row's last
+  value and its slot, centred on the row and clipped at the lane
+  (`docs/features/table-row-end-room.md`, which replaced laying it over the
+  name cell's inline end: in a narrow placement that cell had no slack and the
+  tag covered the label). Every row of a table holding such a tag sets the lane
+  aside, head and foot included, and none does while no form is in play. A
+  Roster's table layout keeps this rule for its rows; its band head has no name
+  cell and takes the bullet below. A Roster card's rows no longer take it
+  (2026-11-13, "Row first" above).
 - **A Roster's band head** (amended after the owner found it on 2026-11-11, in
   a table-layout Roster on a copy of the 5e druid layout, and again after the
   design review): **the tag rides the inline start of the band's second line,
@@ -716,7 +718,8 @@ line is reserved for it — a box is the same size with the form on as off:
     tag is never over an untinted box. **A band head tinted with one of its
     rows is one tag, on the band head**: the band's `tr` comes before its rows,
     so it is the first tinted box, and the row carries only its tint. A row
-    tinted in an earlier band keeps the tag in its name cell, the Table rule.
+    tinted in an earlier band takes the tag in its row-end cell's lane, the
+    Table rule (`table-row-end-room.md`).
   - **The outline closes on all four sides.** With the span gone, the band's
     one cell is both `:first-child` and `:last-child`, and the two shadow rules
     each set the whole `box-shadow`, so the later one would drop the start edge

@@ -7265,3 +7265,60 @@ describe('table.render: focusing a number cell selects its number', () => {
 		}
 	});
 });
+
+/*
+ * The row's end: its last value cell, never its name, wherever `namePosition`
+ * puts the name, and never an open table's delete cell
+ * (`docs/features/table-row-end-room.md`). The door, the slot and a form's tag
+ * sit there, and the head and foot rows' last value cells take the same room.
+ */
+describe('table marks each row\'s end', () => {
+	const ROW_END = 'sheetsmith-row-end';
+	const totalled: TableConfig = {
+		...config,
+		columns: [
+			{ key: 'Training', type: 'number', min: 0, max: 2 },
+			{ key: 'Bonus', type: 'number', total: true },
+		],
+	};
+	const ends = (el: HTMLElement, section: string) =>
+		Array.from(el.querySelectorAll<HTMLElement>(`${section} tr`)).map((tr) =>
+			Array.from(tr.children).filter((cell) => cell.classList.contains(ROW_END)),
+		);
+
+	it('marks the last value cell of every row, head and foot included', () => {
+		const el = render(stored(BODY, totalled), totalled);
+		for (const section of ['thead', 'tbody', 'tfoot']) {
+			const rows = ends(el, section);
+			expect(rows.length).toBeGreaterThan(0);
+			for (const [index, marked] of rows.entries()) {
+				const tr = el.querySelectorAll(`${section} tr`)[index] as HTMLElement;
+				expect(marked).toEqual([tr.lastElementChild]);
+			}
+		}
+	});
+
+	it('marks the cell before the name on a name-last table, and never the name', () => {
+		const nameLast: TableConfig = { ...totalled, namePosition: 2 };
+		const el = render(stored(BODY, nameLast), nameLast);
+		for (const section of ['thead', 'tbody', 'tfoot']) {
+			for (const tr of Array.from(el.querySelectorAll<HTMLElement>(`${section} tr`))) {
+				const name = tr.lastElementChild as HTMLElement;
+				expect(name.classList.contains('sheetsmith-table-name')).toBe(true);
+				expect(name.classList.contains(ROW_END)).toBe(false);
+				expect(name.previousElementSibling?.classList.contains(ROW_END)).toBe(true);
+			}
+		}
+	});
+
+	it('marks the last value cell before an open table\'s delete cell', () => {
+		const open: TableConfig = { ...totalled, openRows: true };
+		const el = render(stored(BODY, open), open);
+		for (const tr of Array.from(el.querySelectorAll<HTMLElement>('tr'))) {
+			const last = tr.lastElementChild as HTMLElement;
+			expect(last.classList.contains('sheetsmith-table-remove')).toBe(true);
+			expect(last.classList.contains(ROW_END)).toBe(false);
+			expect(last.previousElementSibling?.classList.contains(ROW_END)).toBe(true);
+		}
+	});
+});

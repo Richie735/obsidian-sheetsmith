@@ -11,6 +11,7 @@ import { renderGrid, walkLayout } from './grid-cells';
 import {
 	applyDecorations,
 	IN_PLAY_BOX,
+	IN_PLAY_LANE,
 	IN_PLAY_MARK_INLINE,
 	IN_PLAY_MARK,
 	IN_PLAY_MARK_SEVERAL,
@@ -23,7 +24,7 @@ import {
 	bufferLinesIn,
 	choiceLinesIn,
 } from './placement-decorations';
-import { modifierBreakdown, stampStateHost } from '../components/modifier-breakdown';
+import { modifierBreakdown, ROW_END_CLASS, stampStateHost } from '../components/modifier-breakdown';
 import { contrast } from '../ui/contrast';
 
 /*
@@ -220,14 +221,52 @@ describe('the in-play tint', () => {
 		expect(cellOf(root, 'abilities').classList.contains(IN_PLAY_PLACEMENT)).toBe(false);
 	});
 
-	it('tints the table row a form changed, with the pill after its name', () => {
+	it('tints the table row a form changed, with the pill in its row-end cell\'s lane', () => {
 		const { root } = draw(NOTE('yes'));
 		const rows = Array.from(cellOf(root, 'skills').querySelectorAll<HTMLElement>('tbody tr'));
 		// Stealth's floor of 5 raises DEX's 2; Athletics moves through the new
 		// Strength and was pushed at by nothing, so it stays untinted.
 		expect(rows.map((row) => row.classList.contains(IN_PLAY_BOX))).toEqual([false, true]);
-		const pill = rows[1]?.querySelector(`th[scope="row"] .${IN_PLAY_MARK_INLINE}`);
+		// In the row's last value cell, after its value, and never over its name
+		// (`docs/features/table-row-end-room.md`).
+		const end = rows[1]?.querySelector<HTMLElement>(`td.${ROW_END_CLASS}`);
+		const pill = end?.querySelector(`:scope > .${IN_PLAY_MARK_INLINE}`);
 		expect(pill?.textContent).toBe('Brown Bear');
+		expect(end?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(rows[1]?.querySelector(`th[scope="row"] .${IN_PLAY_MARK}`)).toBeNull();
+		expect(rows[1]?.querySelector('th[scope="row"]')?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		// The table sets the lane aside on every row while the tag is drawn.
+		const table = cellOf(root, 'skills').querySelector('table');
+		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(true);
+	});
+
+	it('takes the lane away on a pass with no decoration', () => {
+		const { root } = draw(NOTE('yes'));
+		const table = cellOf(root, 'skills').querySelector('table');
+		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(true);
+		applyDecorations(root, []);
+		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(false);
+		expect(root.querySelector(`.${IN_PLAY_MARKED}`)).toBeNull();
+	});
+
+	it('tags a name-last row in its last value cell, and leaves the pinned name unmarked', () => {
+		const nameLast = {
+			...LAYOUT,
+			components: LAYOUT.components.map((component) =>
+				component.id === 'skills' ? { ...component, namePosition: 1 } : component,
+			),
+		};
+		const { root } = draw(NOTE('yes'), nameLast);
+		const stealth = Array.from(cellOf(root, 'skills').querySelectorAll<HTMLElement>('tbody tr'))[1];
+		// The name is drawn last, and the row's end is the cell before it.
+		const name = stealth?.lastElementChild as HTMLElement;
+		expect(name.matches('th[scope="row"]')).toBe(true);
+		expect(name.classList.contains(ROW_END_CLASS)).toBe(false);
+		expect(name.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		const end = name.previousElementSibling as HTMLElement;
+		expect(end.classList.contains(ROW_END_CLASS)).toBe(true);
+		expect(end.querySelector(`.${IN_PLAY_MARK_INLINE}`)?.textContent).toBe('Brown Bear');
+		expect(name.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
 	});
 
 	it('puts the pill on the first tinted card, never on one the form left alone', () => {
@@ -829,6 +868,8 @@ describe('the in-play tint on a Roster band head', () => {
 		expect(rowsHoldCellsAlone(root)).toBe(true);
 		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(false);
 		expect(headingOf(dexterity)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		// A band's tag rides its own line, so its table sets no lane aside.
+		expect(cellOf(root, 'checks').querySelector(`.${IN_PLAY_LANE}`)).toBeNull();
 	});
 
 	it('draws one tag, on the band, where a form pushed at its score and one of its rows', () => {
@@ -844,7 +885,7 @@ describe('the in-play tint on a Roster band head', () => {
 		expect(rowsHoldCellsAlone(root)).toBe(true);
 	});
 
-	it('keeps the tag in a row\'s name cell where that row comes before a tinted band', () => {
+	it('tags a row in its row-end cell where that row comes before a tinted band', () => {
 		const { root } = draw(BAND_NOTE('Hawk'), ROSTER_TABLE);
 		const [strength, dexterity] = bandsOf(root);
 		const athletics = rowNamed(root, 'Athletics');
@@ -852,7 +893,9 @@ describe('the in-play tint on a Roster band head', () => {
 		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(true);
 		const tags = tagsIn(cellOf(root, 'checks'));
 		expect(tags).toHaveLength(1);
-		expect(tags[0]?.parentElement).toBe(athletics?.querySelector('th[scope="row"]'));
+		expect(tags[0]?.parentElement).toBe(athletics?.querySelector(`.${ROW_END_CLASS}`));
+		expect(athletics?.querySelector('th[scope="row"]')?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		expect(cellOf(root, 'checks').querySelector('table')?.classList.contains(IN_PLAY_LANE)).toBe(true);
 		expect(headingOf(dexterity)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
 		expect(rowsHoldCellsAlone(root)).toBe(true);
 	});

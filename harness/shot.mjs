@@ -3908,9 +3908,11 @@ export const DEFAULTS = [
 	},
 	/*
 	 * The same Roster as one table two columns wide, Cat Form on Stealth's
-	 * ring: the row's name cell has no slack and the tag, which stays there,
-	 * covers the label. A known gap (`docs/BACKLOG.md`, "A form's tag covers a
-	 * name in a Table's or a Roster table's row"), shot so it stays seen.
+	 * ring: the row's name cell has no slack, so the tag sits in the lane the
+	 * table sets aside at the row's end, after the door, and the narrow table
+	 * scrolls sideways to reach it rather than covering the label
+	 * (`docs/features/table-row-end-room.md`). At Text 20 too, the size the
+	 * covered label was measured at.
 	 */
 	{
 		name: 'modifier-states-roster-band-light',
@@ -3919,10 +3921,61 @@ export const DEFAULTS = [
 		frame: '[data-sheetsmith-component="abilities"]',
 	},
 	{
+		name: 'modifier-states-roster-band-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
 		name: 'modifier-states-roster-band-text-24-light',
 		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off&text=24',
 		size: '1400,1100',
 		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
+	 * Three tables ending on a ring (`docs/features/table-row-end-room.md`): a
+	 * Table with its ring column totalled, a Roster table, and a Table with its
+	 * name drawn last, each holding a door, an empty slot and a note mark after
+	 * its rings, one place down the column, and Cat Form's tag in the lane after
+	 * the door. The `-off` twin is the same sheet with the form not in play, so
+	 * each pair is the lane's reflow on one table: nothing but the tint, the
+	 * tag and the lane may differ. At 520 too, where the tables scroll sideways
+	 * and the sheet must not.
+	 */
+	{
+		name: 'modifier-states-ring-end-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off',
+		size: '1400,900',
+	},
+	{
+		name: 'modifier-states-ring-end-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off&text=20',
+		size: '1400,1000',
+	},
+	{
+		name: 'modifier-states-ring-end-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off&text=24',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-states-ring-end-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-ring-end&bar=off',
+		size: '1400,900',
+	},
+	{
+		name: 'modifier-states-ring-end-off-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end-off&bar=off',
+		size: '1400,900',
+	},
+	{
+		name: 'modifier-states-ring-end-520-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off&width=520',
+		size: '620,900',
+	},
+	{
+		name: 'modifier-states-ring-end-off-520-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end-off&bar=off&width=520',
+		size: '620,900',
 	},
 	/*
 	 * Stealth's door opened under Cat Form, stored Untrained (the test vault's

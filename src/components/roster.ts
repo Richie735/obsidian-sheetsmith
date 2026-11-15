@@ -72,11 +72,13 @@ import { bindRingControl } from './ring-control';
 import {
 	cellStateRing,
 	finishRowDoor,
+	lastValueCell,
 	layoutSetsStateIn,
 	RowAccount,
 	RowState,
 	STATE_DOOR_CLASS,
 	STATE_STRIP_CLASS,
+	stampRowEnd,
 } from './state-ring';
 import { columnState, overlayRowStates, refusalFirst, rowStateShapes } from './row-states';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
@@ -947,6 +949,9 @@ function drawHead(
 			cell.textContent = heading;
 		}
 	}
+	// The end column's heading takes the row end's room, so it stays centred
+	// over its values when a lane is set aside (`stampRowEnd`).
+	stampRowEnd(lastValueCell(head));
 }
 
 /**
@@ -1708,7 +1713,7 @@ function drawRow(
 	// The row's one door at its end, or its Totals' note marks where no ring
 	// on it was set (`finishRowDoor`).
 	finishRowDoor(
-		tr.lastElementChild as HTMLElement | null,
+		lastValueCell(tr),
 		modifiersOnName(rowLabel(view.row.label)),
 		rowStates,
 		rowAccounts,
