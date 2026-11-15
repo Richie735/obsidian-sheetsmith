@@ -32,6 +32,14 @@
  * computed cell's note mark where it was — is decided here, beside the door it
  * stands in for, rather than in each row that would otherwise ask it twice.
  *
+ * **And it decides which cell is a table row's end** (`lastValueCell`,
+ * `stampRowEnd`): the last value cell, never the name cell, stamped on every
+ * body row whether or not a ring on it was set, and on the head and foot rows,
+ * which hold no ring. One decision rather than three, because the door, the
+ * note mark's slot and a form's tag lane all sit in that cell, and the
+ * heading and total over it take the same room
+ * (`docs/features/table-row-end-room.md`).
+ *
  * **Shared by Table, Roster and Track**, three consumers, which is §1's
  * extraction line met exactly: the drawn mapping, the description, the live
  * line and the door are one behaviour on three surfaces. It knows no caller: the
@@ -46,6 +54,7 @@ import { AccountDoor, renderAccountDoor } from './account-door';
 import {
 	ModifierAccount,
 	ownNowLine,
+	ROW_END_CLASS,
 	stampStateHost,
 	stateAccountText,
 	stateOwnDescription,
@@ -229,12 +238,14 @@ export interface RowAccount {
  * — the caller's `reserveNoteSlots`, with `STATE_DOOR_CLASS` counted alike.
  */
 export function finishRowDoor(
+	/** The row's last value cell (`lastValueCell`), never its name cell. */
 	end: HTMLElement | null,
 	name: string,
 	states: readonly RowState[],
 	accounts: readonly RowAccount[],
 	holding: string,
 ): void {
+	stampRowEnd(end);
 	if (states.length === 0 || end === null) {
 		for (const { td, account } of accounts) renderAccountNotes(td, account, holding);
 		return;
@@ -257,6 +268,39 @@ export function finishRowDoor(
 		states.map((state) => state.set),
 		parts,
 	);
+}
+
+/**
+ * A table row's last value cell, in display order: the last cell that is
+ * neither the row's name (`th.sheetsmith-table-name`, wherever `namePosition`
+ * put it) nor an open table's delete cell. Null for a row with no value cell.
+ *
+ * **Never the name cell**, which is the pinned one: stamped as the row's end it
+ * would take the door, the slot and the form's tag, and the tag's carrier rule
+ * (`position: relative`) would unpin it (`docs/features/table-row-end-room.md`,
+ * "The end cell is the row's last value cell"). `lastElementChild` was the end
+ * before, which is the name cell on a name-last row. One spelling for a body
+ * row, the head row and the foot row, a Table's and a Roster's.
+ */
+export function lastValueCell(row: HTMLElement): HTMLElement | null {
+	for (let cell = row.lastElementChild; cell !== null; cell = cell.previousElementSibling) {
+		if (!cell.instanceOf(HTMLElement)) continue;
+		if (cell.classList.contains('sheetsmith-table-name')) continue;
+		if (cell.classList.contains('sheetsmith-table-remove')) continue;
+		return cell;
+	}
+	return null;
+}
+
+/**
+ * Stamp a row's end cell (`ROW_END_CLASS`), which the stylesheet gives the tag
+ * lane while a form is in play, and where the pass puts a row's tag. A body
+ * row's is stamped by `finishRowDoor`, on every row whether or not a ring on it
+ * was set; the head and foot rows' by the component that builds them, so the
+ * end column's heading and total take the same room as its values.
+ */
+export function stampRowEnd(end: HTMLElement | null): void {
+	end?.classList.add(ROW_END_CLASS);
 }
 
 /**

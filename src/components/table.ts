@@ -87,7 +87,15 @@ import {
 } from './sample-values';
 import { notesAt, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
-import { cellStateRing, finishRowDoor, RowAccount, RowState, STATE_DOOR_CLASS } from './state-ring';
+import {
+	cellStateRing,
+	finishRowDoor,
+	lastValueCell,
+	RowAccount,
+	RowState,
+	STATE_DOOR_CLASS,
+	stampRowEnd,
+} from './state-ring';
 import { columnState, overlayRowStates, refusalFirst, rowStateShapes, stateColumn } from './row-states';
 import { flagText } from './stored-flag';
 import {
@@ -1871,6 +1879,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			const cell = element('th', 'sheetsmith-table-remove', head);
 			element('span', 'sheetsmith-sr-only', cell, 'Remove');
 		}
+		// The end column's heading takes the row end's room, so it stays centred
+		// over its values when a lane is set aside (`stampRowEnd`).
+		stampRowEnd(lastValueCell(head));
 
 		/** Every column the table draws, the name and the delete glyph included. */
 		const width = columns.length + 1 + (open ? 1 : 0);
@@ -2994,8 +3005,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			}
 			// The last value's cell, before the delete control's: the door is
 			// onto the row's values, and the trailing cell is the row's removal.
+			// Never the name cell, which a name-last table draws at the end.
 			finishRowDoor(
-				tr.lastElementChild as HTMLElement | null,
+				lastValueCell(tr),
 				modifiersOnName(rowLabel(rowView.label)),
 				rowStates,
 				rowAccounts,
@@ -3084,6 +3096,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				);
 			}
 			if (open) element('td', 'sheetsmith-table-remove', foot);
+			// The end column's total takes the row end's room, as its heading does.
+			stampRowEnd(lastValueCell(foot));
 
 			const view = doc.defaultView;
 			let pending: number | undefined;

@@ -124,6 +124,18 @@ export const BOX_ATTRIBUTE = 'data-sheetsmith-box';
 export const TAG_BOX_ATTRIBUTE = 'data-sheetsmith-tag-box';
 
 /**
+ * The class on a table row's last value cell — never its name cell, wherever
+ * the name column falls, and never an open table's delete cell — in a body
+ * row, the head row and the foot row alike
+ * (`docs/features/table-row-end-room.md`). The row's door, a note mark or an
+ * empty slot sits at that cell's inline end, and a form's tag in a lane after
+ * them, so the pass looks for it where a row names no carrier. Stamped by
+ * `state-ring.ts`'s `stampRowEnd`; declared here, beside the attributes the
+ * pass reads, so the view takes it without the drawing modules.
+ */
+export const ROW_END_CLASS = 'sheetsmith-row-end';
+
+/**
  * Mark a value something has been pushed at, say which published name it is,
  * say which box it belongs to, and say what carries the tag where that box
  * cannot.
