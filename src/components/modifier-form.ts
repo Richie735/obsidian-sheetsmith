@@ -1209,7 +1209,11 @@ function renderFields(
 	}
 	changes.value = ownOption;
 	changes.disabled = !editable;
+	/** The one refusal on screen: a second pick replaces it rather than stacking. */
+	let refusal: HTMLElement | null = null;
 	changes.addEventListener('change', () => {
+		refusal?.remove();
+		refusal = null;
 		/*
 		 * **Onto a dropdown, the change becomes a Sets with no amount and an
 		 * option not yet chosen**, and says so (D3): only Sets can choose one.
@@ -1232,7 +1236,7 @@ function renderFields(
 		const unspellable = chosen.column === null ? null : unspellableColumn(chosen.column);
 		if (unspellable !== null) {
 			changes.value = ownOption;
-			const refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: unspellable });
+			refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: unspellable });
 			changes.parentElement?.after(refusal);
 			options.announce(unspellable);
 			options.onResize();
