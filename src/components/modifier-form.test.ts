@@ -390,9 +390,8 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 		expect(written).toEqual([['abilities.stealth = 2 in Training']]);
 	});
 
-	it('refuses a column a cell could not spell, at the pick', () => {
-		const announced: string[] = [];
-		const written: string[][] = [];
+	/** A form whose Value select offers a column no cell could spell. */
+	const unspellableColumnForm = (announced: string[], written: string[][]) => {
 		const body = document.body.createDiv();
 		const state = modifierFormState(['inspiration = true']);
 		state.open = 0;
@@ -422,15 +421,46 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 			announce: (said) => announced.push(said),
 			onResize: () => undefined,
 		});
+		return body;
+	};
+	const pick = (body: HTMLElement, label: string) => {
 		const value = control(body, 'Value') as HTMLSelectElement;
-		const option = Array.from(value.options).find((one) => one.textContent === 'Skills · stealth · Skill in hand');
-		value.value = option?.value ?? '';
+		value.value = Array.from(value.options).find((one) => one.textContent === label)?.value ?? '';
 		value.dispatchEvent(new Event('change'));
-		const refusal =
-			'"Skill in hand" cannot be set from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.';
-		expect(announced).toContain(refusal);
-		expect(body.textContent).toContain(refusal);
+	};
+	const COLUMN_REFUSAL =
+		'"Skill in hand" cannot be set from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.';
+	const columnRefusals = (body: HTMLElement) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).filter((one) => one.textContent === COLUMN_REFUSAL);
+
+	it('refuses a column a cell could not spell, at the pick', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = unspellableColumnForm(announced, written);
+		pick(body, 'Skills · stealth · Skill in hand');
+		expect(announced).toContain(COLUMN_REFUSAL);
+		expect(body.textContent).toContain(COLUMN_REFUSAL);
 		expect(written).toEqual([]);
+		body.remove();
+	});
+
+	it('replaces the column refusal on a second refused pick rather than stacking it', () => {
+		const body = unspellableColumnForm([], []);
+		pick(body, 'Skills · stealth · Skill in hand');
+		pick(body, 'Skills · stealth · Skill in hand');
+		expect(columnRefusals(body)).toHaveLength(1);
+		body.remove();
+	});
+
+	it('clears the column refusal when the next pick is one a cell can spell', () => {
+		const written: string[][] = [];
+		const body = unspellableColumnForm([], written);
+		pick(body, 'Skills · stealth · Skill in hand');
+		expect(columnRefusals(body)).toHaveLength(1);
+		pick(body, 'Abilities · stealth · Training');
+		expect(written).toEqual([['abilities.stealth = true in Training']]);
+		expect(columnRefusals(body)).toHaveLength(0);
+		body.remove();
 	});
 });
 
