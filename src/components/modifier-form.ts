@@ -508,6 +508,28 @@ function changeAsEffect(
 }
 
 /**
+ * Say a field's refusal under it, keeping one on screen: every call removes the
+ * last, so a second refusal replaces the first rather than stacking under it,
+ * and `null` clears it. Each field calls this on every change, not only on a
+ * refused one, so the change that fixes a refusal is also what takes it away.
+ */
+function heldRefusal(
+	anchor: HTMLElement,
+	options: ModifierFormOptions,
+): (message: string | null) => void {
+	let refusal: HTMLElement | null = null;
+	return (message) => {
+		refusal?.remove();
+		refusal = null;
+		if (message === null) return;
+		refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: message });
+		anchor.parentElement?.after(refusal);
+		options.announce(message);
+		options.onResize();
+	};
+}
+
+/**
  * **Option**, in the amount's place on a change choosing a dropdown's option
  * (`docs/features/text-value-modifiers.md`): a select over the dropdown's
  * options showing each one's label and storing its value, `—` first for an
@@ -529,20 +551,15 @@ function renderOptionField(
 	const held = (shown.option ?? '').trim();
 	fillOptionChoices(picker, dropdown, held);
 	picker.disabled = !editable;
-	/** The one refusal on screen: a second pick replaces it rather than stacking. */
-	let refusal: HTMLElement | null = null;
+	const refuse = heldRefusal(picker, options);
 	picker.addEventListener('change', () => {
 		const unspellable = unspellableOption(picker.value);
-		refusal?.remove();
-		refusal = null;
 		if (unspellable !== null) {
 			picker.value = held;
-			refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: unspellable });
-			picker.parentElement?.after(refusal);
-			options.announce(unspellable);
-			options.onResize();
+			refuse(unspellable);
 			return;
 		}
+		refuse(null);
 		put({ option: picker.value });
 	});
 	const fault = choiceOperatorFault(shown.operator);
@@ -1209,11 +1226,9 @@ function renderFields(
 	}
 	changes.value = ownOption;
 	changes.disabled = !editable;
-	/** The one refusal on screen: a second pick replaces it rather than stacking. */
-	let refusal: HTMLElement | null = null;
+	const refuse = heldRefusal(changes, options);
 	changes.addEventListener('change', () => {
-		refusal?.remove();
-		refusal = null;
+		refuse(null);
 		/*
 		 * **Onto a dropdown, the change becomes a Sets with no amount and an
 		 * option not yet chosen**, and says so (D3): only Sets can choose one.
@@ -1236,10 +1251,7 @@ function renderFields(
 		const unspellable = chosen.column === null ? null : unspellableColumn(chosen.column);
 		if (unspellable !== null) {
 			changes.value = ownOption;
-			refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: unspellable });
-			changes.parentElement?.after(refusal);
-			options.announce(unspellable);
-			options.onResize();
+			refuse(unspellable);
 			return;
 		}
 		/*
@@ -1409,19 +1421,10 @@ function renderFields(
 	note.value = heldNote;
 	note.readOnly = !editable;
 	if (editable) {
-		let refusal: HTMLElement | null = null;
 		bindEditable(note, {
 			initial: heldNote,
 			refuse: (next) => unspellableNote(next),
-			onRefusal: (message) => {
-				refusal?.remove();
-				refusal = null;
-				if (message === null) return;
-				refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: message });
-				note.parentElement?.after(refusal);
-				options.announce(message);
-				options.onResize();
-			},
+			onRefusal: heldRefusal(note, options),
 			announceCommit: (next) =>
 				options.announce(next === '' ? 'Note cleared' : `Note ${next}`),
 			announceRestore: () => options.announce('Note restored'),
