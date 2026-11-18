@@ -364,7 +364,15 @@ be the control's at another font size reads the factor, never the length.
 
 - **Relative units for anything that should scale with the sheet's own type**
   [judgement]. The card's headline number is `1.75em`, not a pixel size, so the
-  card scales with whatever sets the sheet's size.
+  card scales with whatever sets the sheet's size. The value under it, the
+  pill under a derived number (a Card's, a Card set tile's, a Roster card's
+  score) and a Pool's temporary points, is `--sheetsmith-qualifier-small`: the
+  app's `--font-ui-small` as a floor under 13/15 of the sheet's `em`, so the
+  app draws what it drew at its own size, a phone keeps its larger token, and
+  a larger sheet raises it with the number. A Pool's points stop at its
+  ceiling's `--font-ui-medium`, which holds still, so they never outrank it.
+  The words ranked with the card's heading — *Temp*, an abbreviation, a note —
+  stay at the heading's fixed size until it moves.
 - **What sets the sheet's size is not the vault's text-size setting**, which
   this section used to claim [judgement]. Obsidian 1.14.4 sets `body` to `--font-ui-medium`, 15px, and
   nothing on a view, and the vault's text size reaches only `--font-text-size`,

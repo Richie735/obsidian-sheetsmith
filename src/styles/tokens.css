@@ -77,6 +77,23 @@ body {
 	   follows the sheet's `em` and the card scales with whatever sets the
 	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
+	/* **The value under that number, in the same unit**: the pill under a
+	   derived number (a Card's, a Card set tile's, a Roster card's score) and
+	   a Pool's temporary points. They were `--font-ui-small`, which no `em`
+	   reaches, so at `text=24` the number grew to 42px and its pill held 13px.
+	   The `em` term is the token over the app's 15px desktop body
+	   (`--font-ui-medium`, the sheet's `em` in the app, UI.md §5), so whatever
+	   raises the sheet's size raises it with the number. The token itself is
+	   the floor: it is what the app draws at its own size, and on a phone,
+	   where Obsidian sets `--font-ui-small` to 0.937 of a 16px body rather
+	   than 13/15 of it, the `em` term alone came out at 13.9px against the
+	   15px the pill drew. Read off the host's `em`, so it must not be nested.
+
+	   **A value, not a label.** The words ranked at or under the card's heading
+	   — a Pool's *Temp*, a card's abbreviation, its note line — stay at
+	   `--font-ui-smaller` with the heading, since growing them past a heading
+	   that holds still reorders the card (`docs/BACKLOG.md` § UI). */
+	--sheetsmith-qualifier-small: max(var(--font-ui-small), calc(13em / 15));
 	/* How tall one row of the sheet's grid is, for a component whose content has
 	   no height the grid could take one from: a block of prose, a picture. Both
 	   put their content out of flow so it cannot decide the box, which leaves the

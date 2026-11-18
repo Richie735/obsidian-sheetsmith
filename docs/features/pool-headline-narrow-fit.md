@@ -189,7 +189,10 @@ design in all of them.
 
 The **temp pill** does not move wherever the reading stays on one line. Its offset
 from the card top was measured identical before and after: 78.2 at the default
-size, 82.2 at `text=24`, 93.0 under phone staging. Where the reading wraps, the
+size, 82.2 at `text=24`, 93.0 under phone staging. *Since moved:* the
+qualifiers-follow-text-size change hung the pill at `0.4em` rather than a fixed
+4px, so these are now 82.6, 89.8 and 97.4, and every Pool with the pill is
+about 4px taller at the default size and 8px at `text=24`. Where the reading wraps, the
 card grows by one line (14 to 19px) and everything below the reading moves down
 with it, the pill included. That is the wrap itself, not a side effect. The grid
 row grows with the card, as any taller cell's does.
