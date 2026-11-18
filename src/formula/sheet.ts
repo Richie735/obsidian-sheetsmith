@@ -39,6 +39,7 @@ import {
 	RowValues,
 	ScopeEntry,
 	ModifierOutcome,
+	ModifierGroup,
 	ScopeValues,
 	StateAccount,
 	StateReader,
@@ -60,6 +61,15 @@ import {
 import { Layout } from '../parse/layout';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
+import { groupTargetLabel, parseModifierGroups, undeclaredGroup } from '../parse/modifier-groups';
+import {
+	groupsOf,
+	mixedGroupList,
+	namesNoGroup,
+	spellGroups,
+	WHERE_REFUSED,
+} from '../parse/modifier-cell';
+import { aimedAt, GroupAim, groupAim, GroupIndex, NO_GROUPS, reachOf } from './group-reach';
 import {
 	acceptingTargets,
 	markedTargets,
@@ -70,6 +80,8 @@ import {
 	stateTargets,
 	bufferTargets,
 	choiceTargets,
+	groupIndex,
+	markedMembers,
 } from './modifier-targets';
 import {
 	called,
@@ -126,6 +138,12 @@ import { buildRowTable, RowComponent } from './rows';
 export interface PublishedComponent {
 	/** The component's layout id: the name formulas reference it by. */
 	id: string;
+	/**
+	 * The component's own label, which is what a sentence naming one of its
+	 * unnamed group members calls it (`docs/features/table-row-modifier-target.md`
+	 * D5). Absent falls back to the id.
+	 */
+	label?: string;
 	values: ScopeValues;
 	/**
 	 * The rows an aggregate may walk, where this component holds any. Absent
@@ -215,6 +233,7 @@ export function publishedComponent({
 	const readable = error === null ? component : undefined;
 	return {
 		id: config.id,
+		label: config.label,
 		values: readable?.scopeValues?.(data, config) ?? {},
 		rows: readable?.scopeRows?.(data, config),
 		modifiers: readable?.scopeModifiers?.(data, config),
@@ -324,6 +343,7 @@ export function buildSheetEnv(
 		shapesOf(modifiers.states ?? []),
 		new Set((modifiers.buffers ?? []).map((target) => target.name)),
 		choiceShapesOf(modifiers.choices ?? []),
+		modifiers.groupIndex ?? NO_GROUPS,
 	);
 	return env;
 }
@@ -436,6 +456,19 @@ export interface SheetModifiers {
 	 * **Dropdowns**. Optional on `states`' terms, and absent means none.
 	 */
 	choices?: readonly ChoiceTarget[];
+	/**
+	 * The layout's declared modifier groups, in declaration order
+	 * (`docs/features/table-row-modifier-target.md` D6): what the form's **Value**
+	 * select offers under **Modifier groups**. Optional on `states`' terms, and
+	 * absent means none.
+	 */
+	groups?: readonly ModifierGroup[];
+	/**
+	 * Which values are in each group, read off the sheet as it is now, character
+	 * rows included (`groupIndex`): what the walk expands a group change into and
+	 * what the row's reach line counts. Absent is none.
+	 */
+	groupIndex?: GroupIndex;
 }
 
 /** A layout with no modifiers, and the paths with no layout at all. */
@@ -451,6 +484,8 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	states: [],
 	buffers: [],
 	choices: [],
+	groups: [],
+	groupIndex: NO_GROUPS,
 };
 
 /**
@@ -523,12 +558,27 @@ export function sheetModifierInput(
 export function noteCandidates(
 	components: readonly PublishedComponent[],
 	definitions: readonly ModifierDefinitionView[],
+	/**
+	 * The sheet's groups, so a note aimed at a group makes each of its members a
+	 * candidate (`docs/features/table-row-modifier-target.md` D3): a note through
+	 * a group lands per member, exactly as one aimed at the member by name.
+	 * Absent is none.
+	 */
+	groups: GroupIndex = NO_GROUPS,
 ): ReadonlySet<string> {
 	const found = new Set<string>();
+	const add = (target: string): void => {
+		const listed = groupsOf(target);
+		if (listed === null) {
+			found.add(target);
+			return;
+		}
+		for (const { member } of reachOf(listed, groups)) found.add(member.name);
+	};
 	for (const definition of definitions) {
 		for (const change of definition.changes) {
 			const target = change.target.trim();
-			if ((change.note ?? '').trim() !== '' && target !== '') found.add(target);
+			if ((change.note ?? '').trim() !== '' && target !== '') add(target);
 		}
 	}
 	// A resolver that resolves nothing: the scan reads text and must not reach
@@ -537,7 +587,7 @@ export function noteCandidates(
 	for (const component of components) {
 		for (const push of component.modifiers?.(inert) ?? []) {
 			const target = typedNoteTarget(push.part);
-			if (target !== null) found.add(target);
+			if (target !== null) add(target);
 		}
 	}
 	return found;
@@ -622,17 +672,46 @@ export function buildSheet(
 		parseModifierTypes(layout).names,
 	);
 	const published = prepared.map(publishedComponent);
-	const env = buildSheetEnv(published, library, input);
+	/*
+	 * **Groups are read off the values as they are now**, because a row the
+	 * character added joins its table's default and has a slot of its own
+	 * (`docs/features/table-row-modifier-target.md` D5) — a fact about this
+	 * note, unlike everything above. The static sources keep every formula; only
+	 * the values are the note's. An unnamed member whose own component reads
+	 * `mod.self` is marked, and so accepting, on `markedTargets`' relative rule.
+	 */
+	const live = sources.map((source, at) => ({
+		...source,
+		values: published[at]?.values ?? {},
+	}));
+	const declaredGroups = parseModifierGroups(layout).groups;
+	const members = markedMembers(live);
+	/*
+	 * An unnamed member of a component that draws notes can show a note pushed
+	 * through its group, as a named one can (D3); nothing can aim at it by name.
+	 */
+	const notableMembers = live
+		.filter((source) => source.drawsNotes === true)
+		.flatMap((source) => (source.values.unnamed ?? []).map((member) => member.key));
+	const grouped: SheetModifiers = {
+		...input,
+		groups: declaredGroups,
+		groupIndex: groupIndex(declaredGroups, live),
+		marked: new Set([...input.marked, ...members]),
+		accepting: new Set([...input.accepting, ...members]),
+		notable: new Set([...(input.notable ?? []), ...notableMembers]),
+	};
+	const env = buildSheetEnv(published, library, grouped);
 	/** Memoised, and taken only when a breakdown first needs it. */
 	let candidates: ReadonlySet<string> | null = null;
 	return {
 		env,
-		marked: input.marked,
+		marked: grouped.marked,
 		modifiers: sheetModifiers(
-			input,
+			grouped,
 			env,
 			promote,
-			() => (candidates ??= noteCandidates(published, input.definitions)),
+			() => (candidates ??= noteCandidates(published, input.definitions, grouped.groupIndex)),
 		),
 	};
 }
@@ -935,6 +1014,187 @@ export function sheetModifiers(
 			suppressed,
 		};
 	};
+	/**
+	 * What one enrolment comes to on its row, aimed at one value: the body every
+	 * part aimed at a name runs, and the one a group part runs once per member
+	 * (`docs/features/table-row-modifier-target.md` D10), so a member's verdict
+	 * on the reach line is the verdict the same change aimed at it by name gets.
+	 */
+	const single = (found: Enrolment, row: RowValues, source: string): ModifierOutcome => {
+		if (found.kind !== 'unknown') {
+			// A dropdown's option, in the walk's words; never arithmetic.
+			const option = choiceOutcome(found, row, source);
+			if (option !== null) return option;
+			// A grant at a buffer, in the walk's words.
+			const granted = bufferOutcome(found, row, source);
+			if (granted !== null) return granted;
+			// A level or a flag, or a boolean at a number, in the walk's words.
+			const stated = stateOutcome(found);
+			if (stated !== null) return stated;
+		}
+		/*
+		 * **A note's own verdict, beside the arithmetic's.** A note-only part
+		 * at a name that can show it applies — it needs no slot, so the
+		 * accepting set has nothing to say about it — and one that cannot is
+		 * not applying, saying why. **A part with an amount *and* a note keeps
+		 * its amount's verdict exactly as before notes existed** — the spec's
+		 * "judged as today" — and carries what its note is doing beside it in
+		 * `noteLine`: refused where the target cannot show it, or still shown
+		 * where the amount changes nothing.
+		 */
+		const refused =
+			found.kind === 'unknown' || found.fields.note === null
+				? null
+				: noteRefusal(found.fields.target);
+		const withRefusal = refused === null ? {} : { noteLine: refused };
+		if (found.kind === 'noted') {
+			const outcome = enrolmentOutcome(found, settled, label);
+			return refused === null
+				? outcome
+				: { ...outcome, applies: false, suppressed: refused };
+		}
+		if (
+			found.kind === 'applies' &&
+			!modifiers.accepting.has(found.contribution.target)
+		) {
+			const named = label(found.contribution.target);
+			const noteShows = found.fields.note !== null && refused === null;
+			return {
+				definition: found.definition,
+				change: found.change,
+				typed: found.typed,
+				target: found.contribution.target,
+				targetLabel: named,
+				applies: false,
+				amount: found.contribution.amount,
+				condition: found.conditional ? true : null,
+				suppressed: `${named} does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.`,
+				...(noteShows ? { noteLine: 'Its note still shows.' } : withRefusal),
+			};
+		}
+		return {
+			...enrolmentOutcome(found, settled, label),
+			...withRefusal,
+		};
+	};
+	const declaredGroups = modifiers.groups ?? [];
+	const index = modifiers.groupIndex ?? NO_GROUPS;
+	/**
+	 * What a part aimed at modifier groups comes to on its row (D10): the groups
+	 * by their labels, and how far it reached.
+	 *
+	 * **Each member's verdict is `single`'s**, the change re-aimed at that member
+	 * through the same `aimedAt` the walk uses, so the reach line and the numbers
+	 * cannot disagree about which values moved. The outcome applies where any
+	 * member is changing, which is the glyph's own any-not-every rule.
+	 */
+	const groupOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+		aim: Exclude<GroupAim, { kind: 'name' }>,
+		row: RowValues,
+		source: string,
+	): ModifierOutcome => {
+		const listed = aim.kind === 'groups' ? aim.groups : (groupsOf(found.fields.target) ?? null);
+		const base = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: found.fields.target,
+			targetLabel:
+				groupTargetLabel(listed, declaredGroups) ?? label(found.fields.target),
+		};
+		const amount =
+			found.kind === 'applies'
+				? found.contribution.amount
+				: found.kind === 'inactive'
+					? found.amount
+					: null;
+		/*
+		 * **A refusal is said as its own sentence, under the first line**, as the
+		 * other group sentences are (`reach.said`), rather than after a "Not
+		 * applied:" that would put a capital after a colon and frame a sentence
+		 * that already says the change does nothing. `suppressed` still carries it
+		 * for every reader that wants the reason alone.
+		 */
+		const refused = (suppressed: string): ModifierOutcome => ({
+			...base,
+			applies: false,
+			amount: aim.kind === 'withheld' ? null : amount,
+			condition: null,
+			suppressed,
+			reach: { values: 0, changed: 0, missed: null, more: 0, said: [suppressed] },
+		});
+		// The reserved member condition, on any target (D8).
+		if (aim.kind === 'withheld') return refused(WHERE_REFUSED);
+		// A published name in the list changes nothing, and says which (D1).
+		if (aim.kind === 'mixed') return refused(mixedGroupList(aim.name));
+		// `@` alone names no group yet, said as the definitions list says it (D1).
+		if (aim.kind === 'none') return refused(namesNoGroup('This modifier'));
+		/*
+		 * **Every group with nothing to reach is said, whatever else the part
+		 * reaches** (D7): one nothing declares, and one declared but holding no
+		 * value on this sheet, beside a group that does reach something.
+		 */
+		const said = aim.groups.map((name) => {
+			const group = index.declared.get(name);
+			if (group === undefined) return undeclaredGroup(spellGroups([name]));
+			return (index.members.get(name) ?? []).length === 0
+				? `${group.label} holds no value on this sheet, so this changes nothing.`
+				: null;
+		}).filter((line): line is string => line !== null);
+		const reached = reachOf(aim.groups, index);
+		if (reached.length === 0) {
+			return {
+				...base,
+				applies: false,
+				amount,
+				condition: null,
+				suppressed: null,
+				reach: { values: 0, changed: 0, missed: null, more: 0, said },
+			};
+		}
+		const each = reached.map(({ member }) => ({
+			member,
+			outcome: single(aimedAt(found, member.name), row, source),
+		}));
+		const changed = each.filter(({ outcome }) => outcome.applies).length;
+		const condition = each[0]?.outcome.condition ?? null;
+		// A false condition is the whole story; no member is "missed" by it.
+		const misses =
+			condition === false
+				? []
+				: each.filter(({ outcome }) => !outcome.applies && outcome.suppressed !== null);
+		const first = misses[0];
+		return {
+			...base,
+			applies: changed > 0,
+			amount: each[0]?.outcome.amount ?? amount,
+			condition,
+			suppressed: changed === 0 && first !== undefined ? (first.outcome.suppressed ?? null) : null,
+			reach: {
+				values: reached.length,
+				changed,
+				missed:
+					first === undefined
+						? null
+						: { label: first.member.label, reason: first.outcome.suppressed ?? '' },
+				more: Math.max(0, misses.length - 1),
+				said,
+			},
+		};
+	};
+	/**
+	 * One enrolment's outcome, whatever it is aimed at: the reserved member
+	 * condition refused on any target (D8), a group part through its members,
+	 * and everything else as it always was.
+	 */
+	const outcomeOf = (found: Enrolment, row: RowValues, source: string): ModifierOutcome => {
+		if (found.kind !== 'unknown') {
+			const aim = groupAim(found.fields);
+			if (aim.kind !== 'name') return groupOutcome(found, aim, row, source);
+		}
+		return single(found, row, source);
+	};
 	return {
 		definitions: modifiers.definitions,
 		targets: modifiers.targets,
@@ -949,6 +1209,7 @@ export function sheetModifiers(
 			return account.error === null && account.lines.length === 0 ? null : account;
 		},
 		choices: modifiers.choices ?? [],
+		groups: declaredGroups,
 		choice: (name, stored): ChoiceAccount | null => {
 			const result = chosen(name);
 			if (result === null) return null;
@@ -1020,63 +1281,7 @@ export function sheetModifiers(
 			// order, so a two-change modifier states both on the row that enrols in
 			// it. The gate below is per change for the same reason the walk's is:
 			// one of a definition's values may read no modifier while another does.
-			resolveEnrolments(table, part, row, calls).map((found) => {
-				if (found.kind !== 'unknown') {
-					// A dropdown's option, in the walk's words; never arithmetic.
-					const option = choiceOutcome(found, row, source);
-					if (option !== null) return option;
-					// A grant at a buffer, in the walk's words.
-					const granted = bufferOutcome(found, row, source);
-					if (granted !== null) return granted;
-					// A level or a flag, or a boolean at a number, in the walk's words.
-					const stated = stateOutcome(found);
-					if (stated !== null) return stated;
-				}
-				/*
-				 * **A note's own verdict, beside the arithmetic's.** A note-only part
-				 * at a name that can show it applies — it needs no slot, so the
-				 * accepting set has nothing to say about it — and one that cannot is
-				 * not applying, saying why. **A part with an amount *and* a note keeps
-				 * its amount's verdict exactly as before notes existed** — the spec's
-				 * "judged as today" — and carries what its note is doing beside it in
-				 * `noteLine`: refused where the target cannot show it, or still shown
-				 * where the amount changes nothing.
-				 */
-				const refused =
-					found.kind === 'unknown' || found.fields.note === null
-						? null
-						: noteRefusal(found.fields.target);
-				const withRefusal = refused === null ? {} : { noteLine: refused };
-				if (found.kind === 'noted') {
-					const outcome = enrolmentOutcome(found, settled, label);
-					return refused === null
-						? outcome
-						: { ...outcome, applies: false, suppressed: refused };
-				}
-				if (
-					found.kind === 'applies' &&
-					!modifiers.accepting.has(found.contribution.target)
-				) {
-					const named = label(found.contribution.target);
-					const noteShows = found.fields.note !== null && refused === null;
-					return {
-						definition: found.definition,
-						change: found.change,
-						typed: found.typed,
-						target: found.contribution.target,
-						targetLabel: named,
-						applies: false,
-						amount: found.contribution.amount,
-						condition: found.conditional ? true : null,
-						suppressed: `${named} does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.`,
-						...(noteShows ? { noteLine: 'Its note still shows.' } : withRefusal),
-					};
-				}
-				return {
-					...enrolmentOutcome(found, settled, label),
-					...withRefusal,
-				};
-			}),
+			resolveEnrolments(table, part, row, calls).map((found) => outcomeOf(found, row, source)),
 		/*
 		 * **Two bounds, one per group.** The arithmetic is bounded by `marked`,
 		 * the names whose own formula reads a modifier for them, and not by the
@@ -1195,6 +1400,8 @@ export function buildSheetScope(
 
 	/** Every name registered below, in declaration order, for the slot pass. */
 	const published: string[] = [];
+	/** Every unnamed member's slot key, which takes a slot and no name. */
+	const slotted: string[] = [];
 
 	for (const component of components) {
 		const resolve = component.resolver?.(bound);
@@ -1294,6 +1501,14 @@ export function buildSheetScope(
 		for (const [name, entry] of Object.entries(component.values.named ?? {})) {
 			register(`${component.id}.${name}`, entry);
 		}
+		/*
+		 * **An unnamed group member gets a slot and no name**
+		 * (`docs/features/table-row-modifier-target.md` D5): only its key goes into
+		 * the slot pass below, so `mod.attacks[3]` is registered — under a key no
+		 * formula can spell, read through the row's own `mod.self` — while
+		 * `attacks.Longsword` still fails as an unknown name.
+		 */
+		for (const member of component.values.unnamed ?? []) slotted.push(member.key);
 	}
 
 	/*
@@ -1319,7 +1534,7 @@ export function buildSheetScope(
 	 * where an absent name would only ever say `mod.self` is unknown. The memo
 	 * above holds only what resolved, so nothing caches the refusal.
 	 */
-	for (const name of published) {
+	for (const name of [...published, ...slotted]) {
 		thunks.set(modifierSlot(name), () => {
 			const result = bound.modifiers(name);
 			if ('error' in result) throw new FormulaError(result.error);
