@@ -721,6 +721,117 @@ body {
 	color: var(--text-error);
 }
 
+/* ---------------------------------------------------------------------------
+   The chip list a set of modifier groups is chosen in
+   (`components/group-chips.ts`, `docs/features/table-row-modifier-target.md`
+   D11, D12). One control on two surfaces — the anchored panel and the layout
+   editor pane — so it lives here, beside both, and is scoped by its own block
+   class rather than by either surface's.
+
+   **A tag's surface and a field's corner**, Passport's ruling on the same
+   shape (`docs/UI.md` §9's tag row): the app's tag background, `--radius-s`,
+   and the panel's own type size. **An inherited chip is muted and outlined
+   dashed rather than faint**: the spec asked for the faint text colour, and
+   `docs/UI.md` §6 measures `--text-faint` under 3:1 on every surface, so the
+   rank is carried by the colour that clears it and a second channel, the
+   dashed edge, that survives forced colours. */
+.sheetsmith-group-chips {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-2-2);
+	min-width: 0;
+}
+
+.sheetsmith-group-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	min-height: var(--size-4-5);
+	padding: 0 var(--size-2-2) 0 var(--size-2-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--tag-background, var(--background-modifier-hover));
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-group-chip-inherited {
+	padding-inline-end: var(--size-2-3);
+	border-style: dashed;
+	background-color: transparent;
+	color: var(--text-muted);
+}
+
+.sheetsmith-group-chip-stray {
+	color: var(--text-muted);
+}
+
+/* A glyph button on the chip, the pointer minimum on both axes (`docs/UI.md`
+   §7), its own padding doubled above the tablet rule's (0,2,1) as every sheet
+   button's is (§2). */
+.sheetsmith-group-chips .sheetsmith-group-chip-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: var(--size-4-5);
+	min-height: var(--size-4-5);
+	margin: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.sheetsmith-group-chips .sheetsmith-group-chip-remove.sheetsmith-group-chip-remove {
+	padding: 0;
+}
+
+.sheetsmith-group-chips .sheetsmith-group-chip-remove:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.sheetsmith-group-chips .sheetsmith-group-chip-remove:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
+.sheetsmith-group-chips .sheetsmith-group-chip-remove svg {
+	width: var(--icon-xs, 14px);
+	height: var(--icon-xs, 14px);
+}
+
+@media (pointer: coarse) {
+	.sheetsmith-group-chips .sheetsmith-group-chip-remove {
+		min-width: 28px;
+		min-height: 28px;
+	}
+}
+
+.sheetsmith-panel .sheetsmith-group-chips .sheetsmith-group-chips-add,
+.sheetsmith-group-chips .sheetsmith-group-chips-add {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-size: var(--font-ui-small);
+}
+
+/* **Modifier groups** on the form: the label against the chips' first line, not
+   centred on a block that wraps. The line is as tall as its tallest control,
+   the **Add a group** select at the app's input height, so the label takes
+   that height and centres its words in it. */
+.sheetsmith-panel .sheetsmith-panel-field-chips {
+	align-items: flex-start;
+}
+
+.sheetsmith-panel .sheetsmith-panel-field-chips > .sheetsmith-panel-field-label {
+	display: flex;
+	align-items: center;
+	min-height: var(--input-height);
+}
+
 /*
  * The sheet: the grid, the cards on it, and the controls inside them.
  *
@@ -12223,20 +12334,23 @@ a.sheetsmith-notice-action {
    here is what makes a fourth field covered without anyone remembering. */
 .sheetsmith-function-library,
 .sheetsmith-trigger-list,
-.sheetsmith-modifier-types {
+.sheetsmith-modifier-types,
+.sheetsmith-modifier-groups {
 	display: block;
 }
 
 .sheetsmith-function-library .setting-item-control,
 .sheetsmith-trigger-list .setting-item-control,
-.sheetsmith-modifier-types .setting-item-control {
+.sheetsmith-modifier-types .setting-item-control,
+.sheetsmith-modifier-groups .setting-item-control {
 	width: 100%;
 	padding-top: var(--size-4-2);
 }
 
 .sheetsmith-function-library textarea,
 .sheetsmith-trigger-list textarea,
-.sheetsmith-modifier-types textarea {
+.sheetsmith-modifier-types textarea,
+.sheetsmith-modifier-groups textarea {
 	width: 100%;
 	font-family: var(--font-monospace);
 	font-size: var(--font-ui-small);
@@ -12250,7 +12364,8 @@ a.sheetsmith-notice-action {
    description-only Setting leaves behind is structure with nothing in it. */
 .sheetsmith-function-library .setting-item-name:empty,
 .sheetsmith-trigger-list .setting-item-name:empty,
-.sheetsmith-modifier-types .setting-item-name:empty {
+.sheetsmith-modifier-types .setting-item-name:empty,
+.sheetsmith-modifier-groups .setting-item-name:empty {
 	display: none;
 }
 
@@ -14628,4 +14743,27 @@ a.sheetsmith-notice-action {
 	.sheetsmith-zone-column > .sheetsmith-detail-field {
 		flex-basis: 100%;
 	}
+}
+
+/* A modifier group's member count, under the Modifier groups list
+   (`docs/features/table-row-modifier-target.md` D12): the group's label at
+   full contrast, since it is what the line is about, then how many values are
+   in it, muted, whose `title` lists them. Not the problem rows' faint locator,
+   which measures 2.3:1 light and 2.97:1 dark against the 4.5:1 small text owes
+   (`docs/UI.md` §6). */
+.sheetsmith-group-members {
+	display: flex;
+	gap: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-group-members-name {
+	color: var(--text-normal);
+}
+
+/* A component's own groups: the chips take the control column's width. */
+.sheetsmith-groups-setting .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-end;
 }

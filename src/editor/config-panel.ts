@@ -80,7 +80,10 @@
  * is the third.
  */
 
-import { Setting } from 'obsidian';
+import { Setting, setIcon } from 'obsidian';
+import { renderGroupChips } from '../components/group-chips';
+import { memberGroupsOf, ownGroups } from '../components/member-groups';
+import { parseModifierGroups, undeclaredGroup } from '../parse/modifier-groups';
 import { acceptsChildren } from './accepts-children';
 import { keyRename, RenameIntent } from '../component-rename-migration';
 import { renderZonesField } from './zones-field';
@@ -91,6 +94,7 @@ import { conditionMet } from './config-fields';
 import {
 	modifierTargetSource,
 	ModifierTargetSource,
+	namedGroups,
 } from '../formula/modifier-targets';
 import { vocabularySource } from '../formula/vocabulary';
 import { fencedKeyProblem } from '../parse/fenced';
@@ -121,6 +125,11 @@ import {
 	ModifierTypesField,
 	renderModifierTypes,
 } from './modifier-types-field';
+import {
+	commitModifierGroups,
+	ModifierGroupsField,
+	renderModifierGroups,
+} from './modifier-groups-field';
 import { DEFAULT_COLUMNS, labelTaken, Layout } from '../parse/layout';
 
 import { renderResetField } from './reset-field';
@@ -131,9 +140,12 @@ import {
 } from './trigger-list-field';
 import {
 	ComponentConfig,
+	ComponentDefinition,
+	ConfigFieldSpec,
 	GRID_POSITION_KEYS,
 	GridPosition,
 	isContainer,
+	ModifierGroup,
 	placesChildren,
 } from '../types';
 import { childIsPlaced, innerPlacement, walkLayout } from '../view/grid-cells';
@@ -344,6 +356,7 @@ export class ConfigPanel {
 	private triggers: TriggerListField | null = null;
 	/** The bonus type list, read back on close for the same reason again. */
 	private modifierTypes: ModifierTypesField | null = null;
+	private modifierGroups: ModifierGroupsField | null = null;
 	/**
 	 * The element the last render drew into, so a gesture can write the position
 	 * fields without the pane being rebuilt around them.
@@ -397,7 +410,8 @@ export class ConfigPanel {
 		const triggersChanged = commitTriggerList(this.triggers);
 		const functionsChanged = commitFunctionLibrary(this.functions);
 		const typesChanged = commitModifierTypes(this.modifierTypes);
-		return triggersChanged || functionsChanged || typesChanged;
+		const groupsChanged = commitModifierGroups(this.modifierGroups);
+		return triggersChanged || functionsChanged || typesChanged || groupsChanged;
 	}
 
 	/**
@@ -577,6 +591,20 @@ export class ConfigPanel {
 			persist: () => this.host.persist(),
 			redraw: () => this.host.redraw(),
 		});
+		const sources = this.modifierSources(layout);
+		// Beside the bonus types, the same category: what a modifier may aim at
+		// instead of one value, with each group's members counted from the same
+		// sources the definitions below read
+		// (`docs/features/table-row-modifier-target.md` D12).
+		this.modifierGroups = renderModifierGroups(
+			form,
+			layout,
+			{
+				persist: () => this.host.persist(),
+				redraw: () => this.host.redraw(),
+			},
+			sources,
+		);
 		// And below the types, because a definition names one of them: the reader
 		// meets the vocabulary before the changes written in it. The accepting
 		// targets come through the shared assembly, which is where the "with no
@@ -602,7 +630,6 @@ export class ConfigPanel {
 		 * through, which would couple the picker's list to the parser's signature
 		 * for the sake of one pass over a handful of entries.
 		 */
-		const sources = this.modifierSources(layout);
 		renderModifierDefinitions(form, layout, {
 			persist: () => this.host.persist(),
 			redraw: () => this.host.redraw(),
@@ -620,6 +647,67 @@ export class ConfigPanel {
 			list: this.host.listContext(),
 			sources,
 		});
+	}
+
+	/**
+	 * A component's own modifier groups (`docs/features/table-row-modifier-target.md`
+	 * D12): the shared chips, on a settings row of their own, and the reports
+	 * this component owes about them under it (D4, D7).
+	 *
+	 * **Drawn only once the layout declares a group, or the config already names
+	 * one**, so a layout with none draws every form as it did. The reports read
+	 * the component's membership through `modifier-targets.ts`'s one walk
+	 * (`namedGroups`), so a group the layout does not declare is named here, and a
+	 * component whose configuration names groups that it publishes nowhere — a
+	 * Table or Roster with no column published per row — is told so rather than
+	 * quietly reaching nothing.
+	 */
+	private renderGroupsField(
+		form: HTMLElement,
+		layout: Layout,
+		config: ComponentConfig,
+		definition: ComponentDefinition,
+		field: ConfigFieldSpec,
+		record: Record<string, unknown>,
+		declared: readonly ModifierGroup[],
+	): void {
+		const own = ownGroups(record[field.key]);
+		// Every group this config names, through the component's own declarations.
+		const configured = memberGroupsOf(record, definition);
+		if (declared.length === 0 && configured.length === 0) return;
+		const setting = new Setting(form).setName(field.label).setDesc(field.description);
+		setting.settingEl.addClass('sheetsmith-groups-setting');
+		const token = configToken(config.id, field.key);
+		setting.controlEl.dataset.sheetsmithFocus = token;
+		renderGroupChips(setting.controlEl, {
+			chosen: own,
+			declared,
+			icon: setIcon,
+			onChange: (next) => {
+				if (next.length === 0) delete record[field.key];
+				else record[field.key] = [...next];
+				this.host.persist();
+				this.host.focusAfterRedraw(token);
+				this.host.redraw();
+			},
+		});
+		/*
+		 * **Undeclared names are read off the configuration**, so a table that
+		 * publishes nothing still names its typo (D7); whether anything is
+		 * published to reach is the walk's answer (`namedGroups`), which is what
+		 * D4's sentence is about.
+		 */
+		const problems: string[] = configured
+			.filter((name) => !declared.some((group) => group.name === name))
+			.map((name) => undeclaredGroup(name));
+		const named = namedGroups(modifierTargetSource(config, definition));
+		if (configured.length > 0 && named.length === 0) {
+			problems.push('Choose a column to publish, so a group has a value on each row to reach.');
+		}
+		if (problems.length === 0) return;
+		const report = form.createDiv('sheetsmith-field-problems');
+		report.setAttribute('role', 'status');
+		for (const message of problems) report.createDiv({ cls: 'sheetsmith-field-problem', text: message });
 	}
 
 	/**
@@ -985,6 +1073,9 @@ export class ConfigPanel {
 			});
 		}
 
+		// The layout's modifier groups, which a `groups` field and a row's own
+		// groups offer (`docs/features/table-row-modifier-target.md` D12).
+		const declaredGroups = parseModifierGroups(layout).groups;
 		let currentGroup: string | undefined;
 		for (const field of definition.configFields) {
 			if (
@@ -1049,6 +1140,9 @@ export class ConfigPanel {
 							// which shares this list shape but stores nothing under
 							// either column (`types.ts`, `EntryAddress`).
 							field.addressesEntry,
+							field.memberGroups === undefined
+								? undefined
+								: { spec: field.memberGroups, declared: declaredGroups },
 						);
 					}
 				} else if (field.kind === 'zones') {
@@ -1074,6 +1168,9 @@ export class ConfigPanel {
 						this.host.listContext(),
 						field.statsField,
 						field.rowFlag,
+						field.memberGroups === undefined
+							? undefined
+							: { spec: field.memberGroups, declared: declaredGroups },
 					);
 				} else {
 					renderColumnsEditor(
@@ -1104,6 +1201,11 @@ export class ConfigPanel {
 						field.addressesEntry,
 					);
 				}
+				continue;
+			}
+
+			if (field.kind === 'groups') {
+				this.renderGroupsField(form, layout, config, definition, field, record, declaredGroups);
 				continue;
 			}
 

@@ -6100,3 +6100,179 @@ export function modifierOptionsSamples(): Sample[] {
 		},
 	];
 }
+
+/** The modifier groups the group-target sheets declare (`docs/features/table-row-modifier-target.md`). */
+export const GROUP_TARGET_GROUPS = [
+	{ name: 'save', label: 'Saving throws' },
+	{ name: 'skill', label: 'Skills' },
+	{ name: 'attack', label: 'Attacks' },
+	{ name: 'check', label: 'Checks' },
+	{ name: 'dc', label: 'Defences' },
+	{ name: 'dex_based', label: 'DX-based' },
+	{ name: 'empty', label: 'Empty' },
+];
+
+/**
+ * Which group-target sheet: the cloak alone, the cloak against a ring,
+ * Frightened on, the errors, `long`, the cloak alone over a Skills table of
+ * all eighteen 5e skills, for the editor's long rows list, or `inherit-off`,
+ * Frightened on with Stealth out of the Skills table's row groups
+ * (`inheritGroups: false`, its own list `dex_based` alone, which Frightened does
+ * not aim at). A state of its own, so the Frightened shots keep their numbers.
+ */
+export type GroupTargetVariant = 'saves' | 'stacking' | 'frightened' | 'errors' | 'long' | 'inherit-off';
+
+/** The eighteen 5e skills, the DX-based three in their own group too. */
+const FIVE_E_SKILLS = [
+	'Acrobatics', 'Animal handling', 'Arcana', 'Athletics', 'Deception', 'History',
+	'Insight', 'Intimidation', 'Investigation', 'Medicine', 'Nature', 'Perception',
+	'Performance', 'Persuasion', 'Religion', 'Sleight of hand', 'Stealth', 'Survival',
+].map((label) => ({
+	label,
+	key: label.toLowerCase().replace(/ /g, '_'),
+	...(['Acrobatics', 'Sleight of hand', 'Stealth'].includes(label) ? { groups: ['dex_based'] } : {}),
+}));
+
+/**
+ * Modifiers aimed at groups (`docs/features/table-row-modifier-target.md`): a
+ * Saves table whose six keyed rows are in `save` through the table's default; a
+ * Skills table, Acrobatics also DX-based; Perception and Armour class cards in
+ * `check` and `dc`; an Attacks list with open rows, two character rows both
+ * Longsword, in `attack`; and Gear and Conditions tables whose rows push at the
+ * groups. Each variant turns on what its views look at.
+ */
+export function groupTargetSamples(variant: GroupTargetVariant): Sample[] {
+	const yes = (on: boolean) => (on ? 'yes' : 'no');
+	const ringWorn = variant === 'stacking';
+	const frightened = variant === 'frightened' || variant === 'inherit-off';
+	const bless = variant === 'saves' || variant === 'frightened' || variant === 'long';
+	const computed = (key: string) => [{ key, type: 'computed', formula: '2 + mod.self', publish: true, signed: true }];
+	return [
+		{
+			config: {
+				id: 'saves',
+				type: 'table',
+				label: 'Saves',
+				position: { col: 1, row: 1, width: 3, height: 3 },
+				rowHeader: 'Save',
+				groups: ['save'],
+				rows: [
+					{ label: 'Strength', key: 'str' },
+					{ label: 'Dexterity', key: 'dex' },
+					{ label: 'Constitution', key: 'con' },
+					{ label: 'Intelligence', key: 'int' },
+					{ label: 'Wisdom', key: 'wis' },
+					{ label: 'Charisma', key: 'cha' },
+				],
+				columns: computed('Bonus'),
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 4, row: 1, width: 3, height: 2 },
+				rowHeader: 'Skill',
+				groups: ['skill'],
+				rows:
+					variant === 'long'
+						? FIVE_E_SKILLS
+						: [
+								{ label: 'Acrobatics', key: 'acrobatics', groups: ['dex_based'] },
+								{ label: 'Athletics', key: 'athletics' },
+								{
+									label: 'Stealth',
+									key: 'stealth',
+									groups: ['dex_based'],
+									...(variant === 'inherit-off' ? { inheritGroups: false } : {}),
+								},
+							],
+				columns: computed('Bonus'),
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'perception',
+				type: 'card',
+				label: 'Perception',
+				position: { col: 7, row: 1, width: 2, height: 1 },
+				derived: '12 + mod.self',
+				groups: ['check'],
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'armour_class',
+				type: 'card',
+				label: 'Armour class',
+				position: { col: 9, row: 1, width: 2, height: 1 },
+				derived: '15 + mod.self',
+				groups: ['dc'],
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'attacks',
+				type: 'table',
+				label: 'Attacks',
+				position: { col: 7, row: 2, width: 6, height: 2 },
+				rowHeader: 'Attack',
+				openRows: true,
+				groups: ['attack'],
+				columns: [{ key: 'To hit', type: 'computed', formula: '5 + mod.self', publish: true, signed: true }],
+			} as unknown as ComponentConfig,
+			body: ['| Attack |', '| --- |', '| Longsword |', '| Longsword |'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 1, row: 4, width: 6, height: 2 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [
+					{ key: 'Worn', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+			} as unknown as ComponentConfig,
+			body: [
+				'| Item | Worn | Modifiers |',
+				'| --- | --- | --- |',
+				'| Cloak of Protection | yes | @save += 1 as item when Worn |',
+				`| Ring of Strength Saves | ${yes(ringWorn)} | saves.str += 2 as item when Worn |`,
+				...(variant === 'errors'
+					? ['| Old charm | yes | @saves += 1 |', '| Hollow token | yes | @empty += 1 |']
+					: []),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'conditions',
+				type: 'table',
+				label: 'Conditions',
+				position: { col: 7, row: 4, width: 6, height: 2 },
+				rowHeader: 'Condition',
+				openRows: true,
+				columns: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+			} as unknown as ComponentConfig,
+			body: [
+				'| Condition | Active | Modifiers |',
+				'| --- | --- | --- |',
+				`| Frightened | ${yes(frightened)} | @save, @skill, @attack, @check, @dc += -1 as status when Active |`,
+				`| Bless | ${yes(bless)} | @attack, @save += 1 when Active |`,
+				...(variant === 'errors'
+					? ['| Jack of All Trades | yes | @skill += 1 where: Training == 0 |']
+					: []),
+			].join('\n'),
+		},
+	];
+}

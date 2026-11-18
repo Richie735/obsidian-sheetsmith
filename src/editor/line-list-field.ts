@@ -56,7 +56,7 @@ export interface LineProblem {
 }
 
 /** The keys of `Layout` this field may edit. */
-type LineListKey = 'triggers' | 'modifierTypes';
+type LineListKey = 'triggers' | 'modifierTypes' | 'modifierGroups';
 
 /**
  * Everything one of these fields differs from the other by.
@@ -101,6 +101,27 @@ export interface LineListSpec {
 		usable: readonly string[];
 		problems: readonly LineProblem[];
 	};
+	/**
+	 * How the stored list reads as lines and is written back from them, where
+	 * an entry is not one string: a modifier group is `{ name, label }` stored
+	 * and `save: Saving throws` typed (`docs/features/table-row-modifier-target.md`
+	 * D12). Absent is a list of strings, stored as typed.
+	 */
+	stored?: {
+		lines: (layout: Layout) => readonly string[];
+		write: (lines: readonly string[]) => unknown[];
+	};
+	/**
+	 * What to draw under the count line about the usable entries, where the
+	 * list says more than how many there are: a group's members. Absent is
+	 * nothing.
+	 */
+	after?: (into: HTMLElement, usable: readonly string[]) => void;
+}
+
+/** The stored list as lines, whichever shape its entries take. */
+function linesOf(layout: Layout, spec: LineListSpec): readonly string[] {
+	return spec.stored?.lines(layout) ?? ((layout[spec.key] ?? []) as readonly string[]);
 }
 
 /**
@@ -142,7 +163,7 @@ export function commitLineList(field: LineListField | null): boolean {
 	const lines = storedLines(field.input.value);
 	field.showProblems(lines);
 
-	const current = field.layout[field.spec.key] ?? [];
+	const current = linesOf(field.layout, field.spec);
 	if (
 		lines.length === current.length &&
 		lines.every((line, index) => line === current[index])
@@ -152,7 +173,10 @@ export function commitLineList(field: LineListField | null): boolean {
 	// An absent key stays absent, so a layout that never wanted this list does
 	// not grow one on first save.
 	if (lines.length === 0) delete field.layout[field.spec.key];
-	else field.layout[field.spec.key] = lines;
+	else {
+		const written = field.spec.stored?.write(lines) ?? lines;
+		(field.layout as unknown as Record<string, unknown>)[field.spec.key] = written;
+	}
 	return true;
 }
 
@@ -205,7 +229,7 @@ export function renderLineList(
 
 	setting.addTextArea((area) => {
 		const input = area.inputEl;
-		area.setValue((layout[spec.key] ?? []).join('\n'));
+		area.setValue(linesOf(layout, spec).join('\n'));
 		area.setPlaceholder(spec.placeholder);
 		bindFitToContent(input);
 		input.dataset.sheetsmithFocus = spec.token;
@@ -240,6 +264,7 @@ export function renderLineList(
 					),
 				);
 			}
+			spec.after?.(problemsEl, usable);
 		};
 
 		field = { input, layout, spec, showProblems };
@@ -250,7 +275,7 @@ export function renderLineList(
 			// the moment it changes.
 			context.redraw();
 		});
-		showProblems(layout[spec.key] ?? []);
+		showProblems(linesOf(layout, spec));
 	});
 
 	return field;

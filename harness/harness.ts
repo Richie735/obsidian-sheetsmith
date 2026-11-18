@@ -84,6 +84,9 @@ import {
 	POOL_GRANT_VARIANTS,
 	modifierOptionsSamples,
 	OPTION_DEFINITIONS,
+	GROUP_TARGET_GROUPS,
+	groupTargetSamples,
+	GroupTargetVariant,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { installStandInRenderer } from './stand-in-markdown';
@@ -139,11 +142,17 @@ type StateName =
 	| 'modifier-states-ring-end'
 	| 'modifier-states-ring-end-off'
 	| 'modifier-options'
+	| `group-target-${GroupTargetVariant}`
 	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 /** The grant sheets (`poolGrantSamples`), one state per variant, from its one list. */
 const POOL_GRANT_STATES: readonly string[] = POOL_GRANT_VARIANTS.map((variant) => `pool-grant-${variant}`);
+
+/** The group-target sheets (`groupTargetSamples`), one state per variant. */
+const GROUP_TARGET_STATES: readonly string[] = ['saves', 'stacking', 'frightened', 'errors', 'long', 'inherit-off'].map(
+	(variant) => `group-target-${variant}`,
+);
 
 interface Live {
 	config: ComponentConfig;
@@ -223,6 +232,9 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'modifier-states-ring-end') return ringEndSamples(true);
 	if (name === 'modifier-states-ring-end-off') return ringEndSamples(false);
 	if (name === 'modifier-options') return modifierOptionsSamples();
+	if (name.startsWith('group-target-')) {
+		return groupTargetSamples(name.slice('group-target-'.length) as GroupTargetVariant);
+	}
 	if (name.startsWith('pool-grant-')) {
 		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
 	}
@@ -261,6 +273,10 @@ function layoutFor(name: StateName): Layout {
 			...built,
 			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
 		};
+	}
+	// The group-target sheets declare the groups their rows aim at.
+	if (name.startsWith('group-target-')) {
+		return { ...built, modifierGroups: [...GROUP_TARGET_GROUPS] };
 	}
 	// The ring-end sheets enrol in Cat Form, whether or not it is in play.
 	if (name === 'modifier-states-ring-end' || name === 'modifier-states-ring-end-off') {
@@ -1153,6 +1169,7 @@ function applyQuery(): void {
 			wanted === 'modifier-states-ring-end' ||
 			wanted === 'modifier-states-ring-end-off' ||
 			wanted === 'modifier-options' ||
+			GROUP_TARGET_STATES.includes(wanted ?? '') ||
 			POOL_GRANT_STATES.includes(wanted ?? '')
 			? (wanted as StateName)
 			: 'populated',

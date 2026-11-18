@@ -77,6 +77,9 @@ import {
 	choiceOptionValue,
 	fillOptionChoices,
 	fillTargetOptions,
+	namesGroups,
+	pickGroups,
+	renderGroupPick,
 	readChoiceOption,
 	readTargetOption,
 	stateOf,
@@ -85,6 +88,8 @@ import {
 import { positionLegend } from '../components/modifier-breakdown';
 import { operatorOnto, operatorsAt } from '../formula/modifier-states';
 import { isNoteOnly, isOptionChange, unspellableNote } from '../parse/modifier-cell';
+import { parseModifierGroups } from '../parse/modifier-groups';
+import { setIcon } from 'obsidian';
 import {
 	addControls,
 	addControlSpacers,
@@ -240,6 +245,9 @@ export function renderModifierDefinitions(
 	// (`docs/features/text-value-modifiers.md`).
 	const choices = choiceTargets(context.sources);
 	const bonusTypes = parseModifierTypes(layout).names;
+	// The layout's own groups, offered first under **Modifier groups** (D11 of
+	// `docs/features/table-row-modifier-target.md`), through the form's helper.
+	const declaredGroups = parseModifierGroups(layout).groups;
 	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
 		showFieldError(input, message, context.list.errors);
@@ -594,7 +602,9 @@ export function renderModifierDefinitions(
 			/** The level or flag this change sets, where it sets one. */
 			const aimed = stateOf(states, storedTarget, storedColumn === '' ? null : storedColumn);
 			value.createEl('option', { value: '', text: '—' });
-			fillTargetOptions(value, targets, notable, states, buffers, choices);
+			fillTargetOptions(value, targets, notable, states, buffers, choices, declaredGroups);
+			/** The groups this change names, through the form's own helper (D11). */
+			const grouped = pickGroups(value, storedTarget, declaredGroups);
 			/**
 			 * Whether this change chooses a dropdown's option: it carries `option`,
 			 * so Sets is its one operator and **Option** takes **Amount**'s place
@@ -620,7 +630,9 @@ export function renderModifierDefinitions(
 			 * ones: every offered option is a label like `Abilities · STR`, and a bare
 			 * identifier among them does not read as a choice this layout made.
 			 */
-			if (choosing && dropdown === undefined && storedTarget !== '') {
+			if (grouped !== null) {
+				// A group's stray option, where nothing declares it, is `pickGroups`'s.
+			} else if (choosing && dropdown === undefined && storedTarget !== '') {
 				// An option change at a name that shows none, carried as written; the
 				// report says why (D7).
 				value.createEl('option', { value: choiceOptionValue(storedTarget), text: storedTarget });
@@ -639,7 +651,9 @@ export function renderModifierDefinitions(
 					text: storedColumn === '' ? storedTarget : `${storedTarget} · ${storedColumn}`,
 				});
 			}
-			value.value = choosing
+			value.value = grouped !== null
+				? grouped.value
+				: choosing
 				? choiceOptionValue(storedTarget)
 				: aimed === undefined
 					? storedColumn === ''
@@ -669,6 +683,12 @@ export function renderModifierDefinitions(
 				const chosen = readTargetOption(value.value);
 				setOptional(change, 'target', chosen.target);
 				putColumn(change, chosen.column);
+				// Onto a group, the list is that one group and the chips add more.
+				if (namesGroups(value.value)) {
+					commit();
+					context.redraw();
+					return;
+				}
 				/*
 				 * **Onto a level or a flag, an Adds to becomes a Sets**: Adds to is
 				 * not offered there, since no amount could make it valid at a
@@ -689,6 +709,25 @@ export function renderModifierDefinitions(
 				commit();
 				context.redraw();
 			});
+
+			/*
+			 * **The whole group list, beside Value, once a group is chosen** (D11):
+			 * the form's own chips, so the two surfaces add and remove a group one
+			 * way. Removing the last leaves `@`, which names no group yet and is
+			 * reported as such under the list.
+			 */
+			if (grouped !== null && grouped.groups.length > 0) {
+				const groupsField = labelled(detail, TEXT.modifierGroups);
+				groupsField.addClass('sheetsmith-detail-field-wide');
+				renderGroupPick(groupsField, grouped, declaredGroups, {
+					icon: setIcon,
+					onTarget: (target) => {
+						setOptional(change, 'target', target);
+						commit();
+						context.redraw();
+					},
+				});
+			}
 
 			/*
 			 * **Operator**: two options, and choosing **Sets** takes the bonus type

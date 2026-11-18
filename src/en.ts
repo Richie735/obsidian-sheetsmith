@@ -30,6 +30,14 @@ export const TEXT = {
 	 */
 	openAsMarkdown: 'Open as Markdown',
 	/**
+	 * What a list of modifier groups is called where a change is aimed at one:
+	 * the **Value** select's optgroup and the chips under it, on the sheet's
+	 * modifier form and the layout editor's **Changes** alike
+	 * (`docs/features/table-row-modifier-target.md` D11). Never **Groups**: a
+	 * Group is a container.
+	 */
+	modifierGroups: 'Modifier groups',
+	/**
 	 * Why a change aimed at a level or a flag may not add to it: the sheet's row
 	 * popup, the modifier form and the layout editor's definitions report all
 	 * say it (`docs/features/non-number-modifiers.md` D6). The fault only: the

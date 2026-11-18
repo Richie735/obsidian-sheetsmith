@@ -1038,6 +1038,7 @@ export function drawRecordModifier(
 			states: context.modifiers?.states ?? [],
 			buffers: context.modifiers?.buffers ?? [],
 			choices: context.modifiers?.choices ?? [],
+			groups: context.modifiers?.groups ?? [],
 			bonusTypes: context.modifiers?.bonusTypes ?? [],
 			// The one import from `obsidian` in this folder, passed on rather
 			// than taken again: the allowlist stays one name long.

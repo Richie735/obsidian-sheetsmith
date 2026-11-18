@@ -38,6 +38,8 @@ import {
 	TOTALLED_TYPES,
 } from '../components/column-types';
 import { getComponent } from '../components';
+import { renderGroupChips } from '../components/group-chips';
+import { ownGroups } from '../components/member-groups';
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
@@ -52,7 +54,10 @@ import {
 	EntryColumnSpec,
 	entryUnit,
 	resolvesResetPerPart,
+	MemberGroupsSpec,
+	ModifierGroup,
 } from '../types';
+import { TEXT } from '../en';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -426,6 +431,8 @@ export function renderRowsEditor(
 	context: ListContext,
 	statsField?: string,
 	rowFlag?: { key: string; label: string },
+	/** Each row's own modifier groups, where the field declares them (D12). */
+	members?: MemberGroupsLine,
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const rows = record[key] as RowEntry[];
@@ -782,6 +789,17 @@ export function renderRowsEditor(
 				return `Remove the row "${row.label}"? It carries ${written} ${written === 1 ? 'expression' : 'expressions'}, and character notes keep their "${row.label}" data either way.`;
 			},
 		);
+		if (members !== undefined) {
+			memberGroupsLine(
+				scroller,
+				row,
+				record.groups,
+				members,
+				row.label,
+				`${prefix}-row-${index}-groups`,
+				context,
+			);
+		}
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
@@ -811,6 +829,9 @@ export function renderRowsEditor(
 			'A row value is an expression each row defines for itself, so one column formula can serve every row — "ability" as abilities.DEX on one row and abilities.WIS on the next.',
 		),
 	);
+	// Beside the row-value note, under the buttons: a note about every row
+	// drawn under the last one read as that row's.
+	if (members !== undefined) memberGroupsNote(listEl, members);
 	addValue.addEventListener('click', () => {
 		let name = 'ability';
 		let counter = 2;
@@ -906,20 +927,121 @@ export function checkField(
 	 * unticked and survives untouched until the box is pressed.
 	 */
 	on: unknown = true,
+	/**
+	 * For a flag whose default is on — a row's **Same groups as the table** —
+	 * the other way round: ticked deletes the key and unticked writes `false`,
+	 * so a row carrying the default reads as a row that never set it
+	 * (`docs/features/table-row-modifier-target.md` D12).
+	 */
+	defaultOn = false,
 ): void {
 	const label = detail.createEl('label', { cls: 'sheetsmith-entry-check' });
 	const input = label.createEl('input', { type: 'checkbox' });
-	input.checked = target[key] === on;
+	input.checked = defaultOn ? target[key] !== false : target[key] === on;
 	if (rebuild) input.dataset.sheetsmithFocus = rebuild.token;
 	label.createSpan({ text });
 	input.addEventListener('change', () => {
-		if (input.checked) target[key] = on;
+		if (defaultOn) {
+			if (input.checked) delete target[key];
+			else target[key] = false;
+		} else if (input.checked) target[key] = on;
 		else delete target[key];
 		context.persist();
 		if (!rebuild) return;
 		context.focusAfterRedraw(rebuild.token);
 		context.redraw();
 	});
+}
+
+/**
+ * What a `rows` or `entries` field needs to draw each row's or entry's own
+ * modifier groups (`docs/features/table-row-modifier-target.md` D12): the
+ * field's own words, and the layout's declared groups.
+ */
+export interface MemberGroupsLine {
+	spec: MemberGroupsSpec;
+	declared: readonly ModifierGroup[];
+}
+
+/**
+ * The list's help text for its rows' or entries' own groups, once under the
+ * list and its buttons: what a row's own groups do and, where there is a
+ * default, what the toggle does (the spec's config-field table). Once rather
+ * than per row, so an eighteen-row list does not repeat two sentences eighteen
+ * times; below the footer, beside the row-value note, so it reads as the
+ * list's and not as the last row's. The words are about rows in general for
+ * the same reason.
+ */
+function memberGroupsNote(listEl: HTMLElement, members: MemberGroupsLine): void {
+	if (members.declared.length === 0) return;
+	const said = [members.spec.description, members.spec.inherit?.description].filter(
+		(line): line is string => line !== undefined,
+	);
+	listEl.createDiv('sheetsmith-entry-footnote', (el) => el.setText(said.join(' ')));
+}
+
+/**
+ * The detail line under one row or entry naming the groups it is in: the
+ * shared chips, the inherited ones drawn faint beside its own, and **Same
+ * groups as the table** where the component has a default to leave.
+ *
+ * **Drawn only once the layout declares a group, or the entry already names
+ * one**, so a layout with none draws every list exactly as it did. Choosing a
+ * group writes `groups`; removing the last removes the key; turning the toggle
+ * off writes `inheritGroups: false` and hides the inherited chips, and turning
+ * it on removes the key.
+ */
+function memberGroupsLine(
+	parent: HTMLElement,
+	entry: Record<string, unknown>,
+	defaults: unknown,
+	members: MemberGroupsLine,
+	name: string,
+	token: string,
+	context: ListContext,
+): void {
+	const own = ownGroups(entry.groups);
+	if (members.declared.length === 0 && own.length === 0) return;
+	const detail = parent.createDiv('sheetsmith-entry-detail');
+	detail.addClass('sheetsmith-member-groups');
+	const field = labelled(detail, TEXT.modifierGroups);
+	field.addClass('sheetsmith-detail-field-wide');
+	field.dataset.sheetsmithFocus = token;
+	const { inherit } = members.spec;
+	const leaves = entry.inheritGroups === false;
+	const defaultGroups = ownGroups(defaults);
+	renderGroupChips(field, {
+		chosen: own,
+		declared: members.declared,
+		inherited: inherit !== undefined && !leaves ? defaultGroups : [],
+		...(inherit === undefined ? {} : { inheritedFrom: inherit.from }),
+		addLabel: `Add a group to ${name}`,
+		icon: setIcon,
+		onChange: (next) => {
+			if (next.length === 0) delete entry.groups;
+			else entry.groups = [...next];
+			context.persist();
+			context.redraw();
+		},
+	});
+	if (inherit === undefined) return;
+	checkField(detail, inherit.label, entry, 'inheritGroups', context, { token: `${token}-inherit` }, true, true);
+	/*
+	 * **A row leaving a default there is none of** is said, not refused
+	 * (`docs/features/table-row-modifier-target.md` D4): harmless, and the
+	 * author is told the key does nothing until the component sets row groups.
+	 */
+	if (leaves && defaultGroups.length === 0) {
+		detail.createDiv({
+			cls: 'sheetsmith-field-problem sheetsmith-detail-legend',
+			text: `${capitalised(inherit.from)} sets no row groups, so this row has nothing to leave.`,
+		});
+	}
+}
+
+/** A phrase with its first letter raised, for one that opens a sentence. */
+function capitalised(text: string): string {
+	return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Optional string config: an empty field means the key is absent. */
@@ -2067,6 +2189,8 @@ export function renderEntriesEditor(
 	 * under either column (`types.ts`, `EntryAddress`).
 	 */
 	address?: EntryAddress,
+	/** Each entry's own modifier groups, where the field declares them (D12). */
+	members?: MemberGroupsLine,
 ): void {
 	// A third content column changes both grids — the header's and the
 	// row's — and neither can be inferred from the markup, so the list
@@ -2400,6 +2524,17 @@ export function renderEntriesEditor(
 				return `Remove the row "${name}"? Its segments formula is lost. Character notes keep their "${name}" data either way.`;
 			},
 		);
+		if (members !== undefined) {
+			memberGroupsLine(
+				listEl,
+				entry,
+				record.groups,
+				members,
+				label,
+				`attr-${prefix}-${index}-groups`,
+				context,
+			);
+		}
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
@@ -2421,4 +2556,7 @@ export function renderEntriesEditor(
 		context.persist();
 		context.redraw();
 	});
+	// Under the footer, where a list-level note belongs, rather than under the
+	// last entry, where it read as that entry's.
+	if (members !== undefined) memberGroupsNote(listEl, members);
 }

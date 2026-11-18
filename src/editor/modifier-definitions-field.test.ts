@@ -1486,3 +1486,47 @@ describe('a change that chooses a dropdown\'s option (docs/features/text-value-m
 		expect(el.querySelector('optgroup')).toBeNull();
 	});
 });
+
+describe('a change aimed at modifier groups (docs/features/table-row-modifier-target.md D11)', () => {
+	const grouped = (target: string): Layout => ({
+		...layout([{ name: 'Cloak', changes: [{ target, amount: '1' }] }]),
+		modifierGroups: [
+			{ name: 'save', label: 'Saving throws' },
+			{ name: 'skill', label: 'Skills' },
+		],
+	});
+	const chips = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-group-chip')).map((chip) => chip.firstElementChild?.textContent);
+
+	it('offers the groups first, shows the first chosen, and every chosen group as a chip under Modifier groups', () => {
+		const el = render(grouped('@save, @skill'));
+		const value = control<HTMLSelectElement>(el, 'modifier-Cloak-0-target');
+		expect(value.querySelector('optgroup')?.label).toBe('Modifier groups');
+		expect(value.value).toBe('@save');
+		expect(chips(el)).toEqual(['Saving throws', 'Skills']);
+		const field = el.querySelector('.sheetsmith-group-chips')?.closest('.sheetsmith-detail-field');
+		expect(field?.querySelector('.sheetsmith-position-label')?.textContent).toBe('Modifier groups');
+	});
+
+	it('writes the list back as the cell would spell it, and onto a group makes the list that one group', () => {
+		const from = grouped('@save');
+		let el = render(from);
+		const add = el.querySelector<HTMLSelectElement>('.sheetsmith-group-chips-add');
+		if (add === null) throw new Error('no add select');
+		add.value = 'skill';
+		add.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]?.changes?.[0]?.target).toBe('@save, @skill');
+		el = render(from);
+		const value = control<HTMLSelectElement>(el, 'modifier-Cloak-0-target');
+		value.value = '@skill';
+		value.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]?.changes?.[0]?.target).toBe('@skill');
+	});
+
+	it('carries a group nothing declares as an option and a chip saying so', () => {
+		const el = render(grouped('@saves'));
+		const value = control<HTMLSelectElement>(el, 'modifier-Cloak-0-target');
+		expect(value.selectedOptions[0]?.textContent).toBe('saves (not declared)');
+		expect(chips(el)).toEqual(['saves (not declared)']);
+	});
+});
