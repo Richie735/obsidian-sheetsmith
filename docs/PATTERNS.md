@@ -65,17 +65,24 @@ The general rule:
 
 So:
 
-- **One consumer.** Keep it private to that module. Do not generalise ahead of
-  evidence.
-- **Two consumers.** Duplication is allowed, *if* a test drives both copies
-  over the same cases and fails when they disagree. The truthiness spellings a
-  second reader of a flag would have to match are the standing example. Without
-  that test the duplication is not allowed.
-- **Three consumers.** Extract. At three, the shape has been demonstrated by
-  use rather than guessed at, and the guard test is no longer cheaper than the
-  module.
+- **One consumer** [judgement]. Keep it private to that module. Do not
+  generalise ahead of evidence.
+- **Two consumers** [judgement]. Duplication is allowed, *if* a test drives
+  both copies over the same cases and fails when they disagree. The truthiness
+  spellings a second reader of a flag would have to match are the standing
+  example. Without that test the duplication is not allowed.
+- **Three consumers** [judgement]. Extract. At three, the shape has been
+  demonstrated by use rather than guessed at, and the guard test is no longer
+  cheaper than the module.
 
-**That ladder is written for behaviour. A policy climbs it in one step.**
+Call sites count as consumers wherever they sit. Inside one file a private
+helper always costs less than a guard test, so two copies there extract on the
+second [judgement], as a policy does. `modifier-form.ts`'s `heldRefusal` is the
+case: the column pick's refusal kept stacking after the option pick's copy had
+been fixed against it, and one helper now serves both and the note field.
+
+**That ladder is written for behaviour. A policy climbs it in one step**
+[judgement].
 Where the duplicated thing is a timing, a bound, a row count, **a set, or a
 predicate**, drift *is* the entire risk, so the two-consumer guard test costs
 more than the module and proves less. It can only assert that the copies still
@@ -155,15 +162,15 @@ type does not compile until it has a word, which is a guard nobody has to
 remember to run.
 
 **A predicate is the same case again, and it was practice before it was written
-here.** `types.ts` holds `isContainer` because four sites were each comparing
-`storage` to `'none'`, and `placesChildren` beside it because `showsOneChild` was
-spelled four times in two complementary pairs — `=== true` where a caller wanted
-one branch and `!== true` where it wanted the other. A guard test over those
-could only assert they still negate each other, which is what one name says for
-free; and the pairs were far enough apart that a rule growing a second clause
-would have been added to one and missed on the other. The tell is the same as for
-a number: **if the only thing a test could check is that the copies still agree,
-there should be one copy.**
+here** [judgement]. `types.ts` holds `isContainer` because four sites were each
+comparing `storage` to `'none'`, and `placesChildren` beside it because
+`showsOneChild` was spelled four times in two complementary pairs — `=== true`
+where a caller wanted one branch and `!== true` where it wanted the other. A
+guard test over those could only assert they still negate each other, which is
+what one name says for free; and the pairs were far enough apart that a rule
+growing a second clause would have been added to one and missed on the other.
+The tell is the same as for a number: **if the only thing a test could check is
+that the copies still agree, there should be one copy.**
 
 Two consequences of that worth stating, because both were learned the hard way in
 one diff. **Share the application, not just the fact.** `placesChildren` takes a
