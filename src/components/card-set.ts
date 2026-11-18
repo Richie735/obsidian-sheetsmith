@@ -18,6 +18,11 @@ import {
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
+import {
+	memberGroupsFault,
+	ownGroups,
+	withGroups,
+} from './member-groups';
 import { modifierBreakdown, movesNumber } from './modifier-breakdown';
 import { sampleNumber, sampleSeed } from './sample-values';
 
@@ -26,6 +31,12 @@ export interface CardSetEntry {
 	key: string;
 	/** Full display name, e.g. "Strength" over "STR". */
 	name?: string;
+	/**
+	 * The modifier groups this entry's number is in
+	 * (`docs/features/table-row-modifier-target.md` D4). A set has no default:
+	 * ruling 2 names only Table and Roster.
+	 */
+	groups?: string[];
 }
 
 export interface CardSetConfig extends ComponentConfig {
@@ -88,6 +99,10 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 				{ key: 'name', heading: 'Full name' },
 			],
 			addressesEntry: { fence: 'section' },
+			memberGroups: {
+				description:
+					"An entry's own groups are the ones its number is in. A modifier aimed at any of them changes that entry, and its breakdown names the group.",
+			},
 			description:
 				'Each key is the entry name in the note and the abbreviation on the card. Order is display order. Renaming a key moves that entry in every note on this layout.',
 		},
@@ -243,7 +258,10 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		return updates.size === 0 ? '' : writeFenced(null, updates);
 	},
 
-	read(body): ReadResult<CardSetData> {
+	read(body, config): ReadResult<CardSetData> {
+		// An entry's `groups` that is not a list of names refuses the set (D6).
+		const grouped = memberGroupsFault(config.entries);
+		if (grouped !== null) return { ok: false, error: grouped };
 		const parsed = readFenced(body);
 		if (!parsed.ok) return parsed;
 		// No fence yet: editable empty cards, not an error.
@@ -262,13 +280,16 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		const named: Record<string, ScopeEntry> = {};
 		for (const entry of config.entries ?? []) {
 			const raw = data?.values[entry.key];
-			named[entry.key] = {
-				value: raw,
-				display:
-					config.derived === undefined
-						? undefined
-						: { field: 'derived', scope: { value: raw ?? '' } },
-			};
+			named[entry.key] = withGroups(
+				{
+					value: raw,
+					display:
+						config.derived === undefined
+							? undefined
+							: { field: 'derived', scope: { value: raw ?? '' } },
+				},
+				ownGroups(entry.groups),
+			);
 		}
 		return { named };
 	},

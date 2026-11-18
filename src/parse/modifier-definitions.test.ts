@@ -1125,3 +1125,60 @@ describe('parseModifierDefinitions: a change that chooses a dropdown\'s option',
 		]);
 	});
 });
+
+describe('parseModifierDefinitions: a change aimed at groups (docs/features/table-row-modifier-target.md)', () => {
+	const grouped = (modifiers: unknown[]): Layout =>
+		({
+			name: 'L',
+			components: [],
+			modifierTypes: ['item'],
+			modifierGroups: [
+				{ name: 'save', label: 'Saving throws' },
+				{ name: 'check', label: 'Checks' },
+			],
+			modifiers,
+		}) as unknown as Layout;
+
+	it('keeps a group target as the cell would spell it, labelled by its groups', () => {
+		const { definitions, problems } = parseModifierDefinitions(
+			grouped([{ name: 'Cloak of Protection', target: '@save, @check', amount: '1', bonusType: 'item' }]),
+			SOURCES,
+		);
+		expect(problems).toEqual([]);
+		expect(definitions[0]?.changes[0]).toMatchObject({
+			target: '@save, @check',
+			targetLabel: 'Saving throws and Checks',
+		});
+	});
+
+	it('reports a group the layout does not declare, and a published name in the list', () => {
+		const { problems } = parseModifierDefinitions(
+			grouped([{ name: 'Charm', target: '@saves, armour_class', amount: '1' }]),
+			SOURCES,
+		);
+		expect(problems.map((problem) => problem.message)).toEqual([
+			'A list of groups can hold only groups. Write armour_class as its own part, or give it a group.',
+			'"@saves" is not a modifier group this layout declares. Choose one it does, or add it under Modifier groups.',
+		]);
+	});
+
+	it('reports a change carrying the reserved member condition, and nothing else about it', () => {
+		const { definitions, problems } = parseModifierDefinitions(
+			grouped([{ name: 'Jack of All Trades', target: '@check', amount: '', where: 'Training == 0' }]),
+			SOURCES,
+		);
+		expect(problems.map((problem) => problem.message)).toEqual([
+			'A condition on each value is not supported yet, so this modifier changes nothing. Remove "where:" to apply it to every value it reaches.',
+		]);
+		expect(definitions[0]?.changes[0]?.where).toBe('Training == 0');
+	});
+
+	it('reports and drops a definition named the way a group part is spelled', () => {
+		const { definitions, problems } = parseModifierDefinitions(
+			grouped([{ name: '@save += 1', target: 'armour_class', amount: '1' }]),
+			SOURCES,
+		);
+		expect(definitions).toEqual([]);
+		expect(problems[0]?.definition).toBe('@save += 1');
+	});
+});

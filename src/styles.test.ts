@@ -4081,6 +4081,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		'sheetsmith-stat-block-action',
 		'sheetsmith-stat-block-brief',
 		'sheetsmith-stat-block-disclosure',
+		'sheetsmith-group-chip-remove',
 	];
 	/**
 	 * Classes on a sheet `<button>` that set no padding of their own: the four

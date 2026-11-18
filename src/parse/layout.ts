@@ -15,6 +15,7 @@ import {
 	GRID_POSITION_KEYS,
 	GridPosition,
 	ModifierDefinition,
+	ModifierGroup,
 	PromotedField,
 	ResetBinding,
 } from '../types';
@@ -127,6 +128,19 @@ export interface Layout {
 	 * written, which the field's own description says out loud.
 	 */
 	promotedFields?: PromotedField[];
+	/**
+	 * The groups a modifier may aim at instead of one value
+	 * (`docs/features/table-row-modifier-target.md` D6), each a `name` a cell
+	 * spells after `@` and a `label` every surface shows.
+	 *
+	 * Held as written, on the bonus types' terms: whether the key is a list of
+	 * objects is the file format's business and refuses the layout below, while
+	 * whether an entry is usable — a blank, repeated or unspellable name — is
+	 * contents, reported in the editor (`parse/modifier-groups.ts`). Membership is
+	 * declared on each value, never here, so dropping a group orphans no
+	 * character data: a cell naming it keeps its bytes and says so.
+	 */
+	modifierGroups?: ModifierGroup[];
 	/**
 	 * Top-level keys this version does not understand are preserved verbatim, so
 	 * editing a layout never strips them from the file.
@@ -630,6 +644,22 @@ export function parseLayout(source: string): Layout {
 		);
 	}
 
+	// The sixth key on the same terms: a list of objects or the layout is
+	// refused, and what each entry says is reported in the editor.
+	const modifierGroups = raw.modifierGroups;
+	if (
+		modifierGroups !== undefined &&
+		(!Array.isArray(modifierGroups) ||
+			modifierGroups.some(
+				(entry) =>
+					typeof entry !== 'object' || entry === null || Array.isArray(entry),
+			))
+	) {
+		throw new LayoutParseError(
+			'"modifierGroups" must be an array of objects, one modifier group per entry.',
+		);
+	}
+
 	const components = raw.components.map((component, index) =>
 		parseComponent(component, index),
 	);
@@ -710,6 +740,9 @@ export function parseLayout(source: string): Layout {
 			: {}),
 		...(promotedFields !== undefined
 			? { promotedFields: promotedFields as PromotedField[] }
+			: {}),
+		...(modifierGroups !== undefined
+			? { modifierGroups: modifierGroups as ModifierGroup[] }
 			: {}),
 		components,
 	};

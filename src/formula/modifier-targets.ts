@@ -37,7 +37,9 @@ import {
 	StateTarget,
 	BufferTarget,
 	ChoiceTarget,
+	ModifierGroup,
 } from '../types';
+import { GroupIndex, GroupMember } from './group-reach';
 import { referencesName } from './expression';
 import { modifierSlot, SELF_SLOT } from './modifiers';
 import { formulaTexts } from './resolve';
@@ -432,4 +434,90 @@ export function modifierTargetSource(
 		...(definition === undefined ? { unknownType: true } : {}),
 		...(definition?.drawsNotes === true ? { drawsNotes: true } : {}),
 	};
+}
+
+/**
+ * Every modifier group's members, read off what the components publish
+ * (`docs/features/table-row-modifier-target.md` D4, D5).
+ *
+ * **The one reading of membership, and it is this module's walk**:
+ * `publishedEntries` for a published name carrying `groups`, and
+ * `ScopeValues.unnamed` for a value in a group with no name. So the sheet, the
+ * row's reach line and the editor's counts all read one answer. The sheet calls
+ * it over the values as they are now, a character's rows included; the editor
+ * over the static read, where `openGroups` says what those rows would join.
+ *
+ * Only declared groups are indexed: a value naming a group nothing declares is
+ * not in it, which is D7's "the membership is ignored".
+ */
+export function groupIndex(
+	declared: readonly ModifierGroup[],
+	components: readonly ModifierTargetSource[],
+): GroupIndex {
+	const groups = new Map(declared.map((group) => [group.name, group]));
+	const members = new Map<string, GroupMember[]>();
+	const add = (group: string, member: GroupMember): void => {
+		if (!groups.has(group)) return;
+		const already = members.get(group);
+		if (already === undefined) members.set(group, [member]);
+		else if (!already.some((one) => one.name === member.name)) already.push(member);
+	};
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			for (const group of entry.groups ?? []) add(group, { name, label });
+		}
+		for (const member of component.values.unnamed ?? []) {
+			for (const group of member.groups) {
+				add(group, { name: member.key, label: `${componentLabel(component)} · ${member.label}` });
+			}
+		}
+	}
+	return { declared: groups, members };
+}
+
+/**
+ * Every group a component's values name, declared or not, and the groups a row
+ * a character adds would join: what the editor's dangling report reads (D7).
+ */
+export function namedGroups(component: ModifierTargetSource): readonly string[] {
+	const found: string[] = [];
+	const add = (group: string): void => {
+		if (!found.includes(group)) found.push(group);
+	};
+	for (const { entry } of publishedEntries(component)) for (const group of entry.groups ?? []) add(group);
+	for (const member of component.values.unnamed ?? []) for (const group of member.groups) add(group);
+	for (const group of component.values.openGroups ?? []) add(group);
+	return found;
+}
+
+/**
+ * The components whose rows a character adds would join each group, by group:
+ * what tells a group whose only members are such rows from one with none (D7).
+ */
+export function openGroupHolders(
+	components: readonly ModifierTargetSource[],
+): ReadonlyMap<string, readonly string[]> {
+	const found = new Map<string, string[]>();
+	for (const component of components) {
+		for (const group of component.values.openGroups ?? []) {
+			const already = found.get(group);
+			if (already === undefined) found.set(group, [componentLabel(component)]);
+			else already.push(componentLabel(component));
+		}
+	}
+	return found;
+}
+
+/**
+ * The slot keys of every unnamed member whose own component reads `mod.self`:
+ * the unnamed half of `markedTargets`, on its relative rule (D5). A row with no
+ * name has no absolute spelling, so the relative rule is the whole of it.
+ */
+export function markedMembers(components: readonly ModifierTargetSource[]): readonly string[] {
+	return components.flatMap((component) => {
+		const relative = (component.formulas ?? []).some((formula) =>
+			referencesName(formula, SELF_SLOT),
+		);
+		return relative ? (component.values.unnamed ?? []).map((member) => member.key) : [];
+	});
 }

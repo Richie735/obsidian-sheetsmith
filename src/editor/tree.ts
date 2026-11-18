@@ -391,7 +391,7 @@ function renderLayoutRow(
 		outline,
 		SHEET_DESTINATION,
 		'Layout',
-		'The grid, the function library, the reset triggers and the bonus types.',
+		'The grid, the function library, the reset triggers, the bonus types and the modifier groups.',
 		host,
 	);
 	bindDropTarget(row, layout, null, host);

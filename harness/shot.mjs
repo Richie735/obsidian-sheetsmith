@@ -4126,6 +4126,101 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&state=modifier-options',
 		size: '1500,2600',
 	},
+	/*
+	 * Modifiers aimed at groups (`docs/features/table-row-modifier-target.md`).
+	 * Seven views, each in both themes. The Value select open on its **Modifier
+	 * groups** optgroup is not one of them: a native `<select>`'s list is the
+	 * browser's own popup and a headless shot draws it closed, so the picker
+	 * views show the form open on a group part instead, its chips under the
+	 * select, and the optgroup is held by `modifier-form.test.ts`.
+	 */
+	...['light', 'dark'].flatMap((theme) => [
+		// The Dexterity save's breakdown: the cloak's one line, `via Saving throws`.
+		{
+			name: `group-target-saves-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-saves&bar=off&press=%5Bdata-sheetsmith-component%3D'saves'%5D%20tbody%20tr:nth-child(2)%20.sheetsmith-table-value.sheetsmith-modified`,
+			size: '1400,1100',
+		},
+		// The Strength save's breakdown with the ring worn: the cloak's line suppressed.
+		{
+			name: `group-target-stacking-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-stacking&bar=off&press=%5Bdata-sheetsmith-component%3D'saves'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-value.sheetsmith-modified`,
+			size: '1400,1100',
+		},
+		// The cloak's own row form, its reach line counting five of six.
+		{
+			name: `group-target-reach-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-stacking&bar=off&press=%5Bdata-sheetsmith-component%3D'gear'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button`,
+			size: '1400,1400',
+		},
+		// Bless reaching both Longsword rows a character added; the first one's breakdown.
+		{
+			name: `group-target-open-rows-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-saves&bar=off&press=%5Bdata-sheetsmith-component%3D'attacks'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-value.sheetsmith-modified`,
+			size: '1400,1100',
+		},
+		// The cloak's form open on its one group part: Value Saving throws, one chip.
+		{
+			name: `group-target-picker-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-saves&bar=off&press=%5Bdata-sheetsmith-component%3D'gear'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button&press=.sheetsmith-panel-line`,
+			size: '1400,1400',
+		},
+		// Frightened's form open: five groups as chips, one part.
+		{
+			name: `group-target-picker-chips-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-frightened&bar=off&press=%5Bdata-sheetsmith-component%3D'conditions'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button&press=.sheetsmith-panel-line`,
+			size: '1400,1400',
+		},
+		// The layout's Modifier groups list with each group's members counted.
+		{
+			name: `group-target-editor-${theme}`,
+			query: `surface=editor&theme=${theme}&state=group-target-saves`,
+			size: '1500,2600',
+		},
+		// The Skills table's form: its row default, and Acrobatics' own group beside
+		// it. Three rows, so it is also the short list for the description footnote:
+		// the whole list and the footnote under it are in the frame.
+		{
+			name: `group-target-editor-rows-${theme}`,
+			query: `surface=editor&theme=${theme}&state=group-target-saves&open=skills`,
+			size: '1500,2600',
+		},
+		// The same form over all eighteen 5e skills: the list's scroller moved to
+		// its last row, Survival, so the end of the list and the footnote under it
+		// are both in the frame, to judge whether the footnote reads as the list's
+		// rather than the last row's.
+		{
+			name: `group-target-editor-rows-long-${theme}`,
+			query: `surface=editor&theme=${theme}&state=group-target-long&open=skills&scroll=%5Bdata-sheetsmith-focus%3D%22skills-row-17-groups%22%5D`,
+			size: '1500,2600',
+		},
+		// Stealth out of the Skills table's row groups, Frightened on: its own
+		// popover reads +2 with no contributor and so no `via` line, while
+		// Athletics beside it drops to +1.
+		{
+			name: `group-target-inherit-off-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-inherit-off&bar=off&press=%5Bdata-sheetsmith-component%3D'skills'%5D%20tbody%20tr:nth-child(3)%20.sheetsmith-table-value`,
+			size: '1400,1100',
+		},
+		// Frightened's own form there: `Reaches 12 values`, one fewer than with
+		// Stealth in (group-target-picker-chips' sheet reads 13).
+		{
+			name: `group-target-inherit-off-reach-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-inherit-off&bar=off&press=%5Bdata-sheetsmith-component%3D'conditions'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button`,
+			size: '1400,1400',
+		},
+		// Rows saying the undeclared-group, empty-group and reserved-clause
+		// sentences, one popup each: Old charm, Hollow token, Jack of All Trades.
+		...[
+			['undeclared', 'gear', 3],
+			['empty', 'gear', 4],
+			['where', 'conditions', 3],
+		].map(([which, id, row]) => ({
+			name: `group-target-errors-${which}-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-errors&bar=off&press=%5Bdata-sheetsmith-component%3D'${id}'%5D%20tbody%20tr:nth-child(${row})%20.sheetsmith-table-modifier-button`,
+			size: '1400,1400',
+		})),
+	]),
 	{
 		name: 'sheet-text-groups-collapsed',
 		query:

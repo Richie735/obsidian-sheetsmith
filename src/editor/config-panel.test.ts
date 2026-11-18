@@ -889,3 +889,96 @@ describe('a select holding a value outside its choices', () => {
 		expect((await harness.stored()).components[1]).toMatchObject({ direction: 'vertical' });
 	});
 });
+
+describe('modifier groups in the pane (docs/features/table-row-modifier-target.md D12)', () => {
+	const at = (col: number) => ({ col, row: 1, width: 2, height: 2 });
+	const layout: Layout = {
+		name: 'Groups',
+		modifierGroups: [
+			{ name: 'save', label: 'Saving throws' },
+			{ name: 'attack', label: 'Attacks' },
+			{ name: 'dc', label: 'Defences' },
+		],
+		components: [
+			{
+				id: 'saves',
+				type: 'table',
+				label: 'Saves',
+				position: at(1),
+				groups: ['save', 'saves_typo'],
+				rows: [
+					{ label: 'Strength', key: 'str' },
+					{ label: 'Dexterity', key: 'dex' },
+				],
+				columns: [{ key: 'Bonus', type: 'computed', formula: 'mod.self', publish: true }],
+			},
+			{
+				id: 'attacks',
+				type: 'table',
+				label: 'Attacks',
+				position: at(3),
+				openRows: true,
+				groups: ['attack'],
+				columns: [{ key: 'Hit', type: 'computed', formula: 'mod.self', publish: true }],
+			},
+			{
+				id: 'unpublished',
+				type: 'table',
+				label: 'Unpublished',
+				position: at(5),
+				groups: ['save', 'unpublished_typo'],
+				rows: [{ label: 'Wisdom' }],
+				columns: [{ key: 'Bonus', type: 'number' }],
+			},
+		] as unknown as ComponentConfig[],
+	};
+
+	it('counts each group\'s members, says which have none, and names what only character rows join', async () => {
+		harness = await open(layout);
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		const lines = Array.from(harness.container.querySelectorAll('.sheetsmith-group-members')).map((line) => [
+			line.firstElementChild?.textContent,
+			line.lastElementChild?.textContent,
+			line.lastElementChild?.getAttribute('title') ?? null,
+		]);
+		expect(lines).toEqual([
+			['Saving throws', '2 values', 'Saves · str, Saves · dex'],
+			['Attacks', 'Only rows a character adds to Attacks are in this group.', null],
+			['Defences', 'No value is in this group yet.', null],
+		]);
+		expect(control<HTMLTextAreaElement>(harness, 'modifier-groups').value).toBe(
+			'save: Saving throws\nattack: Attacks\ndc: Defences',
+		);
+	});
+
+	it('writes the list back as entries, a line with no colon its own label', async () => {
+		harness = await open(layout);
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		const field = control<HTMLTextAreaElement>(harness, 'modifier-groups');
+		field.value = 'save: Saving throws\ncheck';
+		field.dispatchEvent(new Event('change'));
+		await settle(harness.pane);
+		expect((await harness.stored()).modifierGroups).toEqual([
+			{ name: 'save', label: 'Saving throws' },
+			{ name: 'check', label: 'check' },
+		]);
+	});
+
+	it("reports a component's undeclared group, and a table with no published column", async () => {
+		harness = await open(layout);
+		control(harness, 'edit-saves').click();
+		await settle(harness.pane);
+		expect(harness.container.textContent).toContain(
+			'"saves_typo" is not a modifier group this layout declares. Choose one it does, or add it under Modifier groups.',
+		);
+		control(harness, 'edit-unpublished').click();
+		await settle(harness.pane);
+		expect(harness.container.textContent).toContain(
+			'Choose a column to publish, so a group has a value on each row to reach.',
+		);
+		// Read off the configuration, so a table publishing nothing still names its typo.
+		expect(harness.container.textContent).toContain('"unpublished_typo" is not a modifier group this layout declares.');
+	});
+});

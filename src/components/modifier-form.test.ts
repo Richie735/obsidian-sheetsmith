@@ -708,3 +708,106 @@ describe('a change that chooses a dropdown\'s option (docs/features/text-value-m
 		body.remove();
 	});
 });
+
+describe('a change aimed at modifier groups (docs/features/table-row-modifier-target.md)', () => {
+	const GROUPS = [
+		{ name: 'save', label: 'Saving throws' },
+		{ name: 'skill', label: 'Skills' },
+		{ name: 'attack', label: 'Attacks' },
+	];
+
+	it('offers the groups first, under Modifier groups, valued as a cell spells them', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(select, ACCEPTING, NOTABLE, [], [], [], GROUPS);
+		const groups = Array.from(select.querySelectorAll('optgroup'));
+		expect(groups.map((group) => group.label)).toEqual([
+			'Modifier groups',
+			'Takes modifiers',
+			'Notes only',
+		]);
+		expect(Array.from(groups[0]?.querySelectorAll('option') ?? []).map((one) => [one.value, one.textContent])).toEqual([
+			['@save', 'Saving throws'],
+			['@skill', 'Skills'],
+			['@attack', 'Attacks'],
+		]);
+	});
+
+	it('draws today\'s options exactly where the layout declares no group', () => {
+		const without = document.createElement('select');
+		fillTargetOptions(without, ACCEPTING, [], [], [], [], []);
+		expect(without.querySelector('optgroup')).toBeNull();
+		expect(Array.from(without.options).map((one) => one.value)).toEqual(['armour_class', 'abilities.STR']);
+	});
+
+	/** The form open on one typed part, with what it committed. */
+	function form(part: string, target: string) {
+		const body = document.createElement('div');
+		document.body.appendChild(body);
+		const state = modifierFormState([part]);
+		state.open = 0;
+		const committed: string[][] = [];
+		const effect = { target, operator: 'add' as const, amount: '1' };
+		renderModifierForm(body, state, {
+			label: 'Cloak',
+			parts: [part],
+			outcomes: () => [outcomeView({ typed: effect, target, targetLabel: target, applies: true })],
+			definitions: [],
+			targets: ACCEPTING,
+			published: NOTABLE,
+			noteTargets: NOTABLE,
+			groups: GROUPS,
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: (parts) => committed.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: () => undefined,
+			onResize: () => undefined,
+		});
+		return { body, committed };
+	}
+
+	it('shows the first group in the select and every group as a chip', () => {
+		const { body } = form('@save, @skill += 1', '@save, @skill');
+		const value = body.querySelector<HTMLSelectElement>('[data-sheetsmith-panel-field="target"]');
+		expect(value?.value).toBe('@save');
+		expect(Array.from(body.querySelectorAll('.sheetsmith-group-chip')).map((chip) => chip.textContent)).toEqual([
+			'Saving throws',
+			'Skills',
+		]);
+		body.remove();
+	});
+
+	it('writes `@a, @b` when a second group is added', () => {
+		const { body, committed } = form('@save += 1', '@save');
+		const add = body.querySelector<HTMLSelectElement>('.sheetsmith-group-chips-add');
+		if (add === null) throw new Error('no add select');
+		expect(Array.from(add.options).map((one) => one.value)).toEqual(['', 'skill', 'attack']);
+		add.value = 'attack';
+		add.dispatchEvent(new Event('change'));
+		expect(committed.at(-1)).toEqual(['@save, @attack += 1']);
+		body.remove();
+	});
+
+	it('names each chip\'s remove for its group, and leaves `@` when the last goes', () => {
+		const { body, committed } = form('@save += 1', '@save');
+		const remove = body.querySelector<HTMLButtonElement>('.sheetsmith-group-chip-remove');
+		expect(remove?.getAttribute('aria-label')).toBe('Remove Saving throws');
+		remove?.click();
+		expect(committed.at(-1)).toEqual(['@ += 1']);
+		body.remove();
+		// `@` alone draws the select at its blank.
+		const blank = form('@ += 1', '@').body;
+		expect(blank.querySelector<HTMLSelectElement>('[data-sheetsmith-panel-field="target"]')?.value).toBe('');
+		expect(blank.querySelector('.sheetsmith-group-chip')).toBeNull();
+		blank.remove();
+	});
+
+	it('carries a group nothing declares as a chip saying so', () => {
+		const { body } = form('@saves, @skill += 1', '@saves, @skill');
+		expect(Array.from(body.querySelectorAll('.sheetsmith-group-chip')).map((chip) => chip.textContent)).toEqual([
+			'saves (not declared)',
+			'Skills',
+		]);
+		body.remove();
+	});
+});

@@ -170,6 +170,12 @@ export interface PartFields {
 	applies: ModifierPhase;
 	when: string | null;
 	/**
+	 * The reserved member condition, or null where the part carries none
+	 * (`docs/features/table-row-modifier-target.md` D8). Present, blank included,
+	 * the part changes nothing in v1, and the row says so.
+	 */
+	where: string | null;
+	/**
 	 * The words shown at the target, or null where there are none. Never
 	 * evaluated: a note is text, and nothing here reads it but the walk.
 	 */
@@ -289,6 +295,7 @@ function fieldsOfChange(
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(change),
 		when: when === '' ? null : when,
+		where: change.where === undefined ? null : change.where.trim(),
 		note: note === '' ? null : note,
 	};
 }
@@ -308,6 +315,7 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(effect),
 		when: when === '' ? null : when,
+		where: effect.where === undefined ? null : effect.where.trim(),
 		note: note === '' ? null : note,
 	};
 }

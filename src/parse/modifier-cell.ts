@@ -109,7 +109,7 @@ export function unspellableOption(value: string): string | null {
 	const clashes =
 		holdsSeparator(value) ||
 		/[\r\n]/.test(value) ||
-		[' when ', ' as ', ' to ', ' in ', NOTE_CLAUSE].some((word) => value.includes(word));
+		[' when ', ' as ', ' to ', ' in ', NOTE_CLAUSE, WHERE_CLAUSE].some((word) => value.includes(word));
 	return clashes
 		? `"${value}" cannot be chosen from a row's own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.`
 		: null;
@@ -137,7 +137,7 @@ export function unspellableColumn(key: string): string | null {
 	// found from the right, so a key holding it would lose its head to the amount.
 	const clashes =
 		holdsSeparator(key) ||
-		[' when ', ' as ', ' to ', ' in ', NOTE_CLAUSE].some((word) => key.includes(word));
+		[' when ', ' as ', ' to ', ' in ', NOTE_CLAUSE, WHERE_CLAUSE].some((word) => key.includes(word));
 	return clashes
 		? `"${key}" cannot be set from a row's own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.`
 		: null;
@@ -164,9 +164,112 @@ export const RESULT_PHASE = 'result';
  * a comparison a reader wrote by mistake becomes an effect nothing can resolve
  * rather than a stray name they can see. `=` appears in the grammar only as `==`,
  * so one character of lookahead is the whole of what it takes.
+ *
+ * **The target may also be a comma list naming modifier groups**, `@save,
+ * @skill += -1` (`docs/features/table-row-modifier-target.md` D1). That is the
+ * one widening, and it is stated rather than hidden: `@` cannot begin a
+ * published name, so no cell that matched before reads differently, while a
+ * definition named `@save += 1` now reads as a typed part and is refused by
+ * `unspellableName`. A list is a target only where some entry carries the sigil
+ * (`assignmentHead`), so `a, b += 1` stays a stray name.
  */
 const ASSIGNMENT =
-	/^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(\+=|>=|=(?!=))/;
+	/^((?:@[A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\s*,\s*(?:@[A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)?)*)\s*(\+=|>=|=(?!=))/;
+
+/**
+ * What marks a target as a modifier group rather than a published name
+ * (`docs/features/table-row-modifier-target.md` D1).
+ *
+ * **`@` because it cannot begin a published name**, so the old discriminator
+ * never matched it and the target grammar gains a second alternative rather than
+ * a new meaning for an old one; because `tokenize` throws on it, so it can never
+ * start an amount or a condition; and because it means nothing in markdown or in
+ * Obsidian. `#save` was the obvious spelling and is refused: Obsidian indexes
+ * `#save` in a table cell as a tag.
+ */
+export const GROUP_SIGIL = '@';
+
+/**
+ * The head the discriminator matched, as a target, or null where it matched
+ * none: a comma list is a target only where some entry carries the sigil, so
+ * `a, b += 1` stays the stray name it always was.
+ */
+function assignmentHead(text: string): RegExpExecArray | null {
+	const head = ASSIGNMENT.exec(text);
+	if (head === null) return null;
+	const target = head[1] as string;
+	if (target.includes(',') && !target.includes(GROUP_SIGIL)) return null;
+	return head;
+}
+
+/** A target read as a list of groups: what it names, and what it should not. */
+export interface GroupTarget {
+	/** The group names, in order, blanks and repeats dropped. */
+	groups: readonly string[];
+	/**
+	 * Entries without the sigil, which a list of groups may not hold (D1): a
+	 * part listing one changes nothing and says so.
+	 */
+	names: readonly string[];
+}
+
+/**
+ * A target as a list of groups, or null where it is a published name.
+ *
+ * **The one reader of a target's group spelling**, on both tiers (D2): every
+ * reader of a target asks this, so no reader learns the `@`. **Lenient**, on
+ * §4.2's half-built typed part: a blank entry and a repeat are dropped at the
+ * read and the bytes are kept, and `@` alone is a list holding no group yet,
+ * which changes nothing.
+ */
+export function groupTargetOf(target: string): GroupTarget | null {
+	const text = target.trim();
+	if (!text.includes(GROUP_SIGIL)) return null;
+	const groups: string[] = [];
+	const names: string[] = [];
+	for (const raw of text.split(',')) {
+		const entry = raw.trim();
+		if (entry === '') continue;
+		if (entry.startsWith(GROUP_SIGIL)) {
+			const group = entry.slice(GROUP_SIGIL.length).trim();
+			if (group !== '' && !groups.includes(group)) groups.push(group);
+		} else names.push(entry);
+	}
+	return { groups, names };
+}
+
+/** The group names a target lists, or null where it names a published value. */
+export function groupsOf(target: string): readonly string[] | null {
+	return groupTargetOf(target)?.groups ?? null;
+}
+
+/**
+ * How a list of groups is written as a target: `@save, @skill`, canonical, and
+ * `@` where it lists none yet, which reads back as the same unfinished list.
+ */
+export function spellGroups(groups: readonly string[]): string {
+	return groups.length === 0
+		? GROUP_SIGIL
+		: groups.map((group) => `${GROUP_SIGIL}${group}`).join(', ');
+}
+
+/**
+ * Why a list of groups holding a published name changes nothing (D1). One
+ * sentence for the row and the definitions list.
+ */
+export function mixedGroupList(name: string): string {
+	return `A list of groups can hold only groups. Write ${name} as its own part, or give it a group.`;
+}
+
+/**
+ * Why `@` alone changes nothing (D1): a list naming no group yet. Said at the
+ * row as the definitions list says it of a change, so a half-built part reads
+ * the same on both tiers. `subject` is what the sentence is about: a row's
+ * `This modifier`, or a definition's quoted name.
+ */
+export function namesNoGroup(subject: string): string {
+	return `${subject} names no group yet, so it changes nothing. Choose one under Value.`;
+}
 
 /**
  * Whether this text reads as an effect typed on a row rather than as a name.
@@ -182,7 +285,7 @@ const ASSIGNMENT =
  * surveyed system uses.
  */
 export function readsAsAssignment(text: string): boolean {
-	return ASSIGNMENT.test(text.trim());
+	return assignmentHead(text.trim()) !== null;
 }
 
 /** Whether this text holds the separator, so no cell could spell it whole. */
@@ -242,6 +345,25 @@ export function unspellableName(name: string): string | null {
  * types are declared (`parse/modifier-types.ts`).
  */
 export const NOTE_CLAUSE = ' note:';
+
+/**
+ * The keyword a typed part's member condition starts with, space included
+ * (`docs/features/table-row-modifier-target.md` D8).
+ *
+ * **Reserved and refused in v1.** ` note:`'s argument makes it safe: `:` is not
+ * a character of the grammar, so ` where:` cannot occur in an amount or a
+ * condition that parses, and a cell without it runs exactly today's path. The
+ * bare word `where` stays a legal name. Read after the note and before every
+ * other clause, at its leftmost occurrence.
+ */
+export const WHERE_CLAUSE = ' where:';
+
+/**
+ * Why a part carrying the reserved member condition changes nothing (D8). One
+ * sentence for the row and the definitions list.
+ */
+export const WHERE_REFUSED =
+	'A condition on each value is not supported yet, so this modifier changes nothing. Remove "where:" to apply it to every value it reaches.';
 
 /**
  * Why a note a cell could not spell is refused, or null where it could.
@@ -458,7 +580,7 @@ function clauseAt(text: string, keyword: string): number {
  */
 export function parseModifierPart(part: string): ModifierPart {
 	const text = part.trim();
-	const head = ASSIGNMENT.exec(text);
+	const head = assignmentHead(text);
 	if (head === null) return { kind: 'named', name: text };
 	const target = head[1] as string;
 	const operator: ModifierOperator =
@@ -479,6 +601,18 @@ export function parseModifierPart(part: string): ModifierPart {
 	if (noted >= 0) {
 		note = rest.slice(noted + NOTE_CLAUSE.length).trim();
 		rest = rest.slice(0, noted);
+	}
+	/*
+	 * **The member condition next, at its leftmost keyword** (D8), on the note's
+	 * argument: nothing to its left can hold ` where:` and still parse, so a cell
+	 * without it runs today's path. Kept where blank, so `where:` alone still
+	 * refuses the part rather than quietly applying it to every member.
+	 */
+	let where: string | undefined;
+	const whereAt = rest.indexOf(WHERE_CLAUSE);
+	if (whereAt >= 0) {
+		where = rest.slice(whereAt + WHERE_CLAUSE.length).trim();
+		rest = rest.slice(0, whereAt);
 	}
 
 	let when: string | undefined;
@@ -551,6 +685,7 @@ export function parseModifierPart(part: string): ModifierPart {
 			...(applies !== undefined ? { applies } : {}),
 			...(bonusType !== undefined && bonusType !== '' ? { bonusType } : {}),
 			...(when !== undefined && when !== '' ? { when } : {}),
+			...(where !== undefined ? { where } : {}),
 			...(note !== undefined && note !== '' ? { note } : {}),
 		},
 	};
@@ -568,8 +703,16 @@ export function parseModifierPart(part: string): ModifierPart {
  * exactly what parses back as an unfinished effect.
  */
 export function spellTypedEffect(effect: TypedEffect): string {
+	/*
+	 * A list of groups is spelled canonically, `@a, @b`, where it holds only
+	 * groups; one holding a published name keeps its own text, so the refusal
+	 * the row shows is about the bytes the reader wrote (D1).
+	 */
+	const grouped = groupTargetOf(effect.target);
 	const said = [
-		effect.target,
+		grouped !== null && grouped.names.length === 0
+			? spellGroups(grouped.groups)
+			: effect.target,
 		effect.operator === 'override'
 			? SETS
 			: effect.operator === 'upgrade'
@@ -601,6 +744,10 @@ export function spellTypedEffect(effect: TypedEffect): string {
 	if (bonusType !== '') said.push('as', bonusType);
 	const when = (effect.when ?? '').trim();
 	if (when !== '') said.push('when', when);
+	if (effect.where !== undefined) {
+		const where = effect.where.trim();
+		said.push(where === '' ? WHERE_CLAUSE.trim() : `${WHERE_CLAUSE.trim()} ${where}`);
+	}
 	// Last, because the parse takes it off first from the left: anything spelled
 	// after it would be read as part of the note.
 	const note = (effect.note ?? '').trim();

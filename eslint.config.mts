@@ -425,6 +425,27 @@ export default defineConfig(
 								 * nothing from `obsidian` and touching no file.
 								 */
 								'!./zone-rules',
+								/*
+								 * **Which modifier groups a value is in**, and how a
+								 * component publishes that, shared by Card, Card set,
+								 * Table and Roster (`docs/features/table-row-modifier-target.md`
+								 * D4). On PATTERNS §1's one-step tier for a policy: a row's
+								 * own list adding to its component's default is one rule
+								 * four components apply, and four copies could only be
+								 * tested for still agreeing. In no registry, declaring no
+								 * `ComponentDefinition`, importing nothing from `obsidian`
+								 * and touching no file.
+								 */
+								'!./member-groups',
+								/*
+								 * **The chip list a group target is chosen in**, shared by
+								 * the sheet's modifier form and the layout editor's groups
+								 * fields (D11, D12), so the two cannot disagree about how a
+								 * group is added or removed. In no registry, declaring no
+								 * `ComponentDefinition`, importing nothing from `obsidian`
+								 * and touching no file.
+								 */
+								'!./group-chips',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -449,6 +470,8 @@ export default defineConfig(
 								'!../components/stat-block-zones',
 								'!../components/stat-block-briefs',
 								'!../components/zone-rules',
+								'!../components/member-groups',
+								'!../components/group-chips',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',

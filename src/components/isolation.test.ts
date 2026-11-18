@@ -182,6 +182,15 @@ const ALLOWED = [
 	// A row's levels and flags, shared by Table and Roster on §1's one-step tier.
 	"import { overlayRowStates } from './row-states';",
 	"import { overlayRowStates } from '../components/row-states';",
+	// Which modifier groups a value is in, shared by Card, Card set, Table and
+	// Roster on §1's one-step tier for a policy
+	// (`docs/features/table-row-modifier-target.md` D4).
+	"import { rowGroups } from './member-groups';",
+	"import { rowGroups } from '../components/member-groups';",
+	// The chip list a group target is chosen in, shared by the sheet's form and
+	// the layout editor, so the two cannot disagree (D11, D12).
+	"import { renderGroupChips } from './group-chips';",
+	"import { renderGroupChips } from '../components/group-chips';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
