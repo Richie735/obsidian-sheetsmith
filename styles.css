@@ -84,6 +84,23 @@ body {
 	   follows the sheet's `em` and the card scales with whatever sets the
 	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
+	/* **The value under that number, in the same unit**: the pill under a
+	   derived number (a Card's, a Card set tile's, a Roster card's score) and
+	   a Pool's temporary points. They were `--font-ui-small`, which no `em`
+	   reaches, so at `text=24` the number grew to 42px and its pill held 13px.
+	   The `em` term is the token over the app's 15px desktop body
+	   (`--font-ui-medium`, the sheet's `em` in the app, UI.md §5), so whatever
+	   raises the sheet's size raises it with the number. The token itself is
+	   the floor: it is what the app draws at its own size, and on a phone,
+	   where Obsidian sets `--font-ui-small` to 0.937 of a 16px body rather
+	   than 13/15 of it, the `em` term alone came out at 13.9px against the
+	   15px the pill drew. Read off the host's `em`, so it must not be nested.
+
+	   **A value, not a label.** The words ranked at or under the card's heading
+	   — a Pool's *Temp*, a card's abbreviation, its note line — stay at
+	   `--font-ui-smaller` with the heading, since growing them past a heading
+	   that holds still reorders the card (`docs/BACKLOG.md` § UI). */
+	--sheetsmith-qualifier-small: max(var(--font-ui-small), calc(13em / 15));
 	/* How tall one row of the sheet's grid is, for a component whose content has
 	   no height the grid could take one from: a block of prose, a picture. Both
 	   put their content out of flow so it cannot decide the box, which leaves the
@@ -1925,6 +1942,7 @@ body {
 	   scales with a 1.75em number is exactly how the two converged: at `Text → 24`
 	   the dots landed one pixel above the pill's border. */
 	margin-top: 0.4em;
+	max-width: 100%;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -1943,9 +1961,15 @@ body {
 	border-color: var(--interactive-accent);
 }
 
+/* `4em` of its own size, so the slot grows with its digits, and capped at the
+   pill, which is capped at the card: at `text=24` the pill is 101px, past a
+   90.8px Card set tile at a 520px sheet by 5.2px, where three digits at that
+   size need 38. Shrinking the slot takes only the room around the digits. */
 .sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input {
 	width: 4em;
-	font-size: var(--font-ui-small);
+	min-width: 0;
+	max-width: 100%;
+	font-size: var(--sheetsmith-qualifier-small);
 	font-weight: var(--font-semibold);
 	/* Back to normal tracking: the tightening above is for large text. */
 	letter-spacing: normal;
@@ -2005,7 +2029,7 @@ body {
 /* The menu in the pill, on the field's own three rules: the pill is what
    reacts, and a second rectangle inside it would be a second control. */
 .sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select {
-	font-size: var(--font-ui-small);
+	font-size: var(--sheetsmith-qualifier-small);
 	font-weight: var(--font-semibold);
 	letter-spacing: normal;
 	color: var(--text-normal);
@@ -3846,16 +3870,29 @@ body {
 /* Temporary points are the card's pill: a small qualifier hanging under the
    big number, which is the shape a card already uses for its stored
    value. As a second bordered rectangle on its own row it was a third
-   surface saying the same thing. */
+   surface saying the same thing.
+
+   **It wraps its word over its field rather than pass a narrow card**, and is
+   capped at the card. The pill is 81px at the harness's default size and 83px
+   at `text=24`, where its field stops at the ceiling's size; a two-unit Pool on
+   a 520px sheet has 56px of content, and on one line the pill passed it and
+   was clipped. Wrapped, *Temp* sits centred over its three digits. Every card
+   from a one-unit Pool on a 1400px sheet up holds the line. */
 .sheetsmith-pool-temp {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	justify-content: center;
+	max-width: 100%;
 	/* The settle after an absorption; going in is instant, as with a press. */
 	transition:
 		background-color 220ms ease-out,
 		border-color 220ms ease-out;
 	gap: var(--size-2-1);
-	margin-top: var(--size-2-1);
+	/* The Card pill's hang (`.sheetsmith-card-has-derived .sheetsmith-card-value`),
+	   in `em` for its reason: a fixed 4px under a number that grows left the
+	   pill nearly touching it at `text=24`. */
+	margin-top: 0.4em;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -3879,7 +3916,12 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--font-ui-small);
+	/* The qualifier's size, stopped at the ceiling's: the ceiling beside the
+	   number is `--font-ui-medium`, a UI token, and the temporary points under
+	   it must not outrank it. At `text=24` the uncapped field was 20.8px
+	   against a 15px `/9`. The ceiling holds still because the narrow-fit
+	   threshold above counts it in px (`pool-headline-narrow-fit.md`). */
+	font-size: min(var(--sheetsmith-qualifier-small), var(--font-ui-medium));
 	font-variant-numeric: tabular-nums;
 	text-align: center;
 }

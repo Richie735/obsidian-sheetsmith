@@ -4862,6 +4862,68 @@ describe('the pool\'s buffer field holds three digits', () => {
 	});
 });
 
+describe('the qualifiers beside a headline follow the sheet\'s size', () => {
+	/*
+	 * A Pool's temporary points and the pill under a derived number sat at
+	 * `--font-ui-small`, which no `em` reaches, so at `text=24` the number grew
+	 * and they did not. Both values now take one token, `--sheetsmith-qualifier-small`:
+	 * the app's `--font-ui-small` as a floor under 13/15 of the sheet's `em`.
+	 * The Pool's field is capped at its ceiling's `--font-ui-medium`, which
+	 * holds still, so it never outranks the ceiling. The words ranked with the
+	 * card's heading, *Temp* and a note, stay at the heading's `--font-ui-smaller`.
+	 */
+	const bodyOf = (selector: string): string =>
+		rules(CSS_WITHOUT_COMMENTS).find(
+			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
+		)?.body ?? '';
+
+	it('declares the token as the app token floored under its step in em', () => {
+		const tokens = declarations(bodyOf('body'));
+		expect(tokens).toContain('--sheetsmith-qualifier-small: max(var(--font-ui-small), calc(13em / 15))');
+	});
+
+	it.each([
+		'.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input',
+		'.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select',
+	])('sizes %s on the qualifier', (selector) => {
+		expect(declarations(bodyOf(selector))).toContain('font-size: var(--sheetsmith-qualifier-small)');
+	});
+
+	it("stops a Pool's temporary points at the ceiling's size", () => {
+		// The ceiling is `--font-ui-medium` and holds still, so the points
+		// under the number may grow to it and not past it.
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-temp-input'))).toContain(
+			'font-size: min(var(--sheetsmith-qualifier-small), var(--font-ui-medium))',
+		);
+		expect(declarations(bodyOf('.sheetsmith-pool-max'))).toContain(
+			'font-size: var(--font-ui-medium)',
+		);
+	});
+
+	it('keeps the words under a heading at the heading\'s fixed size', () => {
+		expect(declarations(bodyOf('.sheetsmith-pool-temp-label'))).toContain('font-size: var(--font-ui-smaller)');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-card-note-input'))).toContain(
+			'font-size: var(--font-ui-smaller)',
+		);
+	});
+
+	it('hangs both pills under their number in em', () => {
+		expect(declarations(bodyOf('.sheetsmith-pool-temp'))).toContain('margin-top: 0.4em');
+		expect(declarations(bodyOf('.sheetsmith-card-has-derived .sheetsmith-card-value'))).toContain(
+			'margin-top: 0.4em',
+		);
+	});
+
+	it('keeps both pills inside a narrow card', () => {
+		const temp = declarations(bodyOf('.sheetsmith-pool-temp'));
+		expect(temp).toContain('flex-wrap: wrap');
+		expect(temp).toContain('max-width: 100%');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input'))).toContain(
+			'max-width: 100%',
+		);
+	});
+});
+
 describe("a pool's reading fits a narrow card", () => {
 	/*
 	 * `docs/features/pool-headline-narrow-fit.md`. Three rules give way in order,
