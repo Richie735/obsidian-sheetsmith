@@ -358,3 +358,119 @@ describe('what the caller keeps', () => {
 		expect(sets).toEqual([]);
 	});
 });
+
+describe('a ring a modifier set (docs/features/non-number-modifiers.md)', () => {
+	const levels = ['Untrained', 'Proficient:', 'Expertise:E'];
+	/** At least Proficient: the drawn level is never below 1. */
+	const atLeastProficient = (stored: number) => Math.max(stored, 1);
+	const words = ['Untrained', 'Proficient', 'Expertise'];
+	const ownLevel = (stored: number) =>
+		atLeastProficient(stored) === stored ? null : `Set by a modifier; your own: ${words[stored] ?? ''}`;
+
+	it('cycles the stored level, reports it, and names and paints the drawn one', () => {
+		const { button, sets } = ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level: 0,
+			name: 'Stealth Training',
+			drawn: atLeastProficient,
+			ownLevel,
+		});
+		expect(button.getAttribute('aria-label')).toBe('Stealth Training: Proficient');
+		button.click();
+		expect(sets).toEqual([1]);
+		button.click();
+		expect(sets).toEqual([1, 2]);
+		expect(button.getAttribute('aria-label')).toBe('Stealth Training: Expertise');
+		button.click();
+		expect(sets).toEqual([1, 2, 0]);
+		expect(button.getAttribute('aria-label')).toBe('Stealth Training: Proficient');
+	});
+
+	it('steps the stored level with the arrows, not the drawn one', () => {
+		const { button, sets } = ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level: 0,
+			name: 'Stealth Training',
+			drawn: atLeastProficient,
+		});
+		pressKey(button, 'ArrowRight');
+		expect(sets).toEqual([1]);
+	});
+
+	it('says the stored level only where it differs, in the description and the title', () => {
+		const { button } = ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level: 0,
+			name: 'Stealth Training',
+			nameOnScreen: true,
+			drawn: atLeastProficient,
+			ownLevel,
+		});
+		expect(button.getAttribute('aria-description')).toBe('Set by a modifier; your own: Untrained');
+		expect(button.getAttribute('title')).toBe('Proficient\nSet by a modifier; your own: Untrained');
+		button.click();
+		expect(button.hasAttribute('aria-description')).toBe(false);
+		expect(button.getAttribute('title')).toBe('Proficient');
+	});
+
+	it('lets aria-pressed follow the drawn state of a flag', () => {
+		const { button, sets } = ring({
+			drawn: () => 1,
+			ownLevel: (stored) => (stored === 1 ? null : 'Set by a modifier; your own: off'),
+		});
+		expect(button.getAttribute('aria-pressed')).toBe('true');
+		expect(button.getAttribute('aria-description')).toBe('Set by a modifier; your own: off');
+		button.click();
+		expect(sets).toEqual([1]);
+		expect(button.getAttribute('aria-pressed')).toBe('true');
+	});
+
+	it('runs onUnshown after a press the ring does not plainly show, and only then', () => {
+		const unmoved: number[] = [];
+		const { button } = ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level: 0,
+			name: 'Stealth Training',
+			drawn: atLeastProficient,
+			onUnshown: (stored) => unmoved.push(stored),
+		});
+		button.click(); // 0 -> 1: Proficient drawn before and after.
+		expect(unmoved).toEqual([1]);
+		button.click(); // 1 -> 2: the drawn level moves.
+		expect(unmoved).toEqual([1]);
+		button.click(); // 2 -> 0: Proficient drawn where Untrained was set.
+		expect(unmoved).toEqual([1, 0]);
+	});
+
+	it('says the stored level in words only, and draws only the drawn level\'s letter', () => {
+		const { button } = ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level: 1,
+			name: 'Stealth Training',
+			// Sets Expertise: drawn 2 whatever the note stores.
+			drawn: () => 2,
+			ownLevel: (stored) => (stored === 2 ? null : `Set by a modifier; your own: ${words[stored] ?? ''}`),
+		});
+		// The ring's letter is the drawn level's alone, as an unmodified ring's.
+		expect(button.textContent).toBe('E');
+		expect(button.getAttribute('aria-description')).toBe('Set by a modifier; your own: Proficient');
+		button.click(); // 1 -> 2: the note agrees with the ring.
+		expect(button.hasAttribute('aria-description')).toBe(false);
+	});
+
+	it('draws a ring no modifier reaches exactly as before', () => {
+		const { button } = ring({ column: { levels }, count: 2, graded: true, level: 0, name: 'Stealth Training' });
+		expect(button.getAttribute('aria-label')).toBe('Stealth Training: Untrained');
+		expect(button.hasAttribute('aria-description')).toBe(false);
+	});
+});

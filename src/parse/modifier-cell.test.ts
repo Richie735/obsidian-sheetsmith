@@ -8,8 +8,10 @@ import {
 	spellParts,
 	spellTypedEffect,
 	storedParts,
+	unspellableColumn,
 	unspellableName,
 	unspellableNote,
+	unspellableOption,
 	withoutPart,
 } from './modifier-cell';
 import { TypedEffect } from '../types';
@@ -699,5 +701,121 @@ describe('why a note a cell cannot spell is refused', () => {
 	it('takes every other note, a pipe and a colon included', () => {
 		expect(unspellableNote('Advantage: on | Stealth checks')).toBeNull();
 		expect(unspellableNote('')).toBeNull();
+	});
+});
+
+describe('the column clause (docs/features/non-number-modifiers.md)', () => {
+	it('parses `in Training` after the amount, and spells it back to the same bytes', () => {
+		const text = 'abilities.stealth >= 1 in Training';
+		const parsed = parseModifierPart(text);
+		expect(parsed).toEqual({
+			kind: 'typed',
+			effect: {
+				target: 'abilities.stealth',
+				column: 'Training',
+				operator: 'upgrade',
+				amount: '1',
+			},
+		});
+		if (parsed.kind !== 'typed') return;
+		expect(spellTypedEffect(parsed.effect)).toBe(text);
+	});
+
+	it('round-trips a part carrying every clause, in the spec\'s order', () => {
+		const text = 'skills.stealth += 1 in Training to result as item when Worn note: Cat Form';
+		const parsed = parseModifierPart(text);
+		expect(parsed.kind === 'typed' && parsed.effect).toEqual({
+			target: 'skills.stealth',
+			column: 'Training',
+			operator: 'add',
+			amount: '1',
+			applies: 'result',
+			bonusType: 'item',
+			when: 'Worn',
+			note: 'Cat Form',
+		});
+		if (parsed.kind !== 'typed') return;
+		expect(spellTypedEffect(parsed.effect)).toBe(text);
+	});
+
+	it('reads a blank amount before the clause as an unfinished change at that column', () => {
+		const parsed = parseModifierPart('inspiration = in Flag');
+		expect(parsed.kind === 'typed' && parsed.effect).toEqual({
+			target: 'inspiration',
+			column: 'Flag',
+			operator: 'override',
+			amount: '',
+		});
+	});
+
+	it('ignores the keyword inside parentheses, so `(in)` reads a column headed in', () => {
+		const parsed = parseModifierPart('armour_class += (in)');
+		expect(parsed.kind === 'typed' && parsed.effect).toEqual({
+			target: 'armour_class',
+			operator: 'add',
+			amount: '(in)',
+		});
+	});
+
+	it('spells no clause for a part without a column, so a cell written before keeps its bytes', () => {
+		expect(
+			spellTypedEffect({ target: 'armour_class', operator: 'add', amount: '2', bonusType: 'item' }),
+		).toBe('armour_class += 2 as item');
+		expect(
+			spellTypedEffect({ target: 'armour_class', column: '  ', operator: 'add', amount: '2' }),
+		).toBe('armour_class += 2');
+	});
+
+	it('refuses a column a cell could not spell, and takes every other', () => {
+		const refusal = (key: string) =>
+			`"${key}" cannot be set from a row's own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.`;
+		for (const key of ['A;B', 'Worn when on', 'Kept as is', 'Up to two', 'Skill in hand', 'Odd note: here']) {
+			expect(unspellableColumn(key), key).toBe(refusal(key));
+		}
+		expect(unspellableColumn('Training')).toBeNull();
+		expect(unspellableColumn('Proficiency bonus')).toBeNull();
+	});
+});
+
+describe('the option literal (docs/features/text-value-modifiers.md)', () => {
+	it('parses `option: Large` in the amount\'s place, and spells it back to the same bytes', () => {
+		const text = 'size = option: Large';
+		expect(typed(text)).toEqual({ target: 'size', operator: 'override', amount: '', option: 'Large' });
+		expect(spellTypedEffect(typed(text))).toBe(text);
+	});
+
+	it('round-trips an option change with a condition and a note', () => {
+		const text = 'size = option: Large when Wild note: Beast form';
+		expect(typed(text)).toEqual({
+			target: 'size',
+			operator: 'override',
+			amount: '',
+			option: 'Large',
+			when: 'Wild',
+			note: 'Beast form',
+		});
+		expect(spellTypedEffect(typed(text))).toBe(text);
+	});
+
+	it('keeps the space inside a literal', () => {
+		expect(typed('alignment = option: Chaotic good').option).toBe('Chaotic good');
+	});
+
+	it('reads `option:` alone as an unfinished option change, and spells it back', () => {
+		expect(typed('size = option:')).toEqual({ target: 'size', operator: 'override', amount: '', option: '' });
+		expect(spellTypedEffect(typed('size = option:'))).toBe('size = option:');
+	});
+
+	it('leaves every amount without the keyword at its head as it was', () => {
+		expect(typed('armour_class += option + 1')).toEqual({ target: 'armour_class', operator: 'add', amount: 'option + 1' });
+		expect(typed('armour_class = 18').option).toBeUndefined();
+	});
+
+	it('refuses a literal a cell could not spell, and takes one it could', () => {
+		expect(unspellableOption('Size in feet')).toBe(
+			'"Size in feet" cannot be chosen from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.',
+		);
+		expect(unspellableOption('a;b')).not.toBeNull();
+		expect(unspellableOption('Chaotic good')).toBeNull();
 	});
 });

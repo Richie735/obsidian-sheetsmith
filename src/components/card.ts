@@ -19,8 +19,10 @@
  */
 
 import { referencesName } from '../formula/expression';
+import { refoldChoice } from '../formula/modifier-choices';
 import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import {
+	ChoiceShape,
 	ComponentConfig,
 	ComponentDefinition,
 	ReadResult,
@@ -29,7 +31,14 @@ import {
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
-import { modifierAccount } from './modifier-breakdown';
+import {
+	choiceAccountText,
+	choiceOwnDescription,
+	choiceOwnNowLine,
+	modifierAccount,
+	modifiersOnName,
+} from './modifier-breakdown';
+import { DoorPart, doorText } from './state-ring';
 import { sampleNumber, sampleSeed, sampleText } from './sample-values';
 
 /**
@@ -167,6 +176,23 @@ function drawableCard(
 	const entry = valueKey(config);
 	if ('error' in entry) return entry;
 	return optionList(config);
+}
+
+/**
+ * What a modifier choosing this card's option sees of it, or undefined where it
+ * offers nothing to choose (`docs/features/text-value-modifiers.md` D2): a card
+ * with options whose value is shown. A hidden-value dropdown draws no control,
+ * so it has nowhere to show what was chosen or to carry the door.
+ */
+function choiceShape(
+	config: CardConfig,
+	options: readonly CardOption[],
+): ChoiceShape | undefined {
+	if (options.length === 0 || !valueShown(config)) return undefined;
+	return {
+		label: config.label,
+		options: options.map((option) => ({ value: option.value, label: option.label || option.value })),
+	};
 }
 
 /**
@@ -431,14 +457,39 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		// A chosen option publishes its value and never its label: the layout
 		// wrote the mapping down, so the value is the meaning and the label is
 		// its presentation (SPEC §5). Nothing here changes for it.
-		if ('error' in drawableCard(config)) return {};
+		const drawable = drawableCard(config);
+		if ('error' in drawable) return {};
+		const choice = choiceShape(config, drawable.options);
+		if (choice === undefined) {
+			return {
+				self: {
+					value: data?.value,
+					display:
+						config.derived === undefined
+							? undefined
+							: { field: 'derived', scope: { value: data?.value ?? '' } },
+				},
+			};
+		}
+		/*
+		 * **A dropdown a modifier may choose for** (`docs/features/text-value-modifiers.md`
+		 * D2, D6). Its bare name is the chosen option: folded by the name table
+		 * where the card has no `derived`, and through `compute` where it has one,
+		 * since the derived reads the chosen option as `value` and only this card
+		 * knows that. The evaluation is the one `display` ran — the same field,
+		 * the same published name, the same phase — so the slot, `accepting` and
+		 * `marked` are what they were, and every change aimed at the card with an
+		 * amount keeps its meaning (D1).
+		 */
+		if (config.derived === undefined) return { self: { value: data?.value, choice } };
 		return {
 			self: {
 				value: data?.value,
-				display:
-					config.derived === undefined
-						? undefined
-						: { field: 'derived', scope: { value: data?.value ?? '' } },
+				choice,
+				compute: (resolve, _state, read) => {
+					const chosen = read === undefined ? data?.value : read(config.id, data?.value);
+					return resolve('derived', { value: chosen === undefined ? '' : String(chosen) }, config.id, false);
+				},
 			},
 		};
 	},
@@ -475,6 +526,15 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		const signed = config.signed !== false;
 		const showValue = valueShown(config);
 		const value = data?.value ?? '';
+		/*
+		 * **What a modifier chose for this dropdown**, or null where nothing did
+		 * (`docs/features/text-value-modifiers.md`). Asked only of a card that
+		 * declares a choice, so every other card asks nothing new.
+		 */
+		const chosen =
+			choiceShape(config, drawable.options) === undefined
+				? null
+				: (context.modifiers?.choice?.(config.id, data?.value) ?? null);
 		// Only a formula that actually reads this card's own value has
 		// nothing to work with while the field is empty. One computed
 		// entirely from elsewhere — an armour class off `abilities.DEX` —
@@ -508,9 +568,27 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 				),
 			};
 		};
+		/*
+		 * **The derived reads the chosen option** (D6): the card's derived is its
+		 * bare name, which the rest of the sheet reads as the chosen option, and a
+		 * name and the card it came from must not disagree. A refused choice draws
+		 * `?` with its sentence, as a formula reading the name does. A choice the
+		 * reader makes in the menu moves the stored value and not what a Sets
+		 * draws, so the derived holds while a modifier chooses.
+		 */
+		const refused = chosen?.error ?? null;
+		const unresolvable = (reason: string) => ({
+			value: null,
+			face: { text: '?', unresolved: true, reason },
+		});
+		const derivedAt = (raw: string) => {
+			if (chosen === null) return derivedFrom(raw);
+			const account = refoldChoice(chosen, raw.trim());
+			return refused !== null ? unresolvable(refused) : derivedFrom(account.drawn);
+		};
 		/** What the note says, which is what the breakdown is about. */
-		const stored = derivedFrom(value);
-		const deriveFrom = (raw: string) => derivedFrom(raw).face;
+		const stored = derivedAt(value);
+		const deriveFrom = (raw: string) => derivedAt(raw).face;
 
 		/**
 		 * What the pill reads at rest, or undefined to leave it the stored number.
@@ -550,7 +628,39 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			context.modifiers?.breakdown(config.id),
 			stored.value,
 		);
-
+		/*
+		 * **One door per card where a modifier chose its option** (D10): the
+		 * read-only account's glyph in the note mark's corner, carrying the
+		 * choice's part, the derived's arithmetic where it was pushed at too, and
+		 * any note at the card's name — so the card draws no note mark beside it,
+		 * since two `info` glyphs would be two doors onto one value's account.
+		 * Parts are headed only where there is more than one. The derived keeps
+		 * its underline and its own press either way.
+		 */
+		const door =
+			chosen === null
+				? undefined
+				: {
+						name: modifiersOnName(config.label),
+						text: (raw: string) => {
+							const pushed = context.modifiers?.breakdown(config.id);
+							// The arithmetic alone: the notes follow every part, once.
+							const arithmetic = account.arithmetic
+								? modifierAccount(pushed === undefined ? undefined : { ...pushed, notes: [] }, stored.value).text
+								: null;
+							const parts: DoorPart[] = [
+								{ heading: 'Option', text: () => choiceAccountText(refoldChoice(chosen, raw)) },
+								...(arithmetic === null ? [] : [{ heading: 'Total', text: () => arithmetic }]),
+							];
+							const notes = pushed?.notes ?? [];
+							const noted =
+								notes.length === 0
+									? null
+									: modifierAccount({ lines: [], override: null, total: 0, notes }, null).text;
+							return noted === null ? doorText(parts) : `${doorText(parts)}\n\n${noted}`;
+						},
+						description: (raw: string) => choiceOwnDescription(refoldChoice(chosen, raw)),
+					};
 		renderCardFace(face, {
 			title: config.label,
 			// The strip of a container showing one child at a time has already
@@ -568,6 +678,19 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 						// menu with it, the same trade the field already makes.
 						options:
 							drawable.options.length === 0 ? undefined : drawable.options,
+						choice:
+							chosen === null
+								? undefined
+								: {
+										drawn: (raw) => refoldChoice(chosen, raw).drawn,
+										own: (raw) => choiceOwnDescription(refoldChoice(chosen, raw)),
+										unshown: (raw) => {
+											const now = refoldChoice(chosen, raw);
+											// A Sets draws its option whatever the note holds, so no
+											// choice in the menu moves what is drawn while one applies.
+											return now.error === null && now.lines.length > 0 ? choiceOwnNowLine(now) : null;
+										},
+									},
 						// Delta, not snapshot: committing the value cannot
 						// revert a note edited moments earlier.
 						onCommit: (next) => context.onChange({ value: next }),
@@ -601,7 +724,9 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 							placeholder: config.notePlaceholder,
 							onCommit: (next) => context.onChange({ note: next }),
 						},
-			notes: account,
+			// The door carries the notes where there is one (D10).
+			notes: door === undefined ? account : undefined,
+			door,
 		});
 	},
 };

@@ -1342,6 +1342,20 @@
 	visibility: hidden;
 }
 
+/* **And in the Modifiers list it keeps its width and gives up its height.** On a
+   line where Applies to and Bonus type wrap below Value, Operator and Amount, a
+   Sets change's hidden pair reserved a whole empty row — the blank band under a
+   level's position legend and under every Sets on a number alike. No height
+   keeps the width the reservation exists for, where the pair shares the first
+   line, and collapses the row where it sits alone; what is left there is the
+   line's one row gap. Not the Track grid above, whose tracks are rows. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-reserved {
+	height: 0;
+	margin-block: 0;
+	padding-block: 0;
+	overflow: hidden;
+}
+
 /* **Every `<select>` in the Modifiers list carries `.dropdown`, and the class was
    simply missing there.** No rule here does that — it is three `cls: 'dropdown'` in
    `modifier-definitions-field.ts` — and the note is here because this is where the
@@ -2659,6 +2673,15 @@
 .sheetsmith-flash {
 	background-color: var(--background-modifier-hover);
 	transition-duration: 0s;
+}
+
+/* A change aimed at a level or a flag says what each number means on a line of
+   its own across the change line (`docs/features/non-number-modifiers.md`):
+   the line wraps, so a whole-width item breaks it there and the controls after
+   it keep their row. */
+.sheetsmith-entry-detail > .sheetsmith-detail-legend {
+	flex-basis: 100%;
+	padding: 0;
 }
 
 .sheetsmith-entry-detail > input[type='text'] {

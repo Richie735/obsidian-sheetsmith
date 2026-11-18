@@ -38,8 +38,9 @@ import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
-import { applyDecorations, inPlayDecorations } from '../src/view/placement-decorations';
+import { applyDecorations, bufferLinesIn, choiceLinesIn, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
 import { revealWhenTruncated } from '../src/ui/truncation';
+import { closePopover } from '../src/ui/popover';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
 import { App, Platform } from '../src/test/obsidian-stub';
@@ -71,6 +72,18 @@ import {
 	textGroupSamples,
 	notesSamples,
 	NOTE_DEFINITIONS,
+	modifierStatesSamples,
+	rosterCardStateSamples,
+	STATE_DEFINITIONS,
+	RING_END_DEFINITIONS,
+	ringEndSamples,
+	ROSTER_CARD_FORM_ROWS,
+	rosterCardDefinitions,
+	poolGrantSamples,
+	PoolGrantVariant,
+	POOL_GRANT_VARIANTS,
+	modifierOptionsSamples,
+	OPTION_DEFINITIONS,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { installStandInRenderer } from './stand-in-markdown';
@@ -116,8 +129,21 @@ type StateName =
 	| 'companion-mook'
 	| 'companion-npc'
 	| 'companion-empty'
-	| 'markdown';
+	| 'markdown'
+	| 'modifier-states'
+	| 'modifier-states-cycle'
+	| 'modifier-states-roster-card'
+	| 'modifier-states-roster-band'
+	| 'modifier-states-roster-card-middle'
+	| 'modifier-states-roster-card-two'
+	| 'modifier-states-ring-end'
+	| 'modifier-states-ring-end-off'
+	| 'modifier-options'
+	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
+
+/** The grant sheets (`poolGrantSamples`), one state per variant, from its one list. */
+const POOL_GRANT_STATES: readonly string[] = POOL_GRANT_VARIANTS.map((variant) => `pool-grant-${variant}`);
 
 interface Live {
 	config: ComponentConfig;
@@ -187,6 +213,19 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'companion-npc') return companionSamples('npc');
 	if (name === 'companion-empty') return companionSamples('empty');
 	if (name === 'markdown') return markdownSamples();
+	if (name === 'modifier-states') return modifierStatesSamples('all');
+	if (name === 'modifier-states-cycle') return modifierStatesSamples('cycle');
+	if (name === 'modifier-states-roster-card') return rosterCardStateSamples();
+	if (name === 'modifier-states-roster-band') return rosterCardStateSamples('band');
+	if (name === 'modifier-states-roster-card-middle' || name === 'modifier-states-roster-card-two') {
+		return rosterCardStateSamples();
+	}
+	if (name === 'modifier-states-ring-end') return ringEndSamples(true);
+	if (name === 'modifier-states-ring-end-off') return ringEndSamples(false);
+	if (name === 'modifier-options') return modifierOptionsSamples();
+	if (name.startsWith('pool-grant-')) {
+		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
+	}
 	return SAMPLES;
 }
 
@@ -207,6 +246,36 @@ let formsTint: string | null = null;
  */
 function layoutFor(name: StateName): Layout {
 	const built = withTint(harnessLayout(samplesFor(name)), formsTint);
+	// The states sheets enrol in Cat Form, which goes ahead of the layout's own
+	// so the editor opens on a change aimed at a level.
+	if (name === 'modifier-states' || name === 'modifier-states-cycle') {
+		return {
+			...built,
+			modifiers: [...STATE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+		};
+	}
+	// The dropdowns sheet's form enrols in Beast shape, which goes ahead of the
+	// layout's own so the editor opens on a change choosing an option.
+	if (name === 'modifier-options') {
+		return {
+			...built,
+			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+		};
+	}
+	// The ring-end sheets enrol in Cat Form, whether or not it is in play.
+	if (name === 'modifier-states-ring-end' || name === 'modifier-states-ring-end-off') {
+		return {
+			...built,
+			modifiers: [...RING_END_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+		};
+	}
+	if (name in ROSTER_CARD_FORM_ROWS) {
+		const rows = ROSTER_CARD_FORM_ROWS[name as keyof typeof ROSTER_CARD_FORM_ROWS];
+		return {
+			...built,
+			modifiers: [...rosterCardDefinitions(rows), ...(built.modifiers ?? [])] as Layout['modifiers'],
+		};
+	}
 	if (name !== 'notes') return built;
 	return {
 		...built,
@@ -549,6 +618,8 @@ const activeTab = new Map<string, number>();
  * open. Empty to begin with — "every group open" is the default a shot should show.
  */
 const collapsedGroups = new Map<string, Set<string>>();
+/** D8's held sentences, by component, as the view holds them (`types.ts`, `heldNotice`). */
+const heldNotices = new Map<string, string>();
 
 /**
  * Which records the reader has opened where, exactly as the view holds them.
@@ -584,6 +655,13 @@ const openRecords = new Map<string, Set<number>>([
 let sheetRoot: HTMLElement | null = null;
 
 function renderSheet(into: HTMLElement): void {
+	/*
+	 * The view's own first step on a rebuild (`SheetView.renderSheet`): every
+	 * popover is closed, because what it was anchored to is about to be
+	 * replaced. Without it a popover a press opened outlived the next commit
+	 * here and nowhere in the app, which is the instrument and not the plugin.
+	 */
+	closePopover();
 	const view = into.createDiv('sheetsmith-view');
 	sheetRoot = view;
 
@@ -642,6 +720,11 @@ function renderSheet(into: HTMLElement): void {
 					else held.delete(key);
 					collapsedGroups.set(config.id, held);
 				},
+				heldNotice: heldNotices.get(config.id),
+				onHoldNotice: (stored: string | null) => {
+					if (stored === null) heldNotices.delete(config.id);
+					else heldNotices.set(config.id, stored);
+				},
 				openRecords: [...(openRecords.get(config.id) ?? [])],
 				onToggleRecord: (index: number, open: boolean) => {
 					const held = openRecords.get(config.id) ?? new Set<number>();
@@ -657,7 +740,13 @@ function renderSheet(into: HTMLElement): void {
 	// The view's own pass after the grid, the form tint, from the same breakdowns.
 	applyDecorations(
 		grid,
-		inPlayDecorations(marked, (name) => modifiers.breakdown(name)),
+		inPlayDecorations(
+			marked,
+			(name) => modifiers.breakdown(name),
+			// And every ring a modifier set, which needs no slot (D11), and every
+			// buffer a form in play's grant is drawing.
+			[...stateLinesIn(grid, modifiers), ...bufferLinesIn(live, modifiers), ...choiceLinesIn(live, modifiers)],
+		),
 		revealWhenTruncated,
 	);
 
@@ -1054,8 +1143,18 @@ function applyQuery(): void {
 			wanted === 'companion-mook' ||
 			wanted === 'companion-npc' ||
 			wanted === 'companion-empty' ||
-			wanted === 'markdown'
-			? wanted
+			wanted === 'markdown' ||
+			wanted === 'modifier-states' ||
+			wanted === 'modifier-states-cycle' ||
+			wanted === 'modifier-states-roster-card' ||
+			wanted === 'modifier-states-roster-band' ||
+			wanted === 'modifier-states-roster-card-middle' ||
+			wanted === 'modifier-states-roster-card-two' ||
+			wanted === 'modifier-states-ring-end' ||
+			wanted === 'modifier-states-ring-end-off' ||
+			wanted === 'modifier-options' ||
+			POOL_GRANT_STATES.includes(wanted ?? '')
+			? (wanted as StateName)
 			: 'populated',
 	);
 	press('state', state);

@@ -33,6 +33,7 @@
 .sheetsmith-view .sheetsmith-rich-text-rendered,
 .sheetsmith-view .sheetsmith-record-body-rendered,
 .sheetsmith-view .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-state-door,
 .sheetsmith-view .sheetsmith-pool-modifier-button,
 .sheetsmith-view .sheetsmith-track-modifier-button {
 	--no-tooltip: false;
@@ -793,6 +794,21 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* **A dropdown a modifier chose an option for** (`docs/features/text-value-modifiers.md`
+   D9): the ceiling's own mark, a 2px dotted rule in `--text-muted` under the
+   chosen option, and never the underline, since the menu's press edits — the
+   Pool temp pill's ruling. Drawn wherever a Sets line is listed, applied or
+   refused, so it does not come and go with a tie, and kept while the menu is
+   focused, since the door is still what explains it. The negative margin hands
+   back the rule's 2px, so a card is the same height with a form on as off. A
+   border's style and width survive forced colors. At (0,3,0), past the
+   select's own `border: none`. */
+.sheetsmith-view .sheetsmith-card-select.sheetsmith-card-select-chosen {
+	border-bottom: 2px dotted var(--text-muted);
+	border-radius: 0;
+	margin-bottom: -2px;
+}
+
 /* The chevron, which is the whole of what says this value is a menu and not a
    field: with Obsidian's dropdown background taken off, a bare select is a
    piece of text.
@@ -917,6 +933,7 @@
 				.sheetsmith-sr-only,
 				.sheetsmith-card-note,
 				.sheetsmith-note-mark,
+				.sheetsmith-state-door,
 				.sheetsmith-in-play-mark
 			)
 	) {
@@ -2726,6 +2743,19 @@ body {
 	border-bottom: 2px dotted var(--text-muted);
 }
 
+/* **The same mark on the temporary points a grant raises**
+   (`docs/features/granted-temporary-points.md`), and not the underline: the
+   pill's press edits, so `cursor: help` would promise one it does not have. The
+   field's box is the app's fixed input height, so the rule is drawn inside it
+   and the pill is the same height with a grant on as off (`docs/UI.md` §9);
+   its 2px come out of the bottom padding, so the digits sit where they sat. At
+   (0,3,0), past the field's `border: none`; its focus rule takes it away while
+   the field is edited. Its width is the rule below's. */
+.sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-granted {
+	padding-bottom: max(0px, calc(var(--size-2-1) - 2px));
+	border-bottom: 2px dotted var(--text-muted);
+}
+
 /* A max the character owns, typed where it is read.
 
    It keeps the span's colour and size rather than taking the value's, because
@@ -3033,6 +3063,24 @@ body {
 .sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
 	--sheetsmith-pool-temp-width: calc(3ch + 2 * var(--size-2-2));
 	width: var(--sheetsmith-pool-temp-width);
+}
+
+/* **A granted field gives up the reach into the pill's padding**, so its border
+   runs under its own three digits rather than into the pill's rounded corner.
+   The field normally reaches into that padding by a negative margin to widen
+   its target; here the margin and the inline padding go together, and the
+   width loses the padding's two halves, so the margin box, and the pill, are
+   exactly as wide as before and the digits centre in the same three `ch`. A
+   press on the padding now lands on the pill, whose router hands it to the
+   field. Not `clip-path`, which the directory's browser-support check flags
+   (the sr-only rule above). At (0,4,0), past the width rule above, and level
+   with the refused rule, which it follows and so outweighs: a granted field
+   draws the effective number and never the refused text, so it has nothing to
+   widen for. */
+.sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-granted.sheetsmith-pool-temp-granted {
+	width: calc(var(--sheetsmith-pool-temp-width) - 2 * var(--size-2-2));
+	margin-inline: 0;
+	padding-inline: 0;
 }
 
 /* The pill wears the ring, so the field inside it wears nothing.
@@ -3889,7 +3937,8 @@ a.sheetsmith-notice-action {
    by selector rather than a copy of it, at its `--font-ui-smaller`. `grid-column`
    is inert on it: a pool card is a flex column, and its own rule stretches it. */
 .sheetsmith-view .sheetsmith-track-row-problem,
-.sheetsmith-view .sheetsmith-pool > .sheetsmith-error {
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-error,
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-pool-temp-notice {
 	grid-column: 1 / -1;
 	padding: 0 0 0 var(--size-2-2);
 	border: none;
@@ -3897,6 +3946,17 @@ a.sheetsmith-notice-action {
 	border-radius: 0;
 	font-size: var(--font-ui-smaller);
 	text-align: left;
+}
+
+/* The pill's notice (`docs/features/granted-temporary-points.md` D8): a commit
+   that was written left the pill drawing a grant over what was typed, so the
+   sentence takes the refusal's slot and shape and none of its alarm. Muted,
+   which measures 6.19:1 on a card, with the leading rule in the border colour,
+   since nothing is wrong. Spans the card as the refusal does. */
+.sheetsmith-view .sheetsmith-pool > .sheetsmith-pool-temp-notice {
+	align-self: stretch;
+	border-left-color: var(--background-modifier-border);
+	color: var(--text-muted);
 }
 
 /* The **Add** form, under whatever declared rows the picker still offers and
@@ -3991,7 +4051,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button,
 .sheetsmith-view .sheetsmith-track-modifier-button,
 .sheetsmith-view .sheetsmith-pool-modifier-button,
-.sheetsmith-view .sheetsmith-note-mark {
+.sheetsmith-view .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-state-door {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -4013,7 +4074,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button .svg-icon,
 .sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
 .sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
-.sheetsmith-view .sheetsmith-note-mark .svg-icon {
+.sheetsmith-view .sheetsmith-note-mark .svg-icon,
+.sheetsmith-view .sheetsmith-state-door .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
@@ -4021,7 +4083,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button:hover,
 .sheetsmith-view .sheetsmith-track-modifier-button:hover,
 .sheetsmith-view .sheetsmith-pool-modifier-button:hover,
-.sheetsmith-view .sheetsmith-note-mark:hover {
+.sheetsmith-view .sheetsmith-note-mark:hover,
+.sheetsmith-view .sheetsmith-state-door:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
@@ -4029,7 +4092,8 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-action-button:focus-visible,
 .sheetsmith-view .sheetsmith-track-modifier-button:focus-visible,
 .sheetsmith-view .sheetsmith-pool-modifier-button:focus-visible,
-.sheetsmith-view .sheetsmith-note-mark:focus-visible {
+.sheetsmith-view .sheetsmith-note-mark:focus-visible,
+.sheetsmith-view .sheetsmith-state-door:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
@@ -4052,7 +4116,8 @@ a.sheetsmith-notice-action {
    it, which is a smaller type rank than a picker's neighbours are. */
 .sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
 .sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
-.sheetsmith-view .sheetsmith-note-mark .svg-icon {
+.sheetsmith-view .sheetsmith-note-mark .svg-icon,
+.sheetsmith-view .sheetsmith-state-door .svg-icon {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
 }
@@ -4085,6 +4150,7 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-state-door,
 .sheetsmith-view .sheetsmith-pool-has-door > .sheetsmith-pool-modifier-button {
 	position: absolute;
 	/* One step in from the half-padding corner, so the focus ring's 2px offset
@@ -4112,7 +4178,6 @@ a.sheetsmith-notice-action {
 	}
 }
 
-.sheetsmith-view td > .sheetsmith-note-mark,
 .sheetsmith-view .sheetsmith-roster-band-inner > .sheetsmith-note-mark {
 	flex: 0 0 auto;
 	align-self: center;
@@ -4120,16 +4185,104 @@ a.sheetsmith-notice-action {
 	margin-inline-start: var(--size-2-1);
 }
 
-/* **Past a level ring, the gap is the ring's reach.**
-   `.sheetsmith-level-ring::after` reaches `--size-4-2` beyond the ring on each
-   side, in both pointer modes, so at the default gap a press on the mark's
-   first few pixels landed on the ring and changed the stored level. The mark
-   cannot grow over the ring, so the gap has to (`legibility.md` §5) — and only
-   that far: the mark's own target is its box, so there is no second reach to
-   clear, and the margin a reach-plus-4px gap added overflowed a Saves card at
-   the threshold width. */
-.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark {
-	margin-inline-start: var(--size-4-2);
+/* **In a table cell the door or mark sits at the cell's inline end, in a slot
+   the cell sets aside as padding** (`docs/features/table-row-end-room.md`).
+   One gap (`--size-2-1`) and one glyph box at the glyph's own size,
+   `--sheetsmith-inline-control` at `--font-ui-small`: the token's factor over
+   that size, since the token itself is `em` and would resolve at the cell's.
+   A note mark and a row's state door (`components/state-ring.ts`'s
+   `finishRowDoor`) are one box in one slot, and a cell in the same column
+   with neither holds the padding with nothing in it, stamped by
+   `reserveNoteSlots`, so the values, the doors and the marks each line up
+   down a column whatever the value is — a ring, a number or a `?`.
+
+   **The slot is padding, so no value moves it.** The value and its glyph were
+   one group centred in the cell, so the glyph followed the value's width, and
+   a `?` Total put its door 6px off its neighbours'. Now the value is centred
+   in what the padding leaves, and the glyph sits in the padding, one gap past
+   the content box (below). **One gap after anything**: the glyph is positioned and later in
+   the cell than a ring, so it stacks over the ring's 8px outward reach and a
+   press on its first pixel is the glyph's. The 8px gap a mark took after a
+   ring, and its empty slot's, existed only because the mark sat in flow
+   under that reach, and are gone.
+
+   **A foot cell takes the same room** (stamped whatever it holds), so the
+   column's total stays centred over its values rather than over values and
+   slot; a heading takes it where it fits (`sheetsmith-note-heading`, below). The name cell is never stamped, so the pinned
+   cell stays the one positioned by `sticky`. */
+:where(.sheetsmith-view) {
+	--sheetsmith-row-slot: calc(
+		var(--size-2-1) + var(--sheetsmith-inline-control-factor) * var(--font-ui-small)
+	);
+}
+
+.sheetsmith-view td.sheetsmith-note-column,
+.sheetsmith-view td.sheetsmith-table-has-note {
+	padding-inline-end: calc(var(--size-4-2) + var(--sheetsmith-row-slot));
+}
+
+/* **A heading takes the slot's room only where it fits, and never widens its
+   column for it.** The room is an empty box after the heading's words, its
+   width a percentage of the cell (`min()` with the slot), which counts for
+   nothing when the column's width is worked out. Where the words and the room
+   fit, the line centres both, so the words sit over the values, exactly where
+   the heading is no wider than its values. Where they do not fit, the line
+   starts at the cell's start: a heading wider than its values plus the slot
+   centres on its whole cell, half a slot off its values (11.4px at the
+   default size), and one between the two is shifted part of the way (PROF on
+   the ring-end Roster, 7.6px at Text 16). Exact everywhere would need the
+   column to grow by the slot wherever the heading is its widest content, or
+   to know which content is widest, a layout read on every render that
+   `docs/UI.md` §4 refused (`docs/features/table-row-end-room.md`, "Costs
+   taken").
+
+   **The heading clips what overflows it**, which is only ever that empty
+   room: where it does not fit it hangs past the cell, and in a table's last
+   column that made the table's scroller scroll by it, 14px at 520 on a table
+   that before this work scrolled 3px. The words themselves never overflow,
+   since the column is at least as wide as they are. */
+.sheetsmith-view th.sheetsmith-note-heading {
+	overflow: hidden;
+}
+
+.sheetsmith-view th.sheetsmith-note-heading::after {
+	content: '';
+	display: inline-block;
+	margin-inline-start: min(var(--sheetsmith-row-slot), 100%);
+}
+
+/* **The value fills the cell's content box, and the glyph overflows it into
+   the slot.** A number takes the content box's whole width, its text centred
+   in it; a ring takes margins that centre it in that width (percentage
+   margins are of the content box; floored at 0, since a percentage counts as
+   0 when the column's width is worked out and the bare difference would then
+   be negative, handing back the ring's whole width so the ring counted as
+   no width at all). So the glyph after either, in flow with a margin
+   that hands its own room back, starts one gap past the content box's end
+   whatever the value's width, and keeps its line: the number's baseline,
+   `vertical-align: middle` and the raise below, which an out-of-flow glyph
+   cannot keep (a static block position is the line's top, not its middle,
+   and nothing in CSS measures a font's ascent to correct it). Positioned, so
+   it stacks over a ring's outward reach and a press on its first pixel is
+   the glyph's. A field keeps its own fixed width and centring, and a glyph
+   after it sits a gap past it: a column of fields reserves nothing, so there
+   is no empty slot it has to meet. */
+.sheetsmith-view td > .sheetsmith-note-mark,
+.sheetsmith-view td > .sheetsmith-state-door {
+	position: relative;
+	vertical-align: middle;
+	margin-inline: var(--size-2-1) calc(-1 * var(--sheetsmith-row-slot));
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-view td.sheetsmith-note-column > .sheetsmith-table-value,
+.sheetsmith-view td.sheetsmith-table-has-note > .sheetsmith-table-value {
+	width: 100%;
+}
+
+.sheetsmith-view td.sheetsmith-note-column > .sheetsmith-level-ring,
+.sheetsmith-view td.sheetsmith-table-has-note > .sheetsmith-level-ring {
+	margin-inline: max(0px, (100% - var(--sheetsmith-inline-control, 1.6em)) / 2);
 }
 
 /* **And the width the mark costs comes out of the name column.** A ring, its
@@ -4151,23 +4304,16 @@ a.sheetsmith-notice-action {
 	white-space: nowrap;
 }
 
-/* **A noted column reserves the mark's slot in every cell, not only the noted
-   ones** (`docs/features/modifier-notes.md`). Cells are centred, so a mark
-   beside one number pushed that number off its column by half the mark's
-   width — a noted Constitution ring sat 15px left of Dexterity's. The render
-   marks the column (`reserveNoteSlots`), and a cell in it with no mark draws an
-   empty box the mark's size and gap after its value, so every cell's content
-   is the same shape and the values line up. Built from the mark's own
-   measurements: its box, its font size (which its `em` is of) and the gap it
-   takes after a number or after a ring. Body and foot cells only: a column's
-   heading is centred over the cell and reserving there would widen a narrow
-   ring column to its word's width plus a mark. Only a column holding a mark is
-   touched, so a table with no notes is exactly as it was. */
+/* **A noted band reserves the mark's slot in every band head**
+   (`docs/features/modifier-notes.md`): a band head's line is a flex line
+   rather than a column, so its empty slot is a box the mark's size and gap
+   after its reading, and a centred reading lines up with a noted one. A
+   table's cells take theirs as padding instead (above). The mark's size is
+   its own `--font-ui-small`, which its `em` is of, wherever it is drawn. */
 .sheetsmith-view .sheetsmith-note-mark {
 	font-size: var(--font-ui-small);
 }
 
-.sheetsmith-view td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after,
 .sheetsmith-view
 	.sheetsmith-note-bands
 	.sheetsmith-roster-band-inner:not(.sheetsmith-roster-band-has-note)::after {
@@ -4177,10 +4323,6 @@ a.sheetsmith-notice-action {
 	width: var(--sheetsmith-inline-control, 1.6em);
 	font-size: var(--font-ui-small);
 	margin-inline-start: var(--size-2-1);
-}
-
-.sheetsmith-view td.sheetsmith-note-column.sheetsmith-table-level:not(.sheetsmith-table-has-note)::after {
-	margin-inline-start: var(--size-4-2);
 }
 
 .sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-level-ring,
@@ -4231,7 +4373,8 @@ a.sheetsmith-notice-action {
    block margins of half its height give it a margin box of no height at the
    point it is centred on: the box, its hit target and its glyph are where they
    were, and the line is the number's alone. */
-.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-state-door {
 	margin-block: calc(-0.5 * var(--sheetsmith-inline-control, 1.6em));
 }
 
@@ -4248,8 +4391,8 @@ a.sheetsmith-notice-action {
 		--sheetsmith-note-ex: 1ex;
 	}
 
-	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
-		position: relative;
+	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark,
+	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-state-door {
 		top: calc((var(--sheetsmith-note-ex) - var(--sheetsmith-note-cap)) / 2);
 	}
 }
@@ -8597,6 +8740,24 @@ a.sheetsmith-notice-action {
 .sheetsmith-roster-cards {
 	--sheetsmith-card-min: 12rem;
 }
+
+/* **A strip the layout can set a level or flag in keeps a wider floor at
+   larger text** (`STATE_STRIP_CLASS`, `components/state-ring.ts`,
+   `docs/features/non-number-modifiers.md`). A row's door sits at its end, in
+   the note mark's slot, so in a card whose Total column already reserves that
+   slot it costs nothing; where it does not, the slot is new. Measured on
+   `modifier-states-roster-card` with its note taken out, the narrowest door
+   card at 12rem fits at Text default and scrolls sideways by 9px at 20 and
+   32px at 24. The door is fixed px and the rest of the card grows with the
+   sheet's `em`, so the need is a fixed part plus a part in `em`: 120px plus
+   5.75em is 212px at 16, 235px at 20 and 258px at 24 — under the 221px the
+   card has at default, so two cards still share a line there, and over its
+   need at 20 and 24, so each takes a line of its own. **Stamped from the
+   layout, not from a drawn door**, so the cards keep one width as a form comes
+   and goes. A strip no layout change reaches keeps the floor it had. */
+.sheetsmith-roster-cards.sheetsmith-roster-cards-stateful {
+	--sheetsmith-card-min: max(12rem, calc(120px + 5.75em));
+}
 .sheetsmith-roster-card-table {
 	/* `.sheetsmith-card` centres and shrink-wraps its children; a table needs
 	   the card's own width back and its own left-set text, or a row of
@@ -8682,6 +8843,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-track-modifier-button.sheetsmith-track-modifier-button,
 .sheetsmith-view .sheetsmith-pool-modifier-button.sheetsmith-pool-modifier-button,
 .sheetsmith-view .sheetsmith-note-mark.sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-state-door.sheetsmith-state-door,
 .sheetsmith-view .sheetsmith-passport-part-remove.sheetsmith-passport-part-remove,
 .sheetsmith-view .sheetsmith-passport-add.sheetsmith-passport-add,
 .sheetsmith-view .sheetsmith-record-group-toggle.sheetsmith-record-group-toggle,
@@ -10145,6 +10307,19 @@ a.sheetsmith-notice-action {
    `styles.test.ts` holds the list and these rules to each other. */
 :where(.sheetsmith-view) {
 	--sheetsmith-tint: var(--interactive-accent);
+	/* The width a table row's tag lane sets aside, and the most a row's tag
+	   draws: 12ch of the tag's own `--font-ui-smaller`, its whole box, which
+	   is the cap a tag already clipped at (90.7px at 12px). In px tokens and
+	   not `ch`, because the lane is cell padding and `ch` there would be the
+	   cell's font (`docs/features/table-row-end-room.md`, "The lane's
+	   width"). One token for both, so a theme moving the tag's size moves the
+	   lane with it. */
+	--sheetsmith-tag-lane: calc(7.56 * var(--font-ui-smaller));
+	/* The gap before that lane, wider than the gap a ring's door keeps from
+	   its ring in a column no heading widens (9.6px at the default size,
+	   17.7px at Text 24, on a Roster), so a row's door reads as its value's
+	   and not as the tag's own button. */
+	--sheetsmith-tag-gap: var(--size-4-5);
 }
 
 .sheetsmith-view [data-sheetsmith-tint='accent'] {
@@ -10541,8 +10716,8 @@ a.sheetsmith-notice-action {
    accent, its words are the only thing saying which forms it means, and at
    12ch *Brown Bear, Wolf* read *Brown Bear, …*. It stays clear of content by
    geometry whatever its width, since only the bottom padding is inside the box.
-   Not on a row, where it is laid over the name cell and a wider tag would cover
-   the name the row is read by; the reveal answers a clipped one there. */
+   Not on a row, whose tag clips at the lane its table sets aside, a width
+   every row of the table shares; the reveal answers a clipped one there. */
 .sheetsmith-view
 	.sheetsmith-in-play-mark.sheetsmith-in-play-mark-several:not(.sheetsmith-in-play-mark-inline)[aria-hidden='true'] {
 	max-width: calc(100% - 2 * var(--size-4-2));
@@ -10572,19 +10747,62 @@ a.sheetsmith-notice-action {
 }
 
 /* **A row has no free corner**: its start holds the name (and a ring, where
-   the table has one), its end the value. So on a row the pill rides the name
-   cell's inline end, centred on the row, in the slack between the name and the
-   numbers that the name cell takes by design — over the cell, still taking no
-   room. The pinned name cell is `position: sticky`, so it is the pill's
-   containing block already. */
+   the table has one), its end the value. So on a row the pill rides one line,
+   centred on the row: in the lane its table sets aside at the row's end
+   (below), or on a band head's tag line. Where neither applies — a row with
+   no value cell — it falls back to the name cell's inline end, which is
+   `position: sticky` and so the pill's containing block already. */
 .sheetsmith-view .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
-	/* A row's tag is centred over its name cell, so it hangs into no gap and
-	   takes the same room for its 2px edge a card's makes. */
+	/* A row's tag is centred on its line, so it hangs into no gap and takes
+	   the same room for its 2px edge a card's makes. */
 	--sheetsmith-in-play-mark-room: var(--size-2-1);
 	inset-block-start: 50%;
 	inset-block-end: auto;
 	inset-inline-end: var(--size-2-2);
 	transform: translateY(-50%);
+}
+
+/* **On a Table's or a Roster table's row the tag sits in a lane at the row's
+   end** (`docs/features/table-row-end-room.md`): after the value and its
+   slot, `--sheetsmith-tag-gap` and `--sheetsmith-tag-lane` set aside as the end cell's
+   padding, on every row of a table holding such a tag — head and foot
+   included, so the end column's heading and total stay over its values — and
+   on none while no form is in play. `placement-decorations.ts` stamps the
+   table (`sheetsmith-in-play-lane`) only where the tag's host is a row-end
+   cell, so a band head's tag, which rides its own line, sets no lane aside.
+   The slot keeps its place, since the lane comes after it: no door or mark
+   moves relative to its value when a form turns on. */
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > .sheetsmith-row-end {
+	padding-inline-end: calc(var(--size-4-2) + var(--sheetsmith-tag-gap) + var(--sheetsmith-tag-lane));
+}
+
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > .sheetsmith-row-end.sheetsmith-note-column,
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > .sheetsmith-row-end.sheetsmith-table-has-note {
+	padding-inline-end: calc(
+		var(--size-4-2) + var(--sheetsmith-row-slot) + var(--sheetsmith-tag-gap) + var(--sheetsmith-tag-lane)
+	);
+}
+
+/* **A band head's line ends where the values do**, short of the lane: the
+   band spans every column, so with the lane set aside its score and reading
+   would end over the lane, past what a narrow table shows, where with the
+   form off they end over the value columns. Padding on top of the line's own
+   `--size-4-1`, not a margin, so its hairline still runs the band's width. */
+.sheetsmith-view .sheetsmith-in-play-lane > * > tr > td > .sheetsmith-roster-band-inner {
+	padding-inline-end: calc(var(--size-4-1) + var(--sheetsmith-tag-gap) + var(--sheetsmith-tag-lane));
+}
+
+/* The tag at the lane's inline start, clipped at the lane, its ellipsis and
+   the reveal answering a longer name. Under the pinned name cell rather than
+   over it, which a `z-index` would put it, since on a table that scrolls
+   sideways the end cell passes under the name. */
+.sheetsmith-view
+	.sheetsmith-row-end
+	> .sheetsmith-in-play-mark.sheetsmith-in-play-mark-inline[aria-hidden='true'] {
+	inset-inline-start: calc(100% - var(--size-4-2) - var(--sheetsmith-tag-lane));
+	inset-inline-end: auto;
+	z-index: auto;
+	max-width: var(--sheetsmith-tag-lane);
 }
 
 /* **On a Roster's band head the tag rides the reading's line at its inline

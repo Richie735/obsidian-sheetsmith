@@ -213,3 +213,498 @@ describe('the operator a typed effect offers', () => {
 		body.remove();
 	});
 });
+
+describe('a change that sets a level or a flag (docs/features/non-number-modifiers.md)', () => {
+	const TRAINING = {
+		flag: false,
+		positions: 3,
+		words: ['Untrained', 'Proficient', 'Expertise'],
+		label: 'Training',
+	};
+	const STATES = [
+		{ name: 'abilities.stealth', column: 'Training', label: 'Abilities · stealth · Training', shape: TRAINING },
+		{
+			name: 'inspiration',
+			label: 'Inspiration',
+			shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' },
+		},
+	];
+
+	it('offers Levels and flags between the two groups, and a value\'s own state there alone', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(
+			select,
+			[...ACCEPTING, { name: 'inspiration', label: 'Inspiration' }],
+			NOTABLE,
+			STATES,
+		);
+		expect(
+			Array.from(select.querySelectorAll('optgroup')).map((group) => [
+				group.label,
+				Array.from(group.querySelectorAll('option')).map((one) => one.textContent),
+			]),
+		).toEqual([
+			['Takes modifiers', ['Armour class', 'Abilities · STR']],
+			['Levels and flags', ['Abilities · stealth · Training', 'Inspiration']],
+			['Notes only', ['Passive perception']],
+		]);
+	});
+
+	it('draws the existing groups unchanged where the layout has no states', () => {
+		const plain = document.createElement('select');
+		fillTargetOptions(plain, ACCEPTING, NOTABLE);
+		const empty = document.createElement('select');
+		fillTargetOptions(empty, ACCEPTING, NOTABLE, []);
+		expect(empty.innerHTML).toBe(plain.innerHTML);
+	});
+
+	/** The form open on one typed part aimed at Stealth's Training. */
+	function form(part = 'abilities.stealth >= 1 in Training', announced: string[] = [], written: string[][] = []) {
+		const body = document.body.createDiv();
+		const state = modifierFormState([part]);
+		state.open = 0;
+		const options: ModifierFormOptions = {
+			label: 'Cat Form',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({
+					typed: {
+						target: 'abilities.stealth',
+						column: 'Training',
+						operator: part.includes('+=') ? 'add' : 'upgrade',
+						amount: '1',
+					},
+					target: 'abilities.stealth',
+					targetLabel: 'Abilities · stealth · Training',
+					applies: true,
+					amount: 1,
+					state: TRAINING,
+				}),
+			],
+			definitions: [],
+			targets: ACCEPTING,
+			published: ACCEPTING,
+			states: STATES,
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		};
+		renderModifierForm(body, state, options);
+		return body;
+	}
+
+	/** The control under one field label. */
+	const control = (body: HTMLElement, label: string) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-field'))
+			.find((field) => field.querySelector('.sheetsmith-panel-field-label')?.textContent === label)
+			?.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | undefined;
+
+	it('shows the state chosen, Sets and At least only, no bonus type or phase, and the legend', () => {
+		const body = form();
+		const value = control(body, 'Value') as HTMLSelectElement;
+		expect(value.selectedOptions[0]?.textContent).toBe('Abilities · stealth · Training');
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['Sets', 'At least']);
+		expect(control(body, 'Bonus type')).toBeUndefined();
+		expect(control(body, 'Applies to')).toBeUndefined();
+		expect(body.querySelector('.sheetsmith-panel-legend')?.textContent).toBe(
+			'0 Untrained · 1 Proficient · 2 Expertise',
+		);
+	});
+
+	it('carries a stray column as written, never as the plain value it is not', () => {
+		const body = document.body.createDiv();
+		const part = 'abilities.stealth >= 1 in Trainig';
+		const state = modifierFormState([part]);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Cat Form',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'abilities.stealth', column: 'Trainig', operator: 'upgrade', amount: '1' },
+					target: 'abilities.stealth',
+					targetLabel: 'Abilities · stealth · Trainig',
+					suppressed: 'Abilities · stealth has no level or flag called "Trainig".',
+				}),
+			],
+			definitions: [],
+			targets: [{ name: 'abilities.stealth', label: 'Abilities · stealth' }],
+			published: [{ name: 'abilities.stealth', label: 'Abilities · stealth' }],
+			states: STATES,
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: () => undefined,
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: () => undefined,
+			onResize: () => undefined,
+		});
+		const value = control(body, 'Value') as HTMLSelectElement;
+		expect(value.selectedOptions[0]?.textContent).toBe('Abilities · stealth · Trainig');
+	});
+
+	it('says why an Adds to at a state does nothing, in the sentence every surface shows', () => {
+		const body = form('abilities.stealth += 1 in Training');
+		expect(
+			Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).map((one) => one.textContent),
+		).toContain('Adds to cannot change a level or a flag. Choose Sets or At least.');
+	});
+
+	it('switches an Adds to onto a state to Sets, says so, and writes the column clause', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = document.body.createDiv();
+		const state = modifierFormState(['armour_class += 2']);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Ring',
+			parts: ['armour_class += 2'],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'armour_class', operator: 'add', amount: '2' },
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					applies: true,
+					amount: 2,
+				}),
+			],
+			definitions: [],
+			targets: ACCEPTING,
+			published: ACCEPTING,
+			states: STATES,
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		const value = control(body, 'Value') as HTMLSelectElement;
+		const option = Array.from(value.options).find((one) => one.textContent === 'Abilities · stealth · Training');
+		value.value = option?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(announced).toContain('Operator Sets');
+		expect(written).toEqual([['abilities.stealth = 2 in Training']]);
+	});
+
+	/** A form whose Value select offers a column no cell could spell. */
+	const unspellableColumnForm = (announced: string[], written: string[][]) => {
+		const body = document.body.createDiv();
+		const state = modifierFormState(['inspiration = true']);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Ring',
+			parts: ['inspiration = true'],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'inspiration', operator: 'override', amount: 'true' },
+					target: 'inspiration',
+					targetLabel: 'Inspiration',
+					applies: true,
+					amount: 1,
+				}),
+			],
+			definitions: [],
+			targets: [],
+			published: [],
+			states: [
+				...STATES,
+				{ name: 'skills.stealth', column: 'Skill in hand', label: 'Skills · stealth · Skill in hand', shape: TRAINING },
+			],
+			bonusTypes: [],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		return body;
+	};
+	const pick = (body: HTMLElement, label: string) => {
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = Array.from(value.options).find((one) => one.textContent === label)?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+	};
+	const COLUMN_REFUSAL =
+		'"Skill in hand" cannot be set from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.';
+	const columnRefusals = (body: HTMLElement) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).filter((one) => one.textContent === COLUMN_REFUSAL);
+
+	it('refuses a column a cell could not spell, at the pick', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = unspellableColumnForm(announced, written);
+		pick(body, 'Skills · stealth · Skill in hand');
+		expect(announced).toContain(COLUMN_REFUSAL);
+		expect(body.textContent).toContain(COLUMN_REFUSAL);
+		expect(written).toEqual([]);
+		body.remove();
+	});
+
+	it('replaces the column refusal on a second refused pick rather than stacking it', () => {
+		const body = unspellableColumnForm([], []);
+		pick(body, 'Skills · stealth · Skill in hand');
+		pick(body, 'Skills · stealth · Skill in hand');
+		expect(columnRefusals(body)).toHaveLength(1);
+		body.remove();
+	});
+
+	it('clears the column refusal when the next pick is one a cell can spell', () => {
+		const written: string[][] = [];
+		const body = unspellableColumnForm([], written);
+		pick(body, 'Skills · stealth · Skill in hand');
+		expect(columnRefusals(body)).toHaveLength(1);
+		pick(body, 'Abilities · stealth · Training');
+		expect(written).toEqual([['abilities.stealth = true in Training']]);
+		expect(columnRefusals(body)).toHaveLength(0);
+		body.remove();
+	});
+});
+
+describe('a change that grants temporary points (docs/features/granted-temporary-points.md)', () => {
+	const BUFFERS = [{ name: 'hp.temp', label: 'HP · temp', called: 'HP' }];
+	const ACCEPT = [{ name: 'armour_class', label: 'Armour class' }];
+
+	it('offers Temporary points after the levels and flags and before the notes', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(
+			select,
+			ACCEPT,
+			[{ name: 'passive', label: 'Passive perception' }],
+			[{ name: 'inspiration', label: 'Inspiration', shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' } }],
+			BUFFERS,
+		);
+		expect(Array.from(select.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+			'Takes modifiers',
+			'Levels and flags',
+			'Temporary points',
+			'Notes only',
+		]);
+		expect(select.querySelector('optgroup[label="Temporary points"] option')?.textContent).toBe('HP · temp');
+	});
+
+	it('draws today’s list where the layout has no buffer', () => {
+		const plain = document.createElement('select');
+		fillTargetOptions(plain, ACCEPT, []);
+		const none = document.createElement('select');
+		fillTargetOptions(none, ACCEPT, [], [], []);
+		expect(none.innerHTML).toBe(plain.innerHTML);
+	});
+
+	function form(part: string, announced: string[] = [], written: string[][] = []) {
+		const body = document.body.createDiv();
+		const state = modifierFormState([part]);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Ring of Vitality',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({
+					typed: {
+						target: part.startsWith('hp.temp') ? 'hp.temp' : 'armour_class',
+						operator: part.includes('+=') ? 'add' : part.includes('>=') ? 'upgrade' : 'override',
+						amount: '5',
+					},
+					target: part.startsWith('hp.temp') ? 'hp.temp' : 'armour_class',
+					targetLabel: part.startsWith('hp.temp') ? 'HP · temp' : 'Armour class',
+					applies: true,
+					amount: 5,
+				}),
+			],
+			definitions: [],
+			targets: ACCEPT,
+			published: [...ACCEPT, { name: 'hp.temp', label: 'HP · temp' }],
+			buffers: BUFFERS,
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		return body;
+	}
+
+	const control = (body: HTMLElement, label: string) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-field'))
+			.find((one) => one.querySelector('.sheetsmith-panel-field-label')?.textContent === label)
+			?.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | undefined;
+
+	it('offers At least only, no bonus type or phase, and the legend', () => {
+		const body = form('hp.temp >= 5');
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['At least']);
+		expect(control(body, 'Bonus type')).toBeUndefined();
+		expect(control(body, 'Applies to')).toBeUndefined();
+		expect(body.querySelector('.sheetsmith-panel-legend')?.textContent).toBe(
+			'Whole points. The highest grant, or the pool\'s own, applies.',
+		);
+		body.remove();
+	});
+
+	it('keeps a stored Adds to in the list and says why it grants nothing', () => {
+		const body = form('hp.temp += 5');
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['At least', 'Adds to']);
+		expect(Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).map((one) => one.textContent)).toContain(
+			'Temporary points do not add up, so only the highest grant applies. Choose At least.',
+		);
+		body.remove();
+	});
+
+	it('switches a change moved onto a buffer to At least, and says so', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = form('armour_class += 5', announced, written);
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = 'hp.temp';
+		value.dispatchEvent(new Event('change'));
+		expect(announced).toContain('Operator At least');
+		expect(written).toEqual([['hp.temp >= 5']]);
+		body.remove();
+	});
+});
+
+describe('a change that chooses a dropdown\'s option (docs/features/text-value-modifiers.md)', () => {
+	const SIZE = {
+		name: 'size',
+		label: 'Size',
+		shape: {
+			label: 'Size',
+			options: ['Small', 'Medium', 'Large'].map((value) => ({ value, label: value })).concat([
+				{ value: 'Size in feet', label: 'Feet' },
+			]),
+		},
+	};
+	const ACCEPT = [
+		{ name: 'armour_class', label: 'Armour class' },
+		{ name: 'size', label: 'Size' },
+	];
+
+	it('offers Dropdowns before the notes, keeping a dropdown that reads its slot under Takes modifiers', () => {
+		const select = document.createElement('select');
+		fillTargetOptions(select, ACCEPT, [{ name: 'passive', label: 'Passive perception' }], [], [], [SIZE]);
+		expect(Array.from(select.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+			'Takes modifiers',
+			'Dropdowns',
+			'Notes only',
+		]);
+		expect(select.querySelector('optgroup[label="Takes modifiers"]')?.textContent).toContain('Size');
+		expect(select.querySelector('optgroup[label="Dropdowns"] option')?.textContent).toBe('Size');
+	});
+
+	it('draws today\'s list where the layout has no dropdown', () => {
+		const plain = document.createElement('select');
+		fillTargetOptions(plain, ACCEPT, []);
+		const none = document.createElement('select');
+		fillTargetOptions(none, ACCEPT, [], [], [], []);
+		expect(none.innerHTML).toBe(plain.innerHTML);
+	});
+
+	function form(effect: { target: string; operator: 'add' | 'override' | 'upgrade'; amount: string; option?: string }, announced: string[] = [], written: string[][] = []) {
+		const body = document.body.createDiv();
+		const part = 'part';
+		const state = modifierFormState([part]);
+		state.open = 0;
+		renderModifierForm(body, state, {
+			label: 'Brown bear',
+			parts: [part],
+			outcomes: () => [
+				outcomeView({ typed: effect, target: effect.target, targetLabel: effect.target === 'size' ? 'Size' : 'Armour class', applies: true }),
+			],
+			definitions: [],
+			targets: ACCEPT,
+			published: ACCEPT,
+			choices: [SIZE],
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: (parts) => written.push([...parts]),
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: (said) => announced.push(said),
+			onResize: () => undefined,
+		});
+		return body;
+	}
+
+	const control = (body: HTMLElement, label: string) =>
+		Array.from(body.querySelectorAll('.sheetsmith-panel-field'))
+			.find((one) => one.querySelector('.sheetsmith-panel-field-label')?.textContent === label)
+			?.querySelector('select, input') as HTMLSelectElement | HTMLInputElement | undefined;
+
+	it('offers Sets only, hides bonus type and phase, and puts Option in the amount\'s place', () => {
+		const body = form({ target: 'size', operator: 'override', amount: '', option: 'Large' });
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['Sets']);
+		expect(control(body, 'Bonus type')).toBeUndefined();
+		expect(control(body, 'Applies to')).toBeUndefined();
+		expect(control(body, 'Amount')).toBeUndefined();
+		const picker = control(body, 'Option') as HTMLSelectElement;
+		expect(Array.from(picker.options).map((one) => one.textContent)).toEqual(['—', 'Small', 'Medium', 'Large', 'Feet']);
+		expect(picker.value).toBe('Large');
+		body.remove();
+	});
+
+	it('draws a literal naming no option as a stray last line', () => {
+		const body = form({ target: 'size', operator: 'override', amount: '', option: 'Huge' });
+		const picker = control(body, 'Option') as HTMLSelectElement;
+		const last = picker.options[picker.options.length - 1];
+		expect(last?.textContent).toBe('Huge');
+		expect(last?.title).toBe("Not one of this dropdown's options. The change keeps it until something else is chosen.");
+		expect(picker.value).toBe('Huge');
+		body.remove();
+	});
+
+	it('keeps a stored Adds to in the list and says why it chooses nothing', () => {
+		const body = form({ target: 'size', operator: 'add', amount: '', option: 'Large' });
+		const operator = control(body, 'Operator') as HTMLSelectElement;
+		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual(['Sets', 'Adds to']);
+		expect(body.textContent).toContain('Adds to cannot choose an option. Choose Sets.');
+		body.remove();
+	});
+
+	it('moves a change onto a dropdown as a Sets with no option yet, and says so', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = form({ target: 'armour_class', operator: 'add', amount: '2' }, announced, written);
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = Array.from(value.options).find((one) => one.parentElement?.getAttribute('label') === 'Dropdowns')?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(announced).toContain('Operator Sets');
+		expect(written).toEqual([['size = option:']]);
+		body.remove();
+	});
+
+	it('writes the chosen option, and refuses a value a cell could not spell', () => {
+		const announced: string[] = [];
+		const written: string[][] = [];
+		const body = form({ target: 'size', operator: 'override', amount: '', option: '' }, announced, written);
+		const picker = control(body, 'Option') as HTMLSelectElement;
+		picker.value = 'Large';
+		picker.dispatchEvent(new Event('change'));
+		expect(written).toEqual([['size = option: Large']]);
+		picker.value = 'Size in feet';
+		picker.dispatchEvent(new Event('change'));
+		const refusal =
+			'"Size in feet" cannot be chosen from a row\'s own modifier, because a cell spells that word as a clause. Name the change in a modifier definition instead.';
+		expect(announced).toContain(refusal);
+		expect(written).toHaveLength(1);
+		// A second refused pick replaces the sentence rather than stacking it.
+		picker.value = 'Size in feet';
+		picker.dispatchEvent(new Event('change'));
+		expect(Array.from(body.querySelectorAll('.sheetsmith-panel-problem')).filter((one) => one.textContent === refusal)).toHaveLength(1);
+		body.remove();
+	});
+
+	it('moves a change off a dropdown without its option', () => {
+		const written: string[][] = [];
+		const body = form({ target: 'size', operator: 'override', amount: '', option: 'Large' }, [], written);
+		const value = control(body, 'Value') as HTMLSelectElement;
+		value.value = 'armour_class';
+		value.dispatchEvent(new Event('change'));
+		expect(written).toEqual([['armour_class =']]);
+		body.remove();
+	});
+});

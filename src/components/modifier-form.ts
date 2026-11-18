@@ -10,12 +10,15 @@
  * is this file, which knows what a modifier is and nothing about vaults, files or
  * placement.
  *
- * **It knows the *shape* of a modifier and none of its meaning.** The five slots
+ * **It knows the *shape* of a modifier and none of its meaning.** The six slots
+ * — value, column, operator, amount, bonus type, condition, besides the note —
  * are here because the form writes them; the parse and the spelling are
  * `parse/modifier-cell.ts`'s, the resolution is `formula/`'s, the labels and the
  * option lists arrive as arguments — except the **Value** groups, below, which are
- * this file's own. Nothing here decides what an operator does or
- * what a bonus type means arithmetically.
+ * this file's own. Nothing here decides what a bonus type means arithmetically,
+ * and which operators a level or a flag takes, and what an Adds to becomes when
+ * moved onto one, are `formula/modifier-states.ts`'s rules, read here
+ * (`docs/features/non-number-modifiers.md`).
  *
  * **It imports nothing from `obsidian`** — not even `setIcon`, which arrives as a
  * callback. The component layer's allowlist is one name long and the config says
@@ -82,9 +85,11 @@ import {
 	ModifierOutcome,
 	ModifierTarget,
 	operatorOf,
-	OPERATORS,
 	phaseOf,
 	PromoteResult,
+	StateTarget,
+	BufferTarget,
+	ChoiceTarget,
 	TypedEffect,
 } from '../types';
 import { bindEditable } from '../interaction/editable';
@@ -98,17 +103,31 @@ import { armedName, armedPrompt } from '../interaction/arm-to-confirm';
 import {
 	isNoteOnly,
 	spellTypedEffect,
+	unspellableColumn,
 	unspellableName,
 	unspellableNote,
+	unspellableOption,
 	withoutPart,
 } from '../parse/modifier-cell';
 import {
 	modifierOutcomeText,
 	applying,
 	modifierPartName,
+	positionLegend,
 } from './modifier-breakdown';
 import { element } from '../ui/element';
-import { OPERATOR_LABELS } from '../en';
+import { OPERATOR_LABELS, TEXT } from '../en';
+import {
+	addressOf,
+	operatorOnto,
+	operatorsAt,
+	shapesOf,
+	STATE_REFUSES_ADD,
+} from '../formula/modifier-states';
+import { aimsAtBuffer, BUFFER_TAKES_AT_LEAST } from '../formula/modifier-buffers';
+import { choiceOperatorFault, namesOption } from '../formula/modifier-choices';
+
+
 
 /** The one option that is not a definition: the row spells its own effect. */
 const TYPED_OPTION = 'sheetsmith-typed';
@@ -200,6 +219,22 @@ export interface ModifierFormOptions {
 	 * Absent offers none, which is a form drawn with no sheet around it.
 	 */
 	noteTargets?: readonly ModifierTarget[];
+	/**
+	 * The levels and flags a change may set, for **Value**'s **Levels and
+	 * flags** group (`docs/features/non-number-modifiers.md`). Absent offers none.
+	 */
+	states?: readonly StateTarget[];
+	/**
+	 * The buffers a grant may raise, for **Value**'s **Temporary points** group
+	 * (`docs/features/granted-temporary-points.md`). Absent offers none.
+	 */
+	buffers?: readonly BufferTarget[];
+	/**
+	 * The dropdowns a change may choose an option of, for **Value**'s
+	 * **Dropdowns** group (`docs/features/text-value-modifiers.md`). Absent
+	 * offers none.
+	 */
+	choices?: readonly ChoiceTarget[];
 	bonusTypes: readonly string[];
 	/**
 	 * Paint a Lucide icon into an element.
@@ -252,25 +287,140 @@ export function fillTargetOptions(
 	select: HTMLSelectElement,
 	accepting: readonly ModifierTarget[],
 	notable: readonly ModifierTarget[],
+	/**
+	 * The levels and flags a change may set, offered as a third group between
+	 * the two (`docs/features/non-number-modifiers.md`). A name whose own value
+	 * is a state is offered there alone, since it has one meaning and so one
+	 * option. Absent or empty, the list is the one it always was.
+	 */
+	states: readonly StateTarget[] = [],
+	/**
+	 * The buffers a grant may raise, offered as a fourth group after the levels
+	 * and flags (`docs/features/granted-temporary-points.md`). A buffer is
+	 * offered there alone, since a grant is the one thing a change does to it.
+	 */
+	buffers: readonly BufferTarget[] = [],
+	/**
+	 * The dropdowns a change may choose an option of, offered as their own
+	 * group before **Notes only** (`docs/features/text-value-modifiers.md`). A
+	 * dropdown whose derived reads its slot stays under **Takes modifiers** too,
+	 * since a change with an amount and one with an option are two addresses
+	 * (D1), and the group heading is what tells them apart.
+	 */
+	choices: readonly ChoiceTarget[] = [],
 ): void {
-	const taken = new Set(accepting.map((target) => target.name));
+	const own = new Set([
+		...states.filter((state) => state.column === undefined).map((state) => state.name),
+		...buffers.map((buffer) => buffer.name),
+	]);
+	const arithmetic = accepting.filter((target) => !own.has(target.name));
+	const taken = new Set([...arithmetic.map((target) => target.name), ...own]);
 	const notesOnly = notable.filter((target) => !taken.has(target.name));
-	if (notesOnly.length === 0) {
-		for (const target of accepting) option(select, target.name, target.label);
+	if (notesOnly.length === 0 && states.length === 0 && buffers.length === 0 && choices.length === 0) {
+		for (const target of arithmetic) option(select, target.name, target.label);
 		return;
 	}
-	const groups: [string, readonly ModifierTarget[]][] = [
-		['Takes modifiers', accepting],
-		['Notes only', notesOnly],
+	const groups: [string, readonly { value: string; label: string }[]][] = [
+		['Takes modifiers', arithmetic.map((target) => ({ value: target.name, label: target.label }))],
+		[
+			'Levels and flags',
+			states.map((state) => ({
+				value: stateOptionValue(state.name, state.column ?? null),
+				label: state.label,
+			})),
+		],
+		['Temporary points', buffers.map((buffer) => ({ value: buffer.name, label: buffer.label }))],
+		['Dropdowns', choices.map((choice) => ({ value: choiceOptionValue(choice.name), label: choice.label }))],
+		['Notes only', notesOnly.map((target) => ({ value: target.name, label: target.label }))],
 	];
 	for (const [label, members] of groups) {
 		if (members.length === 0) continue;
 		const group = select.createEl('optgroup');
 		group.label = label;
-		for (const target of members) {
-			group.createEl('option', { value: target.name, text: target.label });
+		for (const member of members) {
+			group.createEl('option', { value: member.value, text: member.label });
 		}
 	}
+}
+
+/** Said of the one **Option** line the dropdown did not put there. */
+const STRAY_OPTION_TITLE =
+	"Not one of this dropdown's options. The change keeps it until something else is chosen.";
+
+/**
+ * Fill an **Option** select for a change choosing a dropdown's option
+ * (`docs/features/text-value-modifiers.md`): `—` first for an option not yet
+ * chosen, the dropdown's options by label storing each one's value, and a held
+ * literal naming no option as one extra last line, raw and titled — the card's
+ * stray rule applied to the change — and then select what is held.
+ *
+ * **Exported for the layout editor's own picker**, on `fillTargetOptions`'
+ * argument: one list, read by two surfaces.
+ */
+export function fillOptionChoices(
+	select: HTMLSelectElement,
+	dropdown: ChoiceTarget | undefined,
+	held: string,
+): void {
+	option(select, '', '—');
+	const shape = dropdown?.shape;
+	for (const one of shape?.options ?? []) option(select, one.value, one.label);
+	if (held !== '' && (shape === undefined || !namesOption(shape, held))) {
+		const stray = select.createEl('option', { value: held, text: held });
+		stray.title = STRAY_OPTION_TITLE;
+	}
+	select.value = held;
+}
+
+/**
+ * What separates a state option's two halves in its value: a control
+ * character, which no published name and no column key can hold, so a state's
+ * option can never collide with a target's or with another state's.
+ */
+const STATE_SEPARATOR = '\u001f';
+
+/**
+ * What starts a **Dropdowns** option's value: a control character no published
+ * name holds, and not the state's, so a dropdown's option collides with neither
+ * a target's nor a state's — a dropdown reading `mod.self` is offered under
+ * both **Takes modifiers** and **Dropdowns** (D1).
+ */
+const CHOICE_SEPARATOR = '\u001e';
+
+/** A **Dropdowns** option's value. */
+export function choiceOptionValue(name: string): string {
+	return `${CHOICE_SEPARATOR}${name}`;
+}
+
+/** The dropdown a **Value** option names, or null where it names none. */
+export function readChoiceOption(value: string): string | null {
+	return value.startsWith(CHOICE_SEPARATOR) ? value.slice(CHOICE_SEPARATOR.length) : null;
+}
+
+/** A **Levels and flags** option's value: the target, then the column or none. */
+export function stateOptionValue(name: string, column: string | null): string {
+	return `${STATE_SEPARATOR}${name}${STATE_SEPARATOR}${column ?? ''}`;
+}
+
+/** The target and column a **Value** option names, a state's or a plain one. */
+export function readTargetOption(value: string): { target: string; column: string | null } {
+	if (!value.startsWith(STATE_SEPARATOR)) return { target: value, column: null };
+	const [, target = '', column = ''] = value.split(STATE_SEPARATOR);
+	return { target, column: column === '' ? null : column };
+}
+
+/**
+ * The state a change is aimed at, or undefined where it is aimed at a number:
+ * by its column where it names one, or by its target's own state.
+ */
+export function stateOf(
+	states: readonly StateTarget[],
+	target: string,
+	column: string | null | undefined,
+): StateTarget | undefined {
+	return states.find(
+		(state) => state.name === target && (state.column ?? null) === (column ?? null),
+	);
 }
 
 /**
@@ -344,8 +494,10 @@ function changeAsEffect(
 ): TypedEffect {
 	return {
 		target: change.target,
+		...(change.column === undefined ? {} : { column: change.column }),
 		operator: change.operator ?? 'add',
 		amount: change.amount,
+		...(change.option === undefined ? {} : { option: change.option }),
 		...(change.applies === undefined ? {} : { applies: change.applies }),
 		...(change.bonusType === undefined
 			? {}
@@ -353,6 +505,65 @@ function changeAsEffect(
 		...(definition.when === undefined ? {} : { when: definition.when }),
 		...(change.note === undefined ? {} : { note: change.note }),
 	};
+}
+
+/**
+ * Say a field's refusal under it, keeping one on screen: every call removes the
+ * last, so a second refusal replaces the first rather than stacking under it,
+ * and `null` clears it. Each field calls this on every change, not only on a
+ * refused one, so the change that fixes a refusal is also what takes it away.
+ */
+function heldRefusal(
+	anchor: HTMLElement,
+	options: ModifierFormOptions,
+): (message: string | null) => void {
+	let refusal: HTMLElement | null = null;
+	return (message) => {
+		refusal?.remove();
+		refusal = null;
+		if (message === null) return;
+		refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: message });
+		anchor.parentElement?.after(refusal);
+		options.announce(message);
+		options.onResize();
+	};
+}
+
+/**
+ * **Option**, in the amount's place on a change choosing a dropdown's option
+ * (`docs/features/text-value-modifiers.md`): a select over the dropdown's
+ * options showing each one's label and storing its value, `—` first for an
+ * option not yet chosen, and a stored literal naming no option as one extra
+ * last line, raw — the card's stray rule applied to the change. A value a cell
+ * could not spell is refused at the pick, with the draft kept. The operator's
+ * refusal (D3) is said under it where the change carries another.
+ */
+function renderOptionField(
+	fields: HTMLElement,
+	select: (text: string, key: string) => HTMLSelectElement,
+	shown: TypedEffect,
+	dropdown: ChoiceTarget | undefined,
+	editable: boolean,
+	put: (next: Partial<TypedEffect>) => void,
+	options: ModifierFormOptions,
+): void {
+	const picker = select('Option', 'option');
+	const held = (shown.option ?? '').trim();
+	fillOptionChoices(picker, dropdown, held);
+	picker.disabled = !editable;
+	const refuse = heldRefusal(picker, options);
+	picker.addEventListener('change', () => {
+		const unspellable = unspellableOption(picker.value);
+		if (unspellable !== null) {
+			picker.value = held;
+			refuse(unspellable);
+			return;
+		}
+		refuse(null);
+		put({ option: picker.value });
+	});
+	const fault = choiceOperatorFault(shown.operator);
+	if (fault !== null) element('p', 'sheetsmith-panel-problem', fields, fault);
 }
 
 /**
@@ -605,7 +816,7 @@ function renderFields(
 ): void {
 	const fields = element('div', 'sheetsmith-panel-fields', entry);
 	/*
-	 * **The part's five slots come from `outcomes` and are never parsed here**, which
+	 * **The part's six slots come from `outcomes` and are never parsed here**, which
 	 * is the whole of "there is exactly one parse of a cell part in the codebase,
 	 * and it is on the formula side of the seam". This component spells a part —
 	 * `spellTypedEffect`, because it writes the cell — and never reads one. Two
@@ -629,7 +840,7 @@ function renderFields(
 	const outcome = resolved[0] ?? null;
 	/** The named definition this part points at, where it points at a live one. */
 	const named = outcome?.definition ?? null;
-	/** That definition's first change, which is where the five slots come from. */
+	/** That definition's first change, which is where the six slots come from. */
 	const moved = outcome?.change ?? null;
 	/**
 	 * A part the layout can make nothing of: carried, never corrected.
@@ -692,12 +903,12 @@ function renderFields(
 		return el;
 	};
 
-	/** What the part's five slots read, whichever tier it came from. */
+	/** What the part's six slots read, whichever tier it came from. */
 	const shown: TypedEffect =
 		named !== null && moved !== null
 			? changeAsEffect(moved, named)
 			: (typed ?? blankEffect());
-	/** Whether the reader may edit those five slots on this row. */
+	/** Whether the reader may edit those six slots on this row. */
 	const editable = typed !== null;
 
 	/** Write this part with one field changed, and re-spell nothing else. */
@@ -712,6 +923,10 @@ function renderFields(
 		 */
 		const base = stored === null ? state.draft : shown;
 		const effect: TypedEffect = { ...base, ...next };
+		// Moved off a dropdown, a change carries no option.
+		if (effect.option === undefined) delete effect.option;
+		// A blank column is no column, so the cell spells no clause for it.
+		if ((effect.column ?? '').trim() === '') delete effect.column;
 		if (contestsByValue(effect.operator)) {
 			delete effect.bonusType;
 			// An override or an at least is in the result phase by construction, so
@@ -951,29 +1166,125 @@ function renderFields(
 	 * name in a sentence both surfaces show, so the two could not have differed
 	 * without one of them being told to press something that is not there.
 	 */
+	const states = options.states ?? [];
+	const buffers = options.buffers ?? [];
+	const choices = options.choices ?? [];
+	/**
+	 * Whether this part chooses a dropdown's option
+	 * (`docs/features/text-value-modifiers.md`): it carries `option`, so Sets is
+	 * its one operator and **Option** takes the amount's place. The dropdown it
+	 * names, where the layout declares one.
+	 */
+	const choosing = shown.option !== undefined;
+	const chosenDropdown = choosing ? choices.find((choice) => choice.name === shown.target) : undefined;
+	/** Whether this part grants temporary points: At least is then its one operator. */
+	const granting = aimsAtBuffer(buffers, shown.target, shown.column);
+	/**
+	 * Where this part lands, through the walk's own address: the level or flag
+	 * it sets, or a column the target does not hold, which is carried as
+	 * written — `abilities.stealth >= 1 in Trainig` — and never shown as the
+	 * plain value it is not (D5).
+	 */
+	const address = addressOf(shapesOf(states), shown.target, shown.column ?? null);
+	const aimed = address.kind === 'state' ? stateOf(states, shown.target, shown.column) : undefined;
+	const strayColumn = address.kind === 'stray' ? (shown.column ?? null) : null;
+	/** The option this part's own value is, a state's, a stray column's or a plain one. */
+	const ownOption =
+		choosing
+			? choiceOptionValue(shown.target)
+			: aimed !== undefined
+			? stateOptionValue(aimed.name, aimed.column ?? null)
+			: strayColumn !== null
+				? stateOptionValue(shown.target, strayColumn)
+				: shown.target;
 	const changes = select('Value', 'target');
 	if (shown.target === '') option(changes, '', 'Choose a value');
-	// The editor's own two groups, through the one helper, so the sheet and the
+	// The editor's own groups, through the one helper, so the sheet and the
 	// pane offer one list.
-	fillTargetOptions(changes, options.targets, options.noteTargets ?? []);
-	if (
+	fillTargetOptions(changes, options.targets, options.noteTargets ?? [], states, buffers, choices);
+	if (choosing && chosenDropdown === undefined && shown.target !== '') {
+		// An option change at a name that shows none: carried as written, and
+		// said under the panel's line (D7).
+		const label =
+			options.published.find((target) => target.name === shown.target)?.label ?? shown.target;
+		option(changes, ownOption, `${label} (shows no options)`);
+	} else if (strayColumn !== null) {
+		const label =
+			options.published.find((target) => target.name === shown.target)?.label ?? shown.target;
+		option(changes, ownOption, `${label} · ${strayColumn}`);
+	} else if (
 		shown.target !== '' &&
+		aimed === undefined &&
 		!options.targets.some((target) => target.name === shown.target) &&
-		!(options.noteTargets ?? []).some((target) => target.name === shown.target)
+		!(options.noteTargets ?? []).some((target) => target.name === shown.target) &&
+		!granting
 	) {
 		const label =
 			options.published.find((target) => target.name === shown.target)
 				?.label ?? shown.target;
 		option(changes, shown.target, `${label} (reads no modifier)`);
 	}
-	changes.value = shown.target;
+	changes.value = ownOption;
 	changes.disabled = !editable;
+	const refuse = heldRefusal(changes, options);
 	changes.addEventListener('change', () => {
-		put({ target: changes.value });
+		refuse(null);
+		/*
+		 * **Onto a dropdown, the change becomes a Sets with no amount and an
+		 * option not yet chosen**, and says so (D3): only Sets can choose one.
+		 * Off a dropdown, the option goes.
+		 */
+		const dropdown = readChoiceOption(changes.value);
+		if (dropdown !== null) {
+			if (shown.operator !== 'override') options.announce(`Operator ${OPERATOR_LABELS.override}`);
+			put({ target: dropdown, column: '', operator: 'override', amount: '', option: '' });
+			return;
+		}
+		const chosen = readTargetOption(changes.value);
+		const next = stateOf(states, chosen.target, chosen.column);
+		/*
+		 * **A column a cell could not spell is refused here, at the pick**, with
+		 * the draft kept: the cell spells the column as a clause, so a key holding
+		 * one of the clause words would be read back as something else. A
+		 * definition can still name it, which is the fix the sentence names.
+		 */
+		const unspellable = chosen.column === null ? null : unspellableColumn(chosen.column);
+		if (unspellable !== null) {
+			changes.value = ownOption;
+			refuse(unspellable);
+			return;
+		}
+		/*
+		 * **Onto a state, an Adds to becomes a Sets, and says so**: nothing can
+		 * make Adds to valid at a position, so it is not offered there, and a
+		 * change carrying one would arrive in a select that cannot show it.
+		 */
+		// **Onto a buffer, any operator becomes an At least**, the one a grant is.
+		const onto = aimsAtBuffer(buffers, chosen.target, chosen.column)
+			? 'upgrade'
+			: operatorOnto(next !== undefined, shown.operator);
+		if (onto !== shown.operator) options.announce(`Operator ${OPERATOR_LABELS[onto]}`);
+		put({
+			target: chosen.target,
+			column: chosen.column ?? '',
+			...(onto === shown.operator ? {} : { operator: onto }),
+			option: undefined,
+		});
 	});
 
 	const operator = select('Operator', 'operator');
-	for (const id of OPERATORS) {
+	// A level or a flag takes Sets and At least only: Adds to is left out rather
+	// than disabled, because nothing could make it valid there (D6).
+	// A buffer takes At least only; a stored other operator is kept in the list,
+	// so the select shows what the change says while the refusal says why.
+	// A dropdown's option takes Sets only, a stored other operator kept in the
+	// list on the same terms (D3).
+	const offered = choosing
+		? (['override', ...(shown.operator === 'override' ? [] : [shown.operator])] as const)
+		: granting
+		? (['upgrade', ...(shown.operator === 'upgrade' ? [] : [shown.operator])] as const)
+		: operatorsAt(aimed !== undefined, shown.operator);
+	for (const id of offered) {
 		option(operator, id, OPERATOR_LABELS[id]);
 	}
 	operator.value = shown.operator;
@@ -995,10 +1306,27 @@ function renderFields(
 	 * Escape abandons. No `arithmetic`, because an amount is an expression and
 	 * settling `Qty * 2` to a number would evaluate it against nothing.
 	 */
+	if (choosing) renderOptionField(fields, select, shown, chosenDropdown, editable, put, options);
 	const amount = text('Amount', 'amount');
+	// An option change has no amount: **Option** above takes its place.
+	if (choosing) amount.parentElement?.remove();
 	amount.value = shown.amount;
+	if (aimed !== undefined) {
+		// What each number means, under the field it is typed into, since a change
+		// names a level by its position (the **Shown when** legend's spelling).
+		element('p', 'sheetsmith-panel-why sheetsmith-panel-legend', fields, positionLegend(aimed.shape));
+		if (shown.operator === 'add') {
+			element('p', 'sheetsmith-panel-problem', fields, STATE_REFUSES_ADD);
+		}
+	}
+	if (granting) {
+		element('p', 'sheetsmith-panel-why sheetsmith-panel-legend', fields, TEXT.grantLegend);
+		if (shown.operator !== 'upgrade') {
+			element('p', 'sheetsmith-panel-problem', fields, BUFFER_TAKES_AT_LEAST);
+		}
+	}
 	amount.readOnly = !editable;
-	if (editable) {
+	if (editable && !choosing) {
 		bindEditable(amount, {
 			initial: shown.amount,
 			announceCommit: (next) =>
@@ -1081,7 +1409,7 @@ function renderFields(
 	 * condition. A note a cell could not spell is refused at the commit with
 	 * `unspellableNote`'s sentence, and the draft is kept so the reader can fix it.
 	 */
-	if (editable) {
+	if (editable && !choosing) {
 		amount.addEventListener('input', () => {
 			for (const select of arithmeticOnly) select.disabled = noteOnlyNow(amount.value);
 		});
@@ -1093,19 +1421,10 @@ function renderFields(
 	note.value = heldNote;
 	note.readOnly = !editable;
 	if (editable) {
-		let refusal: HTMLElement | null = null;
 		bindEditable(note, {
 			initial: heldNote,
 			refuse: (next) => unspellableNote(next),
-			onRefusal: (message) => {
-				refusal?.remove();
-				refusal = null;
-				if (message === null) return;
-				refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: message });
-				note.parentElement?.after(refusal);
-				options.announce(message);
-				options.onResize();
-			},
+			onRefusal: heldRefusal(note, options),
 			announceCommit: (next) =>
 				options.announce(next === '' ? 'Note cleared' : `Note ${next}`),
 			announceRestore: () => options.announce('Note restored'),

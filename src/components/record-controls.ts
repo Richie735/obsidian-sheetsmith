@@ -200,6 +200,8 @@ export interface RecordHost {
 	id: string;
 	noun: string;
 	status: HTMLElement;
+	/** The component's label, which its pushes name it by: half of a grant's key. */
+	source: string;
 }
 
 /** A number field as its caller holds it, for a stepper drawn beside it. */
@@ -947,6 +949,7 @@ export function drawRecordModifier(
 		context.modifiers?.outcomes(
 			part,
 			(values ??= options.values()),
+			host.source,
 		) ?? [];
 	const applied = rowModifiers(enrolled, ask);
 	// Through the shared predicate: see `modifier-breakdown.ts` for why one
@@ -1032,6 +1035,9 @@ export function drawRecordModifier(
 			targets: context.modifiers?.targets ?? [],
 			published: context.modifiers?.published ?? [],
 			noteTargets: context.modifiers?.noteTargets ?? [],
+			states: context.modifiers?.states ?? [],
+			buffers: context.modifiers?.buffers ?? [],
+			choices: context.modifiers?.choices ?? [],
 			bonusTypes: context.modifiers?.bonusTypes ?? [],
 			// The one import from `obsidian` in this folder, passed on rather
 			// than taken again: the allowlist stays one name long.

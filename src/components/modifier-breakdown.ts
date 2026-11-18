@@ -66,9 +66,16 @@ import {
 	ModifierOperator,
 	ModifierPhase,
 	ModifierOutcome,
+	StateAccount,
+	StateShape,
+	BufferAccount,
+	ChoiceAccount,
+	ChoiceShape,
 } from '../types';
 import { isNoteOnly } from '../parse/modifier-cell';
 import { roundSum } from '../formula/expression';
+import { positionWord } from '../formula/modifier-states';
+import { optionWord } from '../formula/modifier-choices';
 
 /**
  * The mark on a number something has been pushed at.
@@ -108,23 +115,38 @@ export const BOX_ATTRIBUTE = 'data-sheetsmith-box';
  * The attribute on the element that carries the form's tag where the box a
  * value belongs to cannot (`docs/features/character-forms.md`, "The text
  * mark"). Outside the box or inside it: a Roster card holds its score pill,
- * which has no room for the tag, while a Roster band's name sits inside its
- * `tr`, which has no name cell for it. The carrier takes the tag and no fill or
- * outline of its own. Written by the component, which alone knows which
- * element carries which box's tag and why.
+ * which has no room for the tag, and its rows, whose name cells are as narrow
+ * as the card (`stampRowTagBox`), while a Roster band's tag line sits inside
+ * its `tr`, which has no name cell for it. The carrier takes the tag and no
+ * fill or outline of its own. Written by the component, which alone knows
+ * which element carries which box's tag and why.
  */
 export const TAG_BOX_ATTRIBUTE = 'data-sheetsmith-tag-box';
+
+/**
+ * The class on a table row's last value cell — never its name cell, wherever
+ * the name column falls, and never an open table's delete cell — in a body
+ * row, the head row and the foot row alike
+ * (`docs/features/table-row-end-room.md`). The row's door, a note mark or an
+ * empty slot sits at that cell's inline end, and a form's tag in a lane after
+ * them, so the pass looks for it where a row names no carrier. Stamped by
+ * `state-ring.ts`'s `stampRowEnd`; declared here, beside the attributes the
+ * pass reads, so the view takes it without the drawing modules.
+ */
+export const ROW_END_CLASS = 'sheetsmith-row-end';
 
 /**
  * Mark a value something has been pushed at, say which published name it is,
  * say which box it belongs to, and say what carries the tag where that box
  * cannot.
  *
- * **The one route to the mark**, so the name cannot be missing where the mark is
- * — a scan in `components/isolation.test.ts` holds every other spelling of
- * these attributes to none. `name` is absent where the caller publishes no name,
- * or where another value already carries it, which leaves the mark alone and
- * nothing for the tint to find. `box` is the card, pill or row the value sits
+ * **The one route to the mark**, so the name cannot be missing where the mark
+ * is. The attributes are written in this module alone, here and by
+ * `stampRowTagBox` for a row's carrier — a scan in
+ * `components/isolation.test.ts` holds every other spelling of them to none.
+ * `name` is absent where the caller publishes no name, or where another value
+ * already carries it, which leaves the mark alone and nothing for the tint to
+ * find. `box` is the card, pill or row the value sits
  * in: absent or null, the value is its own box. `tagBox` is what carries the
  * tag where `box` is the first one tinted: absent, the box carries it.
  */
@@ -138,6 +160,57 @@ export function stampModifiedHost(
 	if (name !== undefined) host.setAttribute(NAME_ATTRIBUTE, name);
 	box?.setAttribute(BOX_ATTRIBUTE, '');
 	tagBox?.setAttribute(TAG_BOX_ATTRIBUTE, '');
+}
+
+/**
+ * Name `tagBox` as what carries the form's tag for `row`, once a value or a
+ * ring in the row has stamped it as its box: a Roster's stat card, whose rows'
+ * name cells are as narrow as the card, so a tag laid over one covered the
+ * label (`docs/features/character-forms.md`, "Row first"). Called after the
+ * row is drawn, since its stamps are made by whichever cell a modifier
+ * reached, a ring's by `state-ring.ts`.
+ */
+export function stampRowTagBox(row: HTMLElement, tagBox: HTMLElement): void {
+	if (row.hasAttribute(BOX_ATTRIBUTE)) tagBox.setAttribute(TAG_BOX_ATTRIBUTE, '');
+}
+
+/**
+ * The attributes on a ring a modifier set, beside `NAME_ATTRIBUTE`: which of
+ * the name's levels or flags it is, and the position the note stores
+ * (`docs/features/non-number-modifiers.md` D11). What lets the tint pass fold
+ * the state itself and find the ring's box, without knowing a component.
+ */
+export const STATE_COLUMN_ATTRIBUTE = 'data-sheetsmith-state-column';
+export const STATE_STORED_ATTRIBUTE = 'data-sheetsmith-state-stored';
+
+/**
+ * Say which level or flag a ring is and which box it belongs to, so a form in
+ * play that set it tints that box as it would a number it changed (D11).
+ * **No modified class**, since a ring has no number to underline: its door is
+ * its mark. `column` is null for a name whose own value is the state.
+ */
+export function stampStateHost(
+	host: HTMLElement,
+	name: string,
+	column: string | null,
+	stored: number,
+	box?: HTMLElement | null,
+): void {
+	host.setAttribute(NAME_ATTRIBUTE, name);
+	host.setAttribute(STATE_COLUMN_ATTRIBUTE, column ?? '');
+	host.setAttribute(STATE_STORED_ATTRIBUTE, String(stored));
+	box?.setAttribute(BOX_ATTRIBUTE, '');
+}
+
+/**
+ * Say which dropdown a menu is and which box it belongs to, so a form in play
+ * that chose its option tints that box as it would a number it changed
+ * (`docs/features/text-value-modifiers.md` D12). **No modified class**: the
+ * menu's press edits, so it takes no underline, and its rule is its own.
+ */
+export function stampChoiceHost(host: HTMLElement, name: string, box?: HTMLElement | null): void {
+	host.setAttribute(NAME_ATTRIBUTE, name);
+	box?.setAttribute(BOX_ATTRIBUTE, '');
 }
 
 /**
@@ -515,7 +588,10 @@ export function modifierAccount(
  *
  * **An override line reads "sets to" rather than a signed amount**, because an
  * override is not an addend, and a bonus type is never on one — overrides do not
- * contest by type, so the line carries none either.
+ * contest by type, so the line carries none either. **An upgrade's floor is
+ * unsigned for the same reason**, `at least 3`: a floor is a value the number
+ * is raised to, a sign reads as an add, and `stateChange`'s `at least
+ * Proficient` already says it so (`docs/UI.md` §9).
  *
  * The type, where the definition declared one. An untyped modifier says nothing
  * rather than saying "untyped": every modifier is untyped on a layout that has
@@ -537,13 +613,236 @@ function change(line: {
 	amount: number;
 }): string {
 	if (line.operator === 'override') return `sets to ${line.amount}`;
-	if (line.operator === 'upgrade') return `at least ${signed(line.amount)}`;
+	if (line.operator === 'upgrade') return `at least ${line.amount}`;
 	const said = `${line.type === null ? '' : `${line.type} `}${signed(line.amount)}`;
 	return line.applies === 'result' ? `${said} to the derived number` : said;
 }
 
 /**
- * What one part's outcome does, in words: `sets to 4`, `item +2`, `at least +3`,
+ * What one change at a level or a flag did, as words: `sets to on`, `at least
+ * Proficient` (`docs/features/non-number-modifiers.md`). `change`'s own two
+ * verbs, with the position's word in place of the number — the words are the
+ * shape's, handed over by the caller, so this module learns no component's
+ * vocabulary (`MeasuredEffect.noun`'s rule).
+ */
+function stateChange(
+	line: { operator: ModifierOperator; amount: number },
+	shape: StateShape,
+): string {
+	const word = positionWord(shape, line.amount);
+	return line.operator === 'upgrade' ? `at least ${word}` : `sets to ${word}`;
+}
+
+/**
+ * A level or flag's account, as the door onto it opens it
+ * (`docs/features/non-number-modifiers.md`): where the note holds another
+ * position than the ring draws, `Your own: Untrained` first and a blank line,
+ * since that is what a reader opening the door on a ring that will not move is
+ * asking; then §9's line shape with a position word in place of a number, a
+ * blank line, and the drawn state where a number has its total, `Now
+ * Proficient`. Where the two agree there is no own line, which is the
+ * measured-effect rule's "an effect of zero adds nothing". The last line names
+ * the drawn state only, since the first already names the reader's own.
+ *
+ * A refused state starts with its sentence and never carries an own line: a
+ * refusal draws what the note stores (`foldState`), so there is no second
+ * position to name.
+ *
+ * **Each line names its source exactly as a number's account does**
+ * (`qualified`, `identity`): the component wherever the lines come from more
+ * than one, or wherever the ring is read inside a component with rows
+ * (`inRows`) — so one door carrying a ring's lines and a Total's spells each
+ * modifier one way, `Gear · Bulls strength` on both.
+ */
+export function stateAccountText(account: StateAccount, inRows?: boolean): string {
+	const now = `Now ${positionWord(account.shape, account.drawn)}`;
+	if (account.error !== null) return [account.error, '', now].join('\n');
+	const own =
+		account.drawn === account.stored
+			? []
+			: [`Your own: ${positionWord(account.shape, account.stored)}`, ''];
+	const qualify = qualified(account.lines, inRows);
+	const said = account.lines.map((line) => {
+		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
+		return `${identity(line, qualify)} — ${stateChange(line, account.shape)}${why}`;
+	});
+	return [...own, ...said, '', now].join('\n');
+}
+
+/** What a dropdown's value is called in its account: its label, or `nothing chosen`. */
+function choiceWord(shape: ChoiceShape, value: string): string {
+	return value === '' ? 'nothing chosen' : optionWord(shape, value);
+}
+
+/**
+ * A dropdown's account, as the door onto it opens it
+ * (`docs/features/text-value-modifiers.md` D11):
+ *
+ * ```
+ * Your own: Medium
+ *
+ * Wild Shape · Brown bear — sets to Large
+ *
+ * Now Large
+ * ```
+ *
+ * The state account's shape, with the option's label as its word. The own line
+ * is left out where the two agree, and a refused choice opens on its sentence
+ * with no own line, since it draws what the note stores. **Every line names its
+ * component**, as a grant's does, so the account and the disagreement sentence
+ * (D5) name a source one way.
+ */
+export function choiceAccountText(account: ChoiceAccount): string {
+	const now = `Now ${choiceWord(account.shape, account.drawn)}`;
+	if (account.error !== null) return [account.error, '', now].join('\n');
+	const own =
+		account.drawn === account.stored ? [] : [`Your own: ${choiceWord(account.shape, account.stored)}`, ''];
+	const said = account.lines.map((line) => {
+		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
+		return `${identity(line, true)} — sets to ${optionWord(account.shape, line.option)}${why}`;
+	});
+	return [...own, ...said, '', now].join('\n');
+}
+
+/**
+ * What a dropdown says beside its drawn option when the note holds another:
+ * `Set by a modifier; your own: Medium`, or null where they agree (D9).
+ */
+export function choiceOwnDescription(account: ChoiceAccount): string | null {
+	if (account.drawn === account.stored) return null;
+	return `Set by a modifier; your own: ${choiceWord(account.shape, account.stored)}`;
+}
+
+/**
+ * What the live region says when a choice moved what the note holds and not
+ * what the card draws: `Your own is now Small` (D9), the precedent's sentence.
+ */
+export function choiceOwnNowLine(account: ChoiceAccount): string {
+	return `Your own is now ${choiceWord(account.shape, account.stored)}`;
+}
+
+/**
+ * A buffer's account, as one block of text: what a Pool's door opens for its
+ * temporary points (`docs/features/granted-temporary-points.md`).
+ *
+ * ```
+ * Your own: 5
+ *
+ * Wild Shape · Brown Bear — grants 10, 7 left
+ * Gear · Ring of Vitality — grants 5, 3 left (not applied: a higher grant applies)
+ *
+ * Not granting now: Gear · Old ring, 4 spent
+ *
+ * Now 7
+ * ```
+ *
+ * The state account's shape read for a buffer: the reader's own first where a
+ * grant is in effect over it, one line per grant, the leftovers, and what the
+ * card draws last. **Every line names its component**, however few sources
+ * there are, because the component is half of the key a grant's record is kept
+ * under, and a leftover line is that key and nothing else: a reader matching
+ * `Gear · Old ring` against the note's `spent · Gear · Old ring` finds it.
+ * A refused buffer opens on its sentence and has no own line, since it draws
+ * what the note stores.
+ */
+export function bufferAccountText(account: BufferAccount): string {
+	const now = `Now ${account.effective}`;
+	if (account.error !== null) return [account.error, '', now].join('\n');
+	const own = account.inEffect === null ? [] : [`Your own: ${account.stored}`, ''];
+	const said = account.grants.map((line) => {
+		const named = identity(line, true);
+		// A refused grant reads its sentence in place of the verdict, and keeps
+		// what it asked for, since its amount is known (D5); it carries no
+		// remainder, because it granted nothing and nothing was spent of it.
+		if (line.refused !== undefined) {
+			const asked =
+				typeof line.asked === 'number' && Number.isInteger(line.asked)
+					? String(line.amount)
+					: String(line.asked ?? line.amount);
+			return `${named} — grants ${asked} (not applied: ${line.suppressed ?? ''})`;
+		}
+		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
+		return `${named} — grants ${line.amount}, ${line.left} left${why}${recordMark(line.recordRefused)}`;
+	});
+	const leftovers = account.leftovers.map(
+		(record) =>
+			`Not granting now: ${record.key}, ${record.spent} spent${recordMark(record.recordRefused)}`,
+	);
+	return [
+		...own,
+		...said,
+		...(said.length > 0 && leftovers.length > 0 ? [''] : []),
+		...leftovers,
+		'',
+		now,
+	].join('\n');
+}
+
+/**
+ * The mark on a spent record the rule refuses, on the stored buffer's own
+ * terms (`storedTempMark`): it counts as none, and the note is not rewritten.
+ */
+function recordMark(refused: string | undefined): string {
+	return refused === undefined ? '' : `. The note's "${refused}" is not a whole number, so it counts as none spent`;
+}
+
+/**
+ * What a buffer's pill says beside the number it draws while a grant is in
+ * effect over the reader's own points: `Granted by Wild Shape · Brown Bear;
+ * your own: 5.`, or null where the pill draws the reader's own. The ring's
+ * `Set by a modifier; your own: Untrained`, read for a buffer (D9).
+ */
+export function bufferOwnDescription(account: BufferAccount | null): string | null {
+	if (account === null || account.error !== null || account.inEffect === null) return null;
+	return `Granted by ${identity(account.inEffect, true)}; your own: ${account.stored}.`;
+}
+
+/**
+ * What the pill says once a typed value lands below a grant still in effect,
+ * which the pill goes on drawing (D8): `HP temporary 10, granted by Wild Shape ·
+ * Brown Bear; your own is now 3.`, or null where the pill draws what was typed.
+ */
+export function bufferOwnNowSentence(account: BufferAccount): string | null {
+	if (account.error !== null || account.inEffect === null) return null;
+	return `${account.label} temporary ${account.effective}, granted by ${identity(account.inEffect, true)}; your own is now ${account.stored}.`;
+}
+
+/**
+ * What a ring says beside its drawn state when the note holds another:
+ * `Set by a modifier; your own: Untrained`, or null where they agree. A word
+ * for the state that is *not* drawn, so `aria-pressed` still speaks alone for
+ * the one that is (SPEC §13).
+ */
+export function stateOwnDescription(account: StateAccount): string | null {
+	if (account.drawn === account.stored) return null;
+	return `Set by a modifier; your own: ${positionWord(account.shape, account.stored)}`;
+}
+
+/**
+ * What each position of a level or a flag means, in the amount a change writes
+ * for it: `0 Untrained · 1 Proficient · 2 Expertise`, `0 … 4` for an unnamed
+ * level, `true on · false off` for a flag. The **Shown when** legend's spelling
+ * (`docs/features/conditional-field-visibility.md`), read under a modifier's
+ * **Amount** in the sheet's form and in the layout editor alike.
+ */
+export function positionLegend(shape: StateShape): string {
+	if (shape.flag) {
+		return `true ${positionWord(shape, 1)} · false ${positionWord(shape, 0)}`;
+	}
+	if (shape.words.length === 0) return `0 … ${shape.positions - 1}`;
+	return shape.words.map((word, at) => `${at} ${word}`).join(' · ');
+}
+
+/**
+ * The first line of the popover a press opens when it moved what the note
+ * holds and not what the ring draws: `Your own is now Proficient`.
+ */
+export function ownNowLine(account: StateAccount): string {
+	return `Your own is now ${positionWord(account.shape, account.stored)}`;
+}
+
+/**
+ * What one part's outcome does, in words: `sets to 4`, `item +2`, `at least 3`,
  * or its note — the outcome half every surface spells one way.
  *
  * **Exported for a Stat block's changes list**, which draws each part as
@@ -577,7 +876,15 @@ export function outcomeWords(outcome: ModifierOutcome): string {
 	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
 	const noteOnly = isNoteOnly(moved ?? typed ?? {});
 	const arithmetic =
-		outcome.amount === null
+		outcome.choice !== undefined
+			? `sets to ${optionWord(outcome.choice.shape, outcome.choice.option)}`
+			: outcome.grant === true
+			? outcome.amount === null
+				? 'grants temporary points'
+				: `grants ${outcome.amount}`
+			: outcome.amount !== null && outcome.state !== undefined
+			? stateChange({ operator, amount: outcome.amount }, outcome.state)
+			: outcome.amount === null
 			? operator === 'override'
 				? 'sets a value'
 				: operator === 'upgrade'

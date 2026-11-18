@@ -382,6 +382,13 @@
 /* The open part's fields, disclosed in place under the line the reader chose. The
    left inset lines them up under the words rather than under the glyph, so the
    line above reads as what they belong to. */
+/* A level's position legend, under the Amount it explains: in the control
+   column, past the label column's 6.5em at the same type size, and the row's
+   gap (`docs/features/non-number-modifiers.md`). */
+.sheetsmith-panel .sheetsmith-panel-legend {
+	padding-inline-start: calc(6.5em + var(--size-4-2));
+}
+
 .sheetsmith-panel-fields {
 	display: flex;
 	flex-direction: column;

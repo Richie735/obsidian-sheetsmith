@@ -899,8 +899,101 @@ type ScopeEntrySource =
 			 * name is memoised and a cycle through one is caught rather than
 			 * recursed. Null or undefined publishes nothing.
 			 */
-			compute?: (resolve: FieldResolver) => FieldValue | null | undefined;
+			compute?: (
+				resolve: FieldResolver,
+				/**
+				 * The sheet's reader of a level or a flag a modifier may set
+				 * (`docs/features/non-number-modifiers.md`), for an entry whose
+				 * value is built from a row holding one. Absent where there is no
+				 * sheet, which reads every state as stored.
+				 */
+				state?: StateReader,
+				/**
+				 * The sheet's reader of a dropdown's chosen option
+				 * (`docs/features/text-value-modifiers.md`), for an entry declaring
+				 * `choice` whose value is built from the chosen option — a Card's
+				 * `derived`. Absent where there is no sheet, which reads every
+				 * choice as stored.
+				 */
+				choice?: ChoiceReader,
+			) => FieldValue | null | undefined;
 	  };
+
+/**
+ * What a stored choice a modifier may set looks like: how many positions it
+ * has, what each is called, and what a refusal calls it
+ * (`docs/features/non-number-modifiers.md`).
+ *
+ * **Only the component knows this**, which is why it travels on `ScopeEntry`:
+ * that a Table's `Training` column is a three-step level and its `Qty` a number
+ * is that component's configuration, and nothing outside it may read that.
+ */
+export interface StateShape {
+	/**
+	 * A flag, which is a level with two positions (off 0, on 1) whose amount is
+	 * written `true` or `false` (or `1` or `0`) rather than as a position.
+	 */
+	flag: boolean;
+	/** How many positions there are, none included: 2 for a flag. */
+	positions: number;
+	/**
+	 * A word per position, from none upwards, or empty where the positions have
+	 * no names — an unnamed level reads as its number. A flag's are `off` and
+	 * `on` unless a flag Track names its two levels.
+	 */
+	words: readonly string[];
+	/** What a sentence calls the state: a column's heading, or the value's label. */
+	label: string;
+	/**
+	 * On an entry whose own value is the state, the column that value is read
+	 * from, where it is one: so a change naming that column is told it needs none.
+	 */
+	column?: string;
+}
+
+/**
+ * A stored choice as the sheet reads it once modifiers have had their say, or
+ * the refusal thrown as a `FormulaError` (`docs/features/non-number-modifiers.md`).
+ *
+ * `column` is null for an entry whose own value is the state. `stored` is what
+ * the note holds as the row scope already types it — a level's number, a flag's
+ * boolean — and comes back exactly as given wherever nothing addresses it.
+ */
+export type StateReader = (
+	name: string,
+	column: string | null,
+	stored: FieldValue | undefined,
+) => FieldValue | undefined;
+
+/**
+ * What a Card dropdown a modifier may choose an option of looks like: its
+ * options in list order and what a sentence calls it
+ * (`docs/features/text-value-modifiers.md`).
+ *
+ * **Only the component knows this**, `StateShape`'s argument: that a Card is a
+ * dropdown, and which options it offers, is that component's configuration.
+ */
+export interface ChoiceShape {
+	/** What a sentence calls the dropdown: the card's label, `Size`. */
+	label: string;
+	/**
+	 * Every option, in the order the layout lists them, its `label` the word the
+	 * card shows (the value where it has none). The order is only ever the order
+	 * a sentence lists them in: nothing here reads one option as above another.
+	 */
+	options: readonly { value: string; label: string }[];
+}
+
+/**
+ * A dropdown's chosen option as the sheet reads it once modifiers have had
+ * their say, or the refusal thrown as a `FormulaError`
+ * (`docs/features/text-value-modifiers.md`). `stored` is what the note holds,
+ * and comes back exactly as given wherever nothing chooses for it.
+ */
+export type ChoiceReader = (
+	name: string,
+	stored: FieldValue | undefined,
+) => FieldValue | undefined;
 
 /**
  * One name a component publishes to the rest of the sheet.
@@ -933,7 +1026,64 @@ export type ScopeEntry = {
 	 * string or boolean — narrower on purpose, not out of laziness.
 	 */
 	left?: (resolve: FieldResolver) => number | undefined;
+	/**
+	 * That this entry's own value is a level or a flag a modifier may set, with
+	 * the target alone and no `column` (`docs/features/non-number-modifiers.md`).
+	 * The bare name then reads the modified state and `<name>.value` what the
+	 * note stores. Only on an entry that publishes its `value`, with neither
+	 * `display` nor `compute`.
+	 */
+	state?: StateShape;
+	/**
+	 * The levels and flags on this entry's row a modifier may set through a
+	 * change's `column`, by column key. The component's own row scope reads each
+	 * through the `StateReader` its `compute` is handed, so every reader of the
+	 * row sees one state.
+	 */
+	states?: Readonly<Record<string, StateShape>>;
+	/**
+	 * That this entry's value is a buffer a grant may raise, with what the note
+	 * stores of each grant's spending (`docs/features/granted-temporary-points.md`).
+	 * The bare name then reads the effective buffer and `<name>.value` what the
+	 * note stores. Only on an entry that publishes its `value`, with neither
+	 * `display` nor `compute`; a component declaring one implements `endGrants`.
+	 */
+	buffer?: BufferShape;
+	/**
+	 * That this entry's value is a dropdown's chosen option, which a change
+	 * carrying `option` may choose (`docs/features/text-value-modifiers.md`).
+	 * The bare name then reads the chosen option and `<name>.value` what the
+	 * note stores. Only on an entry that publishes its `value`, and in one of
+	 * two pairings: alone, with neither `display` nor `compute`, where the name
+	 * table folds it; or with `compute`, which is handed the `ChoiceReader` and
+	 * folds it itself — a Card whose `derived` reads the chosen option.
+	 *
+	 * **Reached only by a change carrying `option`** (D1), never by the target
+	 * alone, which is why it is not a `state`: every change already aimed at the
+	 * card with an amount keeps its meaning.
+	 */
+	choice?: ChoiceShape;
 } & ScopeEntrySource;
+
+/**
+ * What a buffer a grant may raise carries to the walk
+ * (`docs/features/granted-temporary-points.md`).
+ *
+ * **Only the component knows its spent records' spelling**, which is why they
+ * travel here: the walk folds them onto the stored value without learning a
+ * Pool's fence, as `StateShape` carries a level's words without the walk
+ * learning a Table's columns.
+ */
+export interface BufferShape {
+	/** What a sentence calls the buffer: the component's label, `HP`. */
+	label: string;
+	/**
+	 * What the note stores of each grant's spending, by grant key
+	 * (`<source> · <row>`), as the note spells it. Empty where nothing has been
+	 * spent, and on the static read the targets are collected from.
+	 */
+	spent: Readonly<Record<string, string>>;
+}
 
 /**
  * What a component publishes to formulas elsewhere on the sheet (SPEC §5).
@@ -1029,7 +1179,11 @@ export interface RowValues {
  * formula that reads the rest of the sheet, and the sheet is the thing being
  * built. Called at most once per sheet.
  */
-export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
+export type RowsSource = (
+	resolve: FieldResolver,
+	/** As `ScopeEntry.compute`'s: how a row reads a level or flag a modifier set. */
+	state?: StateReader,
+) => readonly RowValues[];
 
 /**
  * The three things a modifier definition can do to a number (SPEC §5).
@@ -1216,10 +1370,30 @@ export interface ModifierDefinition {
 	 * SPEC §10 applied to a hand-edited layout.
 	 */
 	target?: string;
+	/**
+	 * Which level or flag on the target's row this change sets, where it sets one
+	 * (`docs/features/non-number-modifiers.md`). Absent is the value itself, which
+	 * is what every definition written before this existed means.
+	 *
+	 * **An address only a modifier uses**, never a published name: `target` stays
+	 * the row's own name, so SPEC §5's names gain no third segment.
+	 */
+	column?: string;
 	/** Omitted for 'add', which is what a definition that says nothing is. */
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
 	amount?: string;
+	/**
+	 * Which of a Card dropdown's options this change chooses, by its value
+	 * (`docs/features/text-value-modifiers.md`). Absent is an ordinary change,
+	 * which is what every definition written before this existed means.
+	 *
+	 * **A literal and never an expression**: the language has no strings, so no
+	 * amount could name `Large`. It is an address the way `column` is, read by
+	 * nothing but the modifier walk, and it publishes no name. Present, the
+	 * amount is ignored, and only Sets may carry one.
+	 */
+	option?: string;
 	/** One of the layout's `modifierTypes`. Absent is untyped. */
 	bonusType?: string;
 	/**
@@ -1260,7 +1434,7 @@ export interface ModifierDefinition {
 }
 
 /**
- * The five members `ModifierChange` declares, as a list something can walk.
+ * The members `ModifierChange` declares, as a list something can walk.
  *
  * **One copy, because the only thing a test over two could assert is that they
  * still agree** (`PATTERNS.md` §1's one-step tier, which extracts a *set* on the
@@ -1278,8 +1452,10 @@ export interface ModifierDefinition {
  */
 export const MODIFIER_CHANGE_KEYS = [
 	'target',
+	'column',
 	'operator',
 	'amount',
+	'option',
 	'bonusType',
 	'applies',
 	'note',
@@ -1305,10 +1481,14 @@ export const MODIFIER_CHANGE_KEYS = [
 export interface ModifierChange {
 	/** The published name this changes. */
 	target: string;
+	/** As `ModifierDefinition.column`: a level or flag on the target's row. */
+	column?: string;
 	/** Omitted for 'add', which is what a change that says nothing is. */
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
 	amount: string;
+	/** As `ModifierDefinition.option`: a dropdown's option, by its value. */
+	option?: string;
 	/** One of the layout's `modifierTypes`. Absent is untyped. */
 	bonusType?: string;
 	/**
@@ -1345,6 +1525,12 @@ export interface ModifierChange {
 export interface TypedEffect {
 	/** The published name this changes. */
 	target: string;
+	/**
+	 * As `ModifierDefinition.column`, spelled in a cell as ` in <column>` after
+	 * the amount. Absent spells nothing, so every cell written before this keeps
+	 * its bytes.
+	 */
+	column?: string;
 	operator: ModifierOperator;
 	/**
 	 * An expression, evaluated on the row that typed it.
@@ -1356,6 +1542,13 @@ export interface TypedEffect {
 	 * not blank a card while the reader is still typing.
 	 */
 	amount: string;
+	/**
+	 * As `ModifierDefinition.option`, spelled in a cell in the amount's place as
+	 * `option: Large`. Absent spells nothing, so every cell written before this
+	 * keeps its bytes; present and blank is an unfinished option change, which
+	 * keeps the address while the reader has not chosen yet.
+	 */
+	option?: string;
 	/**
 	 * One of the layout's `modifierTypes`. Absent is untyped.
 	 *
@@ -1856,6 +2049,26 @@ export interface ModifierOutcome {
 	 * from it either way.
 	 */
 	noteLine?: string;
+	/**
+	 * The shape of the level or flag this part sets, where it sets one
+	 * (`docs/features/non-number-modifiers.md`): `amount` is then a position, and
+	 * the words say it as `at least Proficient` rather than as a number. Absent
+	 * on every part aimed at a number, so such an outcome is the object it was.
+	 */
+	state?: StateShape;
+	/**
+	 * That this part grants temporary points to a buffer
+	 * (`docs/features/granted-temporary-points.md`): `amount` is then whole
+	 * points, and the words say it as `grants 10`. Absent on every other part.
+	 */
+	grant?: true;
+	/**
+	 * The dropdown this part chooses an option of, and the option it names
+	 * (`docs/features/text-value-modifiers.md`): the words then say it as `sets
+	 * to Large`, in the option's label. Absent on every other part, so such an
+	 * outcome is the object it was.
+	 */
+	choice?: { shape: ChoiceShape; option: string };
 }
 
 /**
@@ -1913,6 +2126,63 @@ export interface ModifierContext {
 	/** The layout's bonus types, for the form's **Bonus type** select. */
 	bonusTypes: readonly string[];
 	/**
+	 * Every level and flag a modifier may set, for the form's **Value** select's
+	 * **Levels and flags** group (`docs/features/non-number-modifiers.md`).
+	 * Optional because a context built without a sheet has no layout to ask, and
+	 * absent offers none.
+	 */
+	states?: readonly StateTarget[];
+	/**
+	 * What has been pushed at one level or flag, folded onto what the note
+	 * stores, or null where no change addresses it — so a ring with nothing
+	 * pushed at it draws no door and no description.
+	 *
+	 * `stored` is the value as the component's row scope types it. Optional on
+	 * `notable`'s terms, and absent answers null.
+	 */
+	state?(
+		name: string,
+		column: string | null,
+		stored: FieldValue | undefined,
+	): StateAccount | null;
+	/**
+	 * Every buffer a grant may raise, for the form's **Value** select's
+	 * **Temporary points** group (`docs/features/granted-temporary-points.md`).
+	 * Optional on `states`' terms, and absent offers none.
+	 */
+	buffers?: readonly BufferTarget[];
+	/**
+	 * What the grants aimed at one buffer come to, folded onto what the note
+	 * stores and what each grant has had spent, or null where no grant
+	 * addresses it and no spent record is left — so a pill with nothing pushed
+	 * at it draws no mark and no door.
+	 *
+	 * `stored` is the note's own text for the buffer, and `spent` the
+	 * component's records as `BufferShape.spent` spells them. Optional on
+	 * `state`'s terms, and absent answers null.
+	 */
+	buffer?(
+		name: string,
+		stored: string | undefined,
+		spent: Readonly<Record<string, string>>,
+	): BufferAccount | null;
+	/**
+	 * Every dropdown a modifier may choose an option of, for the form's
+	 * **Value** select's **Dropdowns** group
+	 * (`docs/features/text-value-modifiers.md`). Optional on `states`' terms,
+	 * and absent offers none.
+	 */
+	choices?: readonly ChoiceTarget[];
+	/**
+	 * What the changes choosing one dropdown's option come to, folded onto what
+	 * the note stores, or null where no change addresses it — so a dropdown
+	 * nothing chooses for draws no door, no rule and no description.
+	 *
+	 * `stored` is the note's own text for the value. Optional on `state`'s
+	 * terms, and absent answers null.
+	 */
+	choice?(name: string, stored: string | undefined): ChoiceAccount | null;
+	/**
 	 * What one part of one cell comes to on this row: **one outcome per change**
 	 * the part's modifier names, in the definition's own order.
 	 *
@@ -1924,7 +2194,17 @@ export interface ModifierContext {
 	 * value each give exactly one. Plural because a named part gives one per
 	 * change, which is the whole of what a multi-change definition is on the sheet.
 	 */
-	outcomes(part: string, row: RowValues): readonly ModifierOutcome[];
+	outcomes(
+		part: string,
+		row: RowValues,
+		/**
+		 * The row's component, as its pushes name it (its label): half of a
+		 * grant's key, so the popup's verdict on a grant is the walk's
+		 * (`docs/features/granted-temporary-points.md` D5). Required, so a new
+		 * host cannot leave it out and have the popup disagree with the walk.
+		 */
+		source: string,
+	): readonly ModifierOutcome[];
 	/**
 	 * What applies at this name, in declaration order, and what it comes to. No
 	 * lines where nothing does, and none for a name that accepts no modifier — so
@@ -1966,6 +2246,174 @@ export interface ModifierContext {
 	 * The one asynchronous member on this context, because a vault write is.
 	 */
 	promote(name: string, effect: TypedEffect): Promise<PromoteResult>;
+}
+
+/**
+ * One level or flag a modifier may set, and what to show for it
+ * (`docs/features/non-number-modifiers.md`).
+ */
+export interface StateTarget {
+	/** The published name a change's `target` spells. */
+	name: string;
+	/** The change's `column`, or absent where the name's own value is the state. */
+	column?: string;
+	/** What a picker shows: `Abilities · stealth · Training`, or `Inspiration`. */
+	label: string;
+	shape: StateShape;
+}
+
+/**
+ * What a level or flag comes to once the changes aimed at it are folded onto
+ * what the note stores (`docs/features/non-number-modifiers.md`).
+ *
+ * Positions rather than stored spellings throughout, so one account serves a
+ * level and a flag alike: a flag's off is 0 and its on is 1.
+ */
+export interface StateAccount {
+	shape: StateShape;
+	/** The position the note stores. */
+	stored: number;
+	/** The position the sheet draws: the stored one, where the state is refused. */
+	drawn: number;
+	/**
+	 * Every change listed at this address, in walk order, its `amount` a
+	 * position and its `suppressed` the verdict against the stored position.
+	 */
+	lines: readonly ModifierLine[];
+	/** The refusal, where one change could not be read; null where none was. */
+	error: string | null;
+}
+
+/**
+ * One dropdown a modifier may choose an option of, and what to show for it
+ * (`docs/features/text-value-modifiers.md`).
+ */
+export interface ChoiceTarget {
+	/** The published name a change's `target` spells. */
+	name: string;
+	/** What a picker shows: the component's label, `Size`. */
+	label: string;
+	shape: ChoiceShape;
+}
+
+/**
+ * One change listed at a dropdown, as the account words it
+ * (`docs/features/text-value-modifiers.md`). `ModifierLine`'s identifying
+ * half, with the option it chooses in place of an amount.
+ */
+export interface ChoiceLine {
+	/** The row as a reader sees it. */
+	label: string;
+	/** The component the row lives on. */
+	source: string;
+	/** The modifier, as the layout names it, or absent for one typed on the row. */
+	definition?: string;
+	/** The option's value, as the literal names it. */
+	option: string;
+	/** Null where this line applies, the reason it does not where it ties. */
+	suppressed: string | null;
+	/** The push's own `inPlay`, which the tint reads (D12). */
+	inPlay?: boolean;
+	/** The push's own `tint`, carried beside `inPlay` and never without it. */
+	tint?: TintColour;
+}
+
+/**
+ * What a dropdown comes to once the changes choosing its option are folded
+ * onto what the note stores (`docs/features/text-value-modifiers.md`).
+ *
+ * Option values throughout, the stored one as the note spells it: a stray
+ * stored value stays itself, and nothing stored is the empty string.
+ */
+export interface ChoiceAccount {
+	shape: ChoiceShape;
+	/** The value the note stores, `''` where it stores none. */
+	stored: string;
+	/** The value the card draws: the stored one, where the choice is refused. */
+	drawn: string;
+	/** Every change listed at the dropdown, in walk order. */
+	lines: readonly ChoiceLine[];
+	/** The refusal, where a change could not be read or two disagree; null where none. */
+	error: string | null;
+}
+
+/**
+ * One buffer a grant may raise, and what to show for it
+ * (`docs/features/granted-temporary-points.md`).
+ */
+export interface BufferTarget {
+	/** The published name a grant's `target` spells: `hp.temp`. */
+	name: string;
+	/** What a picker shows: `HP · temp`. */
+	label: string;
+	/** What a sentence calls the buffer (`BufferShape.label`): `HP`. */
+	called: string;
+}
+
+/**
+ * One grant listed at a buffer, as the account words it
+ * (`docs/features/granted-temporary-points.md`).
+ */
+export interface GrantLine {
+	/**
+	 * The key its spent record is held under, `<source> · <row>`, or null where
+	 * the row's label cannot be one (D5) and the line grants nothing.
+	 */
+	key: string | null;
+	/** The row as a reader sees it. */
+	label: string;
+	/** The component the row lives on. */
+	source: string;
+	/** The modifier, as the layout names it, or absent for one typed on the row. */
+	definition?: string;
+	/**
+	 * Whole points, 0 where the amount came out negative. A refused grant keeps
+	 * what it asked for where that is whole, and grants none of it.
+	 */
+	amount: number;
+	/** What a refused grant's amount came to, as it was judged (D4: `2.5`, or text). */
+	asked?: number | boolean | string;
+	/** What the record says has been spent of it, 0 where there is none. */
+	spent: number;
+	/** What is left of it: `max(0, amount − spent)`. */
+	left: number;
+	/**
+	 * The record as the note spells it, where the rule refuses it and it counts
+	 * as none spent: marked in the account, and never rewritten by a read.
+	 */
+	recordRefused?: string;
+	/**
+	 * Null where this grant is the buffer in effect, the reason it is not where
+	 * it was passed over, or its refusal where it grants nothing (D2, D4, D5).
+	 */
+	suppressed: string | null;
+	/** Set where the line grants nothing, beside the sentence in `suppressed`. */
+	refused?: true;
+	/** The push's own `inPlay`, which the tint reads (D12). */
+	inPlay?: boolean;
+	/** The push's own `tint`, carried beside `inPlay` and never without it. */
+	tint?: TintColour;
+}
+
+/**
+ * What a buffer comes to once the grants aimed at it are folded onto what the
+ * note stores (`docs/features/granted-temporary-points.md`, D6).
+ */
+export interface BufferAccount {
+	/** What a sentence calls the buffer. */
+	label: string;
+	/** The note's own points, a refused spelling counting as 0. */
+	stored: number;
+	/** What the card draws: the highest of `stored` and each grant's remainder. */
+	effective: number;
+	/** The grant whose remainder the card draws, or null where its own points are. */
+	inEffect: GrantLine | null;
+	/** Every grant listed at the buffer, in walk order. */
+	grants: readonly GrantLine[];
+	/** Spent records no listed grant claims (D10), in the note's order. */
+	leftovers: readonly { key: string; spent: number; recordRefused?: string }[];
+	/** The refusal, where a grant's amount could not be read (D11); null where none was. */
+	error: string | null;
 }
 
 /**
@@ -2101,6 +2549,13 @@ export interface RenderContext<TData = unknown> {
 	 * pushed at it.
 	 */
 	modifiers?: ModifierContext;
+	/**
+	 * How a formula on this component reads a level or flag a modifier may set,
+	 * the same reader the sheet's own names fold through
+	 * (`docs/features/non-number-modifiers.md`). Optional on `link`'s terms:
+	 * absent reads every state as stored, which is the truth with no sheet.
+	 */
+	readState?: StateReader;
 	/**
 	 * Draw markdown into an element, using the app's own renderer.
 	 *
@@ -2348,6 +2803,20 @@ export interface RenderContext<TData = unknown> {
 	collapsedGroups?: readonly string[];
 	/** Report the reader collapsing or expanding one of this component's groups. */
 	onToggleGroup?: (key: string, collapsed: boolean) => void;
+	/**
+	 * The stored value a reader last typed into this component below a grant
+	 * still in effect over it, or absent (`docs/features/granted-temporary-points.md`
+	 * D8): the sentence saying so is drawn while the note still stores it.
+	 *
+	 * **The view's, on `collapsedGroups`' terms and for their reason**: the
+	 * commit is a write and the write rebuilds the card, so the sentence cannot
+	 * live in the closure; and held by the view rather than the module, since the
+	 * view is one note and the module is every note on the layout. Cleared when
+	 * the leaf moves to another file.
+	 */
+	heldNotice?: string;
+	/** Report the stored value a typed commit left under a grant, or null to clear it. */
+	onHoldNotice?: (stored: string | null) => void;
 }
 
 /**
@@ -2496,6 +2965,17 @@ export interface ComponentDefinition<
 	 */
 	write(data: TData, body: string | null, config: TConfig): string;
 	/**
+	 * Clear the spent records of grants that have just ended, given the
+	 * component's data and their keys (`docs/features/granted-temporary-points.md`
+	 * D7): the edit `write` is then handed, or null where none of them is
+	 * recorded. The sheet view calls it in the same batch as the reader's edit
+	 * that ended them, so a grant's end is one write (SPEC §6).
+	 *
+	 * `hasBuffer`'s argument: the alternative is the view knowing a Pool's fence
+	 * keys. Declaring a `buffer` entry obliges it [checked: `contract.test.ts`].
+	 */
+	endGrants?(data: TData | null, config: TConfig, ended: readonly string[]): TData | null;
+	/**
 	 * Display the component. `data` is null when the section is missing or
 	 * failed to read.
 	 *
@@ -2629,7 +3109,8 @@ export interface ComponentDefinition<
 	 * Declared rather than inferred, because the alternative is the layout
 	 * editor knowing that a Pool has temporary points and a Track does not —
 	 * which is the rule in §4.1 that decides what may be an optional member at
-	 * all. The editor offers `reset.buffer` exactly where this is set.
+	 * all. The editor offers `reset.buffer` exactly where this is set. A
+	 * component declaring a `buffer` entry declares this too.
 	 */
 	hasBuffer?: boolean;
 	/**

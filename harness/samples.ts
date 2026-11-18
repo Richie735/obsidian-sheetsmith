@@ -4422,6 +4422,505 @@ export function textGroupSamples(): Sample[] {
  * an amount *and* a note, which nothing enrols in: it exists so the change line
  * draws its **Note** field beside a filled **Amount**.
  */
+/**
+ * The definition a `modifier-states` sheet enrols in by name: Cat Form, which
+ * makes the druid proficient in Stealth and trained in Endurance through each
+ * row's level rather than its number (`docs/features/non-number-modifiers.md`).
+ * Ahead of the layout's own, so the editor opens on a change aimed at a state.
+ */
+export const STATE_DEFINITIONS = [
+	{
+		name: 'Cat Form',
+		changes: [
+			{ target: 'skills.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+			{ target: 'checks.endurance', column: 'Prof', operator: 'upgrade', amount: '1' },
+		],
+	},
+];
+
+/**
+ * Rings a modifier set (`docs/features/non-number-modifiers.md`), on each of the
+ * three components that draw one: a skills Table and a Roster band where one ring
+ * is raised by At least, one is already higher, one is set by Sets and one is
+ * refused, beside one nothing reaches, and a flag Track turned on by a push.
+ *
+ * `cycle` is one Stealth ring alone, stored Untrained under Cat Form's At least
+ * Proficient, for the three presses the cycle shots take one at a time.
+ */
+export function modifierStatesSamples(variant: 'all' | 'cycle' = 'all'): Sample[] {
+	const cycle = variant === 'cycle';
+	const skillRows = cycle
+		? [{ label: 'Stealth', key: 'stealth', values: { ability: 'abilities.DEX' } }]
+		: [
+				{ label: 'Stealth', key: 'stealth', values: { ability: 'abilities.DEX' } },
+				{ label: 'Arcana', key: 'arcana', values: { ability: 'abilities.INT' } },
+				{ label: 'Athletics', key: 'athletics', values: { ability: 'abilities.STR' } },
+				{ label: 'Perception', key: 'perception', values: { ability: 'abilities.WIS' } },
+				{ label: 'Insight', key: 'insight', values: { ability: 'abilities.WIS' } },
+				{ label: 'Investigation', key: 'investigation', values: { ability: 'abilities.INT' } },
+				{ label: 'Medicine', key: 'medicine', values: { ability: 'abilities.WIS' } },
+			];
+	const skillBody = cycle
+		? ['| Skill | Training | Bonus |', '| --- | --- | --- |', '| Stealth | 0 | |']
+		: [
+				'| Skill | Training | Bonus |',
+				'| --- | --- | --- |',
+				'| Stealth | 0 | |',
+				'| Arcana | 2 | |',
+				'| Athletics | 0 | |',
+				'| Perception | 1 | |',
+				'| Insight | 1 | |',
+				// Stored Proficient, set to Expertise.
+				'| Investigation | 1 | |',
+				// Stored Expertise, set to Proficient.
+				'| Medicine | 2 | |',
+			];
+	const parts = cycle
+		? [['Cat Form', 'Cat Form']]
+		: [
+				['Cat Form', 'Cat Form'],
+				['Scholar', 'skills.arcana >= 1 in Training; checks.concentration >= 1 in Prof'],
+				// Insight's ring and its Total both: the Roster row's one door carries both.
+				['Bulls strength', 'skills.athletics = 2 in Training; checks.insight = 1 in Prof; checks.insight += 1'],
+				['Cursed eye', 'skills.perception = 3 in Training; checks.medicine = 2 in Prof'],
+				['Heroism', 'inspiration = true'],
+				['Lore', 'skills.investigation = 2 in Training'],
+				['Clumsy hands', 'skills.medicine = 1 in Training'],
+				['Legend', 'ranks.athletics = 4 in Rank; ranks.stealth = 4 in Rank; ranks.thievery = 4 in Rank'],
+			];
+	return [
+		{
+			config: {
+				id: 'abilities',
+				type: 'card-set',
+				label: 'Abilities',
+				position: { col: 1, row: 1, width: 12, height: 1 },
+				entries: [
+					{ key: 'STR', name: 'Strength' },
+					{ key: 'DEX', name: 'Dexterity' },
+					{ key: 'INT', name: 'Intelligence' },
+					{ key: 'WIS', name: 'Wisdom' },
+				],
+				derived: 'mod(value + mod.self)',
+			} as ComponentConfig,
+			body: '```sheet\nSTR: 10\nDEX: 14\nINT: 12\nWIS: 16\n```',
+		},
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 2, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [
+					{
+						key: 'Training',
+						hideHeading: true,
+						type: 'level',
+						levels: ['Untrained', 'Proficient:', 'Expertise:E'],
+					},
+					{
+						key: 'Bonus',
+						type: 'computed',
+						formula: 'ability + Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: skillRows,
+			} as ComponentConfig,
+			body: skillBody.join('\n'),
+		},
+		...(cycle
+			? []
+			: [
+					{
+						config: {
+							id: 'checks',
+							type: 'roster',
+							label: 'Checks',
+							position: { col: 7, row: 2, width: 6, height: 3 },
+							rowHeader: 'Check',
+							hideColumnHeadings: true,
+							stats: [
+								{ key: 'CON', name: 'Constitution' },
+								{ key: 'WIS', name: 'Wisdom' },
+							],
+							derived: 'mod(value + mod.self)',
+							signed: true,
+							columns: [
+								{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+								{
+									key: 'Total',
+									type: 'computed',
+									formula: 'stat + Prof * 2 + mod.self',
+									signed: true,
+									publish: true,
+								},
+							],
+							rows: [
+								{ label: 'Endurance', stat: 'CON', key: 'endurance' },
+								{ label: 'Concentration', stat: 'CON', key: 'concentration' },
+								{ label: 'Insight', stat: 'WIS', key: 'insight' },
+								{ label: 'Medicine', stat: 'WIS', key: 'medicine' },
+								{ label: 'Survival', stat: 'WIS', key: 'survival' },
+							],
+						} as ComponentConfig,
+						body: [
+							'```sheet',
+							'CON: 13',
+							'WIS: 16',
+							'```',
+							'',
+							'| Check | Prof |',
+							'| --- | --- |',
+							'| Endurance | 0 |',
+							'| Concentration | 1 |',
+							'| Insight | 0 |',
+							'| Medicine | 0 |',
+							'| Survival | 0 |',
+						].join('\n'),
+					},
+					{
+						config: {
+							id: 'inspiration',
+							type: 'track',
+							label: 'Inspiration',
+							position: { col: 1, row: 4, width: 2, height: 1 },
+							count: 1,
+						} as ComponentConfig,
+						body: '```sheet\nvalue: no\n```',
+					},
+					/*
+					 * A PF2e five-level rank, every row set to Legendary, with the
+					 * reader's own at Trained, Expert and Master: the door's account has
+					 * to name each of the three, not stand for a band of them.
+					 */
+					{
+						config: {
+							id: 'ranks',
+							type: 'table',
+							label: 'Ranks',
+							position: { col: 3, row: 4, width: 4, height: 1 },
+							rowHeader: 'Skill',
+							namePosition: 1,
+							columns: [
+								{
+									key: 'Rank',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Trained', 'Expert', 'Master', 'Legendary'],
+								},
+								{
+									key: 'Bonus',
+									type: 'computed',
+									formula: 'Rank * 2 + mod.self',
+									signed: true,
+									publish: true,
+								},
+							],
+							rows: [
+								{ label: 'Athletics', key: 'athletics' },
+								{ label: 'Stealth', key: 'stealth' },
+								{ label: 'Thievery', key: 'thievery' },
+							],
+						} as ComponentConfig,
+						body: [
+							'| Skill | Rank | Bonus |',
+							'| --- | --- | --- |',
+							'| Athletics | 1 | |',
+							'| Stealth | 2 | |',
+							'| Thievery | 3 | |',
+						].join('\n'),
+					},
+				]),
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: cycle ? { col: 7, row: 2, width: 6, height: 2 } : { col: 1, row: 5, width: 12, height: 2 },
+				rowHeader: 'Item',
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+				rows: parts.map(([label]) => ({ label })),
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				...parts.map(([label, part]) => `| ${label} | ${part} |`),
+			].join('\n'),
+		},
+	];
+}
+
+/**
+ * Cat Form as the test vault's 5e Druid layout declares it: a definition, so the
+ * Roster card strip it reaches is stamped from the layout and keeps one width
+ * with the form in play or not. It raises the Training of each row named:
+ * Stealth as the vault has it, and for the views that move the changed row off
+ * the card's last line, Acrobatics alone (the bottom-corner tag under untinted
+ * rows) or Acrobatics and Stealth (one tag for two rows in one card).
+ */
+export function rosterCardDefinitions(rows: readonly string[]): {
+	name: string;
+	changes: { target: string; column: string; operator: string; amount: string }[];
+}[] {
+	return [
+		{
+			name: 'Cat Form',
+			changes: rows.map((row) => ({ target: `abilities.${row}`, column: 'Training', operator: 'upgrade', amount: '1' })),
+		},
+	];
+}
+
+/** Which rows of the Dexterity card each Roster card state's Cat Form changes. */
+export const ROSTER_CARD_FORM_ROWS = {
+	'modifier-states-roster-card': ['stealth'],
+	'modifier-states-roster-band': ['stealth'],
+	'modifier-states-roster-card-middle': ['acrobatics'],
+	'modifier-states-roster-card-two': ['acrobatics', 'stealth'],
+} as const;
+
+/**
+ * The Druid's Dexterity card in small, as the test vault draws it: a Roster in
+ * card layout at its narrowest card, with Cat Form in play from a Stat block —
+ * so Stealth's row is form-tinted and its Training door's account opens on
+ * the stored Untrained under a pushed Proficient — and a note at
+ * Acrobatics, so a door sits after a number in the same narrow card
+ * (`docs/features/non-number-modifiers.md`).
+ *
+ * `band` draws the same Roster as one table in a placement two columns wide,
+ * so its name cells are as narrow as a card's. Stealth's tag sits in the lane
+ * the table sets aside at the row's end, after the door, and the narrow table
+ * scrolls sideways to reach it rather than laying it over the label
+ * (`docs/features/table-row-end-room.md`); `measure-form-tag.mjs` holds it
+ * clear of the name, the value, the ring and the door.
+ */
+export function rosterCardStateSamples(layout: 'cards' | 'band' = 'cards'): Sample[] {
+	const band = layout === 'band';
+	return [
+		{
+			config: {
+				id: 'abilities',
+				type: 'roster',
+				label: 'Abilities',
+				position: { col: 1, row: 1, width: band ? 2 : 4, height: 6 },
+				hideLabel: true,
+				cardLayout: !band,
+				hideColumnHeadings: true,
+				signed: true,
+				stats: [
+					{ key: 'DEX', name: 'Dexterity' },
+					{ key: 'WIS', name: 'Wisdom' },
+				],
+				derived: 'mod(value + mod.self)',
+				effective: 'value + mod.self',
+				rows: [
+					{ label: 'Dex Save', stat: 'DEX', key: 'dex_save', dividerAfter: true },
+					{ label: 'Acrobatics', stat: 'DEX', key: 'acrobatics' },
+					{ label: 'Sleight of Hand', stat: 'DEX' },
+					{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+					{ label: 'Perception', stat: 'WIS', key: 'perception' },
+				],
+				columns: [
+					{ key: 'Training', type: 'level', levels: ['Untrained', 'Proficient:', 'Expertise:E'] },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'stat + Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+			} as ComponentConfig,
+			body: [
+				'```sheet',
+				'DEX: 20',
+				'WIS: 22',
+				'```',
+				'',
+				'| Name | Training |',
+				'|---|---|',
+				'| Dex Save |  |',
+				'| Acrobatics |  |',
+				'| Sleight of Hand |  |',
+				'| Stealth | 0 |',
+				'| Perception | 1 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 5, row: 1, width: 6, height: 6 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: [
+				'### Cat Form',
+				'```sheet',
+				'Active: yes',
+				'Modifiers: Cat Form; abilities.acrobatics += note: Intuitive Motion: add 1d6 to the check',
+				'```',
+			].join('\n'),
+		},
+	];
+}
+
+/**
+ * Cat Form for the `modifier-states-ring-end` states: it raises Stealth's ring
+ * in each of the three tables — the published level, so addressed by the row's
+ * name alone, with no column — the row the Boots already raise, so the form
+ * turned on changes the row's tint, its tag and the table's lane and nothing
+ * else (`docs/features/table-row-end-room.md`, "Harness").
+ */
+export const RING_END_DEFINITIONS = [
+	{
+		name: 'Cat Form',
+		changes: [
+			{ target: 'skills.stealth', operator: 'upgrade', amount: '1' },
+			{ target: 'checks.stealth', operator: 'upgrade', amount: '1' },
+			{ target: 'names.stealth', operator: 'upgrade', amount: '1' },
+		],
+	},
+];
+
+/**
+ * Three tables ending on a ring (`docs/features/table-row-end-room.md`): a
+ * Table whose ring column is totalled, so its foot holds a value under the
+ * slot, a Roster table, and a Table whose name column is
+ * drawn last. In each, Stealth's ring is raised by the Boots, so a door
+ * follows it; Arcana's (Insight's on the Roster) nothing reaches, so an empty
+ * slot follows it; and Perception's (Medicine's) has a note at its own name
+ * and nothing set, so a mark follows it. Cat Form, in play from a Stat block,
+ * raises Stealth too, so each table holds one tagged row and sets the tag's
+ * lane aside. `inPlay: false` is the same sheet with the form not in play: no
+ * tint, no tag, no lane, and every door, mark and slot where it was, which is
+ * the before of the lane's reflow.
+ */
+export function ringEndSamples(inPlay = true): Sample[] {
+	const training = ['Untrained', 'Proficient:', 'Expertise:E'];
+	const tableRows = [
+		{ label: 'Stealth', key: 'stealth' },
+		{ label: 'Arcana', key: 'arcana' },
+		{ label: 'Perception', key: 'perception' },
+	];
+	return [
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				columns: [
+					{ key: 'Bonus', type: 'number' },
+					{ key: 'Training', type: 'level', levels: training, publish: true, total: true },
+				],
+				rows: tableRows,
+			} as ComponentConfig,
+			body: [
+				'| Skill | Bonus | Training |',
+				'| --- | --- | --- |',
+				'| Stealth | 1 | 0 |',
+				'| Arcana | 0 | 0 |',
+				'| Perception | 2 | 0 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 7, row: 1, width: 6, height: 2 },
+				rowHeader: 'Check',
+				stats: [{ key: 'WIS', name: 'Wisdom' }],
+				derived: 'mod(value)',
+				signed: true,
+				columns: [
+					{ key: 'Total', type: 'computed', formula: 'stat + Prof * 2', signed: true },
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], publish: true },
+				],
+				rows: [
+					{ label: 'Stealth', stat: 'WIS', key: 'stealth' },
+					{ label: 'Insight', stat: 'WIS', key: 'insight' },
+					{ label: 'Medicine', stat: 'WIS', key: 'medicine' },
+				],
+			} as ComponentConfig,
+			body: [
+				'```sheet',
+				'WIS: 14',
+				'```',
+				'',
+				'| Check | Prof |',
+				'| --- | --- |',
+				'| Stealth | 0 |',
+				'| Insight | 0 |',
+				'| Medicine | 0 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'names',
+				type: 'table',
+				label: 'Name last',
+				position: { col: 1, row: 3, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [{ key: 'Training', type: 'level', levels: training, publish: true }],
+				rows: tableRows,
+			} as ComponentConfig,
+			body: [
+				'| Skill | Training |',
+				'| --- | --- |',
+				'| Stealth | 0 |',
+				'| Arcana | 0 |',
+				'| Perception | 0 |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 7, row: 3, width: 6, height: 3 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: ['### Cat Form', '```sheet', `Active: ${inPlay ? 'yes' : 'no'}`, 'Modifiers: Cat Form', '```'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 1, row: 6, width: 12, height: 1 },
+				rowHeader: 'Item',
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+				rows: [{ label: 'Boots' }, { label: 'Lore' }],
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				'| Boots | skills.stealth >= 1; checks.stealth >= 1; names.stealth >= 1 |',
+				'| Lore | skills.perception += note: Advantage on checks about lore; checks.medicine += note: Advantage on checks about lore; names.perception += note: Advantage on checks about lore |',
+			].join('\n'),
+		},
+	];
+}
+
 export const NOTE_DEFINITIONS = [
 	{
 		name: 'Boots of Elvenkind',
@@ -4955,6 +5454,13 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 	const corners = variant === 'tint-corners';
 	const banded = variant === 'roster-band' || variant === 'roster-band-score' || corners;
 	const wolf = variant === 'two' || variant === 'tint-two' || scoreOnly ? 'yes' : 'no';
+	/*
+	 * Cat Form's column change on the band state (D11 of
+	 * `docs/features/non-number-modifiers.md`): the bear makes the druid
+	 * proficient in Endurance through its level, so that row is tinted and
+	 * carries the form's tag like a row whose number a form set.
+	 */
+	const bandLevel = variant === 'roster-band' ? '; checks.endurance >= 1 in Prof' : '';
 	const mook = variant === 'mook' || variant === 'tint-error' ? 'yes' : 'no';
 	/*
 	 * Two-on with a target both forms add to, so one card is reached by two
@@ -5226,7 +5732,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 						`Active: ${bear}`,
 						`HP: ${bearHp}`,
 						'Speed: 40 ft., climb 30 ft.',
-						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5; checks.concentration += 2; checks.insight += 1; checks.CON += 2${shared}${poolPush}${trackPush}`,
+						`Modifiers: abilities.STR = 4; abilities.DEX = 0; abilities.CON = 3; armour_class = 11; skills.perception >= 3; skills.stealth >= 3; saves.CON = 5; checks.concentration += 2; checks.insight += 1; checks.CON += 2${shared}${poolPush}${trackPush}${bandLevel}`,
 						...(tinting ? ['Tint: orange'] : []),
 						'```',
 						'',
@@ -5369,5 +5875,228 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					},
 				]
 			: []),
+	];
+}
+
+/**
+ * Which grant sheet a `pool-grant-*` state draws
+ * (`docs/features/granted-temporary-points.md`, Harness views).
+ */
+export const POOL_GRANT_VARIANTS = [
+	'form-active',
+	'form-ended',
+	'spell-active',
+	'spell-ended',
+	'item-active',
+	'item-ended',
+	'door',
+	'spent-below',
+] as const;
+export type PoolGrantVariant = (typeof POOL_GRANT_VARIANTS)[number];
+
+/**
+ * A Pool with temporary points beside the one component that grants them: a
+ * Stat block's form in play, a Record set's spell, or a Table's worn item.
+ * Each is drawn active and ended, so the pair shows the card holding its size
+ * while the grant comes and goes. `door` is the form and the item together over
+ * a record left by a ring no longer worn, whose account reads exactly as the
+ * spec's (`The account`): own 5, the bear's 10 with 3 spent, the ring's 5 with
+ * 2 spent and passed over, the old ring's 4 a leftover. `spent-below` is the
+ * bear spent down to 1 left beside the ring worn whole, so the smaller grant is
+ * the one in effect and the Gear row says so (the design review's pinned state).
+ */
+export function poolGrantSamples(variant: PoolGrantVariant): Sample[] {
+	const fence = (...lines: string[]) => ['```sheet', ...lines, '```'].join('\n');
+	const pool = (...lines: string[]): Sample => ({
+		config: {
+			id: 'hp',
+			type: 'pool',
+			label: 'HP',
+			position: { col: 1, row: 1, width: 3, height: 2 },
+			max: '30',
+			hasTemp: true,
+		} as ComponentConfig,
+		body: fence('current: 22', ...lines),
+	});
+	const wildShape = (active: boolean): Sample => ({
+		config: {
+			id: 'wild_shape',
+			type: 'stat-block',
+			label: 'Wild Shape',
+			position: { col: 4, row: 1, width: 6, height: 4 },
+			recordName: 'Form',
+			fields: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+			exclusive: 'Active',
+			zones: [{ key: 'vitals' }, { key: 'changes' }],
+		} as ComponentConfig,
+		body: ['### Brown Bear', fence(`Active: ${active ? 'yes' : 'no'}`, 'Modifiers: hp.temp >= 10')].join('\n'),
+	});
+	const gear = (worn: boolean, col = 4): Sample => ({
+		config: {
+			id: 'gear',
+			type: 'table',
+			label: 'Gear',
+			position: { col, row: col === 4 ? 1 : 5, width: 6, height: 2 },
+			rowHeader: 'Item',
+			openRows: true,
+			columns: [
+				{ key: 'Worn', type: 'toggle' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Item | Worn | Modifiers |',
+			'| --- | --- | --- |',
+			`| Ring of Vitality | ${worn ? 'yes' : 'no'} | hp.temp >= 5 when Worn |`,
+		].join('\n'),
+	});
+	if (variant === 'form-active') return [pool('temp: 3', 'spent · Wild Shape · Brown Bear: 4'), wildShape(true)];
+	if (variant === 'form-ended') return [pool('temp: 3'), wildShape(false)];
+	if (variant === 'item-active') return [pool('temp: 6'), gear(true)];
+	if (variant === 'item-ended') return [pool('temp: 6'), gear(false)];
+	if (variant === 'spent-below') {
+		return [
+			pool('temp: 0', 'spent · Wild Shape · Brown Bear: 9'),
+			wildShape(true),
+			{ ...gear(true), config: { ...gear(true).config, position: { col: 1, row: 5, width: 9, height: 2 } } },
+		];
+	}
+	if (variant === 'door') {
+		return [
+			pool('temp: 5', 'spent · Wild Shape · Brown Bear: 3', 'spent · Gear · Ring of Vitality: 2', 'spent · Gear · Old ring: 4'),
+			wildShape(true),
+			{ ...gear(true), config: { ...gear(true).config, position: { col: 1, row: 5, width: 9, height: 2 } } },
+		];
+	}
+	const active = variant === 'spell-active';
+	return [
+		pool('temp: 0'),
+		{
+			config: {
+				id: 'spells',
+				type: 'record-set',
+				label: 'Spells',
+				position: { col: 4, row: 1, width: 6, height: 3 },
+				recordName: 'Spell',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+			} as ComponentConfig,
+			body: ['### False Life', fence(`Active: ${active ? 'yes' : 'no'}`, 'Modifiers: hp.temp >= 8 when Active')].join('\n'),
+		},
+	];
+}
+
+/**
+ * The layout definition the dropdowns sheet enrols in through its form: Beast
+ * shape chooses Creature type's option (`docs/features/text-value-modifiers.md`).
+ */
+export const OPTION_DEFINITIONS = [
+	{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Beast' },
+];
+
+/**
+ * Dropdowns a modifier chose (`docs/features/text-value-modifiers.md`): Size,
+ * chosen Large by the Brown bear form in play through a typed part; Creature
+ * type, chosen Beast by the layout's Beast shape, which the same form enrols;
+ * Alignment, aimed at by a worn Gear row whose literal misses on case alone, so
+ * D4 refuses it; Lifestyle, which nothing aims at, as the control; and Speed,
+ * the B pattern, a Card set whose climb the form floors.
+ */
+export function modifierOptionsSamples(): Sample[] {
+	const dropdown = (
+		id: string,
+		label: string,
+		col: number,
+		values: readonly string[],
+		stored: string,
+	): Sample => ({
+		config: {
+			id,
+			type: 'card',
+			label,
+			position: { col, row: 1, width: 3, height: 1 },
+			options: values.map((value) => ({ value })),
+			hideNote: true,
+		} as ComponentConfig,
+		body: ['```sheet', `value: ${stored}`, '```'].join('\n'),
+	});
+	return [
+		dropdown('size', 'Size', 1, ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'], 'Medium'),
+		dropdown(
+			'creature_type',
+			'Creature type',
+			4,
+			['Aberration', 'Beast', 'Celestial', 'Construct', 'Dragon', 'Elemental', 'Fey', 'Fiend', 'Giant', 'Humanoid', 'Monstrosity', 'Ooze', 'Plant', 'Undead'],
+			'Humanoid',
+		),
+		dropdown(
+			'alignment',
+			'Alignment',
+			7,
+			['Lawful good', 'Neutral good', 'Chaotic good', 'Lawful neutral', 'Neutral', 'Chaotic neutral', 'Lawful evil', 'Neutral evil', 'Chaotic evil'],
+			'Neutral good',
+		),
+		dropdown('lifestyle', 'Lifestyle', 10, ['Poor', 'Modest', 'Comfortable', 'Wealthy'], 'Modest'),
+		{
+			config: {
+				id: 'speed',
+				type: 'card-set',
+				label: 'Speed',
+				// Two units wide at fixed sizing, so its four cards sit two to a
+				// row at every width, a phone's included, rather than 3 + 1.
+				position: { col: 1, row: 2, width: 2, height: 2 },
+				sizing: 'fixed',
+				entries: [{ key: 'walk' }, { key: 'climb' }, { key: 'fly' }, { key: 'swim' }],
+				derived: 'value + mod.self',
+				signed: false,
+			} as ComponentConfig,
+			body: ['```sheet', 'walk: 30', 'climb: 0', 'fly: 0', 'swim: 0', '```'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 3, row: 2, width: 10, height: 1 },
+				rowHeader: 'Item',
+				columns: [
+					{ key: 'Worn', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+				rows: [{ label: 'Cursed amulet' }],
+			} as ComponentConfig,
+			body: [
+				'| Item | Worn | Modifiers |',
+				'| --- | --- | --- |',
+				'| Cursed amulet | yes | alignment = option: Chaotic Evil when Worn |',
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 1, row: 4, width: 12, height: 5 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: [
+				'### Brown bear',
+				'```sheet',
+				'Active: yes',
+				'Modifiers: size = option: Large; Beast shape; speed.walk = 40; speed.climb >= 30',
+				'```',
+			].join('\n'),
+		},
 	];
 }

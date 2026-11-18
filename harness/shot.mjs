@@ -363,6 +363,9 @@ const PASTE_FRAME = '1500,18000';
  */
 const OPEN_MIXED_GLYPH =
 	"press=.sheetsmith-table-modifier-button%5Btitle*%3D'item%20%2B1%20%28changes%20nothing%29'%5D";
+/** One press on the cycle sheet's only Stealth ring. */
+const CYCLE_PRESS =
+	"press=%5Bdata-sheetsmith-component%3D'skills'%5D%20.sheetsmith-level-ring";
 const OPEN_MIXED_FORM = `${OPEN_MIXED_GLYPH}&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D`;
 
 /**
@@ -3705,6 +3708,424 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&state=notes',
 		size: '1500,2600',
 	},
+	/*
+	 * Rings a modifier set (`docs/features/non-number-modifiers.md`): on the
+	 * skills Table and the Checks Roster, one ring raised by At least, one
+	 * already higher, one set by Sets and one refused, beside one nothing
+	 * reaches; and the Inspiration flag turned on by a push, its door beside its
+	 * label. In each column the doors stand in line and the rings stay in line
+	 * whether or not a row is marked.
+	 */
+	{
+		name: 'modifier-states-light',
+		query: 'surface=sheet&theme=light&state=modifier-states',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-states-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-states-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-states',
+		size: '1400,1100',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-states-phone',
+		query: 'surface=sheet&theme=light&state=modifier-states',
+		size: '380,3200',
+		platform: 'phone',
+	},
+	// The same state at Text 20 and 24, where the doors keep their fixed-px box
+	// and the rings and their faces grow with the sheet's `em`.
+	{
+		name: 'modifier-states-text-20',
+		query: 'surface=sheet&theme=light&state=modifier-states&text=20',
+		size: '1400,1300',
+	},
+	{
+		name: 'modifier-states-text-24',
+		query: 'surface=sheet&theme=light&state=modifier-states&text=24',
+		size: '1400,1500',
+	},
+	/*
+	 * The Lore row's modifier form open on `skills.investigation = 2 in
+	 * Training`: Value, the Sets operator, and the position legend under Amount.
+	 */
+	{
+		name: 'modifier-states-form',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=.sheetsmith-table-modifier-button%5Btitle*%3D'investigation'%5D&press=.sheetsmith-panel-line",
+		size: '1400,1100',
+	},
+	/*
+	 * The Druid's Dexterity card in small, Cat Form in play: Stealth's door
+	 * beside a Proficient ring, a note mark after Acrobatics' Total, and the
+	 * strip's state floor, stamped from the layout, putting each card on a line
+	 * of its own where two would scroll sideways. Every Text size the harness
+	 * stages and a phone, in both palettes, and forced colors at default.
+	 */
+	{
+		name: 'modifier-states-roster-card-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-phone-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-20-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-text-24-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-phone-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-roster-card&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+		flags: ['--force-high-contrast'],
+	},
+	/*
+	 * The card's bottom-corner tag for a row that is not the card's last:
+	 * Cat Form raising Acrobatics, a middle row, and then Acrobatics with
+	 * Stealth, two rows and one tag, so a review can judge whether the tag
+	 * still reads as the changed row's (`docs/features/character-forms.md`,
+	 * "Row first"). Every Text size the harness stages and a phone.
+	 */
+	{
+		name: 'modifier-states-roster-card-middle-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-phone-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-phone-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off',
+		size: '380,1800',
+		platform: 'phone',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
+	 * Text 20 in a 700px frame, which keeps each card at its 235px floor
+	 * where the 1400 frame's Text 20 cards are about 450px wide and give the
+	 * name cell slack: the width at which Stealth's tag covered 23px of its
+	 * label (`measure-form-tag.mjs`'s Text 20 at 700 run). The cards stack one
+	 * to a line here too; what this frame holds is their narrow width.
+	 */
+	{
+		name: 'modifier-states-roster-card-text-20-700-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&text=20&width=700',
+		size: '700,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-middle-text-20-700-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-middle&bar=off&text=20&width=700',
+		size: '700,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-card-two-text-20-700-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-card-two&bar=off&text=20&width=700',
+		size: '700,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
+	 * The same Roster as one table two columns wide, Cat Form on Stealth's
+	 * ring: the row's name cell has no slack, so the tag sits in the lane the
+	 * table sets aside at the row's end, after the door, and the narrow table
+	 * scrolls sideways to reach it rather than covering the label
+	 * (`docs/features/table-row-end-room.md`). At Text 20 too, the size the
+	 * covered label was measured at.
+	 */
+	{
+		name: 'modifier-states-roster-band-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off',
+		size: '1400,900',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-band-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off&text=20',
+		size: '1400,1000',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	{
+		name: 'modifier-states-roster-band-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-roster-band&bar=off&text=24',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="abilities"]',
+	},
+	/*
+	 * Three tables ending on a ring (`docs/features/table-row-end-room.md`): a
+	 * Table with its ring column totalled, a Roster table, and a Table with its
+	 * name drawn last, each holding a door, an empty slot and a note mark after
+	 * its rings, one place down the column, and Cat Form's tag in the lane after
+	 * the door. The `-off` twin is the same sheet with the form not in play, so
+	 * each pair is the lane's reflow on one table: nothing but the tint, the
+	 * tag and the lane may differ. At 520 too, where the tables scroll sideways
+	 * and the sheet must not.
+	 */
+	{
+		name: 'modifier-states-ring-end-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off',
+		size: '1400,900',
+	},
+	{
+		name: 'modifier-states-ring-end-text-20-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off&text=20',
+		size: '1400,1000',
+	},
+	{
+		name: 'modifier-states-ring-end-text-24-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off&text=24',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-states-ring-end-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-states-ring-end&bar=off',
+		size: '1400,900',
+	},
+	{
+		name: 'modifier-states-ring-end-off-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end-off&bar=off',
+		size: '1400,900',
+	},
+	{
+		name: 'modifier-states-ring-end-520-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end&bar=off&width=520',
+		size: '620,900',
+	},
+	{
+		name: 'modifier-states-ring-end-off-520-light',
+		query: 'surface=sheet&theme=light&state=modifier-states-ring-end-off&bar=off&width=520',
+		size: '620,900',
+	},
+	/*
+	 * Stealth's door opened under Cat Form, stored Untrained (the test vault's
+	 * Thorne): the account opens on `Your own: Untrained`, then the line and the
+	 * drawn state.
+	 */
+	{
+		name: 'modifier-states-own-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states-roster-card&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Stealth'%5D",
+		size: '1400,900',
+	},
+	/*
+	 * A Roster row whose ring and Total a modifier both changed, its one door
+	 * at the row's end opened: Insight under Bulls strength, the ring's lines
+	 * first and then the Total's.
+	 */
+	{
+		name: 'modifier-states-row-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Insight'%5D",
+		size: '1400,1100',
+	},
+	/*
+	 * A refused state's door opened: Perception's row, whose Training the Cursed eye
+	 * sets to 3 on a list running 0 to 2, so the account opens on the refusal's
+	 * sentence over the stored level (UI.md §10, "Error text names the fix").
+	 */
+	{
+		name: 'modifier-states-refused-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Perception'%5D",
+		size: '1400,1100',
+	},
+	/*
+	 * An already-higher ring's door opened: Arcana, stored Expertise under the
+	 * Scholar's At least Proficient, so the account names the level it already
+	 * is, `already Expertise`.
+	 */
+	{
+		name: 'modifier-states-already-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-states&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Arcana'%5D",
+		size: '1400,1100',
+	},
+	/*
+	 * One Stealth ring, stored Untrained under Cat Form's At least Proficient,
+	 * pressed one, two and three times: the first press moves the note and not
+	 * the ring; the second moves the ring to Expertise; and the third wraps the
+	 * note to Untrained, which the ring draws as Proficient. No press opens a
+	 * popover, and the door is the `info` glyph throughout: the reader's own
+	 * level is in its account.
+	 */
+	{
+		name: 'modifier-states-cycle-1',
+		query: `surface=sheet&theme=light&state=modifier-states-cycle&bar=off&${CYCLE_PRESS}`,
+		size: '1400,700',
+	},
+	{
+		name: 'modifier-states-cycle-2',
+		query: `surface=sheet&theme=light&state=modifier-states-cycle&bar=off&${CYCLE_PRESS}&${CYCLE_PRESS}`,
+		size: '1400,700',
+	},
+	{
+		name: 'modifier-states-cycle-3',
+		query: `surface=sheet&theme=light&state=modifier-states-cycle&bar=off&${CYCLE_PRESS}&${CYCLE_PRESS}&${CYCLE_PRESS}`,
+		size: '1400,700',
+	},
+	/*
+	 * The editor opening on Cat Form's two changes, each aimed at a level: the
+	 * Value select on **Levels and flags**, the Operator offering Sets and At
+	 * least only, and the position legend under Amount.
+	 */
+	{
+		name: 'editor-modifier-states',
+		query: 'surface=editor&theme=light&state=modifier-states',
+		size: '1500,2600',
+	},
+	/*
+	 * Dropdowns a modifier chose (`docs/features/text-value-modifiers.md`): Size
+	 * chosen Large by the Brown bear form in play, Creature type chosen Beast by
+	 * the layout's Beast shape, Alignment refused on case alone, Lifestyle with
+	 * nothing aimed at it, and the Speed set's climb floored by the form. The
+	 * door sits at the label line's end on each modified card, and the dotted
+	 * rule is under the three modified selects and not under Lifestyle's.
+	 */
+	{
+		name: 'modifier-options-light',
+		query: 'surface=sheet&theme=light&state=modifier-options',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-options-dark',
+		query: 'surface=sheet&theme=dark&state=modifier-options',
+		size: '1400,1100',
+	},
+	{
+		name: 'modifier-options-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-options',
+		size: '1400,1100',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-options-phone',
+		query: 'surface=sheet&theme=light&state=modifier-options',
+		size: '380,3200',
+		platform: 'phone',
+	},
+	// Size's door open: its own choice, the form's line, and what it draws.
+	{
+		name: 'modifier-options-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-options&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Size'%5D",
+		size: '1400,1100',
+	},
+	// Alignment's door open on D4's sentence, over the stored choice.
+	{
+		name: 'modifier-options-refused-door',
+		query:
+			"surface=sheet&theme=light&state=modifier-options&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Alignment'%5D",
+		size: '1400,1100',
+	},
+	// Size focused by code: the stored Medium, the dotted rule still under it.
+	{
+		name: 'modifier-options-focus',
+		query:
+			"surface=sheet&theme=light&state=modifier-options&bar=off&focus=%5Bdata-sheetsmith-component%3D'size'%5D%20.sheetsmith-card-select",
+		size: '1400,1100',
+	},
+	// Brown bear's row form open on its size part: Value Size, Operator Sets,
+	// Option Large.
+	{
+		name: 'modifier-options-form',
+		query:
+			'surface=sheet&theme=light&state=modifier-options&bar=off&press=.sheetsmith-stat-block-change-glyph%20button&press=.sheetsmith-panel-line',
+		size: '1400,1100',
+	},
+	// The form tint on Size and Creature type, with one tag per placement.
+	{
+		name: 'modifier-options-tint',
+		query: 'surface=sheet&theme=light&state=modifier-options&tint=green',
+		size: '1400,1100',
+	},
+	// The editor's definitions list holding Beast shape: Value Creature type,
+	// Operator Sets, Option Beast.
+	{
+		name: 'editor-modifier-options',
+		query: 'surface=editor&theme=light&state=modifier-options',
+		size: '1500,2600',
+	},
 	{
 		name: 'sheet-text-groups-collapsed',
 		query:
@@ -3767,6 +4188,42 @@ export const DEFAULTS = [
 		hover: '.sheetsmith-record-input-text',
 	},
 	...poolHeadlineViews(),
+	/*
+	 * Temporary points a modifier grants (`docs/features/granted-temporary-points.md`):
+	 * a Pool beside a Stat block's form in play, a Record set's spell and a
+	 * Table's worn item, each active and then ended, so each pair shows the card
+	 * holding its size while the grant comes and goes. Then the form view's door
+	 * opened on the account, and a value typed under the bear's grant, the pill
+	 * still drawing the grant and D8's sentence under it.
+	 */
+	...['form-active', 'form-ended', 'spell-active', 'spell-ended', 'item-active', 'item-ended'].map(
+		(variant) => ({
+			name: `pool-grant-${variant}`,
+			query: `surface=sheet&theme=light&state=pool-grant-${variant}&bar=off`,
+			size: '1400,700',
+		}),
+	),
+	{
+		name: 'pool-grant-door',
+		query:
+			'surface=sheet&theme=light&state=pool-grant-door&bar=off&press=.sheetsmith-pool-modifier-button',
+		size: '1400,900',
+	},
+	/*
+	 * The bear spent down to 1 left beside the ring worn whole: the ring is the
+	 * grant in effect, so the pill draws 5 and the Gear row's glyph applies.
+	 */
+	{
+		name: 'pool-grant-spent-below',
+		query: 'surface=sheet&theme=light&state=pool-grant-spent-below&bar=off',
+		size: '1400,700',
+	},
+	{
+		name: 'pool-grant-typed-under',
+		query:
+			'surface=sheet&theme=light&state=pool-grant-form-active&bar=off&type=.sheetsmith-pool-temp-input%7C2',
+		size: '1400,700',
+	},
 ];
 
 /**

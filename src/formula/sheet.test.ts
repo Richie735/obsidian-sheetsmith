@@ -760,7 +760,7 @@ describe('sheetModifiers', () => {
 		const outcome = sheet('10 + mod.self').outcomes('Ring', {
 			label: 'Ring of Protection',
 			values: {},
-		})[0] as ModifierOutcome;
+		}, '')[0] as ModifierOutcome;
 		expect(outcome.definition?.name).toBe('Ring');
 		expect(outcome.applies).toBe(true);
 		expect(outcome.amount).toBe(2);
@@ -771,7 +771,7 @@ describe('sheetModifiers', () => {
 		const outcome = sheet('10 + mod.self').outcomes('Ring of Nonexistence', {
 			label: 'Amulet',
 			values: {},
-		})[0] as ModifierOutcome;
+		}, '')[0] as ModifierOutcome;
 		expect(outcome.definition).toBeNull();
 		expect(outcome.applies).toBe(false);
 	});
@@ -819,7 +819,7 @@ describe('sheetModifiers', () => {
 		expect(input.marked.has('armour_class')).toBe(false);
 		const context = sheetModifiers(input, buildSheetEnv(components, undefined, input));
 		expect(context.breakdown('armour_class').lines).toEqual([]);
-		const outcome = context.outcomes('Ring', { label: 'Ring', values: {} })[0] as ModifierOutcome;
+		const outcome = context.outcomes('Ring', { label: 'Ring', values: {} }, '')[0] as ModifierOutcome;
 		expect(outcome.applies).toBe(true);
 	});
 
@@ -1200,10 +1200,10 @@ describe('sheetModifiers over notes (docs/features/modifier-notes.md)', () => {
 	it('says a note-only part at a note target is applying, and one at another name is not', () => {
 		const { context } = sheet([]);
 		const row = { label: 'Boots', values: {} };
-		const noted = context.outcomes('passive += note: Advantage', row)[0];
+		const noted = context.outcomes('passive += note: Advantage', row, '')[0];
 		expect(noted?.applies).toBe(true);
 		expect(noted?.suppressed).toBeNull();
-		const refused = context.outcomes('abilities.STR += note: Advantage', row)[0];
+		const refused = context.outcomes('abilities.STR += note: Advantage', row, '')[0];
 		expect(refused?.applies).toBe(false);
 		expect(refused?.suppressed).toBe(
 			'Abilities · STR cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
@@ -1215,7 +1215,7 @@ describe('sheetModifiers over notes (docs/features/modifier-notes.md)', () => {
 		const outcome = context.outcomes('passive += 1 note: Advantage', {
 			label: 'Boots',
 			values: {},
-		})[0];
+		}, '')[0];
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe(
 			'Passive perception does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.',
@@ -1228,7 +1228,7 @@ describe('sheetModifiers over notes (docs/features/modifier-notes.md)', () => {
 		const outcome = context.outcomes('abilities.STR += 1 note: Strong', {
 			label: 'Belt',
 			values: {},
-		})[0];
+		}, '')[0];
 		expect(outcome?.applies).toBe(true);
 		expect(outcome?.noteLine).toBe(
 			'Abilities · STR cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
@@ -1251,7 +1251,7 @@ describe('sheetModifiers over notes (docs/features/modifier-notes.md)', () => {
 		expect(parsed.problems.map((problem) => problem.definition)).toEqual(['Belt']);
 		const { context } = sheet(['Belt', 'Keen'], parsed.definitions);
 		const row = { label: 'Row', values: {} };
-		expect(context.outcomes('Belt', row)[0]?.applies).toBe(false);
-		expect(context.outcomes('Keen', row)[0]?.applies).toBe(true);
+		expect(context.outcomes('Belt', row, '')[0]?.applies).toBe(false);
+		expect(context.outcomes('Keen', row, '')[0]?.applies).toBe(true);
 	});
 });

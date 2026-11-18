@@ -11,6 +11,7 @@ import { renderGrid, walkLayout } from './grid-cells';
 import {
 	applyDecorations,
 	IN_PLAY_BOX,
+	IN_PLAY_LANE,
 	IN_PLAY_MARK_INLINE,
 	IN_PLAY_MARK,
 	IN_PLAY_MARK_SEVERAL,
@@ -19,8 +20,11 @@ import {
 	inPlayDecorations,
 	TAG_TEXT_ATTRIBUTE,
 	pickTagText,
+	stateLinesIn,
+	bufferLinesIn,
+	choiceLinesIn,
 } from './placement-decorations';
-import { modifierBreakdown } from '../components/modifier-breakdown';
+import { modifierBreakdown, ROW_END_CLASS, stampStateHost } from '../components/modifier-breakdown';
 import { contrast } from '../ui/contrast';
 
 /*
@@ -217,14 +221,52 @@ describe('the in-play tint', () => {
 		expect(cellOf(root, 'abilities').classList.contains(IN_PLAY_PLACEMENT)).toBe(false);
 	});
 
-	it('tints the table row a form changed, with the pill after its name', () => {
+	it('tints the table row a form changed, with the pill in its row-end cell\'s lane', () => {
 		const { root } = draw(NOTE('yes'));
 		const rows = Array.from(cellOf(root, 'skills').querySelectorAll<HTMLElement>('tbody tr'));
 		// Stealth's floor of 5 raises DEX's 2; Athletics moves through the new
 		// Strength and was pushed at by nothing, so it stays untinted.
 		expect(rows.map((row) => row.classList.contains(IN_PLAY_BOX))).toEqual([false, true]);
-		const pill = rows[1]?.querySelector(`th[scope="row"] .${IN_PLAY_MARK_INLINE}`);
+		// In the row's last value cell, after its value, and never over its name
+		// (`docs/features/table-row-end-room.md`).
+		const end = rows[1]?.querySelector<HTMLElement>(`td.${ROW_END_CLASS}`);
+		const pill = end?.querySelector(`:scope > .${IN_PLAY_MARK_INLINE}`);
 		expect(pill?.textContent).toBe('Brown Bear');
+		expect(end?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(rows[1]?.querySelector(`th[scope="row"] .${IN_PLAY_MARK}`)).toBeNull();
+		expect(rows[1]?.querySelector('th[scope="row"]')?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		// The table sets the lane aside on every row while the tag is drawn.
+		const table = cellOf(root, 'skills').querySelector('table');
+		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(true);
+	});
+
+	it('takes the lane away on a pass with no decoration', () => {
+		const { root } = draw(NOTE('yes'));
+		const table = cellOf(root, 'skills').querySelector('table');
+		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(true);
+		applyDecorations(root, []);
+		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(false);
+		expect(root.querySelector(`.${IN_PLAY_MARKED}`)).toBeNull();
+	});
+
+	it('tags a name-last row in its last value cell, and leaves the pinned name unmarked', () => {
+		const nameLast = {
+			...LAYOUT,
+			components: LAYOUT.components.map((component) =>
+				component.id === 'skills' ? { ...component, namePosition: 1 } : component,
+			),
+		};
+		const { root } = draw(NOTE('yes'), nameLast);
+		const stealth = Array.from(cellOf(root, 'skills').querySelectorAll<HTMLElement>('tbody tr'))[1];
+		// The name is drawn last, and the row's end is the cell before it.
+		const name = stealth?.lastElementChild as HTMLElement;
+		expect(name.matches('th[scope="row"]')).toBe(true);
+		expect(name.classList.contains(ROW_END_CLASS)).toBe(false);
+		expect(name.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		const end = name.previousElementSibling as HTMLElement;
+		expect(end.classList.contains(ROW_END_CLASS)).toBe(true);
+		expect(end.querySelector(`.${IN_PLAY_MARK_INLINE}`)?.textContent).toBe('Brown Bear');
+		expect(name.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
 	});
 
 	it('puts the pill on the first tinted card, never on one the form left alone', () => {
@@ -258,7 +300,7 @@ describe('the in-play tint', () => {
 		expect(cellOf(root, 'perception').querySelector('.sheetsmith-modified')).toBeNull();
 		// And the breakdown says why, from the same fact.
 		expect(modifierBreakdown(modifiers.breakdown('perception'), 6)).toContain(
-			'Brown Bear — at least +3 (not applied: already higher)',
+			'Brown Bear — at least 3 (not applied: already higher)',
 		);
 	});
 
@@ -536,9 +578,10 @@ describe('the tag text picked against the fill', () => {
 /*
  * A Roster drawn as stat cards, whose rows each move on their own: a form
  * tints a stat's score pill and each row it changed, never the card, and the
- * card carries the tag for its pill where a score comes first; where only a
- * row moved, the tag is in that row's name cell
- * (`docs/features/character-forms.md`, "Where a decoration lands" and "The
+ * card carries the tag for its pill and its rows alike, at its bottom corner,
+ * opposite the score: a card's name cell is as narrow as the card, so a tag
+ * laid over it covered the label (`docs/features/character-forms.md`, "Where
+ * a decoration lands" and "The
  * text mark", Roster). Cat adds to its scores, as the owner's
  * druid's Cat Form does, so `mod.self` moves the score where `effective` reads
  * it; an `=` sets the published reading and leaves the score alone.
@@ -699,14 +742,24 @@ describe('the in-play tint on a Roster card', () => {
 		expect(insight?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
 	});
 
-	it('tags a row\'s name cell where a form pushed only at that row', () => {
+	it('tags the card at its corner where a form pushed only at one of its rows, never the row\'s name', () => {
+		// A card's name cell is as narrow as the card, so a tag laid over its
+		// inline end covered the label: Stealth read "Stea[Cat Form]".
 		const { root } = draw(ROSTER_NOTE('no', 'yes'), ROSTER(true));
+		const [strength, dexterity, wisdom] = cardsOf(root);
 		const insight = Array.from(cellOf(root, 'checks').querySelectorAll<HTMLElement>('tbody tr'))[3];
 		expect(insight?.classList.contains(IN_PLAY_BOX)).toBe(true);
-		const tag = insight?.querySelector(`th[scope="row"] .${IN_PLAY_MARK_INLINE}`);
-		expect(tag?.textContent).toBe('Owl');
-		expect(tagsIn(cellOf(root, 'checks'))).toHaveLength(1);
-		for (const card of cardsOf(root)) expect(card.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		expect(insight?.querySelector(`.${IN_PLAY_MARK}`)).toBeNull();
+		const tags = tagsIn(cellOf(root, 'checks'));
+		expect(tags).toHaveLength(1);
+		expect(tags[0]?.parentElement).toBe(wisdom);
+		expect(tags[0]?.textContent).toBe('Owl');
+		// On the card itself, as its score's tag is — never inside the score's
+		// pill or along a row's line — so the stylesheet's bottom corner places it.
+		expect(tags[0]?.classList.contains(IN_PLAY_MARK_INLINE)).toBe(false);
+		expect(wisdom?.classList.contains(IN_PLAY_MARKED)).toBe(true);
+		expect(wisdom?.classList.contains(IN_PLAY_BOX)).toBe(false);
+		for (const card of [strength, dexterity]) expect(card?.classList.contains(IN_PLAY_MARKED)).toBe(false);
 	});
 
 	it('tints the card whole where only the reading moved, with no effective', () => {
@@ -815,6 +868,8 @@ describe('the in-play tint on a Roster band head', () => {
 		expect(rowsHoldCellsAlone(root)).toBe(true);
 		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(false);
 		expect(headingOf(dexterity)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		// A band's tag rides its own line, so its table sets no lane aside.
+		expect(cellOf(root, 'checks').querySelector(`.${IN_PLAY_LANE}`)).toBeNull();
 	});
 
 	it('draws one tag, on the band, where a form pushed at its score and one of its rows', () => {
@@ -830,7 +885,7 @@ describe('the in-play tint on a Roster band head', () => {
 		expect(rowsHoldCellsAlone(root)).toBe(true);
 	});
 
-	it('keeps the tag in a row\'s name cell where that row comes before a tinted band', () => {
+	it('tags a row in its row-end cell where that row comes before a tinted band', () => {
 		const { root } = draw(BAND_NOTE('Hawk'), ROSTER_TABLE);
 		const [strength, dexterity] = bandsOf(root);
 		const athletics = rowNamed(root, 'Athletics');
@@ -838,7 +893,9 @@ describe('the in-play tint on a Roster band head', () => {
 		expect(dexterity?.classList.contains(IN_PLAY_BOX)).toBe(true);
 		const tags = tagsIn(cellOf(root, 'checks'));
 		expect(tags).toHaveLength(1);
-		expect(tags[0]?.parentElement).toBe(athletics?.querySelector('th[scope="row"]'));
+		expect(tags[0]?.parentElement).toBe(athletics?.querySelector(`.${ROW_END_CLASS}`));
+		expect(athletics?.querySelector('th[scope="row"]')?.classList.contains(IN_PLAY_MARKED)).toBe(false);
+		expect(cellOf(root, 'checks').querySelector('table')?.classList.contains(IN_PLAY_LANE)).toBe(true);
 		expect(headingOf(dexterity)?.classList.contains(IN_PLAY_MARKED)).toBe(false);
 		expect(rowsHoldCellsAlone(root)).toBe(true);
 	});
@@ -947,5 +1004,254 @@ describe('the tag text on a carrier no tinted box holds', () => {
 		);
 		pickTagText(page);
 		expect(pill.getAttribute(TAG_TEXT_ATTRIBUTE)).toBe('black');
+	});
+});
+
+describe('stateLinesIn: a ring a form in play set (docs/features/non-number-modifiers.md D11)', () => {
+	const line = {
+		label: 'Cat Form',
+		source: 'Wild Shape',
+		operator: 'upgrade' as const,
+		type: null,
+		amount: 1,
+		suppressed: null,
+		inPlay: true,
+		tint: 'green' as const,
+	};
+
+	/** A sheet holding one stamped ring, and what the context folded for it. */
+	function ringed() {
+		const root = document.createElement('div');
+		const cell = root.createDiv({ attr: { 'data-sheetsmith-component': 'checks' } });
+		const row = cell.createEl('table').createEl('tbody').createEl('tr');
+		row.createEl('th', { attr: { scope: 'row' }, text: 'Endurance' });
+		const ring = row.createEl('td').createEl('button');
+		stampStateHost(ring, 'checks.endurance', 'Prof', 0, row);
+		const asked: [string, string | null, unknown][] = [];
+		const modifiers = {
+			state: (name: string, column: string | null, stored: unknown) => {
+				asked.push([name, column, stored]);
+				return {
+					shape: { flag: false, positions: 2, words: ['Untrained', 'Proficient'], label: 'Prof' },
+					stored: 0,
+					drawn: 1,
+					lines: [line],
+					error: null,
+				};
+			},
+		};
+		return { root, row, asked, modifiers };
+	}
+
+	it('reads the stamped name, column and stored position, and hands back the folded lines', () => {
+		const { root, asked, modifiers } = ringed();
+		expect(stateLinesIn(root, modifiers)).toEqual([{ name: 'checks.endurance', lines: [line] }]);
+		expect(asked).toEqual([['checks.endurance', 'Prof', 0]]);
+	});
+
+	it('tints the ring\'s row in the form\'s colour, as a number it changed would be', () => {
+		const { root, row, modifiers } = ringed();
+		const decorations = inPlayDecorations([], () => ({ lines: [], override: null, total: 0 }), stateLinesIn(root, modifiers));
+		expect(decorations).toEqual([
+			{ kind: 'in-play', label: 'Cat Form', tint: 'green', names: ['checks.endurance'] },
+		]);
+		applyDecorations(root, decorations);
+		expect(row.classList.contains('sheetsmith-in-play')).toBe(true);
+		expect(row.getAttribute('data-sheetsmith-tint')).toBe('green');
+	});
+
+	it('finds nothing where the context has no states, or nothing is stamped', () => {
+		const { root } = ringed();
+		expect(stateLinesIn(root, {})).toEqual([]);
+		expect(stateLinesIn(document.createElement('div'), ringed().modifiers)).toEqual([]);
+	});
+});
+
+describe('bufferLinesIn: a pool a form in play grants (docs/features/granted-temporary-points.md D12)', () => {
+	const GRANTS = {
+		name: 'Grants fixture',
+		columns: 12,
+		components: [
+			{ id: 'hp', type: 'pool', label: 'HP', max: '30', hasTemp: true, position: { col: 1, row: 1, width: 3, height: 2 } },
+			{
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				position: { col: 4, row: 1, width: 6, height: 4 },
+			},
+		],
+	};
+	const note = (temp: number) => `---
+sheet-layout: Grants fixture
+---
+
+## HP
+\`\`\`sheet
+current: 22
+temp: ${temp}
+\`\`\`
+
+## Wild Shape
+
+### Brown Bear
+\`\`\`sheet
+Active: yes
+Modifiers: hp.temp >= 10
+\`\`\`
+`;
+
+	function drawn(source: string) {
+		const layout = parseLayout(JSON.stringify(GRANTS));
+		const parsed = parseCharacter(source);
+		const walk = walkLayout(layout.components);
+		const prepared = walk.map(({ config }) => {
+			const component = getComponent(config.type);
+			if (component === undefined) throw new Error(config.type);
+			const section = getSection(parsed, config.label);
+			const result = section ? component.read(section.body, config) : null;
+			return { config, component, error: null, data: result?.ok === true ? result.data : null };
+		});
+		const { env, modifiers, marked } = buildSheet(layout, prepared);
+		const root = document.createElement('div');
+		root.className = 'sheetsmith-view';
+		document.body.appendChild(root);
+		renderGrid(root, walk, prepared, ({ config, component, data }) => ({
+			...formulaContext(component, config, data, env),
+			modifiers,
+			onChange: () => undefined,
+		}));
+		applyDecorations(
+			root,
+			inPlayDecorations(marked, (name) => modifiers.breakdown(name), bufferLinesIn(prepared, modifiers)),
+		);
+		return { root, lines: bufferLinesIn(prepared, modifiers) };
+	}
+
+	it('tints the pool’s card where the form’s grant is the buffer it draws', () => {
+		const { root, lines } = drawn(note(3));
+		expect(lines.map((one) => [one.name, one.lines[0]?.label, one.lines[0]?.inPlay])).toEqual([
+			['hp.temp', 'Brown Bear', true],
+		]);
+		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_BOX}`)).not.toBeNull();
+		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_MARK}`)?.textContent).toBe('Brown Bear');
+		// The form's change line names the pool it grants at, not only its key.
+		expect(cellOf(root, 'wild_shape').textContent).toContain('HP · temp grants 10');
+	});
+
+	it('leaves the pool untinted where its own points beat the grant', () => {
+		const { root, lines } = drawn(note(12));
+		expect(lines).toEqual([]);
+		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_BOX}`)).toBeNull();
+	});
+});
+
+describe('choiceLinesIn: a dropdown a form in play chose (docs/features/text-value-modifiers.md D12, D13)', () => {
+	const CHOICES = {
+		name: 'Choices fixture',
+		columns: 12,
+		components: [
+			{
+				id: 'size',
+				type: 'card',
+				label: 'Size',
+				options: [{ value: 'Small' }, { value: 'Medium' }, { value: 'Large' }],
+				hideNote: true,
+				position: { col: 1, row: 1, width: 3, height: 1 },
+			},
+			{
+				id: 'lifestyle',
+				type: 'card',
+				label: 'Lifestyle',
+				options: [{ value: 'Modest' }, { value: 'Wealthy' }],
+				hideNote: true,
+				position: { col: 1, row: 2, width: 3, height: 1 },
+			},
+			{
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				position: { col: 4, row: 1, width: 6, height: 4 },
+			},
+		],
+	};
+	const note = (active: boolean) => `---
+sheet-layout: Choices fixture
+---
+
+## Size
+\`\`\`sheet
+value: Medium
+\`\`\`
+
+## Lifestyle
+\`\`\`sheet
+value: Modest
+\`\`\`
+
+## Wild Shape
+
+### Brown bear
+\`\`\`sheet
+Active: ${active ? 'yes' : 'no'}
+Modifiers: size = option: Large
+\`\`\`
+`;
+
+	function drawn(source: string) {
+		const layout = parseLayout(JSON.stringify(CHOICES));
+		const parsed = parseCharacter(source);
+		const walk = walkLayout(layout.components);
+		const prepared = walk.map(({ config }) => {
+			const component = getComponent(config.type);
+			if (component === undefined) throw new Error(config.type);
+			const section = getSection(parsed, config.label);
+			const result = section ? component.read(section.body, config) : null;
+			return { config, component, error: null, data: result?.ok === true ? result.data : null };
+		});
+		const { env, modifiers, marked } = buildSheet(layout, prepared);
+		const root = document.createElement('div');
+		root.className = 'sheetsmith-view';
+		document.body.appendChild(root);
+		renderGrid(root, walk, prepared, ({ config, component, data }) => ({
+			...formulaContext(component, config, data, env),
+			modifiers,
+			onChange: () => undefined,
+		}));
+		applyDecorations(
+			root,
+			inPlayDecorations(marked, (name) => modifiers.breakdown(name), choiceLinesIn(prepared, modifiers)),
+		);
+		return { root, lines: choiceLinesIn(prepared, modifiers) };
+	}
+
+	it('tints the card whose option the form in play chose, and no other', () => {
+		const { root, lines } = drawn(note(true));
+		expect(lines.map((one) => [one.name, one.lines[0]?.label, one.lines[0]?.inPlay])).toEqual([
+			['size', 'Brown bear', true],
+		]);
+		expect(cellOf(root, 'size').querySelector(`.${IN_PLAY_BOX}`)).not.toBeNull();
+		expect(cellOf(root, 'size').querySelector(`.${IN_PLAY_MARK}`)?.textContent).toBe('Brown bear');
+		expect(cellOf(root, 'lifestyle').querySelector(`.${IN_PLAY_BOX}`)).toBeNull();
+	});
+
+	it('reads the option change as one of the form\'s vitals, in the option\'s label', () => {
+		const { root } = drawn(note(true));
+		const tiles = Array.from(cellOf(root, 'wild_shape').querySelectorAll('.sheetsmith-stat-block-vital')).map(
+			(tile) => tile.textContent,
+		);
+		expect(tiles).toContain('SizeLarge');
+		expect(cellOf(root, 'wild_shape').textContent).not.toContain('option:');
 	});
 });

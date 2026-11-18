@@ -65,17 +65,24 @@ The general rule:
 
 So:
 
-- **One consumer.** Keep it private to that module. Do not generalise ahead of
-  evidence.
-- **Two consumers.** Duplication is allowed, *if* a test drives both copies
-  over the same cases and fails when they disagree. The truthiness spellings a
-  second reader of a flag would have to match are the standing example. Without
-  that test the duplication is not allowed.
-- **Three consumers.** Extract. At three, the shape has been demonstrated by
-  use rather than guessed at, and the guard test is no longer cheaper than the
-  module.
+- **One consumer** [judgement]. Keep it private to that module. Do not
+  generalise ahead of evidence.
+- **Two consumers** [judgement]. Duplication is allowed, *if* a test drives
+  both copies over the same cases and fails when they disagree. The truthiness
+  spellings a second reader of a flag would have to match are the standing
+  example. Without that test the duplication is not allowed.
+- **Three consumers** [judgement]. Extract. At three, the shape has been
+  demonstrated by use rather than guessed at, and the guard test is no longer
+  cheaper than the module.
 
-**That ladder is written for behaviour. A policy climbs it in one step.**
+Call sites count as consumers wherever they sit. Inside one file a private
+helper always costs less than a guard test, so two copies there extract on the
+second [judgement], as a policy does. `modifier-form.ts`'s `heldRefusal` is the
+case: the column pick's refusal kept stacking after the option pick's copy had
+been fixed against it, and one helper now serves both and the note field.
+
+**That ladder is written for behaviour. A policy climbs it in one step**
+[judgement].
 Where the duplicated thing is a timing, a bound, a row count, **a set, or a
 predicate**, drift *is* the entire risk, so the two-consumer guard test costs
 more than the module and proves less. It can only assert that the copies still
@@ -155,15 +162,15 @@ type does not compile until it has a word, which is a guard nobody has to
 remember to run.
 
 **A predicate is the same case again, and it was practice before it was written
-here.** `types.ts` holds `isContainer` because four sites were each comparing
-`storage` to `'none'`, and `placesChildren` beside it because `showsOneChild` was
-spelled four times in two complementary pairs — `=== true` where a caller wanted
-one branch and `!== true` where it wanted the other. A guard test over those
-could only assert they still negate each other, which is what one name says for
-free; and the pairs were far enough apart that a rule growing a second clause
-would have been added to one and missed on the other. The tell is the same as for
-a number: **if the only thing a test could check is that the copies still agree,
-there should be one copy.**
+here** [judgement]. `types.ts` holds `isContainer` because four sites were each
+comparing `storage` to `'none'`, and `placesChildren` beside it because
+`showsOneChild` was spelled four times in two complementary pairs — `=== true`
+where a caller wanted one branch and `!== true` where it wanted the other. A
+guard test over those could only assert they still negate each other, which is
+what one name says for free; and the pairs were far enough apart that a rule
+growing a second clause would have been added to one and missed on the other.
+The tell is the same as for a number: **if the only thing a test could check is
+that the copies still agree, there should be one copy.**
 
 Two consequences of that worth stating, because both were learned the hard way in
 one diff. **Share the application, not just the fact.** `placesChildren` takes a
@@ -508,7 +515,7 @@ Every component follows the same order. A reader who knows one knows them all.
    order [judgement]:
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
    `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
-   `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
+   `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `endGrants`, `hasBuffer`,
    `drawsNotes`, `resetColumns`, `resetWhole`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
@@ -534,6 +541,9 @@ Every component follows the same order. A reader who knows one knows them all.
    behaviour it conditions. `drawsNotes` sits directly after `hasBuffer` because
    it is the same kind of declaration — a fact about what this component draws
    that nothing outside it could infer (`docs/features/modifier-notes.md`).
+   `endGrants` sits directly after `write` because it is the write the sheet
+   adds when a grant ends, the data path's last step, before the declarations
+   (`docs/features/granted-temporary-points.md`).
    `resetWhole` sits directly after `resetColumns`
    because it answers the same picker read the other way: one names the parts a
    binding may pick, the other names what the picker calls a binding that picks
@@ -947,6 +957,14 @@ A component inventing its own is the failure mode to watch for.
   component's parts, so without a picker there is nowhere to offer it — a string
   with nothing for it to be the alternative to
   (`docs/features/record-set-reset-field-targeting.md`).
+- **Declaring a `ScopeEntry.buffer` obliges `endGrants` and `hasBuffer`, and
+  `endGrants` obliges a buffer** [checked: `contract.test.ts`]. The sheet view
+  clears an ended grant's spent records through `endGrants`, so a component
+  publishing a buffer without it keeps those records for ever, and one with it
+  and no buffer is never asked; a buffer is also what a reset's `buffer: 'clear'`
+  reaches. The check reads the bare config, the example, every palette entry
+  and every boolean field on, so a buffer behind a toggle is found
+  (`docs/features/granted-temporary-points.md`).
 - **Declaring `reset.*.where` obliges honouring it in `applyReset`** [checked:
   `contract.test.ts`]. The declaration is what the sheet reads to hand a component
   a binding carrying a condition, and what the editor reads to draw **Only where**

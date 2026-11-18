@@ -29,6 +29,40 @@ export const TEXT = {
 	 * header action and its pane menu entry (`view/sheet-view.ts`).
 	 */
 	openAsMarkdown: 'Open as Markdown',
+	/**
+	 * Why a change aimed at a level or a flag may not add to it: the sheet's row
+	 * popup, the modifier form and the layout editor's definitions report all
+	 * say it (`docs/features/non-number-modifiers.md` D6). The fault only: the
+	 * fix names two operators by their labels, which the lint reads as words
+	 * out of sentence case, so `formula/modifier-states.ts` composes it from
+	 * `OPERATOR_LABELS` as `STATE_REFUSES_ADD`, the one spelling every surface
+	 * shows.
+	 */
+	stateRefusesAdd: 'Adds to cannot change a level or a flag.',
+	/**
+	 * Why a change aimed at a buffer may only be an At least: the row popup, the
+	 * modifier form and the layout editor's definitions report all say it
+	 * (`docs/features/granted-temporary-points.md` D2). The fault only, on
+	 * `stateRefusesAdd`'s terms: `formula/modifier-buffers.ts` composes the fix
+	 * from `OPERATOR_LABELS` as `BUFFER_TAKES_AT_LEAST`.
+	 */
+	bufferRefusesOperator: 'Temporary points do not add up, so only the highest grant applies.',
+	/**
+	 * Why an Adds to or an At least may not choose a dropdown's option: the row
+	 * popup, the modifier form and the layout editor's definitions report all
+	 * say it (`docs/features/text-value-modifiers.md` D3). The faults only, on
+	 * `stateRefusesAdd`'s terms: `formula/modifier-choices.ts` composes the fix
+	 * from `OPERATOR_LABELS`.
+	 */
+	choiceRefusesAdd: 'Adds to cannot choose an option.',
+	choiceRefusesAtLeast: 'At least cannot choose an option.',
+	/**
+	 * What a grant's amount means, under the field it is typed into: the sheet's
+	 * modifier form and the layout editor's definitions field
+	 * (`docs/features/granted-temporary-points.md`), in the position legend's
+	 * spelling.
+	 */
+	grantLegend: "Whole points. The highest grant, or the pool's own, applies.",
 } as const;
 
 /**

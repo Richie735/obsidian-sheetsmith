@@ -39,7 +39,7 @@
  * from `modifiers.ts` — stays downstream of both.
  */
 
-import { isNoteOnly, parseModifierPart } from '../parse/modifier-cell';
+import { isNoteOnly, isOptionChange, parseModifierPart } from '../parse/modifier-cell';
 import {
 	contestsByValue,
 	ModifierChangeView,
@@ -57,6 +57,7 @@ import {
 	FormulaError,
 	FunctionEnv,
 	Scope,
+	Value,
 } from './expression';
 
 /** The layout's definitions by name, which is how a cell addresses one. */
@@ -94,6 +95,23 @@ export interface Contribution {
 	 * says nothing means what it has always meant.
 	 */
 	applies?: ModifierPhase;
+	/**
+	 * The boolean the amount came to, where it came to one; `amount` is then its
+	 * position, 1 or 0 (`docs/features/non-number-modifiers.md` D2). Only a Sets
+	 * or an At least carries one, and only a level or a flag can take it: the
+	 * walk refuses it at a number with `notNumber`, once it knows the target's
+	 * shape, so the target check is in one place.
+	 */
+	literal?: boolean;
+	/** The sentence a number refuses `literal` with: the shipped one, unchanged. */
+	notNumber?: string;
+	/**
+	 * The option a change chooses, by its value, where it chooses one
+	 * (`docs/features/text-value-modifiers.md`); `amount` is then 0 and never
+	 * read. The walk checks it against the dropdown's options, since that is
+	 * where the target's shape is known.
+	 */
+	option?: string;
 }
 
 /**
@@ -122,7 +140,7 @@ export interface PartSource {
 }
 
 /**
- * The five facts one part holds, whichever tier it came from.
+ * The facts one part holds, whichever tier it came from.
  *
  * Carried on every case but `unknown`, because `ModifierOutcome` owes a target and
  * a label even where the row is changing nothing: the form's line for a stowed
@@ -130,9 +148,20 @@ export interface PartSource {
  */
 export interface PartFields {
 	target: string;
+	/**
+	 * The level or flag on the target's row this sets, or null where it changes
+	 * the value itself (`docs/features/non-number-modifiers.md`).
+	 */
+	column: string | null;
 	operator: ModifierOperator;
 	/** The amount as an expression, before it is evaluated. Blank is unfinished. */
 	amount: string;
+	/**
+	 * The option a change chooses, trimmed, or null where it carries none
+	 * (`docs/features/text-value-modifiers.md`). Blank is an option change not
+	 * yet given its option. Present, `amount` is never evaluated.
+	 */
+	option: string | null;
 	bonusType: string | null;
 	/**
 	 * Which phase an addition lands in (SPEC §5). Never null: absent storage
@@ -166,12 +195,20 @@ export type Enrolment =
 	 * `condition` says which: true where the condition is what failed, which is
 	 * the one case a note on the same change is listed as not applying. Where the
 	 * amount failed under a condition that holds, the note shows.
+	 *
+	 * `resolved` is what the amount came to where it **did** resolve and is not
+	 * a number, and absent where it would not resolve at all. The walk needs the
+	 * two apart only at a buffer: a text amount is that grant's own mistake and
+	 * refuses that grant alone (D4), where one nothing can evaluate refuses the
+	 * buffer (D11, `docs/features/granted-temporary-points.md`). Everywhere else
+	 * both refuse the slot exactly alike.
 	 */
 	| ({
 			kind: 'unreadable';
 			fields: PartFields;
 			reason: string;
 			condition: boolean;
+			resolved?: Value;
 	  } & PartSource)
 	/**
 	 * A note and no amount, with its condition holding: a **note-only change**.
@@ -242,10 +279,13 @@ function fieldsOfChange(
 	const bonusType = (change.bonusType ?? '').trim();
 	const when = (definition.when ?? '').trim();
 	const note = (change.note ?? '').trim();
+	const column = (change.column ?? '').trim();
 	return {
 		target: change.target.trim(),
+		column: column === '' ? null : column,
 		operator: operatorOf(change),
 		amount: (change.amount ?? '').trim(),
+		option: isOptionChange(change) ? (change.option ?? '').trim() : null,
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(change),
 		when: when === '' ? null : when,
@@ -258,10 +298,13 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
 	const bonusType = (effect.bonusType ?? '').trim();
 	const when = (effect.when ?? '').trim();
 	const note = (effect.note ?? '').trim();
+	const column = (effect.column ?? '').trim();
 	return {
 		target: effect.target.trim(),
+		column: column === '' ? null : column,
 		operator: effect.operator,
 		amount: effect.amount.trim(),
+		option: isOptionChange(effect) ? (effect.option ?? '').trim() : null,
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(effect),
 		when: when === '' ? null : when,
@@ -276,7 +319,7 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
  * is spelled by *what it does* — "this row's modifier" — which is the same
  * substitution `modifier-breakdown.ts` makes wherever a name is missing.
  */
-function called(source: PartSource): string {
+export function called(source: PartSource): string {
 	return source.definition === null
 		? "this row's own modifier"
 		: `the modifier "${source.definition.name}"`;
@@ -476,6 +519,40 @@ function settle(
 		};
 	}
 
+	/*
+	 * **An option change is never evaluated: the literal is the amount**
+	 * (`docs/features/text-value-modifiers.md`). Whether it names one of the
+	 * dropdown's options, and whether its operator may choose one, are the
+	 * walk's to say, where the target's shape is known. A blank option keeps the
+	 * blank amount's two meanings: unfinished on a row, missing on a definition.
+	 */
+	if (fields.option !== null) {
+		if (fields.option === '') {
+			if (source.typed !== null) return { kind: 'unfinished', ...source, fields };
+			return {
+				kind: 'unreadable',
+				...source,
+				fields,
+				reason: `${called(source)} has no option.`,
+				condition: false,
+			};
+		}
+		return {
+			kind: 'applies',
+			...source,
+			fields,
+			conditional: verdict.kind === 'holds',
+			contribution: {
+				target: fields.target,
+				operator: fields.operator,
+				type: null,
+				applies: 'result',
+				amount: 0,
+				option: fields.option,
+			},
+		};
+	}
+
 	if (fields.amount === '') {
 		/*
 		 * **A note makes a blank amount complete**, on both tiers. Without one the
@@ -509,13 +586,27 @@ function settle(
 			condition: false,
 		};
 	}
-	if (typeof amount.value !== 'number') {
+	const notNumber = `"${String(amount.value)}" is not a number, so ${called(source)} has no amount.`;
+	/*
+	 * **A boolean passes only for an operator that contests by value**, because
+	 * only a Sets or an At least can set a flag (D2). It is not yet known whether
+	 * the target is one, so it travels as a position with the shipped sentence
+	 * beside it, and the walk refuses it with that sentence at a number — which
+	 * keeps `"true" is not a number` byte for byte, and the target check in one
+	 * place.
+	 */
+	const literal =
+		typeof amount.value === 'boolean' && contestsByValue(fields.operator)
+			? amount.value
+			: undefined;
+	if (typeof amount.value !== 'number' && literal === undefined) {
 		return {
 			kind: 'unreadable',
 			...source,
 			fields,
-			reason: `"${String(amount.value)}" is not a number, so ${called(source)} has no amount.`,
+			reason: notNumber,
 			condition: false,
+			resolved: amount.value,
 		};
 	}
 
@@ -547,7 +638,8 @@ function settle(
 			 * the phase, and nothing would have said so until something read it.
 			 */
 			applies: contestsByValue(fields.operator) ? 'result' : fields.applies,
-			amount: amount.value,
+			amount: literal === undefined ? (amount.value as number) : literal ? 1 : 0,
+			...(literal === undefined ? {} : { literal, notNumber }),
 		},
 	};
 }

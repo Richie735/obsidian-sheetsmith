@@ -36,9 +36,19 @@ import {
 	ModifierTarget,
 	PromoteResult,
 	RowsSource,
+	RowValues,
 	ScopeEntry,
+	ModifierOutcome,
 	ScopeValues,
+	StateAccount,
+	StateReader,
+	StateTarget,
 	TypedEffect,
+	BufferAccount,
+	BufferTarget,
+	ChoiceAccount,
+	ChoiceReader,
+	ChoiceTarget,
 } from '../types';
 import {
 	FormulaError,
@@ -57,14 +67,44 @@ import {
 	ModifierTargetSource,
 	noteTargets,
 	publishedTargets,
+	stateTargets,
+	bufferTargets,
+	choiceTargets,
 } from './modifier-targets';
 import {
+	called,
 	definitionTable,
+	Enrolment,
 	resolveEnrolments,
 	typedNoteTarget,
 } from './modifier-definitions';
 import {
-	buildModifierTable,
+	foldState,
+	NO_STATES,
+	shapesOf,
+	StateLookup,
+	stateVerdict,
+} from './modifier-states';
+import { suppressionWording } from './suppression-wording';
+import {
+	ChoiceLookup,
+	choiceShapesOf,
+	choiceVerdict,
+	foldChoice,
+	NO_CHOICES,
+} from './modifier-choices';
+import {
+	aimsAtBuffer,
+	BufferLookup,
+	bufferEntries,
+	foldBuffer,
+	grantAsked,
+	grantVerdict,
+	NO_BUFFERS,
+	storedBuffer,
+} from './modifier-buffers';
+import {
+	buildModifierTables,
 	enrolmentOutcome,
 	ModifierComponent,
 	ModifierResult,
@@ -78,6 +118,8 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
+	choiceReaderFor,
+	stateReaderFor,
 } from './resolve';
 import { buildRowTable, RowComponent } from './rows';
 
@@ -223,13 +265,34 @@ export function buildSheetEnv(
 		sheet: (name) => names(name),
 		rows: (id, caller) => rows(id, caller),
 		modifiers: (name) => slots(name),
+		states: (name, column) => states(name, column),
+		choices: (name) => choices(name),
+		// What the walk found, with what the note stores of the buffer beside it.
+		buffers: (name) => {
+			const result = buffers(name);
+			const held = notes.get(name);
+			return result === null || 'error' in result || held === undefined
+				? result
+				: { ...result, ...held };
+		},
 		// One guard for the whole sheet build, on `FormulaEnv.selfGuard`'s own
 		// comment: the ring it catches crosses several separate `resolveField`
 		// calls, so it must not be reset per evaluation.
 		selfGuard: new Set(),
 		floors: new Map(),
 	};
+	/** What each buffer's note stores, its own points and its records, by name. */
+	const notes = new Map<string, { stored?: string; spent: Readonly<Record<string, string>> }>();
+	for (const component of components) {
+		for (const { name, buffer, entry } of bufferEntries(component.id, component.values)) {
+			const stored = storedBuffer(entry);
+			notes.set(name, { ...(stored === undefined ? {} : { stored }), spent: buffer.spent });
+		}
+	}
 	const names = buildSheetScope(components, env);
+	// One reader for every row on the sheet, so an aggregate and a published
+	// name read one level or flag the same way (D10).
+	const readState = stateReaderFor(env);
 	const rows = buildRowTable(
 		components.map((component): RowComponent => {
 			const source = component.rows;
@@ -238,10 +301,10 @@ export function buildSheetEnv(
 			// same environment the name table's own entries are bound to: a
 			// column formula and a published cell must not resolve differently.
 			const resolve = component.resolver?.(env) ?? ((): null => null);
-			return { id: component.id, rows: () => source(resolve) };
+			return { id: component.id, rows: () => source(resolve, readState) };
 		}),
 	);
-	const slots = buildModifierTable(
+	const { slots, states, buffers, choices } = buildModifierTables(
 		components.map((component): ModifierComponent => {
 			const source = component.modifiers;
 			if (source === undefined) return { id: component.id };
@@ -258,9 +321,13 @@ export function buildSheetEnv(
 		// the names to fall through to, and the row table an amount may aggregate
 		// over. Through `callsFrom`, which is the one conversion (`resolve.ts`).
 		callsFrom(env),
+		shapesOf(modifiers.states ?? []),
+		new Set((modifiers.buffers ?? []).map((target) => target.name)),
+		choiceShapesOf(modifiers.choices ?? []),
 	);
 	return env;
 }
+
 
 /**
  * The layout's half of the modifier machinery, assembled once.
@@ -351,6 +418,24 @@ export interface SheetModifiers {
 	 * and the outcome of a note aimed at one says so.
 	 */
 	notable?: ReadonlySet<string>;
+	/**
+	 * Every level and flag a modifier may set (`stateTargets`), which the walk
+	 * reduces apart from the slots and the form offers under **Levels and
+	 * flags**. Optional on `noteTargets`' terms, and absent means none.
+	 */
+	states?: readonly StateTarget[];
+	/**
+	 * Every buffer a grant may raise (`bufferTargets`), which the walk reduces
+	 * apart from the slots and the form offers under **Temporary points**.
+	 * Optional on `states`' terms, and absent means none.
+	 */
+	buffers?: readonly BufferTarget[];
+	/**
+	 * Every dropdown a change may choose an option of (`choiceTargets`), which
+	 * the walk reduces apart from the slots and the form offers under
+	 * **Dropdowns**. Optional on `states`' terms, and absent means none.
+	 */
+	choices?: readonly ChoiceTarget[];
 }
 
 /** A layout with no modifiers, and the paths with no layout at all. */
@@ -363,6 +448,9 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	marked: new Set(),
 	noteTargets: [],
 	notable: new Set(),
+	states: [],
+	buffers: [],
+	choices: [],
 };
 
 /**
@@ -405,6 +493,9 @@ export function sheetModifierInput(
 		marked: new Set(markedTargets(sources).map((target) => target.name)),
 		noteTargets: notes,
 		notable: new Set(notes.map((target) => target.name)),
+		states: stateTargets(sources),
+		buffers: bufferTargets(sources),
+		choices: choiceTargets(sources),
 	};
 }
 
@@ -633,12 +724,251 @@ export function sheetModifiers(
 		if (target === '' || notable.has(target)) return null;
 		return `${label(target)} cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.`;
 	};
+	const shapes = shapesOf(modifiers.states ?? []);
+	const lookup: StateLookup = env.states ?? NO_STATES;
+	/**
+	 * What one part comes to where it is aimed at a level or a flag, or null
+	 * where it is aimed at a number (`docs/features/non-number-modifiers.md`).
+	 *
+	 * **Each verdict is the walk's**, read through the same address, position and
+	 * fold, so the row's popup and the ring cannot disagree about a refusal. One
+	 * thing it cannot say: whether an At least is already beaten by what the note
+	 * stores, because the row is not the state's — so the ring's own door is
+	 * where `already higher` against the note is said.
+	 */
+	const stateOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+	): ModifierOutcome | null => {
+		const { fields } = found;
+		// The walk's own verdict, through the one function both read.
+		const verdict = stateVerdict(shapes, found, label);
+		if (verdict.kind === 'number' || verdict.kind === 'quiet') return null;
+		const named = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: fields.target,
+			// The column goes on the label, so the row's popup says which ring.
+			targetLabel:
+				fields.column === null
+					? label(fields.target)
+					: `${label(fields.target)} · ${fields.column}`,
+			...(verdict.kind !== 'stray' && verdict.shape !== null ? { state: verdict.shape } : {}),
+		};
+		const refused = (suppressed: string, amount: number | null = null): ModifierOutcome => ({
+			...named,
+			applies: false,
+			amount,
+			condition: null,
+			suppressed,
+		});
+		if (verdict.kind !== 'set') return refused(verdict.reason);
+		if (found.kind !== 'applies') return null;
+		const result = lookup(fields.target, fields.column);
+		if (result !== null && 'error' in result) return refused(result.error, verdict.position);
+		/*
+		 * **Beaten only by a higher change of its own kind**: the row is not the
+		 * state's, so what the note stores is unknown here, and whether a floor is
+		 * already met is the ring's door's to say. A tie is not a loss — the two
+		 * rows are symmetric, as `suppressionOf` rules for a number.
+		 */
+		const { operator } = found.contribution;
+		const rivals = (result === null ? [] : result.lines).filter((line) => line.operator === operator);
+		const top = Math.max(verdict.position, ...rivals.map((line) => line.amount));
+		const suppressed =
+			verdict.position < top
+				? suppressionWording(operator === 'override' ? 'override' : 'at least', false, 'value')
+				: null;
+		return {
+			...named,
+			applies: suppressed === null,
+			amount: verdict.position,
+			condition: found.conditional ? true : null,
+			suppressed,
+		};
+	};
+	const choiceShapes = choiceShapesOf(modifiers.choices ?? []);
+	const chosen: ChoiceLookup = env.choices ?? NO_CHOICES;
+	/**
+	 * What one part comes to where it carries an option, or null where it does
+	 * not (`docs/features/text-value-modifiers.md`).
+	 *
+	 * **Each verdict is the walk's**, through `choiceVerdict` and the fold, so the
+	 * row's popup and the card's door cannot disagree about a refusal: a stray
+	 * (D7), an operator (D3), a literal naming no option (D4), and two rows
+	 * disagreeing (D5) all reach the row in the door's own sentence.
+	 */
+	const choiceOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+		row: RowValues,
+		/** The row's component, as its pushes name it. */
+		source: string,
+	): ModifierOutcome | null => {
+		const { fields } = found;
+		const verdict = choiceVerdict(choiceShapes, found, label);
+		if (verdict.kind === 'none') return null;
+		const named = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: fields.target,
+			targetLabel: label(fields.target),
+			...(verdict.kind === 'stray' || fields.option === null
+				? {}
+				: { choice: { shape: verdict.shape, option: fields.option } }),
+		};
+		const refused = (suppressed: string): ModifierOutcome => ({
+			...named,
+			applies: false,
+			amount: null,
+			condition: null,
+			suppressed,
+		});
+		if (verdict.kind === 'stray' || verdict.kind === 'refused') return refused(verdict.reason);
+		if (verdict.kind === 'quiet') {
+			// A false condition still says what the row would choose, as an
+			// inactive number says what it would add.
+			return found.kind === 'inactive'
+				? { ...named, applies: false, amount: null, condition: false, suppressed: null }
+				: null;
+		}
+		if (found.kind !== 'applies') return null;
+		const result = chosen(fields.target);
+		if (result !== null && 'error' in result) return refused(result.error);
+		const account = result === null ? null : foldChoice(result, undefined);
+		if (account !== null && account.error !== null) return refused(account.error);
+		/*
+		 * **A tie is listed as the walk lists it**: the first line naming the
+		 * option applies and the rest say another override of the same value
+		 * applies. This row's own line is the one with its component and its
+		 * label; a miss reads as applying, since nothing beat it.
+		 */
+		const first = account?.lines[0];
+		const isFirst =
+			first === undefined || (first.source === source && first.label === row.label);
+		return {
+			...named,
+			applies: isFirst,
+			amount: null,
+			condition: found.conditional ? true : null,
+			suppressed: isFirst ? null : suppressionWording('override', true, 'value'),
+		};
+	};
+	const bufferNames = new Set((modifiers.buffers ?? []).map((target) => target.name));
+	const grants: BufferLookup = env.buffers ?? NO_BUFFERS;
+	/**
+	 * What one part comes to where it is aimed at a buffer, or null where it is
+	 * not (`docs/features/granted-temporary-points.md`).
+	 *
+	 * **Each verdict is the walk's**, through the same sentences in the same
+	 * order, so the row's popup and the pill's door cannot disagree about a
+	 * refusal. What it cannot say is whether the pool's own points beat it, since
+	 * the row is not the buffer's: the door says that.
+	 */
+	const bufferOutcome = (
+		found: Exclude<Enrolment, { kind: 'unknown' }>,
+		row: RowValues,
+		/** The row's component, whose label is half of the grant's key. */
+		source: string,
+	): ModifierOutcome | null => {
+		const { fields } = found;
+		if (!aimsAtBuffer(bufferNames, fields.target, fields.column)) return null;
+		// Text is known and judged here, as the walk judges it (D4); what nothing
+		// knows falls through to the row's own unreadable line, as it refuses the
+		// buffer (D11).
+		const asked = grantAsked(found);
+		if (asked === null) return null;
+		const named = {
+			definition: found.definition,
+			change: found.change,
+			typed: found.typed,
+			target: fields.target,
+			targetLabel: label(fields.target),
+			grant: true as const,
+		};
+		const refused = (suppressed: string, amount: number | null = null): ModifierOutcome => ({
+			...named,
+			applies: false,
+			amount,
+			condition: null,
+			suppressed,
+		});
+		// The walk's own verdict, through the one function both read.
+		const verdict = grantVerdict(
+			fields.operator,
+			asked,
+			called(found),
+			source,
+			row.label,
+		);
+		if (verdict.refused !== null || verdict.amount === null) {
+			return refused(verdict.refused ?? '');
+		}
+		const result = grants(fields.target);
+		if (result !== null && 'error' in result) return refused(result.error, verdict.amount);
+		/*
+		 * **The door's own verdict**: the grants folded against what the note
+		 * stores of the buffer, its own points and its records, so a grant spent
+		 * down below another is the one passed over, and one the pool's own points
+		 * beat is `already higher`, on the row as at the door (D6). Its own line is
+		 * found by key and nothing else: a label alone would match a same-named
+		 * row on another component, which is what the source in the key keeps
+		 * apart. A miss weighs the grant's whole amount against what the buffer
+		 * draws.
+		 */
+		const account =
+			result === null ? null : foldBuffer('', result.stored, result.spent ?? {}, result);
+		const own = account?.grants.find(
+			(line) => line.refused === undefined && verdict.key !== null && line.key === verdict.key,
+		);
+		const suppressed =
+			own !== undefined
+				? own.suppressed
+				: account !== null && verdict.amount < account.effective
+					? suppressionWording('grant', false, 'value')
+					: null;
+		return {
+			...named,
+			applies: suppressed === null,
+			amount: verdict.amount,
+			condition: found.kind === 'applies' && found.conditional ? true : null,
+			suppressed,
+		};
+	};
 	return {
 		definitions: modifiers.definitions,
 		targets: modifiers.targets,
 		published: modifiers.published,
 		noteTargets: modifiers.noteTargets ?? [],
 		bonusTypes: modifiers.bonusTypes,
+		states: modifiers.states ?? [],
+		state: (name, column, stored): StateAccount | null => {
+			const result = lookup(name, column);
+			if (result === null) return null;
+			const account = foldState(result, stored);
+			return account.error === null && account.lines.length === 0 ? null : account;
+		},
+		choices: modifiers.choices ?? [],
+		choice: (name, stored): ChoiceAccount | null => {
+			const result = chosen(name);
+			if (result === null) return null;
+			const account = foldChoice(result, stored);
+			return account.error === null && account.lines.length === 0 ? null : account;
+		},
+		buffers: modifiers.buffers ?? [],
+		buffer: (name, stored, spent): BufferAccount | null => {
+			const result = grants(name);
+			if (result === null) return null;
+			const account = foldBuffer(
+				(modifiers.buffers ?? []).find((target) => target.name === name)?.called ?? name,
+				stored,
+				spent,
+				result,
+			);
+			return account.error === null && account.grants.length === 0 && account.leftovers.length === 0
+				? null
+				: account;
+		},
 		/*
 		 * **Bounded by the accepting set**, which is wider than `breakdown`'s
 		 * bound on purpose: a push at a name another component reads through
@@ -685,12 +1015,23 @@ export function sheetModifiers(
 		 * already has the same shape, telling the reader to choose another and the
 		 * author to add one.
 		 */
-		outcomes: (part, row) =>
+		outcomes: (part, row, source) =>
 			// One per change the part's modifier names, in the definition's own
 			// order, so a two-change modifier states both on the row that enrols in
 			// it. The gate below is per change for the same reason the walk's is:
 			// one of a definition's values may read no modifier while another does.
 			resolveEnrolments(table, part, row, calls).map((found) => {
+				if (found.kind !== 'unknown') {
+					// A dropdown's option, in the walk's words; never arithmetic.
+					const option = choiceOutcome(found, row, source);
+					if (option !== null) return option;
+					// A grant at a buffer, in the walk's words.
+					const granted = bufferOutcome(found, row, source);
+					if (granted !== null) return granted;
+					// A level or a flag, or a boolean at a number, in the walk's words.
+					const stated = stateOutcome(found);
+					if (stated !== null) return stated;
+				}
 				/*
 				 * **A note's own verdict, beside the arithmetic's.** A note-only part
 				 * at a name that can show it applies — it needs no slot, so the
@@ -841,6 +1182,16 @@ export function buildSheetScope(
 	};
 
 	const bound: FormulaEnv = env ?? { ...NO_ENV, sheet: scope };
+	/**
+	 * How a name built from a level or a flag reads it once modifiers have had
+	 * their say: the same reader the rows and the cards fold through. Built over
+	 * a closure, so it reaches the state lookup the environment holds by the time
+	 * anything is evaluated.
+	 */
+	const readState: StateReader = (name, column, stored) =>
+		stateReaderFor(bound)(name, column, stored);
+	/** How a name built from a dropdown reads its chosen option, on the same terms. */
+	const readChoice: ChoiceReader = (name, stored) => choiceReaderFor(bound)(name, stored);
 
 	/** Every name registered below, in declaration order, for the slot pass. */
 	const published: string[] = [];
@@ -878,7 +1229,49 @@ export function buildSheetScope(
 				// A component with no resolver of its own still computes: what
 				// it is handed is a resolver that finds no field, which is what
 				// a component declaring no formula fields would have anyway.
-				thunks.set(name, () => worth(compute(resolve ?? (() => null))));
+				thunks.set(name, () =>
+					worth(compute(resolve ?? (() => null), readState, readChoice)),
+				);
+				return;
+			}
+			/*
+			 * **A dropdown's chosen option folds here**, with no component code
+			 * involved, where the entry has no `compute` of its own: the bare name
+			 * reads the chosen option and `.value`, registered above, what the note
+			 * stores (`docs/features/text-value-modifiers.md` D6). A refusal throws
+			 * with its sentence, as a refused slot does.
+			 */
+			if (entry.choice !== undefined) {
+				thunks.set(name, () => clean(readChoice(name, entry.value)));
+				return;
+			}
+			/*
+			 * **A value that is itself a level or a flag folds here**, with no
+			 * component code involved: the bare name reads the modified state and
+			 * `.value`, registered above, what the note stores (D4). A refusal
+			 * throws out of the thunk with the row named, as a refused slot does.
+			 */
+			if (entry.state !== undefined) {
+				thunks.set(name, () => clean(readState(name, null, entry.value)));
+				return;
+			}
+			/*
+			 * **A buffer a grant may raise folds here too**, with no component code
+			 * involved: the bare name reads the effective buffer and `.value`,
+			 * registered above, what the note stores. A buffer no grant addresses
+			 * reads exactly as it did, the stored value as stored. A refused one
+			 * throws with the row named, as a refused slot does (D11).
+			 */
+			if (entry.buffer !== undefined) {
+				const { buffer } = entry;
+				thunks.set(name, () => {
+					const result = bound.buffers?.(name) ?? null;
+					if (result === null) return clean(entry.value);
+					if ('error' in result) throw new FormulaError(result.error);
+					const account = foldBuffer(buffer.label, storedBuffer(entry), buffer.spent, result);
+					if (account.grants.every((line) => line.refused !== undefined)) return clean(entry.value);
+					return account.effective;
+				});
 				return;
 			}
 			if (display === undefined || resolve === undefined) {

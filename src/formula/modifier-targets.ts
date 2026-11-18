@@ -34,6 +34,9 @@ import {
 	ModifierTarget,
 	ScopeEntry,
 	ScopeValues,
+	StateTarget,
+	BufferTarget,
+	ChoiceTarget,
 } from '../types';
 import { referencesName } from './expression';
 import { modifierSlot, SELF_SLOT } from './modifiers';
@@ -228,6 +231,73 @@ export function noteTargets(
 	return publishedTargets(
 		components.filter((component) => component.drawsNotes === true),
 	);
+}
+
+/**
+ * Every level and flag a modifier may set, in declaration order
+ * (`docs/features/non-number-modifiers.md`).
+ *
+ * **Read statically from what the components declare**, `ScopeEntry.state` and
+ * `.states`, on the accepting set's own terms: no note is read, so the editor's
+ * picker, the sheet's form and the walk's shapes all reach one answer from the
+ * layout alone. A name's own state comes before the columns on its row, and a
+ * column is labelled after the name it sits on: `Abilities · stealth · Training`.
+ */
+export function stateTargets(
+	components: readonly ModifierTargetSource[],
+): readonly StateTarget[] {
+	const found: StateTarget[] = [];
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			if (entry.state !== undefined) found.push({ name, label, shape: entry.state });
+			for (const [column, shape] of Object.entries(entry.states ?? {})) {
+				found.push({ name, column, label: `${label} · ${column}`, shape });
+			}
+		}
+	}
+	return found;
+}
+
+/**
+ * Every buffer a grant may raise (`docs/features/granted-temporary-points.md`
+ * D3), in publication order.
+ *
+ * **Read statically from what the components declare**, `ScopeEntry.buffer`,
+ * on `stateTargets`' terms: no note is read, so the editor's picker, the
+ * sheet's form and the walk all reach one answer from the layout alone. A
+ * Pool declares one on `<id>.temp` where its layout asks for temporary points,
+ * labelled as the name is: `HP · temp`.
+ */
+export function bufferTargets(
+	components: readonly ModifierTargetSource[],
+): readonly BufferTarget[] {
+	const found: BufferTarget[] = [];
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			if (entry.buffer !== undefined) found.push({ name, label, called: entry.buffer.label });
+		}
+	}
+	return found;
+}
+
+/**
+ * Every dropdown a modifier may choose an option of, in publication order
+ * (`docs/features/text-value-modifiers.md`).
+ *
+ * **Read statically from what the components declare**, `ScopeEntry.choice`,
+ * on `stateTargets`' terms. Labelled with the component's own label, since a
+ * dropdown is a Card's bare name: `Size`.
+ */
+export function choiceTargets(
+	components: readonly ModifierTargetSource[],
+): readonly ChoiceTarget[] {
+	const found: ChoiceTarget[] = [];
+	for (const component of components) {
+		for (const { name, label, entry } of publishedEntries(component)) {
+			if (entry.choice !== undefined) found.push({ name, label, shape: entry.choice });
+		}
+	}
+	return found;
 }
 
 /**

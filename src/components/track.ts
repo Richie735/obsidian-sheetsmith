@@ -68,12 +68,15 @@ import {
 } from '../interaction/editable';
 import { levelGlyph, levelName, parseLevel } from './level-ring';
 import { bindRingControl } from './ring-control';
+import { stateRing } from './state-ring';
+import { flagShape } from '../formula/modifier-states';
 import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
 import {
 	ACCOUNT_GLYPH,
 	modifierBreakdown,
 	modifiersOnName,
+	stampStateHost,
 } from './modifier-breakdown';
 import { publishedFieldNames } from '../formula/resolve';
 import {
@@ -1406,12 +1409,23 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * is a count whose own ceiling can fail to resolve.
 		 */
 		if (flag) {
-			const entry = (key: string): ScopeEntry => ({
+			/*
+			 * **A flag is a state a modifier may set**, named by its target alone
+			 * (`docs/features/non-number-modifiers.md` D3): the bare name then reads
+			 * the flag as modifiers leave it and `.value` what the note stores, and
+			 * the sheet folds it with no code here. Its words are the levels' names
+			 * where a checkbox names them, `off` and `on` where it does not.
+			 */
+			const words = config.levels?.map((level) => parseLevel(level).name);
+			const entry = (key: string, label: string): ScopeEntry => ({
 				value: (marksFrom(data?.values[key]) ?? 0) >= 1,
+				state: flagShape(label, words),
 			});
 			if (isRowSet(config)) {
 				const named: Record<string, ScopeEntry> = {};
-				for (const row of config.rows ?? []) named[row.key] = entry(row.key);
+				for (const row of config.rows ?? []) {
+					named[row.key] = entry(row.key, row.name ?? row.key);
+				}
 				return { named };
 			}
 			// `<id>.count` as a literal, because a numeric run publishes one and a
@@ -1419,7 +1433,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// from every formula reading it — the continuity a raised count gets
 			// on the read side. A checklist publishes none, exactly as a numeric
 			// row set does: a set of runs has no one ceiling to name.
-			return { self: entry(VALUE_KEY), named: { count: { value: 1 } } };
+			return { self: entry(VALUE_KEY, config.label), named: { count: { value: 1 } } };
 		}
 
 		/*
@@ -1802,8 +1816,34 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * unmodified card keeps the DOM it always had — the label as a direct
 		 * child of the card — so nothing about the common Track moves.
 		 */
-		const heading = cardPushed === null ? null : card.createDiv('sheetsmith-track-heading');
+		/*
+		 * **A single flag a modifier set** (`docs/features/non-number-modifiers.md`):
+		 * its account, asked before the heading row is decided, because the door
+		 * onto it is this card's own door beside the label. A checklist's rows
+		 * each carry theirs beside the ring instead, since one door beside the
+		 * set's heading could not say which row it meant.
+		 */
+		const flagState =
+			isFlagCard(config) && !isRowSet(config)
+				? (context.modifiers?.state?.(config.id, null, storedMarks(data, VALUE_KEY) >= 1) ?? null)
+				: null;
+		const flagSet =
+			flagState === null
+				? null
+				: stateRing(
+						flagState,
+						(said) => {
+							status.textContent = said;
+						},
+					);
+
+		const heading =
+			cardPushed === null && flagSet === null ? null : card.createDiv('sheetsmith-track-heading');
 		renderLabel(heading ?? card, config, context);
+		if (heading !== null && flagSet !== null && cardPushed === null) {
+			// The card's own door, onto the flag's account rather than a run's.
+			flagSet.door(heading, modifiersOnName(config.label), { cls: 'sheetsmith-track-modifier-button' });
+		}
 		if (heading !== null && cardPushed !== null) {
 			/*
 			 * **The door to the breakdown, and it is deliberately not the run.**
@@ -2332,7 +2372,27 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 * own mark in the ring — and a flag is the one place `count === 1` and
 				 * `graded` meet, since a cell's toggle is never graded.
 				 */
+				/*
+				 * A flag a modifier set draws the modified state, and its press edits
+				 * the note's (`state-ring.ts`): the single flag's account was asked
+				 * for its door above; a checklist row asks for its own and draws its
+				 * door beside the ring.
+				 */
+				const rowState = rowSet
+					? (context.modifiers?.state?.(`${config.id}.${row.key}`, null, held >= 1) ?? null)
+					: null;
+				const set = rowSet
+					? rowState === null
+						? null
+						: stateRing(
+								rowState,
+								(said) => {
+									status.textContent = said;
+								},
+							)
+					: flagSet;
 				const control = bindRingControl({
+					...(set === null ? {} : set.ring),
 					button: el,
 					column: { levels: config.levels },
 					count: 1,
@@ -2364,6 +2424,23 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						return true;
 					},
 				});
+				// What a form in play tints where it set this flag: the card for a
+				// single flag, the row's own line in a checklist (D11).
+				const state = rowSet ? rowState : flagState;
+				if (state !== null) {
+					stampStateHost(
+						el,
+						rowSet ? `${config.id}.${row.key}` : config.id,
+						null,
+						state.stored,
+						rowSet ? line : card,
+					);
+				}
+				if (rowSet && set !== null) {
+					set.door(line, modifiersOnName(row.name ?? row.key), {
+						cls: 'sheetsmith-track-modifier-button',
+					});
+				}
 				run.paint = control.repaint;
 				// The segmented run's own shape, with the control's silent setter
 				// where that one calls `run.paint()`. One interface member has to

@@ -34,9 +34,15 @@ import {
 	ModifierTargetSource,
 	noteTargets,
 	publishedTargets,
+	stateTargets,
+	bufferTargets,
+	choiceTargets,
 } from '../formula/modifier-targets';
+import { choiceShapesOf, storedChoiceFaults } from '../formula/modifier-choices';
+import { shapesOf, storedStateFault } from '../formula/modifier-states';
+import { aimsAtBuffer, BUFFER_TAKES_AT_LEAST } from '../formula/modifier-buffers';
 import { Layout } from './layout';
-import { isNoteOnly, unspellableName, unspellableNote } from './modifier-cell';
+import { isNoteOnly, isOptionChange, unspellableName, unspellableNote } from './modifier-cell';
 import { series, spelled } from './spelled';
 import {
 	contestsByValue,
@@ -169,6 +175,13 @@ export function parseModifierDefinitions(
 	// sheet reads the one derivation too, so this report and the sheet's own
 	// sentence cannot disagree about which names those are.
 	const notable = new Set(noteTargets(sources).map((target) => target.name));
+	// The levels and flags a change may set, through the same derivation the walk
+	// and both pickers read (`docs/features/non-number-modifiers.md`).
+	const shapes = shapesOf(stateTargets(sources));
+	const buffers = new Set(bufferTargets(sources).map((buffer) => buffer.name));
+	// The dropdowns a change may choose an option of, the walk's own derivation
+	// (`docs/features/text-value-modifiers.md`).
+	const choiceShapes = choiceShapesOf(choiceTargets(sources));
 	// Read as a shape rather than as the declared type: `parseLayout` checked that
 	// each entry is an object and nothing more, so every member here is still a
 	// free `unknown` and a hand-edited file may hold a number where a name goes.
@@ -251,10 +264,18 @@ export function parseModifierDefinitions(
 			const applies = phaseOf(one);
 			const bonusType = text(one, 'bonusType');
 			const note = text(one, 'note');
+			const column = text(one, 'column');
 			return {
 				target,
+				// Absent where blank, so a definition naming no column is the object
+				// it always was.
+				...(column !== '' ? { column } : {}),
 				operator,
 				amount: text(one, 'amount'),
+				// Present wherever the file holds a string, blank included: a blank
+				// option is a change aimed at a dropdown and not yet given its
+				// option, which keeps its address (`text-value-modifiers.md`).
+				...(typeof one.option === 'string' ? { option: one.option.trim() } : {}),
 				...(bonusType !== '' ? { bonusType } : {}),
 				// Absent where blank, as every optional member is (PATTERNS §8). Held
 				// as written, line breaks and all: the sheet draws a break as a space,
@@ -296,6 +317,55 @@ export function parseModifierDefinitions(
 		for (const change of changes) {
 			const { target } = change;
 			const noted = change.note !== undefined;
+			/*
+			 * **A level or a flag needs no slot**, so it is never told its target
+			 * reads no modifier: it is told the three things that make it do
+			 * nothing instead — an Adds to, a column the target does not hold, and a
+			 * column naming the state the target already is (D5, D6). **A buffer
+			 * needs no slot either**, and a grant is an At least: an Adds to or a
+			 * Sets aimed at one is told so, in the sheet's own sentence
+			 * (`docs/features/granted-temporary-points.md` D2).
+			 */
+			/*
+			 * **A change carrying an option needs no slot either**: it is told the
+			 * faults that make it choose nothing, in the sheet's own sentences and
+			 * order — a stray, an operator, a literal naming no option — and that
+			 * an amount beside it is ignored (D3, D4, D7).
+			 */
+			if (isOptionChange(change) && target !== '') {
+				const faults =
+					storedChoiceFaults(
+						choiceShapes,
+						change,
+						`the modifier "${name}"`,
+						(one) => published.get(one) ?? one,
+					) ?? [];
+				for (const message of faults) problems.push({ definition: name, message });
+				if ((change.option ?? '') === '' && choiceShapes.has(target) && faults.length === 0) {
+					problems.push({
+						definition: name,
+						message: several
+							? `"${name}" has no option for "${target}", so that change does nothing. Choose one under Option.`
+							: `"${name}" has no option, so it changes nothing. Choose one under Option.`,
+					});
+				}
+				continue;
+			}
+			if (aimsAtBuffer(buffers, target, change.column)) {
+				if (operatorOf(change) !== 'upgrade' && !noteOnly(change)) {
+					problems.push({ definition: name, message: BUFFER_TAKES_AT_LEAST });
+				}
+				continue;
+			}
+			// The sheet's own verdict, read off the stored change before anything
+			// is evaluated, so the report and the sheet name one fault.
+			const stated = published.has(target)
+				? storedStateFault(shapes, change, (one) => published.get(one) ?? one)
+				: ({ kind: 'number' } as const);
+			if (stated.kind === 'state') {
+				if (stated.fault !== null) problems.push({ definition: name, message: stated.fault });
+				continue;
+			}
 			if (target === '') {
 				problems.push({
 					definition: name,
@@ -358,8 +428,10 @@ export function parseModifierDefinitions(
 			 */
 			if (several && target === '') continue;
 			// A note with no amount is a complete change: it moves no number, so
-			// there is no amount for it to be missing.
+			// there is no amount for it to be missing. Nor has an option change,
+			// whose literal is its amount.
 			if (noteOnly(change)) continue;
+			if (isOptionChange(change)) continue;
 			if (amount === '') {
 				problems.push({
 					definition: name,
@@ -473,8 +545,11 @@ export function parseModifierDefinitions(
 		const counted = new Set<string>();
 		for (const change of changes) {
 			if (change.target === '') continue;
-			if (counted.has(change.target)) twice.add(change.target);
-			counted.add(change.target);
+			// A column is a different address on the same row, so a change at the
+			// value and one at its Training are not the same value twice.
+			const at = change.column === undefined ? change.target : `${change.target} · ${change.column}`;
+			if (counted.has(at)) twice.add(at);
+			counted.add(at);
 		}
 		for (const target of twice) {
 			problems.push({

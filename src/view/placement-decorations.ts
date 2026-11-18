@@ -22,10 +22,26 @@
  * design, and would paint half a 5e sheet for one form.
  */
 
-import { ModifierBreakdown, TINT_ATTRIBUTE, TintColour } from '../types';
+import {
+	ModifierBreakdown,
+	ModifierContext,
+	ModifierLine,
+	TINT_ATTRIBUTE,
+	TintColour,
+} from '../types';
 import { contrast, over, readColour, Rgb } from '../ui/contrast';
+import { bufferEntries, storedBuffer } from '../formula/modifier-buffers';
+import { publishedEntries } from '../formula/modifier-targets';
+import type { ReadComponent } from '../formula/sheet';
 // The attributes a stamped value and its box carry, declared once beside the stamp.
-import { BOX_ATTRIBUTE, NAME_ATTRIBUTE, TAG_BOX_ATTRIBUTE } from '../components/modifier-breakdown';
+import {
+	BOX_ATTRIBUTE,
+	NAME_ATTRIBUTE,
+	ROW_END_CLASS,
+	STATE_COLUMN_ATTRIBUTE,
+	STATE_STORED_ATTRIBUTE,
+	TAG_BOX_ATTRIBUTE,
+} from '../components/modifier-breakdown';
 
 /**
  * The class on the box a form changed — a card, a table row, a Roster card's
@@ -46,10 +62,19 @@ export const IN_PLAY_MARKED = 'sheetsmith-in-play-marked';
 export const IN_PLAY_MARK = 'sheetsmith-in-play-mark';
 
 /**
- * The pill's class where it rides one line of a row — its name cell, or a
- * Roster band's name — rather than a box's corner.
+ * The pill's class where it rides one line of a row — its row-end cell's
+ * lane, or a Roster band's tag line — rather than a box's corner.
  */
 export const IN_PLAY_MARK_INLINE = 'sheetsmith-in-play-mark-inline';
+
+/**
+ * The class on a table whose row's tag sits in its row-end cell, which the
+ * stylesheet reads to set the tag's lane aside at the end of every row of it,
+ * head and foot included (`docs/features/table-row-end-room.md`). Stamped
+ * only where the tag's host is a row-end cell: a band head's tag rides its own
+ * line and needs no lane.
+ */
+export const IN_PLAY_LANE = 'sheetsmith-in-play-lane';
 
 /**
  * The pill's class where it names more than one form. Its words are the only
@@ -106,11 +131,21 @@ function agreed(tints: readonly TintColour[]): TintColour {
 export function inPlayDecorations(
 	names: Iterable<string>,
 	breakdown: (name: string) => ModifierBreakdown,
+	/**
+	 * The lines at each level or flag a ring on the sheet draws, already folded
+	 * against what its note stores (`stateLinesIn`), so a ring a form in play
+	 * set is tinted as a number it changed would be (D11). Absent is none.
+	 */
+	states: readonly { name: string; lines: readonly ModifierLine[] }[] = [],
 ): PlacementDecoration[] {
 	const byForm = new Map<string, { label: string; tint: TintColour; names: string[] }>();
-	for (const name of names) {
+	const read = [
+		...[...names].map((name) => ({ name, lines: breakdown(name).lines })),
+		...states,
+	];
+	for (const { name, lines } of read) {
 		const seen = new Set<string>();
-		for (const line of breakdown(name).lines) {
+		for (const line of lines) {
 			if (line.inPlay !== true || line.suppressed !== null) continue;
 			const tint = line.tint ?? 'accent';
 			// A row's label is one line, so a newline keys the pair without a collision.
@@ -123,6 +158,116 @@ export function inPlayDecorations(
 		}
 	}
 	return [...byForm.values()].map((form) => ({ kind: 'in-play', ...form }));
+}
+
+/**
+ * Every ring on the sheet a modifier set, with its lines folded against the
+ * position its note stores, read off the attributes the component stamped
+ * (`stampStateHost`) — so the pass learns no component, and the verdict an
+ * `already higher` floor carries is the one the ring's own door shows.
+ */
+export function stateLinesIn(
+	root: HTMLElement,
+	modifiers: Pick<ModifierContext, 'state'>,
+): { name: string; lines: readonly ModifierLine[] }[] {
+	if (modifiers.state === undefined) return [];
+	const found: { name: string; lines: readonly ModifierLine[] }[] = [];
+	for (const host of Array.from(root.querySelectorAll<HTMLElement>(`[${STATE_COLUMN_ATTRIBUTE}]`))) {
+		const name = host.getAttribute(NAME_ATTRIBUTE);
+		if (name === null) continue;
+		const column = host.getAttribute(STATE_COLUMN_ATTRIBUTE) ?? '';
+		const stored = Number(host.getAttribute(STATE_STORED_ATTRIBUTE) ?? '0');
+		const account = modifiers.state(name, column === '' ? null : column, stored);
+		if (account !== null) found.push({ name, lines: account.lines });
+	}
+	return found;
+}
+
+/**
+ * The grant in effect at each buffer on the sheet, as the one line the tint
+ * reads (`docs/features/granted-temporary-points.md` D12): a form in play whose
+ * grant is the buffer the card draws changed that card directly, so its card is
+ * tinted as a number the form changed would be. A grant a higher one passed
+ * over, or that the pool's own points beat, changed nothing and lists nothing.
+ *
+ * Read off the components as the sheet read them, since a buffer's account
+ * needs the note's stored points and records, which no box on the sheet stamps.
+ */
+export function bufferLinesIn(
+	prepared: readonly ReadComponent[],
+	modifiers: Pick<ModifierContext, 'buffer'>,
+): { name: string; lines: readonly ModifierLine[] }[] {
+	if (modifiers.buffer === undefined) return [];
+	const found: { name: string; lines: readonly ModifierLine[] }[] = [];
+	for (const { config, component, data, error } of prepared) {
+		if (component === undefined || error !== null) continue;
+		const values = component.scopeValues?.(data, config) ?? {};
+		for (const { name, buffer, entry } of bufferEntries(config.id, values)) {
+			const account = modifiers.buffer(name, storedBuffer(entry), buffer.spent);
+			const grant = account?.inEffect ?? null;
+			if (grant === null) continue;
+			found.push({
+				name,
+				lines: [
+					{
+						label: grant.label,
+						source: grant.source,
+						operator: 'upgrade',
+						type: null,
+						amount: grant.left,
+						applies: 'result',
+						suppressed: null,
+						...(grant.inPlay === true ? { inPlay: true } : {}),
+						...(grant.tint === undefined ? {} : { tint: grant.tint }),
+					},
+				],
+			});
+		}
+	}
+	return found;
+}
+
+/**
+ * The option chosen at each dropdown on the sheet, as the one line the tint
+ * reads (`docs/features/text-value-modifiers.md` D12): a form in play whose
+ * Sets chose the option the card draws changed that card directly, so its card
+ * is tinted as a number the form changed would be. A tie's second line and a
+ * refused choice changed nothing and list nothing.
+ *
+ * Read off the components as the sheet read them, `bufferLinesIn`'s way, since
+ * the account needs what the note stores.
+ */
+export function choiceLinesIn(
+	prepared: readonly ReadComponent[],
+	modifiers: Pick<ModifierContext, 'choice'>,
+): { name: string; lines: readonly ModifierLine[] }[] {
+	if (modifiers.choice === undefined) return [];
+	const found: { name: string; lines: readonly ModifierLine[] }[] = [];
+	for (const { config, component, data, error } of prepared) {
+		if (component === undefined || error !== null) continue;
+		const values = component.scopeValues?.(data, config) ?? {};
+		for (const { name, entry } of publishedEntries({ id: config.id, values })) {
+			if (entry.choice === undefined) continue;
+			const stored = entry.value === undefined ? undefined : String(entry.value);
+			const account = modifiers.choice(name, stored);
+			if (account === null || account.error !== null) continue;
+			found.push({
+				name,
+				lines: account.lines.map((line) => ({
+					label: line.label,
+					source: line.source,
+					operator: 'override',
+					type: null,
+					amount: 0,
+					applies: 'result',
+					suppressed: line.suppressed,
+					...(line.inPlay === true ? { inPlay: true } : {}),
+					...(line.tint === undefined ? {} : { tint: line.tint }),
+				})),
+			});
+		}
+	}
+	return found;
 }
 
 /** The cell a component was drawn into, by its id. */
@@ -160,15 +305,18 @@ function boxOf(host: HTMLElement): HTMLElement {
  *
  * **The pill is once per placement, on the first box tinted**, so it never sits
  * over a card the form left alone — or on what its component named to carry the
- * tag for that box (`TAG_BOX_ATTRIBUTE`), a Roster card for its score's pill,
- * which holds the box and takes no tint of its own. It is laid over the box and
- * takes no room: on a card-like box in its bottom inline-end corner, inside by
- * exactly the box's bottom padding so it can reach no content in any font,
- * where no note mark, door, score or value sits; on a table row over the name
- * cell's inline end, since a row's two ends hold its name and its value; on a
- * Roster's band head, a row with no name cell, at the inline start of the name
- * its component named to carry it (`carrierOf`). The CSS places it; this only
- * says which box and which cell carry it.
+ * tag for that box (`TAG_BOX_ATTRIBUTE`), a Roster card for its score's pill
+ * and its rows, which holds the box and takes no tint of its own. It is laid
+ * over the box and takes no room: on a card-like box in its bottom inline-end
+ * corner, inside by exactly the box's bottom padding so it can reach no
+ * content in any font, where no note mark, door, score or value sits; on a
+ * table row in its row-end cell, in a lane the table sets aside after the
+ * row's last value and its slot while such a tag is drawn (`IN_PLAY_LANE`,
+ * `docs/features/table-row-end-room.md`), since a row's name cell has no room
+ * that is its own to give; on a Roster's band head, a row with no name cell,
+ * at the inline start of the tag line its component named to carry it
+ * (`carrierOf`). The CSS places it; this only says which box and which cell
+ * carry it.
  */
 export function applyDecorations(
 	root: HTMLElement,
@@ -180,7 +328,7 @@ export function applyDecorations(
 	// still names: a Stat block's head, its name rows, its briefs and its Tint
 	// swatch carry the attribute too, and are not this pass's to clear.
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_BOX}`))) el.removeAttribute(TINT_ATTRIBUTE);
-	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED]) {
+	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED, IN_PLAY_LANE]) {
 		for (const el of Array.from(root.querySelectorAll(`.${cls}`))) el.classList.remove(cls);
 	}
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_MARK}`))) el.remove();
@@ -225,24 +373,37 @@ export function applyDecorations(
 		)[0];
 		if (first === undefined) continue;
 		const row = first.tagName === 'TR';
-		const rowName = row ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
-		// A row with a name cell takes the tag there. Otherwise the component
-		// may name what carries it — the card holding a score pill, the name
-		// inside a band's `tr` — which takes the tag and no fill or outline
-		// (`carrierOf`).
-		const carrier = rowName === null ? carrierOf(first, row) : null;
-		const host = rowName ?? carrier;
+		// What the component named to carry the tag — the card holding a score
+		// pill or a row, a band's own tag line — takes it, and no fill or
+		// outline (`carrierOf`). Otherwise a row takes it in its row-end cell,
+		// in the lane set aside after its value and slot; a row with none, in
+		// its name cell, unmarked, since that is the pinned cell and a
+		// carrier's `position: relative` would unpin it; a row with no name
+		// cell either, in its first cell.
+		const carrier = carrierOf(first, row);
+		const rowEnd = carrier === null && row ? rowEndOf(first) : null;
+		const rowName =
+			carrier === null && rowEnd === null ? first.querySelector<HTMLElement>('th[scope="row"]') : null;
+		const firstCell = first.firstElementChild;
+		const marked =
+			carrier ?? rowEnd ?? (rowName === null && firstCell instanceof HTMLElement ? firstCell : null);
+		const host = rowName ?? marked;
 		// A row with no cell has nowhere a tag may go; the spoken twin still does.
 		if (host === null) {
 			cell.createSpan({ cls: `sheetsmith-sr-only ${IN_PLAY_MARK}`, text: `Changed by ${said}` });
 			continue;
 		}
-		carrier?.classList.add(IN_PLAY_MARKED);
+		marked?.classList.add(IN_PLAY_MARKED);
+		// Every row of the table sets the lane aside, so the slots stay in one
+		// place down it; only where the tag is in a row's end cell.
+		if (rowEnd !== null) rowEnd.closest('table')?.classList.add(IN_PLAY_LANE);
+		// A tag inside a row rides one line, wherever in the row that line is;
+		// one a card carries for its row takes the card's bottom corner.
+		const inline = host.closest('tr') !== null;
 		const pill = host.createSpan({
 			cls: [
 				IN_PLAY_MARK,
-				// A row's tag rides one line, wherever in the row that line is.
-				...(row ? [IN_PLAY_MARK_INLINE] : []),
+				...(inline ? [IN_PLAY_MARK_INLINE] : []),
 				...(labels.length > 1 ? [IN_PLAY_MARK_SEVERAL] : []),
 			].join(' '),
 			text: said,
@@ -256,21 +417,39 @@ export function applyDecorations(
 }
 
 /**
- * What carries the tag for a first box that is not a row's name cell.
+ * What carries the tag for the first tinted box: what its component named
+ * (`TAG_BOX_ATTRIBUTE`), or a box that is not a row itself. Null for a row its
+ * component named nothing for — a Table's, a Roster table's — which takes the
+ * tag in its row-end cell.
  *
- * **A card's carrier holds its box from outside, a row's sits inside it**: a
- * Roster card's pill names the card above it, and a Roster band's `tr`, which
- * has no name cell, holds the name its component stamped
- * (`docs/features/character-forms.md`, "A Roster's band head"). So a row looks
- * down, then falls back to its first cell, and **a tag is never a direct child
- * of a `tr`**: a span there is outside every cell, resolves its containing
- * block outside the row, and takes the `:last-child` the row's end edge is
- * drawn on.
+ * **A carrier holds its box from outside or sits inside it**: a Roster card
+ * holds its score's pill and its rows, and a Roster band's `tr`, which has no
+ * name cell, holds the tag line its component stamped
+ * (`docs/features/character-forms.md`, "A Roster's band head"). **So a Roster
+ * card's row never takes its own name cell**, which is as narrow as the card:
+ * laid over that cell's inline end the tag had no slack and covered the label,
+ * Stealth reading "Stea[Cat Form]" (`docs/features/character-forms.md`, "Row
+ * first"). Down before up, so a band keeps its own tag line.
+ *
+ * **A tag is never a direct child of a `tr`**: a span there is outside every
+ * cell, resolves its containing block outside the row, and takes the
+ * `:last-child` the row's end edge is drawn on.
  */
 function carrierOf(first: HTMLElement, row: boolean): HTMLElement | null {
-	if (!row) return first.closest<HTMLElement>(`[${TAG_BOX_ATTRIBUTE}]`) ?? first;
-	const cell = first.firstElementChild;
-	return first.querySelector<HTMLElement>(`[${TAG_BOX_ATTRIBUTE}]`) ?? (cell instanceof HTMLElement ? cell : null);
+	const named = `[${TAG_BOX_ATTRIBUTE}]`;
+	if (!row) return first.closest<HTMLElement>(named) ?? first;
+	return first.querySelector<HTMLElement>(named) ?? first.closest<HTMLElement>(named);
+}
+
+/**
+ * A row's end cell, as its component stamped it (`ROW_END_CLASS`): the row's
+ * last value cell, never its name cell, or null on a row with none.
+ */
+function rowEndOf(row: HTMLElement): HTMLElement | null {
+	for (const cell of Array.from(row.children)) {
+		if (cell.instanceOf(HTMLElement) && cell.classList.contains(ROW_END_CLASS)) return cell;
+	}
+	return null;
 }
 
 /** The two text colours a tag may be written in, as the stylesheet's words map them. */

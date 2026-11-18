@@ -2828,6 +2828,32 @@ describe('a rule reads the class that says why, never the elements drawn', () =>
 	});
 });
 
+describe('no rule clips with `clip-path`', () => {
+	/*
+	 * `sheet.css` at the visually-hidden rule: the browser-support check the
+	 * directory runs reads `clip-path` as partially supported — about external
+	 * SVG references, not `inset()` — so the stylesheet clips with `clip` there
+	 * and with an element's own box everywhere else. A granted temporary-points
+	 * field reached for it once, to inset its dotted rule, and was refused at the
+	 * land stop (`docs/features/granted-temporary-points.md`).
+	 */
+	const declares = (text: string, property: string): string[] =>
+		text.match(new RegExp(`(?:^|[;{\\s])${property}\\s*:[^;}]*`, 'gm')) ?? [];
+
+	it('declares no `clip-path` anywhere in the stylesheet', () => {
+		expect(declares(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
+	});
+
+	it('would notice one', () => {
+		// The same scan finds the `clip` the visually-hidden rule does declare,
+		// so the empty list above is a finding, and one planted in an at-rule.
+		expect(declares(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
+		expect(
+			declares('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
+		).toHaveLength(1);
+	});
+});
+
 describe('no two rules declare the same body', () => {
 	/*
 	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
@@ -2939,7 +2965,7 @@ describe('no two rules declare the same body', () => {
 		{
 			rules: [
 				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
-				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-pool-modifier-button, .sheetsmith-view .sheetsmith-note-mark',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-pool-modifier-button, .sheetsmith-view .sheetsmith-note-mark, .sheetsmith-view .sheetsmith-state-door',
 			],
 			reason: 'a glyph-only reset whose family is unruled',
 		},
@@ -4310,38 +4336,80 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 		expect(guarded.slice(0, guarded.indexOf('}\n}'))).toContain('top: calc(');
 	});
 
-	it('reserves in an unmarked cell of a noted column exactly what the mark takes', () => {
-		// A slot the mark's own size and gap, so every cell's content is the same
-		// shape and a centred value or ring lines up with the noted one.
-		const slot = ruleFor('.sheetsmith-view td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after')?.body ?? '';
-		expect(declarations(slot)).toEqual(
-			expect.arrayContaining([
-				'width: var(--sheetsmith-inline-control, 1.6em)',
-				'font-size: var(--font-ui-small)',
-				'margin-inline-start: var(--size-2-1)',
-			]),
+	it('reserves in every cell of a slotted column exactly what the mark takes, as padding', () => {
+		// The slot is the mark's own gap and box at the mark's size, set aside as
+		// the cell's inline-end padding, so no value's width moves it and a
+		// door, a mark and an empty slot are one place down a column
+		// (`docs/features/table-row-end-room.md`).
+		const slot = rules(CSS_WITHOUT_COMMENTS).find((rule) => /--sheetsmith-row-slot:/.test(rule.body))?.body ?? '';
+		expect(slot.replace(/\s+/g, ' ')).toContain(
+			'--sheetsmith-row-slot: calc( var(--size-2-1) + var(--sheetsmith-inline-control-factor) * var(--font-ui-small) )',
 		);
+		for (const cell of ['.sheetsmith-view td.sheetsmith-note-column', '.sheetsmith-view td.sheetsmith-table-has-note']) {
+			expect(declarations(ruleFor(cell)?.body ?? '')).toContain(
+				'padding-inline-end: calc(var(--size-4-2) + var(--sheetsmith-row-slot))',
+			);
+		}
+		// A heading takes the slot as room that counts for nothing in the
+		// column's width, a percentage capped at the slot, and no padding of it.
+		expect(declarations(ruleFor('.sheetsmith-view th.sheetsmith-note-heading::after')?.body ?? '')).toContain(
+			'margin-inline-start: min(var(--sheetsmith-row-slot), 100%)',
+		);
+		// That room hangs past a heading it does not fit; unclipped, it made a
+		// last column's table scroll by it (Skills at 520, 254px against 237).
+		expect(declarations(ruleFor('.sheetsmith-view th.sheetsmith-note-heading')?.body ?? '')).toContain(
+			'overflow: hidden',
+		);
+		// A ring's centring margins are floored at 0: a percentage counts as 0
+		// when the column is sized, and the bare difference went negative and
+		// handed back the ring's whole width, so the ring counted as no width.
+		expect(
+			declarations(ruleFor('.sheetsmith-view td.sheetsmith-note-column > .sheetsmith-level-ring')?.body ?? ''),
+		).toContain('margin-inline: max(0px, (100% - var(--sheetsmith-inline-control, 1.6em)) / 2)');
+		expect(
+			rules(CSS_WITHOUT_COMMENTS).filter(
+				(rule) => rule.selector.includes('sheetsmith-note-heading') && /--sheetsmith-row-slot/.test(rule.body) && !rule.selector.includes('::after'),
+			),
+		).toEqual([]);
 		const mark =
 			rules(CSS_WITHOUT_COMMENTS).find(
 				(rule) => rule.selector.trim() === '.sheetsmith-view .sheetsmith-note-mark',
 			)?.body ?? '';
 		expect(declarations(mark)).toContain('font-size: var(--font-ui-small)');
-		const after = ruleFor('.sheetsmith-view td > .sheetsmith-note-mark')?.body ?? '';
-		expect(declarations(after)).toContain('margin-inline-start: var(--size-2-1)');
-		// After a ring, the slot takes the ring's gap, as the mark does.
-		const ringSlot = ruleFor('.sheetsmith-view td.sheetsmith-note-column.sheetsmith-table-level:not(.sheetsmith-table-has-note)::after')?.body ?? '';
-		expect(declarations(ringSlot)).toContain('margin-inline-start: var(--size-4-2)');
+		// The glyph hands its own room back, so it sits in the padding one gap
+		// past the content box, after a ring and after a number alike.
+		for (const glyph of ['.sheetsmith-view td > .sheetsmith-note-mark', '.sheetsmith-view td > .sheetsmith-state-door']) {
+			expect(declarations(ruleFor(glyph)?.body ?? '')).toEqual(
+				expect.arrayContaining([
+					'margin-inline: var(--size-2-1) calc(-1 * var(--sheetsmith-row-slot))',
+					'font-size: var(--font-ui-small)',
+				]),
+			);
+		}
+		// No empty box drawn in a cell any more: the padding is the slot.
+		expect(
+			rules(CSS_WITHOUT_COMMENTS).filter((rule) => /td\.sheetsmith-note-column[^,{]*::after/.test(rule.selector)),
+		).toEqual([]);
 	});
 
-	it('keeps clear of a level ring’s expanded target beside it', () => {
-		// The ring's `::after` reaches `--size-4-2` sideways; the gap after it
-		// must be at least that, or a press on the mark changes the level.
+	it('gives a door or mark one gap after a ring and after a value, and stacks it over the ring’s reach', () => {
+		// The ring's `::after` reaches `--size-4-2` sideways. The glyph is
+		// positioned and later in the cell, so it paints over that reach and a
+		// press on its first pixel is the glyph's; the 8px gaps a mark and its
+		// empty slot took after a ring are gone.
 		const reach = ruleFor('.sheetsmith-view .sheetsmith-level-ring::after')?.body ?? '';
 		expect(declarations(reach)).toContain(
 			'inset: calc(-1 * var(--size-2-2)) calc(-1 * var(--size-4-2))',
 		);
-		const gap = ruleFor('.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark')?.body ?? '';
-		expect(declarations(gap)).toContain('margin-inline-start: var(--size-4-2)');
+		expect(declarations(ruleFor('.sheetsmith-view td > .sheetsmith-note-mark')?.body ?? '')).toContain(
+			'position: relative',
+		);
+		const afterRing = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) =>
+				/\.sheetsmith-level-ring\s*[+~]\s*\.sheetsmith-(note-mark|state-door)/.test(rule.selector) ||
+				/\.sheetsmith-table-level[^,{]*::after/.test(rule.selector),
+		);
+		expect(afterRing).toEqual([]);
 	});
 });
 
@@ -5094,6 +5162,35 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 	});
 });
 
+describe('a table row\'s tag lane (docs/features/table-row-end-room.md)', () => {
+	it('declares the lane once, in the tag\'s own size token', () => {
+		const declared = rules(CSS_WITHOUT_COMMENTS).filter((rule) => /--sheetsmith-tag-lane:/.test(rule.body));
+		expect(declared).toHaveLength(1);
+		expect(declared[0]?.body).toMatch(/--sheetsmith-tag-lane:\s*calc\([\d.]+ \* var\(--font-ui-smaller\)\)/);
+	});
+
+	it('sets the lane aside on a row-end cell only under the stamped table class', () => {
+		const lanes = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) => rule.selector.includes('.sheetsmith-row-end') && /padding-inline-end:[^;]*--sheetsmith-tag-lane/.test(rule.body),
+		);
+		expect(lanes.length).toBeGreaterThan(0);
+		for (const rule of lanes) {
+			for (const selector of selectorList(rule.selector)) {
+				expect(selector).toMatch(/^\.sheetsmith-view \.sheetsmith-in-play-lane > \* > tr > \.sheetsmith-row-end/);
+			}
+		}
+	});
+
+	it('clips a row-end tag at the lane, under the pinned name', () => {
+		const tag = rules(CSS_WITHOUT_COMMENTS).find(
+			(rule) => rule.selector.includes('.sheetsmith-row-end') && rule.selector.includes('.sheetsmith-in-play-mark-inline'),
+		);
+		expect(declarations(tag?.body ?? '')).toEqual(
+			expect.arrayContaining(['max-width: var(--sheetsmith-tag-lane)', 'z-index: auto']),
+		);
+	});
+});
+
 describe('the form tint (docs/features/character-forms.md)', () => {
 	const tint = rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
 		rule.selector.includes('.sheetsmith-in-play'),
@@ -5311,13 +5408,9 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		).toBeDefined();
 		// A first row under no heading row has no rule above it, so draws its top.
 		expect(find(/border-top:\s*1px solid Highlight/, `.sheetsmith-table-headless > ${top}*::before`)).toBeDefined();
-		// And never on `::after`, the in-flow mark slot a noted column's cell
-		// keeps (`docs/features/modifier-notes.md`): an absolute layer there took
-		// the slot out of flow and shifted the cell's value off its column.
-		const slot = rules(CSS_WITHOUT_COMMENTS).find((rule) =>
-			rule.selector.includes('td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after'),
-		);
-		expect(slot).toBeDefined();
+		// And never on `::after`, which the mark slot once was: an absolute
+		// layer there took the slot out of flow and shifted the cell's value off
+		// its column. The slot is padding now, and `::after` stays free.
 		for (const rule of forced) {
 			if (/tr\.sheetsmith-in-play/.test(rule.selector)) expect(rule.selector).not.toMatch(/::after/);
 		}
@@ -5377,6 +5470,21 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(pill?.body).not.toMatch(/pointer-events/);
 		const host = tint.find((rule) => rule.selector === '.sheetsmith-view .sheetsmith-in-play-marked:not(tr)');
 		expect(host?.body).toMatch(/position:\s*relative/);
+	});
+
+	it('never moves a card\'s tag to the top, beside the score', () => {
+		// A Roster card carries the tag for its rows as for its score, and at
+		// the bottom corner the tag cannot read as the score having moved
+		// (`docs/features/character-forms.md`, "Row first"). Only a row's tag,
+		// which rides its line, and a Pool's, whose bottom holds the bar, may
+		// set a top inset.
+		const tops = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) => rule.selector.includes('.sheetsmith-in-play-mark') && /inset-block-start\s*:/.test(rule.body),
+		);
+		expect(tops.length).toBeGreaterThan(1);
+		for (const rule of tops) {
+			expect(rule.selector).toMatch(/\.sheetsmith-in-play-mark-inline|\.sheetsmith-pool\s*>/);
+		}
 	});
 });
 
@@ -5831,5 +5939,17 @@ describe('a stat block name is titled open or closed', () => {
 		expect(rule?.selector).toContain('.sheetsmith-record-name-input');
 		expect(rule?.selector).not.toContain('aria-expanded');
 		expect(rule?.selector).not.toContain(':has(');
+	});
+});
+
+
+describe('a Roster card strip\'s state floor (docs/features/non-number-modifiers.md)', () => {
+	it('keys on the layout\'s stamp, never on a drawn door, so a form in play moves no card', () => {
+		const rules = [...CSS_WITHOUT_COMMENTS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , body]) =>
+			/--sheetsmith-card-min:/.test(body ?? ''),
+		);
+		const selectors = rules.map(([, selector]) => (selector ?? '').trim());
+		expect(selectors).toContain('.sheetsmith-roster-cards.sheetsmith-roster-cards-stateful');
+		for (const selector of selectors) expect(selector, selector).not.toContain('sheetsmith-state-door');
 	});
 });

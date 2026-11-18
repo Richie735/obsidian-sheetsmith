@@ -1234,3 +1234,255 @@ describe('a change carrying a note (docs/features/modifier-notes.md)', () => {
 		});
 	});
 });
+
+describe('a change that sets a level or a flag (docs/features/non-number-modifiers.md)', () => {
+	const TRAINING = {
+		flag: false,
+		positions: 3,
+		words: ['Untrained', 'Proficient', 'Expertise'],
+		label: 'Training',
+	};
+	const STATES: readonly ModifierTargetSource[] = [
+		{
+			id: 'abilities',
+			label: 'Abilities',
+			values: { named: { stealth: { states: { Training: TRAINING } } } },
+			formulas: ['stat + Training * pb + mod.self'],
+		},
+		{
+			id: 'skills',
+			label: 'Skills',
+			values: { named: { stealth: { value: 0, state: { ...TRAINING, column: 'Training' } } } },
+		},
+	];
+
+	function drawn(modifiers: Declared[]): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, layout(modifiers), {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources: STATES,
+		});
+		return container;
+	}
+
+	const valueSelect = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('select[aria-label*="value"], select[aria-label*="Value"]');
+
+	it('offers the state under Levels and flags, restricts the operator, and draws the legend', () => {
+		const el = drawn([
+			{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+		]);
+		const value = valueSelect(el);
+		expect(Array.from(el.querySelectorAll('optgroup')).map((group) => group.label)).toContain(
+			'Levels and flags',
+		);
+		expect(value?.selectedOptions[0]?.textContent).toBe('Abilities · stealth · Training');
+		const operator = el.querySelector<HTMLSelectElement>('select[aria-label*="perator"]');
+		expect(Array.from(operator?.options ?? []).map((one) => one.textContent)).toEqual(['Sets', 'At least']);
+		expect(el.textContent).toContain('0 Untrained · 1 Proficient · 2 Expertise');
+	});
+
+	it('writes the column straight after the target, and turns an Adds to into a Sets', () => {
+		const modifiers: Declared[] = [{ name: 'Cat Form', target: 'armour_class', amount: '1' }];
+		const el = drawn(modifiers);
+		const value = valueSelect(el) as HTMLSelectElement;
+		const option = Array.from(value.options).find((one) => one.textContent === 'Abilities · stealth · Training');
+		value.value = option?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(JSON.stringify(modifiers[0])).toBe(
+			'{"name":"Cat Form","target":"abilities.stealth","column":"Training","amount":"1","operator":"override"}',
+		);
+	});
+
+	it('reports an Adds to at a state and both stray columns, and nothing for a sound one', () => {
+		expect(
+			problems(
+				drawn([
+					{ name: 'Adds', target: 'abilities.stealth', column: 'Training', amount: '1' },
+					{ name: 'Typo', target: 'abilities.stealth', column: 'Trainig', operator: 'upgrade', amount: '1' },
+					{ name: 'Twice', target: 'skills.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+				]),
+			),
+		).toEqual([
+			'AddsAdds to cannot change a level or a flag. Choose Sets or At least.',
+			'TypoAbilities · stealth has no level or flag called "Trainig".',
+			'TwiceSkills · stealth already is "Training", so this change needs no column. Clear it.',
+		]);
+		expect(
+			problems(
+				drawn([
+					{ name: 'Cat Form', target: 'abilities.stealth', column: 'Training', operator: 'upgrade', amount: '1' },
+				]),
+			),
+		).toEqual([]);
+	});
+});
+
+describe('a change that grants temporary points (docs/features/granted-temporary-points.md)', () => {
+	const SOURCES: readonly ModifierTargetSource[] = [
+		{
+			id: 'hp',
+			label: 'HP',
+			values: { self: { value: '22' }, named: { temp: { value: '0', buffer: { label: 'HP', spent: {} } } } },
+		},
+		{ id: 'armour_class', label: 'Armour class', values: { self: { display: { field: 'derived', scope: {} } } }, formulas: ['10 + mod.self'] },
+	];
+
+	function drawn(modifiers: Declared[], sources = SOURCES): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, layout(modifiers), {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources,
+		});
+		return container;
+	}
+
+	const valueSelect = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('select[aria-label*="value"], select[aria-label*="Value"]');
+
+	it('offers HP · temp under Temporary points, At least only, with the legend', () => {
+		const el = drawn([{ name: 'Vitality', target: 'hp.temp', operator: 'upgrade', amount: '5' }]);
+		expect(Array.from(el.querySelectorAll('optgroup')).map((group) => group.label)).toContain('Temporary points');
+		expect(valueSelect(el)?.selectedOptions[0]?.textContent).toBe('HP · temp');
+		const operator = el.querySelector<HTMLSelectElement>('select[aria-label*="perator"]');
+		expect(Array.from(operator?.options ?? []).map((one) => one.textContent)).toEqual(['At least']);
+		expect(el.textContent).toContain("Whole points. The highest grant, or the pool's own, applies.");
+	});
+
+	it('turns a change moved onto a buffer into an At least', () => {
+		const modifiers: Declared[] = [{ name: 'Vitality', target: 'armour_class', amount: '5' }];
+		const el = drawn(modifiers);
+		const value = valueSelect(el) as HTMLSelectElement;
+		value.value = 'hp.temp';
+		value.dispatchEvent(new Event('change'));
+		expect(modifiers[0]).toMatchObject({ target: 'hp.temp', operator: 'upgrade' });
+	});
+
+	it('reports an Adds to and a Sets aimed at a buffer, and nothing for an At least', () => {
+		expect(
+			problems(
+				drawn([
+					{ name: 'Adds', target: 'hp.temp', amount: '5' },
+					{ name: 'Sets', target: 'hp.temp', operator: 'override', amount: '5' },
+					{ name: 'Grant', target: 'hp.temp', operator: 'upgrade', amount: '5' },
+				]),
+			),
+		).toEqual([
+			'AddsTemporary points do not add up, so only the highest grant applies. Choose At least.',
+			'SetsTemporary points do not add up, so only the highest grant applies. Choose At least.',
+		]);
+	});
+
+	it('draws today’s groups for a layout with no buffer', () => {
+		const el = drawn([{ name: 'Ring', target: 'armour_class', amount: '1' }], [SOURCES[1] as ModifierTargetSource]);
+		expect(el.querySelector('optgroup')).toBeNull();
+	});
+});
+
+describe('a change that chooses a dropdown\'s option (docs/features/text-value-modifiers.md)', () => {
+	const TYPES = ['Aberration', 'Beast', 'Humanoid'];
+	const SOURCES: readonly ModifierTargetSource[] = [
+		{
+			id: 'creature_type',
+			label: 'Creature type',
+			values: { self: { value: 'Humanoid', choice: { label: 'Creature type', options: TYPES.map((value) => ({ value, label: value })) } } },
+		},
+		{ id: 'armour_class', label: 'Armour class', values: { self: { display: { field: 'derived', scope: {} } } }, formulas: ['10 + mod.self'] },
+	];
+
+	function drawn(modifiers: Declared[], sources = SOURCES): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, layout(modifiers), {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources,
+		});
+		return container;
+	}
+
+	const valueSelect = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('select[aria-label*="value"], select[aria-label*="Value"]');
+	const optionSelect = (el: HTMLElement) => el.querySelector<HTMLSelectElement>('select[aria-label*="option"]');
+
+	it('offers the dropdown under Dropdowns, Sets only, and Option in Amount\'s place', () => {
+		const el = drawn([{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Beast' }]);
+		expect(Array.from(el.querySelectorAll('optgroup')).map((group) => group.label)).toContain('Dropdowns');
+		expect(valueSelect(el)?.selectedOptions[0]?.textContent).toBe('Creature type');
+		const operator = el.querySelector<HTMLSelectElement>('select[aria-label*="perator"]');
+		expect(Array.from(operator?.options ?? []).map((one) => one.textContent)).toEqual(['Sets']);
+		expect(el.querySelector('input[aria-label*="amount"]')).toBeNull();
+		expect(Array.from(optionSelect(el)?.options ?? []).map((one) => one.textContent)).toEqual(['—', ...TYPES]);
+		expect(optionSelect(el)?.value).toBe('Beast');
+	});
+
+	it('turns a change moved onto a dropdown into a Sets with a blank option, and writes the option chosen', () => {
+		const modifiers: Declared[] = [{ name: 'Beast shape', target: 'armour_class', amount: '5' }];
+		const el = drawn(modifiers);
+		const value = valueSelect(el) as HTMLSelectElement;
+		value.value = Array.from(value.options).find((one) => one.textContent === 'Creature type')?.value ?? '';
+		value.dispatchEvent(new Event('change'));
+		expect(modifiers[0]).toEqual({ name: 'Beast shape', target: 'creature_type', operator: 'override', option: '' });
+		const again = drawn(modifiers);
+		const picker = optionSelect(again) as HTMLSelectElement;
+		picker.value = 'Beast';
+		picker.dispatchEvent(new Event('change'));
+		expect(modifiers[0]?.option).toBe('Beast');
+	});
+
+	it('reports the operator, the literal and the stray, and nothing for a sound one', () => {
+		expect(
+			problems(
+				drawn([
+					{ name: 'Adds', target: 'creature_type', option: 'Beast' },
+					{ name: 'Floor', target: 'creature_type', operator: 'upgrade', option: 'Beast' },
+					{ name: 'Case', target: 'creature_type', operator: 'override', option: 'beast' },
+					{ name: 'Stray', target: 'armour_class', operator: 'override', option: 'Beast' },
+					{ name: 'Column', target: 'creature_type', column: 'Kind', operator: 'override', option: 'Beast' },
+					{ name: 'Both', target: 'creature_type', operator: 'override', amount: '3', option: 'Beast' },
+				]),
+			),
+		).toEqual([
+			'AddsAdds to cannot choose an option. Choose Sets.',
+			'FloorAt least cannot choose an option. Choose Sets.',
+			'Case"beast" is not an option of Creature type, so the modifier "Case" chooses nothing. Choose Aberration, Beast or Humanoid.',
+			'StrayArmour class shows no options, so this change has none to choose. Give it an amount instead.',
+			'ColumnCreature type is a dropdown, so this change needs no column. Clear it.',
+			'BothThis change has both an amount and an option, so the amount is ignored. Clear one.',
+		]);
+		expect(problems(drawn([{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Beast' }]))).toEqual([]);
+	});
+
+	it('carries a literal naming no option as a titled last line, as the sheet form does', () => {
+		const el = drawn([{ name: 'Beast shape', target: 'creature_type', operator: 'override', option: 'Dragon' }]);
+		const picker = optionSelect(el) as HTMLSelectElement;
+		const last = picker.options[picker.options.length - 1];
+		expect(last?.textContent).toBe('Dragon');
+		expect(last?.title).toBe("Not one of this dropdown's options. The change keeps it until something else is chosen.");
+		expect(picker.value).toBe('Dragon');
+	});
+
+	it('draws today’s groups for a layout with no dropdown', () => {
+		const el = drawn([{ name: 'Ring', target: 'armour_class', amount: '1' }], [SOURCES[1] as ModifierTargetSource]);
+		expect(el.querySelector('optgroup')).toBeNull();
+	});
+});

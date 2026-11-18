@@ -5,6 +5,7 @@ import { ModifierPush, RenderContext } from '../types';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { parseModifierPart } from '../parse/modifier-cell';
 import { outcomeView } from '../test/modifier-views';
+import { outcomeWords } from './modifier-breakdown';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { formsSamples } from '../../harness/samples';
 import { sampleOf } from '../test/sample';
@@ -1103,12 +1104,14 @@ describe('the changes list', () => {
 			'abilities.STR': 'Abilities · STR',
 			'abilities.DEX': 'Abilities · DEX',
 			'skills.perception': 'Skills · Perception',
+			'speed.walk': 'Speed · walk',
+			'speed.climb': 'Speed · climb',
 			armour_class: 'Armour class',
 		};
 		return {
 			...modifiers,
 			outcomes: (part, row) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: labels[outcome.target] ?? outcome.target,
 				})),
@@ -1126,7 +1129,7 @@ describe('the changes list', () => {
 		const { el } = render(BODY, {}, { modifiers: labelled() });
 		toLibrary(el);
 		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
-		expect(lines(detail)).toEqual(['STR +4', 'Perception at least +3']);
+		expect(lines(detail)).toEqual(['STR sets to 4', 'Perception at least 3']);
 		expect(vitals(detail)).toContain('Armour class11');
 		const glyph = detail.querySelector('.sheetsmith-stat-block-edit-changes');
 		expect(glyph?.textContent).toBe('Edit changes');
@@ -1139,14 +1142,14 @@ describe('the changes list', () => {
 			'Modifiers: abilities.STR = 4; abilities.DEX = 0; skills.perception >= 3',
 		);
 		const { el } = render(body, {}, { modifiers: labelled() });
-		expect(lines(el)).toEqual(['STR +4 · DEX +0', 'Perception at least +3']);
+		expect(lines(el)).toEqual(['STR sets to 4 · DEX sets to 0', 'Perception at least 3']);
 
 		// A part that changes nothing says why in words, not by colour alone.
 		const base = labelled();
 		const idle = {
 			...base,
 			outcomes: (part: string, row: Parameters<typeof base.outcomes>[1]) =>
-				base.outcomes(part, row).map((outcome) =>
+				base.outcomes(part, row, '').map((outcome) =>
 					outcome.target === 'skills.perception'
 						? { ...outcome, applies: false, suppressed: 'already higher' }
 						: outcome,
@@ -1155,7 +1158,7 @@ describe('the changes list', () => {
 		document.body.replaceChildren();
 		const again = render(body, {}, { modifiers: idle });
 		const item = again.el.querySelector('.sheetsmith-stat-block-change-idle');
-		expect(item?.textContent).toBe('Perception at least +3 (already higher)');
+		expect(item?.textContent).toBe('Perception at least 3 (already higher)');
 		// The glyph that edits them sits beside the section's heading, its label.
 		const head = again.el.querySelector('.sheetsmith-stat-block-section-head');
 		expect(head?.textContent).toContain('Modifiers');
@@ -1171,7 +1174,65 @@ describe('the changes list', () => {
 		expect(set?.querySelector('.sheetsmith-stat-block-vital-value')?.textContent).toBe('11');
 		expect(lines(el).join(' ')).not.toContain('Armour class');
 		// An `=` on one entry of a set, and an at-least, stay in the list.
-		expect(lines(el)).toEqual(['STR +4', 'Perception at least +3']);
+		expect(lines(el)).toEqual(['STR sets to 4', 'Perception at least 3']);
+	});
+
+	it('reads a Sets and an At least on a sub-entry unsigned, so neither reads as an add', () => {
+		// Walk's own value may be a total (30 under a Walk of 40): a signed `+40`
+		// reads as 70, so a set says the word and a floor carries no sign.
+		const body = BODY.replace(
+			'Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3',
+			'Modifiers: speed.walk = 40; speed.climb >= 30',
+		);
+		const { el } = render(body, {}, { modifiers: labelled() });
+		expect(lines(el)).toEqual(['walk sets to 40 · climb at least 30']);
+	});
+
+	it('reads an option change as a vital tile in the option\'s label, and keeps a refused one in the list with its reason', () => {
+		const SIZE = {
+			label: 'Size',
+			options: ['Small', 'Medium', 'Large'].map((value) => ({ value, label: value })),
+		};
+		const ALIGNMENT = { label: 'Alignment', options: [{ value: 'Neutral good', label: 'Neutral good' }] };
+		const refusal = '"large" is not an option of Alignment, so this row\'s own modifier chooses nothing. Choose Neutral good.';
+		const base = labelled();
+		const choosing = {
+			...base,
+			outcomes: (part: string, row: Parameters<typeof base.outcomes>[1]) => {
+				const typed = parseModifierPart(part);
+				if (typed.kind !== 'typed' || typed.effect.option === undefined) return base.outcomes(part, row, '');
+				const size = typed.effect.target === 'size';
+				return [
+					outcomeView({
+						typed: typed.effect,
+						target: typed.effect.target,
+						targetLabel: size ? 'Size' : 'Alignment',
+						applies: size,
+						suppressed: size ? null : refusal,
+						choice: { shape: size ? SIZE : ALIGNMENT, option: typed.effect.option },
+					}),
+				];
+			},
+		};
+		const body = BODY.replace(
+			'Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3',
+			'Modifiers: size = option: Large; alignment = option: large',
+		);
+		const { el } = render(body, {}, { modifiers: choosing });
+		const tile = Array.from(el.querySelectorAll('.sheetsmith-stat-block-vital-set')).find(
+			(one) => one.querySelector('.sheetsmith-stat-block-vital-label')?.textContent === 'Size',
+		);
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-value')?.textContent).toBe('Large');
+		expect(lines(el)).toEqual([`Alignment sets to large (${refusal})`]);
+		// The words the list and the row's own popup say for an option change.
+		expect(
+			outcomeWords(
+				outcomeView({
+					typed: { target: 'size', operator: 'override', amount: '', option: 'Large' },
+					choice: { shape: SIZE, option: 'Large' },
+				}),
+			),
+		).toBe('sets to Large');
 	});
 
 	it('says why a set number is not applying, beside it in the strip', () => {
@@ -1179,7 +1240,7 @@ describe('the changes list', () => {
 		const idle = {
 			...base,
 			outcomes: (part: string, row: Parameters<typeof base.outcomes>[1]) =>
-				base.outcomes(part, row).map((outcome) =>
+				base.outcomes(part, row, '').map((outcome) =>
 					outcome.target === 'armour_class'
 						? { ...outcome, applies: false, condition: false }
 						: outcome,
@@ -1266,7 +1327,7 @@ describe('a closed form in the library', () => {
 		const labelled = {
 			...modifiers,
 			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
 				})),
@@ -2360,7 +2421,7 @@ describe('the briefs with no form on', () => {
 		const labelled = {
 			...modifiers,
 			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
 				})),
@@ -2385,7 +2446,7 @@ describe('the briefs with no form on', () => {
 		const idle = {
 			...modifiers,
 			outcomes: (part: string, row: Parameters<typeof modifiers.outcomes>[1]) =>
-				modifiers.outcomes(part, row).map((outcome) => ({
+				modifiers.outcomes(part, row, '').map((outcome) => ({
 					...outcome,
 					targetLabel: outcome.target === 'armour_class' ? 'Armour class' : `Skills · ${outcome.target}`,
 					applies: false,

@@ -333,6 +333,38 @@ export default defineConfig(
 								 */
 								'!./note-mark',
 								/*
+								 * **A door onto a value's read-only account**: the `info`
+								 * button, its twin and its popover, with the class, the
+								 * name and the words the caller's. Shared by the note mark,
+								 * a ring's state door and a dropdown's door, three
+								 * consumers, which is PATTERNS §1's extraction line met
+								 * exactly (`docs/features/text-value-modifiers.md`). In no
+								 * registry, declaring no `ComponentDefinition`, touching no
+								 * file, and taking only `setIcon` from `obsidian`.
+								 */
+								'!./account-door',
+								/*
+								 * **A ring a modifier set**: the drawn mapping, its words
+								 * for the stored level, the popover a press that moves
+								 * nothing on screen opens, and the door onto the account
+								 * (`docs/features/non-number-modifiers.md`). Shared by
+								 * Table, Roster and Track, three consumers, which is §1's
+								 * extraction line met exactly. In no registry, declaring no
+								 * `ComponentDefinition`, touching no file, and taking only
+								 * `setIcon` from `obsidian`.
+								 */
+								'!./state-ring',
+								/*
+								 * **What a row's levels and flags are once a modifier may
+								 * set them**: which columns are states, how a change names
+								 * each, and how a row's scope reads them, shared by Table
+								 * and Roster on PATTERNS §1's one-step tier for a policy
+								 * (`docs/features/non-number-modifiers.md`). In no registry,
+								 * declaring no `ComponentDefinition`, importing nothing from
+								 * `obsidian` and touching no file.
+								 */
+								'!./row-states',
+								/*
 								 * **How wide a Record set's summary line is before it
 								 * fits**, estimated from its declared fields
 								 * (`docs/features/record-set-stacking-tiers.md`). On
@@ -408,6 +440,9 @@ export default defineConfig(
 								'!../components/picture-frame',
 								'!../components/ring-control',
 								'!../components/note-mark',
+								'!../components/account-door',
+								'!../components/state-ring',
+								'!../components/row-states',
 								'!../components/record-line-fit',
 								'!../components/record-fields',
 								'!../components/record-controls',

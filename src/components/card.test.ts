@@ -843,7 +843,9 @@ describe('card.render: a value chosen from a list', () => {
 			options: [{ value: '2', label: 'Expertise' }],
 		});
 		expect(published?.self?.value).toBe('2');
-		expect(JSON.stringify(published)).not.toContain('Expertise');
+		// The choice's shape carries the labels for the pickers and the account
+		// (`docs/features/text-value-modifiers.md`); nothing a formula reads does.
+		expect(JSON.stringify({ ...published?.self, choice: undefined })).not.toContain('Expertise');
 	});
 
 	it('keeps one tab stop for the value, named by the card\'s label', () => {
@@ -1999,5 +2001,194 @@ describe('card.render: focusing the value selects its number', () => {
 		value.blur();
 		expect(onChange).not.toHaveBeenCalled();
 		expect(value.value).toBe('27');
+	});
+});
+
+/*
+ * A dropdown a modifier chose an option for (`docs/features/text-value-modifiers.md`
+ * D9, D10, D11): the menu draws the chosen option at rest and the stored one
+ * under a hand, the door in the note mark's corner opens the account, and a
+ * choice the face does not plainly show is said.
+ */
+describe('card.render: a dropdown a modifier chose', () => {
+	const SIZE: CardConfig = {
+		id: 'size',
+		type: 'card',
+		label: 'Size',
+		position: { col: 1, row: 1, width: 2, height: 1 },
+		options: ['Tiny', 'Small', 'Medium', 'Large', 'Huge'].map((value) => ({ value })),
+		hideNote: true,
+	};
+
+	afterEach(() => closePopover());
+
+	/** The card rendered on a real sheet whose Wild Shape row pushes `parts`. */
+	function drawn(
+		parts: readonly string[],
+		stored: string | null = 'Medium',
+		over: Partial<CardConfig> = {},
+		edits: unknown[] = [],
+	) {
+		const placed = { ...SIZE, ...over };
+		const data = stored === null ? {} : { value: stored };
+		const layout = {
+			name: 'L',
+			components: [
+				placed,
+				{
+					id: 'notes',
+					type: 'card',
+					label: 'Notes',
+					position: { col: 3, row: 1, width: 2, height: 1 },
+				},
+			],
+		} as unknown as Layout;
+		const forms: ReadComponent = {
+			config: { id: 'forms', type: 'stub', label: 'Wild Shape', position: { col: 1, row: 2, width: 1, height: 1 } },
+			component: {
+				type: 'stub',
+				description: '',
+				storage: 'none',
+				formulaFields: [],
+				configFields: [],
+				read: () => ({ ok: true, data: null }),
+				write: (_data, body) => body ?? '',
+				render: () => undefined,
+				scopeModifiers: () => () =>
+					parts.map((part) => ({ part, source: 'Wild Shape', row: { label: 'Brown bear', values: {} } })),
+			},
+			data: null,
+			error: null,
+		};
+		const { env, modifiers } = buildSheet(layout, [
+			{ config: placed, component: card, data, error: null },
+			forms,
+		]);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		card.render(el, placed, data, {
+			...context,
+			resolveField: makeFieldResolver(card, placed, data, env),
+			modifiers,
+			onChange: (delta) => edits.push(delta),
+		});
+		return el;
+	}
+
+	const select = (el: HTMLElement) => el.querySelector<HTMLSelectElement>('.sheetsmith-card-select') as HTMLSelectElement;
+	const door = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sheetsmith-state-door');
+
+	it('draws the chosen option at rest and the stored one on focus, then the chosen one on blur', () => {
+		const el = drawn(['size = option: Large']);
+		const menu = select(el);
+		expect(menu.value).toBe('Large');
+		menu.dispatchEvent(new Event('focus'));
+		expect(menu.value).toBe('Medium');
+		menu.dispatchEvent(new Event('blur'));
+		expect(menu.value).toBe('Large');
+	});
+
+	it('shows the stored choice under a press and a key, before the menu opens or the value steps', () => {
+		const menu = select(drawn(['size = option: Large']));
+		menu.dispatchEvent(new Event('pointerdown'));
+		expect(menu.value).toBe('Medium');
+		menu.dispatchEvent(new Event('blur'));
+		menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+		expect(menu.value).toBe('Medium');
+	});
+
+	it('shows `—` on focus where nothing is stored, and the stray line where the stored value is a stray', () => {
+		const empty = select(drawn(['size = option: Large'], null));
+		expect(empty.value).toBe('Large');
+		empty.dispatchEvent(new Event('focus'));
+		expect(empty.value).toBe('');
+		const stray = select(drawn(['size = option: Large'], 'Huge-ish'));
+		expect(stray.value).toBe('Large');
+		expect(Array.from(stray.options).map((one) => one.value)).toContain('Huge-ish');
+		stray.dispatchEvent(new Event('focus'));
+		expect(stray.value).toBe('Huge-ish');
+		expect(stray.getAttribute('title')).toBe(
+			"Not one of this card's options. The note keeps it until something else is chosen.\nSet by a modifier; your own: Huge-ish",
+		);
+	});
+
+	it('reports the line chosen as the stored choice, draws the chosen option again, and says so', async () => {
+		const edits: unknown[] = [];
+		const el = drawn(['size = option: Large'], 'Medium', {}, edits);
+		const menu = select(el);
+		menu.dispatchEvent(new Event('focus'));
+		menu.value = 'Small';
+		menu.dispatchEvent(new Event('change'));
+		expect(edits).toEqual([{ value: 'Small' }]);
+		await Promise.resolve();
+		expect(menu.value).toBe('Large');
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('Your own is now Small');
+		expect(menu.getAttribute('aria-description')).toBe('Set by a modifier; your own: Small');
+	});
+
+	it('says the reader\'s own only while the two differ', () => {
+		const menu = select(drawn(['size = option: Large']));
+		expect(menu.getAttribute('aria-description')).toBe('Set by a modifier; your own: Medium');
+		expect(menu.getAttribute('title')).toBe('Set by a modifier; your own: Medium');
+		const same = select(drawn(['size = option: Medium']));
+		expect(same.hasAttribute('aria-description')).toBe(false);
+		expect(same.hasAttribute('title')).toBe(false);
+		expect(same.classList.contains('sheetsmith-card-select-chosen')).toBe(true);
+		const empty = select(drawn(['size = option: Large'], null));
+		expect(empty.getAttribute('aria-description')).toBe('Set by a modifier; your own: nothing chosen');
+	});
+
+	it('draws the rule wherever a line is listed, a refusal included, and the door opens the account', () => {
+		const el = drawn(['size = option: Large']);
+		expect(select(el).classList.contains('sheetsmith-card-select-chosen')).toBe(true);
+		const button = door(el) as HTMLButtonElement;
+		expect(button.getAttribute('aria-label')).toBe('Modifiers on Size');
+		expect(button.getAttribute('aria-description')).toBe('Set by a modifier; your own: Medium');
+		const twin = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+		expect(twin?.textContent).toBe('Your own: Medium\n\nWild Shape · Brown bear — sets to Large\n\nNow Large');
+		expect(el.querySelector('.sheetsmith-card-single')?.classList.contains('sheetsmith-card-has-note')).toBe(true);
+		button.click();
+		expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(twin?.textContent);
+	});
+
+	it('puts a note at the card\'s name into the door\'s account, and draws no note mark', () => {
+		const el = drawn(['size = option: Large', 'size += note: Squeezes through gaps']);
+		expect(el.querySelector('.sheetsmith-note-mark')).toBeNull();
+		expect(el.querySelectorAll('.sheetsmith-state-door')).toHaveLength(1);
+		const twin = document.getElementById(door(el)?.getAttribute('aria-describedby') ?? '');
+		expect(twin?.textContent).toBe(
+			'Your own: Medium\n\nWild Shape · Brown bear — sets to Large\n\nNow Large\n\nBrown bear — "Squeezes through gaps"',
+		);
+	});
+
+	it('opens a refused choice\'s door on its sentence, drawing the stored choice', () => {
+		const el = drawn(['size = option: large']);
+		expect(select(el).value).toBe('Medium');
+		expect(select(el).classList.contains('sheetsmith-card-select-chosen')).toBe(true);
+		const twin = document.getElementById(door(el)?.getAttribute('aria-describedby') ?? '');
+		expect(twin?.textContent).toBe(
+			'Row "Brown bear": "large" is not an option of Size, so this row\'s own modifier chooses nothing. Choose Tiny, Small, Medium, Large or Huge.\n\nNow Medium',
+		);
+	});
+
+	it('draws exactly today\'s DOM for a dropdown nothing chooses', () => {
+		const el = drawn([]);
+		expect(door(el)).toBeNull();
+		expect(select(el).value).toBe('Medium');
+		expect(select(el).className).toBe('sheetsmith-card-select');
+		expect(select(el).hasAttribute('title')).toBe(false);
+		expect(select(el).hasAttribute('aria-description')).toBe(false);
+	});
+
+	it('reads the chosen option in the derived, and a refusal draws `?`', () => {
+		const numbered: Partial<CardConfig> = {
+			options: ['Tiny', 'Small', 'Medium', 'Large'].map((label, at) => ({ value: String(at), label })),
+			derived: 'value * 10',
+			signed: false,
+		};
+		const el = drawn(['size = option: 3'], '2', numbered);
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('30');
+		const refused = drawn(['size += option: 3'], '2', numbered);
+		expect(refused.querySelector('.sheetsmith-card-derived')?.textContent).toBe('?');
 	});
 });

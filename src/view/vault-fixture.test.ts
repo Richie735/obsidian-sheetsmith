@@ -863,13 +863,13 @@ describe('what a modifier cell says about its own row', () => {
 	function applied(label: string, cell: string) {
 		const values = row(label).row;
 		return rowModifiers(cellParts(cell), (stored) =>
-			built.modifiers.outcomes(stored, values),
+			built.modifiers.outcomes(stored, values, ''),
 		);
 	}
 
 	/** The one outcome a part naming a one-change definition comes to. */
 	const outcomeFor = (part: string, label: string) =>
-		built.modifiers.outcomes(part, row(label).row)[0] as ModifierOutcome;
+		built.modifiers.outcomes(part, row(label).row, '')[0] as ModifierOutcome;
 
 	it('says what one row is doing when its cell names two, at both depths', () => {
 		/*
@@ -1484,7 +1484,7 @@ describe('the notes the fixture recipe names (docs/features/modifier-notes.md)',
 	it('says at the row that a card set cannot show a note yet, and draws nothing there', () => {
 		const [outcome] = built.modifiers.outcomes(
 			'abilities.STR += note: Advantage against poison',
-			{ label: 'Belt of Dwarvenkind', values: {} },
+			{ label: 'Belt of Dwarvenkind', values: {} }, '',
 		);
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe(

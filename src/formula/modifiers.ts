@@ -43,6 +43,7 @@
  */
 
 import {
+	ChoiceLine,
 	ModifierDefinitionView,
 	ModifierLine,
 	ModifierNote,
@@ -57,11 +58,28 @@ import {
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
 import { isNoteOnly } from '../parse/modifier-cell';
 import {
+	called,
 	Contribution,
 	definitionTable,
 	Enrolment,
 	resolveEnrolments,
 } from './modifier-definitions';
+import {
+	aimsAtBuffer,
+	BufferLookup,
+	FoundGrant,
+	grantAsked,
+	grantVerdict,
+} from './modifier-buffers';
+import {
+	addressOf,
+	StateLookup,
+	StateResult,
+	StateShapes,
+	stateVerdict,
+} from './modifier-states';
+import { ChoiceLookup, ChoiceShapes, choiceVerdict } from './modifier-choices';
+import { suppressionWording } from './suppression-wording';
 
 /**
  * The reserved top-level namespace every slot sits under.
@@ -210,7 +228,7 @@ const EMPTY: ModifierResult = {
  * own, a formula evaluated in a test. Every slot is empty, which is the truth
  * there — nothing pushes, because there is nothing to push.
  *
- * A constant rather than `buildModifierTable([])`, so this file never has to
+ * A constant rather than `buildModifierTables([], []).slots`, so this file never has to
  * reach for an environment it would then have to import `resolve.ts` for — and
  * `resolve.ts` imports this.
  */
@@ -258,6 +276,33 @@ interface Walked {
 	applied: Map<string, Contributor[]>;
 	refused: Map<string, Refused>;
 	/**
+	 * The third reduction (`docs/features/non-number-modifiers.md`): every change
+	 * aimed at a level or a flag, keyed by `stateKey`, its amount a position. It
+	 * never reaches `applied`, so a state push leaves `mod.<target>` and the
+	 * number's breakdown exactly as they were.
+	 */
+	stated: Map<string, Contributor[]>;
+	/** A state refused, on `refused`'s terms: the first refusal names the row. */
+	stateRefused: Map<string, Refused>;
+	/**
+	 * The fourth reduction (`docs/features/granted-temporary-points.md`): every
+	 * change aimed at a buffer, keyed by its target, a grant of whole points or
+	 * the sentence it grants nothing with. It never reaches `applied`, so a grant
+	 * leaves `mod.<target>` and every slot's breakdown exactly as they were.
+	 */
+	granted: Map<string, FoundGrant[]>;
+	/** A buffer refused (D11), on `refused`'s terms: the first refusal names the row. */
+	grantRefused: Map<string, Refused>;
+	/**
+	 * The fifth reduction (`docs/features/text-value-modifiers.md`): every change
+	 * carrying `option` aimed at a dropdown, keyed by its target, the option it
+	 * names. It never reaches `applied`, so a choice leaves `mod.<target>` and
+	 * every slot's breakdown exactly as they were (D1).
+	 */
+	chosen: Map<string, ChoiceLine[]>;
+	/** A choice refused (D3, D4), on `refused`'s terms: the first refusal names the row. */
+	choiceRefused: Map<string, Refused>;
+	/**
 	 * The notes, kept apart from the arithmetic from the walk onward
 	 * (`docs/features/modifier-notes.md` E): only a change with an amount becomes a
 	 * `Contributor`, so the stacking rule and both of its zero skips never see a
@@ -281,8 +326,13 @@ interface Walked {
  * two cycle guards wins a ring both could catch, and warming this table in a
  * fixed order before drawing would decide that by biasing it toward the name
  * table's guard. So a slot is entered exactly as any other published name is.
+ *
+ * **The slot lookup and the state lookup come from that one walk**
+ * (`docs/features/non-number-modifiers.md`): a change aimed at a level or a flag
+ * is keyed by its address and reduced apart from the arithmetic, so asking either
+ * lookup first warms both.
  */
-export function buildModifierTable(
+export function buildModifierTables(
 	components: readonly ModifierComponent[],
 	definitions: readonly ModifierDefinitionView[],
 	/**
@@ -292,7 +342,24 @@ export function buildModifierTable(
 	 * so this file stays upstream of `resolve.ts`.
 	 */
 	calls: FunctionEnv = {},
-): ModifierLookup {
+	/**
+	 * Every declared level and flag, by `stateKey`, read statically from the
+	 * layout (`stateTargets`). Empty is a sheet with none, which walks exactly as
+	 * it did before states existed.
+	 */
+	shapes: StateShapes = new Map(),
+	/**
+	 * Every declared buffer a grant may raise, by name (`bufferTargets`). Empty
+	 * is a sheet with none, which walks exactly as it did before grants existed.
+	 */
+	bufferNames: ReadonlySet<string> = new Set(),
+	/**
+	 * Every declared dropdown a change may choose an option of, by name
+	 * (`choiceTargets`). Empty is a sheet with none, which walks exactly as it
+	 * did before choices existed.
+	 */
+	choiceShapes: ChoiceShapes = new Map(),
+): { slots: ModifierLookup; states: StateLookup; buffers: BufferLookup; choices: ChoiceLookup } {
 	const table = definitionTable(definitions);
 	/**
 	 * Every contribution by target, once the walk has produced a set nothing
@@ -339,6 +406,12 @@ export function buildModifierTable(
 		const applied = new Map<string, Contributor[]>();
 		const refused = new Map<string, Refused>();
 		const noted = new Map<string, ModifierNote[]>();
+		const stated = new Map<string, Contributor[]>();
+		const stateRefused = new Map<string, Refused>();
+		const granted = new Map<string, FoundGrant[]>();
+		const grantRefused = new Map<string, Refused>();
+		const chosen = new Map<string, ChoiceLine[]>();
+		const choiceRefused = new Map<string, Refused>();
 		for (const component of components) {
 			for (const push of component.pushes?.() ?? []) {
 				// A blank part enrols in nothing and is not an error: on an
@@ -407,6 +480,115 @@ export function buildModifierTable(
 					}
 					// A note-only change contributes nothing to the arithmetic.
 					if (found.kind === 'noted') continue;
+					/*
+					 * **A dropdown's option, the fifth reduction**, taken first: a
+					 * change carrying `option` is never arithmetic, whatever it is
+					 * aimed at. One aimed at no dropdown, or naming a column, changes
+					 * nothing and refuses nothing (D7); an operator other than Sets, a
+					 * condition that will not resolve and a literal naming no option
+					 * refuse the choice (D3, D4).
+					 */
+					const choice = choiceVerdict(choiceShapes, found);
+					if (choice.kind !== 'none') {
+						if (choice.kind === 'refused') {
+							if (!choiceRefused.has(target)) {
+								choiceRefused.set(target, { label: push.row.label, reason: choice.reason });
+							}
+						} else if (choice.kind === 'set') {
+							const line: ChoiceLine = {
+								label: push.row.label,
+								source: push.source,
+								...(found.definition === null ? {} : { definition: found.definition.name }),
+								option: choice.option,
+								suppressed: null,
+								...(push.inPlay === true ? { inPlay: true } : {}),
+								...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+							};
+							const already = chosen.get(target);
+							if (already === undefined) chosen.set(target, [line]);
+							else already.push(line);
+						}
+						continue;
+					}
+					/*
+					 * **A buffer, the fourth reduction.** A change aimed at a name
+					 * whose value is a buffer, with no column, is a grant: reduced by
+					 * target, never reaching the slot. A grant that cannot be one is
+					 * listed with its sentence and grants nothing (D2, D4, D5), text
+					 * among them; only an amount that will not resolve refuses the
+					 * buffer (D11).
+					 */
+					if (aimsAtBuffer(bufferNames, target, found.fields.column)) {
+						const asked = grantAsked(found);
+						if (asked === null) {
+							// Only an unreadable change asks nothing (`grantAsked`): an
+							// applying one always carries its amount, so the kind check
+							// narrows the type rather than skipping a grant.
+							if (found.kind === 'unreadable' && !isNoteOnly(found.fields) && !grantRefused.has(target)) {
+								grantRefused.set(target, { label: push.row.label, reason: found.reason });
+							}
+							continue;
+						}
+						const grant: FoundGrant = {
+							...grantVerdict(
+								found.fields.operator,
+								asked,
+								called(found),
+								push.source,
+								push.row.label,
+							),
+							label: push.row.label,
+							source: push.source,
+							...(found.definition === null ? {} : { definition: found.definition.name }),
+							...(push.inPlay === true ? { inPlay: true } : {}),
+							...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+						};
+						const already = granted.get(target);
+						if (already === undefined) granted.set(target, [grant]);
+						else already.push(grant);
+						continue;
+					}
+					/*
+					 * **A level or a flag, the third reduction.** Where the change
+					 * names a column, or its target's own value is a state, it is
+					 * reduced by address and never reaches the slot. A column the
+					 * target does not hold contributes nothing and refuses nothing:
+					 * §5's rule for a push at a name the sheet does not publish, said
+					 * at the row (D5).
+					 */
+					const verdict = stateVerdict(shapes, found);
+					if (verdict.kind === 'stray' || verdict.kind === 'quiet') continue;
+					if (verdict.kind === 'refused' && verdict.key !== null) {
+						if (!stateRefused.has(verdict.key)) {
+							stateRefused.set(verdict.key, { label: push.row.label, reason: verdict.reason });
+						}
+						continue;
+					}
+					if (verdict.kind === 'set' && found.kind === 'applies') {
+						const line: Contributor = {
+							...found.contribution,
+							amount: verdict.position,
+							label: push.row.label,
+							source: push.source,
+							...(push.inPlay === true ? { inPlay: true } : {}),
+							...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+							...(found.definition === null ? {} : { definition: found.definition.name }),
+						};
+						const already = stated.get(verdict.key);
+						if (already === undefined) stated.set(verdict.key, [line]);
+						else already.push(line);
+						continue;
+					}
+					/*
+					 * A boolean amount at a number: refused with the shipped sentence,
+					 * now that the target is known to be no level or flag (D6).
+					 */
+					if (verdict.kind === 'refused') {
+						if (!refused.has(target)) {
+							refused.set(target, { label: push.row.label, reason: verdict.reason });
+						}
+						continue;
+					}
 					if (found.kind === 'unreadable') {
 						// A note-only change never refuses a slot, even where its
 						// condition will not resolve: it moves no number, so it cannot
@@ -441,31 +623,47 @@ export function buildModifierTable(
 				}
 			}
 		}
-		return { applied, refused, noted };
+		return { applied, refused, noted, stated, stateRefused, granted, grantRefused, chosen, choiceRefused };
 	};
 
-	return (name) => {
+	/**
+	 * The walk's result, or null where it is already running. One entry for both
+	 * lookups, so the guard and the memo are one.
+	 */
+	const walked = (): Walked | null => {
+		if (held !== null) return held;
+		if (walking) return null;
+		walking = true;
+		let found: Walked;
+		try {
+			found = walk();
+		} finally {
+			walking = false;
+		}
+		if (
+			found.refused.size === 0 &&
+			found.stateRefused.size === 0 &&
+			found.grantRefused.size === 0 &&
+			found.choiceRefused.size === 0
+		) {
+			held = found;
+		}
+		return found;
+	};
+
+	const slots: ModifierLookup = (name) => {
 		const done = stacked.get(name);
 		if (done !== undefined) return done;
-		let found = held;
+		const found = walked();
 		if (found === null) {
-			if (walking) {
-				// Says only what has been established. It used to assert that "one of
-				// them is waiting on the total it is part of", which is false
-				// whenever the amount read a *different* target's slot — the common
-				// shape of this refusal, and the one that sends a reader looking for
-				// a self-reference that is not there.
-				return {
-					error: `A modifier's own amount reads "${modifierSlot(name)}", and the modifiers on this sheet are still being worked out, so there is no total to give it yet. Give the amount a plain number, or read the value being modified rather than what was pushed at it.`,
-				};
-			}
-			walking = true;
-			try {
-				found = walk();
-			} finally {
-				walking = false;
-			}
-			if (found.refused.size === 0) held = found;
+			// Says only what has been established. It used to assert that "one of
+			// them is waiting on the total it is part of", which is false whenever
+			// the amount read a *different* target's slot — the common shape of
+			// this refusal, and the one that sends a reader looking for a
+			// self-reference that is not there.
+			return {
+				error: `A modifier's own amount reads "${modifierSlot(name)}", and the modifiers on this sheet are still being worked out, so there is no total to give it yet. Give the amount a plain number, or read the value being modified rather than what was pushed at it.`,
+			};
 		}
 		// Attached only where there are any, so every result on a sheet with no
 		// notes is the object it always was.
@@ -487,23 +685,91 @@ export function buildModifierTable(
 		stacked.set(name, result);
 		return result;
 	};
+
+	const states: StateLookup = (name, column) => {
+		const address = addressOf(shapes, name, column);
+		if (address.kind !== 'state') return null;
+		const { shape, key } = address;
+		const found = walked();
+		if (found === null) {
+			/*
+			 * **The walk's own guard, in a state's words**: `mod.<name>` names
+			 * nothing here, so the cold half of the cycle case says what was read
+			 * and what to read instead. The fix offered is the stored state, which
+			 * no push changes, so it cannot loop.
+			 */
+			return {
+				shape,
+				error:
+					column === null
+						? `A modifier's own condition or amount reads "${name}", which a modifier sets, and the modifiers on this sheet are still being worked out. Read the value as stored (${name}.value) instead.`
+						: `A modifier's own condition or amount reads ${column} on "${name}", which a modifier sets, and the modifiers on this sheet are still being worked out. Read a value no modifier sets instead.`,
+			};
+		}
+		const stopped = found.stateRefused.get(key);
+		if (stopped !== undefined) {
+			return { shape, error: inRowMessage(stopped.label, stopped.reason) };
+		}
+		const result: StateResult = { shape, lines: (found.stated.get(key) ?? []).map(stateLine) };
+		return result;
+	};
+
+	const buffers: BufferLookup = (name) => {
+		if (!bufferNames.has(name)) return null;
+		const found = walked();
+		if (found === null) {
+			/*
+			 * **The walk's own guard, in a buffer's words** (D13): the cold half of
+			 * the cycle case, naming what was read and the stored value to read
+			 * instead, which no grant changes, so it cannot loop.
+			 */
+			return {
+				error: `A modifier's own condition or amount reads "${name}", which a grant raises, and the modifiers on this sheet are still being worked out. Read the value as stored (${name}.value) instead.`,
+			};
+		}
+		const stopped = found.grantRefused.get(name);
+		if (stopped !== undefined) return { error: inRowMessage(stopped.label, stopped.reason) };
+		return { lines: found.granted.get(name) ?? [] };
+	};
+
+	const choices: ChoiceLookup = (name) => {
+		const shape = choiceShapes.get(name);
+		if (shape === undefined) return null;
+		const found = walked();
+		if (found === null) {
+			/*
+			 * **The walk's own guard, in the state's words** (D14): the cold half of
+			 * the cycle case, naming what was read and the stored choice to read
+			 * instead, which no change moves, so it cannot loop.
+			 */
+			return {
+				shape,
+				error: `A modifier's own condition or amount reads "${name}", which a modifier sets, and the modifiers on this sheet are still being worked out. Read the value as stored (${name}.value) instead.`,
+			};
+		}
+		const stopped = found.choiceRefused.get(name);
+		if (stopped !== undefined) return { shape, error: inRowMessage(stopped.label, stopped.reason) };
+		return { shape, lines: found.chosen.get(name) ?? [] };
+	};
+
+	return { slots, states, buffers, choices };
 }
 
-/** What a suppressed contributor's parenthetical says, in one place. */
-function suppressionWording(
-	kind: string,
-	tied: boolean,
-	/** "value" for an override, "size" for an amount that stacks. */
-	measure: 'value' | 'size',
-): string {
-	// Two wordings because only one of them is ever true. A tie is not a larger
-	// modifier, and telling a reader one applies would send them hunting for a
-	// number that is not there.
-	return tied
-		? `another ${kind} of the same ${measure} applies`
-		: measure === 'value'
-			? `a higher ${kind} applies`
-			: `a larger ${kind} applies`;
+/** One state contributor as a line, its verdict left to `foldState`. */
+function stateLine(entry: Contributor): ModifierLine {
+	const { label, source, definition, operator, amount, inPlay, tint } = entry;
+	return {
+		label,
+		source,
+		definition,
+		operator,
+		type: null,
+		amount,
+		applies: 'result',
+		suppressed: null,
+		...(inPlay === true ? { inPlay: true } : {}),
+		...(tint === undefined ? {} : { tint }),
+	};
 }
 
 /** What a typed contribution contests for: its type and its direction. */
@@ -736,8 +1002,6 @@ export function withFloorVerdict(
 	return { ...result, lines };
 }
 
-/** Why the winning floor did not raise a number its formula already passed. */
-export const ALREADY_HIGHER = 'already higher';
 
 /**
  * Why one enrolment is not applying at its target, or null where it is.

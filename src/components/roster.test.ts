@@ -741,6 +741,42 @@ describe('a stat whose formula reads mod.self, pushed at from a Table elsewhere'
 		return el;
 	}
 
+	/** Two stat cards, each with a row whose Total publishes, and no `effective`, so only a row can be a box. */
+	const rowCards = (base: RosterConfig): RosterConfig => {
+		const { effective: _effective, ...rest } = base;
+		return {
+			...rest,
+			cardLayout: true,
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+			],
+			columns: [{ key: 'Total', type: 'computed', formula: 'stat + mod.self', publish: true }],
+		};
+	};
+	const cardsIn = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-card'));
+
+	it('names the card holding a pushed row as what carries its tag, never as a box, and no other card', () => {
+		const el = drawn(rowCards, 'abilities.stealth += 2 as item');
+		const [strength, dexterity] = cardsIn(el);
+		expect(dexterity?.querySelector('tr[data-sheetsmith-box]')).not.toBeNull();
+		expect(dexterity?.hasAttribute('data-sheetsmith-tag-box')).toBe(true);
+		expect(dexterity?.hasAttribute('data-sheetsmith-box')).toBe(false);
+		expect(strength?.hasAttribute('data-sheetsmith-tag-box')).toBe(false);
+		expect(strength?.hasAttribute('data-sheetsmith-box')).toBe(false);
+	});
+
+	it('names no card as a carrier where nothing reached any of its rows', () => {
+		const el = drawn(rowCards, 'elsewhere += 1');
+		expect(cardsIn(el)).toHaveLength(2);
+		expect(el.querySelector('[data-sheetsmith-box]')).toBeNull();
+		expect(el.querySelector('[data-sheetsmith-tag-box]')).toBeNull();
+	});
+
 	it('names its score pill as the box in the card layout, and the card as what carries the tag', () => {
 		const el = drawn((base) => ({ ...base, cardLayout: true, derived: 'mod(value + mod.self)' }));
 		const card = el.querySelector<HTMLElement>('.sheetsmith-card');
@@ -1557,5 +1593,47 @@ describe('a roster something has noted (docs/features/modifier-notes.md)', () =>
 		expect(el.querySelector('.sheetsmith-error')?.textContent).toBe(
 			'The stat "STR: base" cannot contain a colon or a line break, because the sheet block separates key from value with a colon. Rename it under Stats in the layout editor.',
 		);
+	});
+});
+
+/*
+ * The row's end, as a Table's (`docs/features/table-row-end-room.md`): a Roster
+ * row's last value cell, never its name, wherever `namePosition` puts it, and
+ * the heading row's too.
+ */
+describe('a roster marks each row\'s end', () => {
+	const ROW_END = 'sheetsmith-row-end';
+	const drawnWith = (over: RosterConfig) => {
+		const result = roster.read(BODY, over);
+		if (!result.ok) throw new Error(result.error);
+		const el = document.createElement('div');
+		roster.render(el, over, result.data, contextFor(result.data, over));
+		return el;
+	};
+	const rows = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll<HTMLElement>('thead tr, tbody tr')).filter(
+			(tr) => tr.querySelector('th.sheetsmith-table-name') !== null,
+		);
+
+	it('marks the last value cell of its heading row and each row', () => {
+		const el = drawnWith(config);
+		const marked = rows(el);
+		expect(marked.length).toBeGreaterThan(2);
+		for (const tr of marked) {
+			const ends = Array.from(tr.children).filter((cell) => cell.classList.contains(ROW_END));
+			expect(ends).toEqual([tr.lastElementChild]);
+		}
+	});
+
+	it('marks the cell before the name on a name-last roster, and never the name', () => {
+		const el = drawnWith({ ...config, namePosition: 2 });
+		const marked = rows(el);
+		expect(marked.length).toBeGreaterThan(2);
+		for (const tr of marked) {
+			const name = tr.lastElementChild as HTMLElement;
+			expect(name.classList.contains('sheetsmith-table-name')).toBe(true);
+			expect(name.classList.contains(ROW_END)).toBe(false);
+			expect(name.previousElementSibling?.classList.contains(ROW_END)).toBe(true);
+		}
 	});
 });

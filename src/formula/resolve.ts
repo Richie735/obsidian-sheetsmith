@@ -27,7 +27,11 @@ import {
 	ResolvedValues,
 	RowsSource,
 	ScopeEntry,
+	StateReader,
+	ChoiceReader,
 } from '../types';
+import type { BufferLookup } from './modifier-buffers';
+import { ChoiceLookup, choiceReaderOf, READ_CHOICE_AS_STORED } from './modifier-choices';
 import {
 	EMPTY_SCOPE,
 	evaluate,
@@ -39,14 +43,15 @@ import {
 	Scope,
 	Value,
 } from './expression';
+import { ALREADY_HIGHER } from './suppression-wording';
 import {
-	ALREADY_HIGHER,
 	ModifierLookup,
 	modifierSlot,
 	NO_MODIFIERS,
 	SELF_SLOT,
 } from './modifiers';
 import { NO_ROWS, RowLookup } from './rows';
+import { READ_AS_STORED, StateLookup, stateReaderOf } from './modifier-states';
 
 /**
  * Everything on the sheet a formula resolves against.
@@ -89,6 +94,35 @@ export interface FormulaEnv {
 	 * pushed and so nothing floors.
 	 */
 	floors?: Map<string, string | null>;
+	/**
+	 * What has been pushed at each level and flag a modifier may set
+	 * (`docs/features/non-number-modifiers.md`), from the same walk as
+	 * `modifiers`. Absent on an environment with no sheet, where every state
+	 * reads as stored.
+	 */
+	states?: StateLookup;
+	/**
+	 * What has been granted at each buffer (`docs/features/granted-temporary-points.md`),
+	 * from the same walk as `modifiers`. Absent on an environment with no sheet,
+	 * where every buffer reads as stored.
+	 */
+	buffers?: BufferLookup;
+	/**
+	 * What has been chosen at each dropdown (`docs/features/text-value-modifiers.md`),
+	 * from the same walk as `modifiers`. Absent on an environment with no sheet,
+	 * where every choice reads as stored.
+	 */
+	choices?: ChoiceLookup;
+}
+
+/** The reader a component folds a level or a flag through, on this sheet. */
+export function stateReaderFor(env: FormulaEnv): StateReader {
+	return env.states === undefined ? READ_AS_STORED : stateReaderOf(env.states);
+}
+
+/** The reader a name or a Card's `derived` folds a dropdown's choice through. */
+export function choiceReaderFor(env: FormulaEnv): ChoiceReader {
+	return env.choices === undefined ? READ_CHOICE_AS_STORED : choiceReaderOf(env.choices);
 }
 
 /**
@@ -419,7 +453,12 @@ function fieldReaders(
 				? calls
 				: {
 						...calls,
-						self: { id: published ?? config.id, build: () => selfRows(resolve) },
+						// The sheet's state reader with it, so a band's own rows read
+						// a level or flag a modifier set as every other reader does.
+						self: {
+							id: published ?? config.id,
+							build: () => selfRows(resolve, stateReaderFor(env)),
+						},
 					},
 		);
 		return displayOnly ? value : withPublishedModifiers(asked, value);
@@ -728,6 +767,7 @@ export function formulaContext(
 	explainField: FieldExplainer;
 	resolveExpression: ExpressionResolver;
 	explainExpression: ExpressionExplainer;
+	readState: StateReader;
 } {
 	const readers = fieldReaders(component, config, data, env);
 	return {
@@ -736,6 +776,9 @@ export function formulaContext(
 		explainField: readers.explain,
 		resolveExpression: readers.resolveExpression,
 		explainExpression: readers.explainExpression,
+		// The sheet's own reader, so a ring on the card and a name in a formula
+		// fold one state through one function.
+		readState: stateReaderFor(env),
 	};
 }
 

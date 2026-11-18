@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
+import { typedState,
 	boundedText,
 	formatComputed,
 	typedValue,
@@ -139,5 +139,37 @@ describe('formatComputed', () => {
 
 	it('reads text as itself', () => {
 		expect(formatComputed('sword', true)).toBe('sword');
+	});
+});
+
+describe('typedState: a level or a toggle as a state a modifier may set', () => {
+	it('reads a level with names as its grades, from none upwards', () => {
+		expect(typedState({ type: 'level', levels: ['Untrained', 'Proficient:', 'Expertise:E'] }, 'Training')).toEqual({
+			flag: false,
+			positions: 3,
+			words: ['Untrained', 'Proficient', 'Expertise'],
+			label: 'Training',
+		});
+	});
+
+	it('reads an unnamed level by its ceiling, and a toggle as a flag whatever levels it kept', () => {
+		expect(typedState({ type: 'level', max: 4 }, 'Rating')).toEqual({
+			flag: false,
+			positions: 5,
+			words: [],
+			label: 'Rating',
+		});
+		expect(typedState({ type: 'toggle', levels: ['No', 'Yes', 'Twice'] }, 'Worn')).toEqual({
+			flag: true,
+			positions: 2,
+			words: ['off', 'on'],
+			label: 'Worn',
+		});
+	});
+
+	it('is no state for any other type', () => {
+		expect(typedState({ type: 'number' }, 'Qty')).toBeUndefined();
+		expect(typedState({}, 'Name')).toBeUndefined();
+		expect(typedState({ type: 'computed' }, 'Total')).toBeUndefined();
 	});
 });

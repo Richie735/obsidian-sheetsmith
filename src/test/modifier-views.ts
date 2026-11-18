@@ -54,7 +54,9 @@ function changeView(
 		// Spelled key by key rather than spread, because a partial holding an
 		// explicit `undefined` would otherwise write the key back in — and an
 		// `operator: undefined` is not what a definition that says nothing is.
+		...(over.column === undefined ? {} : { column: over.column }),
 		...(over.operator === undefined ? {} : { operator: over.operator }),
+		...(over.option === undefined ? {} : { option: over.option }),
 		...(over.bonusType === undefined ? {} : { bonusType: over.bonusType }),
 		...(over.applies === undefined ? {} : { applies: over.applies }),
 		...(over.note === undefined ? {} : { note: over.note }),
