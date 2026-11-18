@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
 	cellParts,
+	groupsOf,
+	groupTargetOf,
 	holdsSeparator,
+	mixedGroupList,
 	MODIFIER_SEPARATOR,
 	parseModifierPart,
 	readsAsAssignment,
+	spellGroups,
 	spellParts,
 	spellTypedEffect,
 	storedParts,
@@ -817,5 +821,101 @@ describe('the option literal (docs/features/text-value-modifiers.md)', () => {
 		);
 		expect(unspellableOption('a;b')).not.toBeNull();
 		expect(unspellableOption('Chaotic good')).toBeNull();
+	});
+});
+
+describe('a target naming modifier groups (docs/features/table-row-modifier-target.md)', () => {
+	it('reads `@save += 1 as item when Worn` as a typed part aimed at one group', () => {
+		const effect = typed('@save += 1 as item when Worn');
+		expect(effect).toEqual({
+			target: '@save',
+			operator: 'add',
+			amount: '1',
+			bonusType: 'item',
+			when: 'Worn',
+		});
+		expect(groupsOf(effect.target)).toEqual(['save']);
+		expect(spellTypedEffect(effect)).toBe('@save += 1 as item when Worn');
+	});
+
+	it('reads a comma list as several groups, and spells it canonically', () => {
+		const effect = typed('@save, @skill += -1');
+		expect(groupsOf(effect.target)).toEqual(['save', 'skill']);
+		expect(spellTypedEffect(typed('@save,@skill += -1'))).toBe('@save, @skill += -1');
+	});
+
+	it('drops a repeat and a blank at the read, and keeps the stored bytes', () => {
+		const cell = '@save,  @save += 1';
+		expect(groupsOf(typed(cell).target)).toEqual(['save']);
+		expect(groupsOf(typed('@save, , @skill += 1').target)).toEqual(['save', 'skill']);
+		// The read list is the cell's own text: nothing re-spells an untouched part.
+		expect(spellParts(storedParts(cell))).toBe(cell);
+	});
+
+	it('reads `@` alone as a list naming no group yet, which is unfinished', () => {
+		const effect = typed('@ += 1');
+		expect(groupsOf(effect.target)).toEqual([]);
+		expect(spellGroups([])).toBe('@');
+		expect(spellTypedEffect(effect)).toBe('@ += 1');
+	});
+
+	it('leaves a published name a name, and a comma list with no sigil a stray', () => {
+		expect(groupsOf(typed('armour_class += 1').target)).toBeNull();
+		expect(name('a, b += 1')).toBe('a, b += 1');
+	});
+
+	it('reads a list holding a published name as typed, so its refusal can be said', () => {
+		const effect = typed('@attack, armour_class += -1');
+		expect(groupTargetOf(effect.target)).toEqual({ groups: ['attack'], names: ['armour_class'] });
+		// Kept as written, since the row is told to change it.
+		expect(spellTypedEffect(effect)).toBe('@attack, armour_class += -1');
+		expect(mixedGroupList('armour_class')).toBe(
+			'A list of groups can hold only groups. Write armour_class as its own part, or give it a group.',
+		);
+	});
+
+	it('widens the discriminator, so a definition named like a group part is refused', () => {
+		expect(readsAsAssignment('@save += 1')).toBe(true);
+		expect(unspellableName('@save += 1')).not.toBeNull();
+		expect(readsAsAssignment('@save')).toBe(false);
+	});
+});
+
+describe('the reserved member condition (docs/features/table-row-modifier-target.md D8)', () => {
+	it('keeps `where:` and its condition, and spells them back', () => {
+		const text = '@skill += floor(prof / 2) where: Training == 0';
+		expect(typed(text)).toEqual({
+			target: '@skill',
+			operator: 'add',
+			amount: 'floor(prof / 2)',
+			where: 'Training == 0',
+		});
+		expect(spellTypedEffect(typed(text))).toBe(text);
+	});
+
+	it('keeps a condition before it and a note after it', () => {
+		const text = '@save += 1 when Worn where: x note: y';
+		expect(typed(text)).toEqual({
+			target: '@save',
+			operator: 'add',
+			amount: '1',
+			when: 'Worn',
+			where: 'x',
+			note: 'y',
+		});
+		expect(spellTypedEffect(typed(text))).toBe(text);
+	});
+
+	it('keeps a blank `where:`, so the part is still refused rather than applied', () => {
+		expect(typed('@save += 1 where:').where).toBe('');
+		expect(spellTypedEffect(typed('@save += 1 where:'))).toBe('@save += 1 where:');
+	});
+
+	it('leaves the bare word `where` a name', () => {
+		expect(typed('armour_class += where + 1')).toEqual({
+			target: 'armour_class',
+			operator: 'add',
+			amount: 'where + 1',
+		});
 	});
 });

@@ -480,6 +480,7 @@ describe('component registry', () => {
 			'bonusType',
 			'applies',
 			'when',
+			'where',
 			'note',
 		]);
 		// A change is the effect minus the condition, which is the one thing a

@@ -42,7 +42,18 @@ import { choiceShapesOf, storedChoiceFaults } from '../formula/modifier-choices'
 import { shapesOf, storedStateFault } from '../formula/modifier-states';
 import { aimsAtBuffer, BUFFER_TAKES_AT_LEAST } from '../formula/modifier-buffers';
 import { Layout } from './layout';
-import { isNoteOnly, isOptionChange, unspellableName, unspellableNote } from './modifier-cell';
+import {
+	groupTargetOf,
+	isNoteOnly,
+	isOptionChange,
+	mixedGroupList,
+	namesNoGroup,
+	spellGroups,
+	unspellableName,
+	unspellableNote,
+	WHERE_REFUSED,
+} from './modifier-cell';
+import { groupTargetLabel, parseModifierGroups, undeclaredGroup } from './modifier-groups';
 import { series, spelled } from './spelled';
 import {
 	contestsByValue,
@@ -182,6 +193,11 @@ export function parseModifierDefinitions(
 	// The dropdowns a change may choose an option of, the walk's own derivation
 	// (`docs/features/text-value-modifiers.md`).
 	const choiceShapes = choiceShapesOf(choiceTargets(sources));
+	// The layout's own groups, which a change may aim at instead of one value
+	// (`docs/features/table-row-modifier-target.md` D2). Whether a group holds any
+	// member is the editor's groups list's to say, beside the members.
+	const declaredGroups = parseModifierGroups(layout).groups;
+	const groupNames = new Set(declaredGroups.map((group) => group.name));
 	// Read as a shape rather than as the declared type: `parseLayout` checked that
 	// each entry is an object and nothing more, so every member here is still a
 	// free `unknown` and a hand-edited file may hold a number where a name goes.
@@ -284,6 +300,9 @@ export function parseModifierDefinitions(
 				// Omitted for the value phase, so a layout gains a key only where it
 				// means something other than the default (PATTERNS §8).
 				...(applies === 'result' && !contestsByValue(operator) ? { applies } : {}),
+				// Present wherever the file holds a string, blank included, so a
+				// reserved member condition is refused rather than dropped (D8).
+				...(typeof one.where === 'string' ? { where: one.where.trim() } : {}),
 				/*
 				 * The reader's own words for the value, wherever there are any.
 				 *
@@ -297,6 +316,7 @@ export function parseModifierDefinitions(
 				 * name for a change with no target at all.
 				 */
 				targetLabel:
+					groupTargetLabel(groupTargetOf(target)?.groups ?? null, declaredGroups) ??
 					accepting.get(target) ??
 					published.get(target) ??
 					(target === '' ? name : target),
@@ -317,6 +337,39 @@ export function parseModifierDefinitions(
 		for (const change of changes) {
 			const { target } = change;
 			const noted = change.note !== undefined;
+			/*
+			 * **A reserved member condition changes nothing, on either tier** (D8),
+			 * so it is said first and nothing else about the change is: every other
+			 * fault would be a fault of a change that does not apply.
+			 */
+			if (change.where !== undefined) {
+				problems.push({ definition: name, message: WHERE_REFUSED });
+				continue;
+			}
+			/*
+			 * **A change aimed at groups is judged on its groups** (D1, D7): a
+			 * published name in the list, and each group the layout does not
+			 * declare, in the sentences the row says. Every other target fault is
+			 * a member's, said where the member is drawn.
+			 */
+			const grouped = groupTargetOf(target);
+			if (grouped !== null) {
+				for (const stray of grouped.names) {
+					problems.push({ definition: name, message: mixedGroupList(stray) });
+				}
+				if (grouped.groups.length === 0) {
+					problems.push({
+						definition: name,
+						message: namesNoGroup(`"${name}"`),
+					});
+				}
+				for (const group of grouped.groups) {
+					if (!groupNames.has(group)) {
+						problems.push({ definition: name, message: undeclaredGroup(spellGroups([group])) });
+					}
+				}
+				continue;
+			}
 			/*
 			 * **A level or a flag needs no slot**, so it is never told its target
 			 * reads no modifier: it is told the three things that make it do
@@ -427,6 +480,7 @@ export function parseModifierDefinitions(
 			 * line, and a flat layout's report must not move.
 			 */
 			if (several && target === '') continue;
+			if (change.where !== undefined) continue;
 			// A note with no amount is a complete change: it moves no number, so
 			// there is no amount for it to be missing. Nor has an option change,
 			// whose literal is its amount.

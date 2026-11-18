@@ -39,7 +39,7 @@
  */
 
 import { Layout } from './layout';
-import { NOTE_CLAUSE } from './modifier-cell';
+import { NOTE_CLAUSE, WHERE_CLAUSE } from './modifier-cell';
 
 /** Something wrong with a bonus type or with a definition naming one. */
 export interface ModifierTypeProblem {
@@ -96,6 +96,14 @@ export function parseModifierTypes(layout: Layout): ParsedModifierTypes {
 		if (` ${name}`.includes(NOTE_CLAUSE)) {
 			problems.push({
 				message: `"${name}" cannot be a bonus type, because a row's modifier spells its note after "note:". Rename it without that text.`,
+			});
+			continue;
+		}
+		// The member condition's keyword, on the note's argument: it is taken off
+		// before the type clause is read (`table-row-modifier-target.md` D8).
+		if (` ${name}`.includes(WHERE_CLAUSE)) {
+			problems.push({
+				message: `"${name}" cannot be a bonus type, because a row's modifier spells a condition on each value after "where:". Rename it without that text.`,
 			});
 			continue;
 		}
