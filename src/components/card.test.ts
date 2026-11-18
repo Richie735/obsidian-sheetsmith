@@ -731,6 +731,7 @@ describe('card contract', () => {
 			'derived',
 			'effective',
 			'notePlaceholder',
+			'groups',
 			'hideLabel',
 			'hideValue',
 			'hideNote',
