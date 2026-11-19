@@ -4889,14 +4889,15 @@ describe('a headline number shrinks with a narrow card, to a floor above its qua
 		);
 	});
 
-	it('sizes exactly the four headlines on it', () => {
+	it('sizes exactly the four headlines on it, and the mark that stands in for them', () => {
 		const taking = sizedBy('--sheetsmith-headline-size').map((one) => one.selector.replace(/\s+/g, ' '));
 		// The count first, so a renamed selector cannot leave this passing on
 		// nothing (`docs/PATTERNS.md` §10).
-		expect(taking).toHaveLength(4);
+		expect(taking).toHaveLength(5);
 		expect(taking.sort()).toEqual(
 			[
 				'.sheetsmith-card > .sheetsmith-card-derived',
+				'.sheetsmith-headline-mark',
 				'.sheetsmith-view .sheetsmith-card-select',
 				'.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input',
 				'.sheetsmith-view .sheetsmith-pool-current',
@@ -4921,6 +4922,26 @@ describe('a headline number shrinks with a narrow card, to a floor above its qua
 		expect(body).toContain('max-width: 100%');
 		expect(body).toContain('overflow: hidden');
 		expect(body).toContain('white-space: nowrap');
+	});
+
+	it('hides a cut number\'s digits only while it is not focused, and the mark takes no press', () => {
+		// The glyphs' fill, not `color`, which two headlines transition on.
+		const transparent = all.filter((one) => declarations(one.body).includes('-webkit-text-fill-color: transparent'));
+		const cut = transparent.filter((one) => one.selector.includes('.sheetsmith-headline-cut'));
+		expect(cut).toHaveLength(1);
+		expect(cut[0]?.selector).toBe('.sheetsmith-view .sheetsmith-headline.sheetsmith-headline-cut:not(input:focus)');
+		expect(declarations(bodyOf('.sheetsmith-headline-mark'))).toContain('pointer-events: none');
+		// Shown only while the number is cut and not focused, so a focused field
+		// shows its digits and no mark.
+		const shown = all.filter(
+			(one) =>
+				declarations(one.body).includes('display: block') &&
+				selectorList(one.selector).some((sel) => sel.endsWith('.sheetsmith-headline-mark')),
+		);
+		expect(shown).toHaveLength(1);
+		for (const sel of selectorList(shown[0]?.selector ?? '')) {
+			expect(sel).toContain('.sheetsmith-headline-cut:not(input:focus)');
+		}
 	});
 });
 

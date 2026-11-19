@@ -33,6 +33,7 @@ import {
 	SPENT_PREFIX,
 	wholePoints,
 } from '../formula/modifier-buffers';
+import { refitHeadline, stampHeadline } from '../ui/headline-fit';
 import { showPopover } from '../ui/popover';
 import { formatDerived } from './card-face';
 import {
@@ -1089,6 +1090,17 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		const hint = createDiv({ cls: 'sheetsmith-sr-only', text: POOL_HINT });
 		hint.id = `sheetsmith-pool-hint-${config.id}`;
 		input.setAttribute('aria-describedby', hint.id);
+		/*
+		 * The card's headline, marked where it does not fit and revealed by
+		 * editing it (`docs/features/headline-narrow-cell.md`). The mark is laid
+		 * over the reading, where a cut field fills the first line and the
+		 * ceiling has wrapped under it; it takes no pointer, so every press the
+		 * field, the steppers, the door and the card's router see is unchanged.
+		 */
+		stampHeadline(input, reading);
+		// Measured again on blur too, after an Escape has put the stored value
+		// back, which is a value set in code no paint follows.
+		input.addEventListener('blur', () => refitHeadline(input));
 
 		/**
 		 * Whether the ceiling is the character's own number rather than the
@@ -1257,6 +1269,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				'sheetsmith-pool-temp-empty',
 				tempValue() === 0,
 			);
+			// Every paint may have set the value in code — a step, a scrub, the
+			// optimistic paint after an adjustment — which resizes nothing the
+			// view's observer would see.
+			refitHeadline(input);
 		};
 
 		/**
