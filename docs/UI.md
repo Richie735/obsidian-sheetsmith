@@ -369,8 +369,9 @@ be the control's at another font size reads the factor, never the length.
   `--sheetsmith-headline-size`: `clamp()` from a floor, through the size at
   which three digits fit the card (`52cqi - 2px`, no `em`, since that size does
   not depend on the text size), to the `1.75em` cap. The floor is one
-  minor-third step (1.2) above the largest qualifier on the card, the ceiling's
-  `--font-ui-medium` or the own-value pill's `--sheetsmith-qualifier-small`, so
+  minor-third step (1.2) above the largest qualifier on the card, a Pool's
+  ceiling at `--sheetsmith-qualifier-medium`, which the own-value pill and the
+  temporary points, at `--sheetsmith-qualifier-small`, are never above, so
   the number never flattens into what is under it, and never under 18.67px,
   14pt, where bold text is large text and needs 3:1 rather than 4.5:1 (a Pool's
   over state is accent, about 3.2 to 3.9:1), which also keeps a field there from
@@ -381,8 +382,14 @@ be the control's at another font size reads the factor, never the length.
   score) and a Pool's temporary points, is `--sheetsmith-qualifier-small`: the
   app's `--font-ui-small` as a floor under 13/15 of the sheet's `em`, so the
   app draws what it drew at its own size, a phone keeps its larger token, and
-  a larger sheet raises it with the number. A Pool's points stop at its
-  ceiling's `--font-ui-medium`, which holds still, so they never outrank it.
+  a larger sheet raises it with the number. **A Pool's ceiling follows the
+  sheet too**, at `--sheetsmith-qualifier-medium`: the app's `--font-ui-medium`
+  as a floor under that same qualifier, so the app and a phone draw it as they
+  always did, it grows with the number above 17.3px of sheet, and the points
+  under it, uncapped, never outrank it. A ceiling the character types is the
+  same size by a rule of its own, and never under 16px under `.is-mobile`,
+  where iOS zooms a smaller field on tap
+  (`docs/features/pool-ceiling-text-size.md`).
   The words ranked with the card's heading — *Temp*, an abbreviation, a note —
   stay at the heading's fixed size until it moves.
 - **What sets the sheet's size is not the vault's text-size setting**, which
@@ -869,8 +876,8 @@ differently-shaped control.
 borrows the classes rather than spelling them again** [judgement]. A Record set's
 `number` field is the second consumer: `Uses 1` cannot say whether that is all of
 them or one of three, so a bounded field reads `Uses 1 / 3`. It overrides exactly one
-declaration, the size, because the shared `--font-ui-medium` would draw a 13px
-value's ceiling larger than the value. **A `.sheetsmith-record-ceiling` beside the
+declaration, the size, because the shared `--sheetsmith-qualifier-medium` would
+draw a 13px value's ceiling larger than the value. **A `.sheetsmith-record-ceiling` beside the
 pool's is what this section opens by forbidding**, and the borrowing is this
 section's own rule rather than an exception to it: the name belongs to the component
 that is nothing but the thing, and a Pool is a value over its ceiling, exactly as a
@@ -917,7 +924,8 @@ the gap without buying the movement.
 **A Pool's value field is fixed at `4ch` wherever it fits, and elastic from
 `min(2ch, 100%)` only below its container threshold** [judgement]. That is not a departure from
 the ruling above, which is about fields on a summary line and stands as it is.
-Below `calc(4.6em + 44px)` of card, a narrow cell has no room for the four-character
+Below `calc(6.4em + 20px)` of card (`docs/features/pool-ceiling-text-size.md`
+re-derived it once the ceiling followed the sheet), a narrow cell has no room for the four-character
 slot beside a ceiling, so the slot drops to two and grows with its digits
 (`docs/features/pool-headline-narrow-fit.md`). `9 → 10` still moves nothing,
 but `99 → 100` widens the number by a digit and can wrap the ceiling onto a

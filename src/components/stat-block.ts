@@ -1383,6 +1383,9 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					marks.push(mark);
 				}
 			}
+			// `harness/measure-pool-headline.mjs` (check 9, `statUses`) builds a copy
+			// of this reading's markup, since no harness sample draws the numerals:
+			// a change to these four lines' classes or nesting goes there too.
 			const reading = element('span', 'sheetsmith-pool-ceiling sheetsmith-stat-block-uses-count', run);
 			const value = element('span', 'sheetsmith-stat-block-uses-value', reading);
 			element('span', 'sheetsmith-pool-separator', reading, '/');

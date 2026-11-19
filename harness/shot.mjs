@@ -4284,6 +4284,7 @@ export const DEFAULTS = [
 	},
 	...poolHeadlineViews(),
 	...headlineNarrowViews(),
+	...poolCeilingViews(),
 	/*
 	 * Temporary points a modifier grants (`docs/features/granted-temporary-points.md`):
 	 * a Pool beside a Stat block's form in play, a Record set's spell and a
@@ -4323,6 +4324,22 @@ export const DEFAULTS = [
 ];
 
 /**
+ * `&type=` for a view builder: the selector and the text in one encoded
+ * parameter, `<selector>|<text>`, which is what `harness.ts` splits. One
+ * spelling for every builder below, so a change to the format is one edit.
+ * Declarations rather than `const`, since `DEFAULTS` above calls the builders
+ * before this line runs.
+ */
+function typed(selector, text) {
+	return `type=${encodeURIComponent(`${selector}|${text}`)}`;
+}
+
+/** A Pool's grid cell, named by its value field's accessible name, its label. */
+function poolCell(label) {
+	return `.sheetsmith-cell:has(.sheetsmith-pool-current[aria-label='${label}'])`;
+}
+
+/**
  * A Pool's reading in a narrow card (`docs/features/pool-headline-narrow-fit.md`),
  * framed to one Pool's cell per shot, in the five conditions the spec names and
  * the reported case.
@@ -4341,8 +4358,6 @@ export const DEFAULTS = [
  * card's border is a stray line along the frame's edge.
  */
 function poolHeadlineViews() {
-	const cell = (label) => `.sheetsmith-cell:has(.sheetsmith-pool-current[aria-label='${label}'])`;
-	const typed = (selector, text) => `type=${encodeURIComponent(`${selector}|${text}`)}`;
 	const REPORTED =
 		'surface=sheet&theme=light&text=24&place=hit_points:5,1&' +
 		typed(".sheetsmith-pool-temp-input[aria-label='Hit points temporary']", '100');
@@ -4358,7 +4373,7 @@ function poolHeadlineViews() {
 			['Stamina reserve', 'Reservoir'].map((label) => ({
 				...view,
 				name: `pool-headline-${id}-${label === 'Reservoir' ? 'reservoir' : 'stamina'}`,
-				frame: cell(label),
+				frame: poolCell(label),
 				pad: 6,
 			})),
 		),
@@ -4369,24 +4384,55 @@ function poolHeadlineViews() {
 			name: 'pool-headline-large-520-reservoir-dark',
 			query: 'surface=sheet&theme=dark&width=520&text=24',
 			size: '1400,1900',
-			frame: cell('Reservoir'),
+			frame: poolCell('Reservoir'),
 			pad: 6,
 		},
 		{
 			name: 'pool-headline-reported',
 			query: REPORTED,
 			size: '1400,1900',
-			frame: cell('Hit points'),
+			frame: poolCell('Hit points'),
 			pad: 6,
 		},
 		{
 			name: 'pool-headline-reported-three-digits',
 			query: `${REPORTED}&${typed(".sheetsmith-pool-current[aria-label='Hit points']", '100')}`,
 			size: '1400,1900',
-			frame: cell('Hit points'),
+			frame: poolCell('Hit points'),
 			pad: 6,
 		},
 	];
+}
+
+/**
+ * A Pool's ceiling and temporary points at the sheet's text size
+ * (`docs/features/pool-ceiling-text-size.md`), framed to one Pool per shot, at
+ * the default size and `text=24`, on the 1400 and the 520 sheet.
+ *
+ * Two Pools, because no sample Pool has both: **Hit points**, with temporary
+ * points under a calculated `/9`, and **Rolled HP**, whose ceiling the
+ * character owns, with `120` typed into it by `&type=`, so its digits are seen
+ * beside its `/` at one size. The pad sits under the grid's 8px gap, as
+ * `poolHeadlineViews` argues.
+ */
+function poolCeilingViews() {
+	const OWNED = typed(".sheetsmith-pool-max-input[aria-label='Rolled HP maximum']", '120');
+	const conditions = [
+		{ id: 'default-1400', query: 'surface=sheet&theme=light' },
+		{ id: 'default-520', query: 'surface=sheet&theme=light&width=520' },
+		{ id: 'large-1400', query: 'surface=sheet&theme=light&text=24' },
+		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24' },
+	];
+	return conditions.flatMap(({ id, query }) => [
+		{ name: `pool-ceiling-${id}-temp`, query, size: '1400,1900', frame: poolCell('Hit points'), pad: 6 },
+		{
+			name: `pool-ceiling-${id}-owned`,
+			query: `${query}&${OWNED}`,
+			size: '1400,1900',
+			frame: poolCell('Rolled HP'),
+			pad: 6,
+		},
+	]);
 }
 
 /**
@@ -4410,7 +4456,6 @@ function poolHeadlineViews() {
  * `poolHeadlineViews` argues.
  */
 function headlineNarrowViews() {
-	const typed = (selector, text) => `type=${encodeURIComponent(`${selector}|${text}`)}`;
 	const field = (label) => `.sheetsmith-card-input[aria-label='${label}']`;
 	const tile = (label) => `.sheetsmith-card:has(> .sheetsmith-card-value > ${field(label)})`;
 	const POOL = ".sheetsmith-pool-current[aria-label='Hit points']";
