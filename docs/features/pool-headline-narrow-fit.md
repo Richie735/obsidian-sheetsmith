@@ -149,16 +149,26 @@ design falls back to wherever `field-sizing` is unsupported.
    for two reasons. First, the hover and focus ring do not clamp onto one numeral.
    Second, `9 → 10` does not re-centre the reading. In Chromium the field is
    `field-sizing: content`, so above `2ch` it is as wide as its digits.
-   - The threshold is where today's layout still fits a three-digit ceiling: `4ch`
-     at the value size (4.6em on the card), plus three px parts. They are the
-     reading's gap (`--size-2-1`, 2px), the widest three-digit ceiling (38.7px, a
-     max the character owns with its padding), and the 2px the reading's row
-     sits inside the card's content box. That is 42.7px, rounded up to 44.
+   - The threshold is where the layout still fits a three-digit ceiling beside
+     the `4ch` slot. *Since amended (2026-11-19):*
+     `docs/features/pool-ceiling-text-size.md`, once the ceiling followed the
+     sheet: `4ch` at the value size (4.59em on the card) plus the widest
+     three-digit ceiling's digits, a `/120` the character owns, at the
+     qualifier's size (43.4px at `text=24`'s 20.8, 1.81em), so 6.4em; and in px
+     the reading's gap (`--size-2-1`, 2px), the 2px the reading's row sits
+     inside the card's content box and the ceiling's 10px of padding and gap,
+     14px, rounded up to 20 for the regime where the app's `--font-ui-medium`
+     holds the ceiling above 13/15 of the sheet (a phone's 16px needs 4.9px
+     more). As first shipped it was `4.6em + 44px`, with the ceiling counted as
+     38.7px of fixed chrome; that 38.7 was a 13px field, since Obsidian's
+     `input[type='text']` set the owned ceiling's size over `.sheetsmith-pool-max`.
    - It is written as `em` plus `px`:
-     `@container (max-width: calc(4.6em + 44px))`. The value is in `em` and the
-     ceiling is fixed-px chrome (`docs/UI.md` §5). A container query's `em`
-     resolves on the Pool card, which is the query container. This was measured:
-     the threshold is 118px at the default size and 154px at `text=24`.
+     `@container (max-width: calc(6.4em + 20px))`. The value and the ceiling
+     follow the sheet and are in `em`; the gaps, padding and inset are chrome the
+     sheet's `em` does not reach (`docs/UI.md` §5). A container query's `em`
+     resolves on the Pool card, which is the query container. Measured: 122.4px
+     of card content at the default size and on a phone, 173.6 at `text=24`,
+     116 in the app's 15px sheet (118 and 154 as first shipped).
    - Above the threshold nothing changes, so every Pool that fits today is
      pixel-identical.
    - **The override sits below the base rule in `sheet.css`.** `@container` adds
@@ -168,9 +178,10 @@ design falls back to wherever `field-sizing` is unsupported.
      repository's rule for every container step).
    - **The threshold is `em` plus `px` because of `docs/UI.md` §5.** A width that
      has to agree with fixed-px chrome is px. Here the sum has two parts. The
-     value's `4ch` is in `em`, because the number scales with the sheet. The gap,
-     the ceiling and the 2px row inset are in px, because they are UI-token
-     chrome and box geometry the sheet's `em` does not reach.
+     value's `4ch` and, since `pool-ceiling-text-size.md`, the ceiling's digits
+     are in `em`, because both scale with the sheet. The gap, the ceiling's
+     padding and the 2px row inset are in px, because they are UI-token chrome
+     and box geometry the sheet's `em` does not reach.
 2. **The ceiling gives way second.** `.sheetsmith-pool-reading` takes
    `flex-wrap: wrap` with no row gap. The row is already `justify-content: center`,
    so a wrapped ceiling sits centred under the number. It keeps its `/`, so it

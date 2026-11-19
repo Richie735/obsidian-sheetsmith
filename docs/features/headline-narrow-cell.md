@@ -54,17 +54,24 @@ not the 17.2 the BACKLOG row records: the shipped script prints 15.2 for it too.
 The ruling puts the floor above every qualifier on the same card. Measured on a
 Card (`.sheetsmith-card`) in each condition:
 
-| Condition | Sheet `em` | Ceiling (`--font-ui-medium`) | Own-value pill (`--sheetsmith-qualifier-small`) | Pool temp (pill, capped at the ceiling) | Headline cap (`1.75em`) | **Floor** |
+| Condition | Sheet `em` | Ceiling (`--sheetsmith-qualifier-medium`) | Own-value pill (`--sheetsmith-qualifier-small`) | Pool temp (`--sheetsmith-qualifier-small`) | Headline cap (`1.75em`) | **Floor** |
 | --- | --- | --- | --- | --- | --- | --- |
 | default | 16 | 15 | 13.9 | 13.9 | 28 | **18.67** (18.0 by the step) |
-| `text=20` | 20 | 15 | 17.3 | 15 | 35 | **20.8** |
-| `text=24` | 24 | 15 | 20.8 | 15 | 42 | **25.0** |
-| `text=32` (200%) | 32 | 15 | 27.7 | 15 | 56 | **33.3** |
+| `text=20` | 20 | 17.3 | 17.3 | 17.3 | 35 | **20.8** |
+| `text=24` | 24 | 20.8 | 20.8 | 20.8 | 42 | **25.0** |
+| `text=32` (200%) | 32 | 27.7 | 27.7 | 27.7 | 56 | **33.3** |
 | `platform=phone` | 16 | 16 | 15 | 15 | 28 | **19.2** |
 
-**The floor is `1.2 × max(--font-ui-medium, --sheetsmith-qualifier-small)`.** The
-Pool's temporary points are `min(qualifier, ceiling)`, so the larger of those two
-tokens is the largest qualifier any card carries, and 1.2 is one step of a
+*Amended (2026-11-19) by `docs/features/pool-ceiling-text-size.md`*: the
+ceiling and the temporary points follow the sheet now, so the ceiling and temp
+columns above are that feature's sizes. As this feature shipped, the ceiling
+was `--font-ui-medium`, 15 in every desktop row, and the temp was capped at it.
+The floor column is unchanged in every row.
+
+**The floor is `1.2 × max(--font-ui-medium, --sheetsmith-qualifier-small)`**,
+since `pool-ceiling-text-size.md` spelt
+`1.2 × --sheetsmith-qualifier-medium`, the same number. The ceiling is
+`max(--font-ui-medium, qualifier)`, so it is the largest qualifier any card carries, and 1.2 is one step of a
 minor-third scale above it: the smallest ratio that reads as a rank rather than as
 two near sizes. **It is never under 18.67px** (14pt), the size at which bold
 text is large text and needs 3:1 rather than 4.5:1: a Pool's number in its over
@@ -147,9 +154,14 @@ what the ruling asks: it holds the number above its qualifiers and hands the
 rest to the reveal.
 
 **The order in which a Pool gives way, measured for its capacity reading
-`100 / 120`.** The slot drops to `2ch` below 118px of card (154 at `text=24`),
-the ceiling wraps below about 90px of content (116 at `text=24`), and the number
-starts to scale only below 57.7 (84.6). So for three digits over three, the
+`100 / 120`.** The slot drops to `2ch` below 122.4px of card content (173.6 at
+`text=24`), the ceiling wraps below about 97.5px of content (135.5 at
+`text=24`), and the number starts to scale only below 57.7 (84.6). *Amended
+(2026-11-19) by `pool-ceiling-text-size.md`*, which re-derived the threshold
+and grew the ceiling with the sheet; as this feature shipped the figures were
+118 (154) and about 90 (116), the wrap measured on the row where the amended
+figures are the card's content box, which reads 94.5 (120.5) for the shipped
+rules. So for three digits over three, the
 prior feature's two rules still give way first. For a short reading the order is
 not guaranteed: the size cannot know the value, so a `6 / 9` that would just
 share a line at 54.3px of content is drawn 26.6px there rather than 28. Accepted,
@@ -221,7 +233,9 @@ a Passport's name, a Stat block's vitals, and the Pool's ceiling. All four keep
 
 Two tokens in `tokens.css`, beside `--sheetsmith-card-value-size`:
 
-- `--sheetsmith-headline-floor: max(18.67px, calc(1.2 * max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))))`
+- `--sheetsmith-headline-floor: max(18.67px, calc(1.2 * max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))))`,
+  spelt `max(18.67px, calc(1.2 * var(--sheetsmith-qualifier-medium)))` since
+  `pool-ceiling-text-size.md` named the ceiling's token, with the same value
 - `--sheetsmith-headline-size: clamp(var(--sheetsmith-headline-floor), calc(52cqi - 2px), var(--sheetsmith-card-value-size))`
 
 Both are read off the element that uses them, as the qualifier token already is:
