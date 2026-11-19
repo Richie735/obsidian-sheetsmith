@@ -4921,6 +4921,173 @@ export function ringEndSamples(inPlay = true): Sample[] {
 	];
 }
 
+/**
+ * Cat Form for the `modifier-set-ring-mark` state: it raises Nature's ring in
+ * the Skills Table and in the Checks Roster, so the one row a form in play set
+ * is tinted and tagged beside its halo (`docs/features/modifier-set-ring-mark.md`).
+ */
+export const RING_MARK_DEFINITIONS = [
+	{
+		name: 'Cat Form',
+		changes: [
+			{ target: 'skills.nature', column: 'Training', operator: 'upgrade', amount: '1' },
+			{ target: 'checks.nature', column: 'Training', operator: 'upgrade', amount: '1' },
+		],
+	},
+];
+
+/**
+ * Rings a modifier set, against the note they draw over
+ * (`docs/features/modifier-set-ring-mark.md`). A Skills Table and a Checks
+ * Roster in its table layout hold the same six rows, so each case is drawn on
+ * both components:
+ *
+ * - Persuasion, stored Untrained under an At least Proficient: drawn ≠ stored.
+ * - Arcana, stored Expertise under the same At least: the floor is met, equal.
+ * - History, stored Proficient under a Sets Proficient: equal.
+ * - Medicine, stored Expertise under a Sets Proficient: lowered, drawn ≠ stored.
+ * - Nature, stored Untrained, raised by Cat Form in play from a Stat block: the
+ *   row tinted and tagged as well.
+ * - Survival, stored Untrained, nothing reaching it: today's ring.
+ * - Religion, stored Proficient under a Sets Untrained: emptied, so the halo
+ *   is drawn round an empty ring.
+ *
+ * And the Inspiration flag, stored off and turned on by a push, so a Track's
+ * flag is in frame. The shots of this state are the halo's before and after.
+ */
+export function ringMarkSamples(): Sample[] {
+	const training = ['Untrained', 'Proficient:', 'Expertise:E'];
+	const stored: [string, string, number][] = [
+		['Persuasion', 'CHA', 0],
+		['Arcana', 'INT', 2],
+		['History', 'INT', 1],
+		['Medicine', 'WIS', 2],
+		['Nature', 'INT', 0],
+		['Survival', 'WIS', 0],
+		['Religion', 'INT', 1],
+	];
+	const keyOf = (label: string) => label.toLowerCase();
+	const both = (row: string, change: string) =>
+		`skills.${row} ${change} in Training; checks.${row} ${change} in Training`;
+	const parts = [
+		['Silver tongue', both('persuasion', '>= 1')],
+		['Scholar', both('arcana', '>= 1')],
+		['Tutor', both('history', '= 1')],
+		['Clumsy hands', both('medicine', '= 1')],
+		['Forgetful', both('religion', '= 0')],
+		['Heroism', 'inspiration = true'],
+	];
+	return [
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [
+					{ key: 'Training', hideHeading: true, type: 'level', levels: training },
+					{
+						key: 'Bonus',
+						type: 'computed',
+						formula: 'Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: stored.map(([label]) => ({ label, key: keyOf(label) })),
+			} as ComponentConfig,
+			body: [
+				'| Skill | Training | Bonus |',
+				'| --- | --- | --- |',
+				...stored.map(([label, , level]) => `| ${label} | ${level} | |`),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 7, row: 1, width: 6, height: 3 },
+				rowHeader: 'Check',
+				hideColumnHeadings: true,
+				stats: [
+					{ key: 'INT', name: 'Intelligence' },
+					{ key: 'WIS', name: 'Wisdom' },
+					{ key: 'CHA', name: 'Charisma' },
+				],
+				derived: 'mod(value + mod.self)',
+				signed: true,
+				columns: [
+					{ key: 'Training', type: 'level', levels: training, hideHeading: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'stat + Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: stored.map(([label, stat]) => ({ label, stat, key: keyOf(label) })),
+			} as ComponentConfig,
+			body: [
+				'```sheet',
+				'INT: 12',
+				'WIS: 16',
+				'CHA: 10',
+				'```',
+				'',
+				'| Check | Training |',
+				'| --- | --- |',
+				...stored.map(([label, , level]) => `| ${label} | ${level} |`),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'inspiration',
+				type: 'track',
+				label: 'Inspiration',
+				position: { col: 1, row: 3, width: 2, height: 1 },
+				count: 1,
+			} as ComponentConfig,
+			body: '```sheet\nvalue: no\n```',
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 3, row: 3, width: 4, height: 2 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: ['### Cat Form', '```sheet', 'Active: yes', 'Modifiers: Cat Form', '```'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 1, row: 5, width: 12, height: 2 },
+				rowHeader: 'Item',
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+				rows: parts.map(([label]) => ({ label })),
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				...parts.map(([label, part]) => `| ${label} | ${part} |`),
+			].join('\n'),
+		},
+	];
+}
+
 export const NOTE_DEFINITIONS = [
 	{
 		name: 'Boots of Elvenkind',

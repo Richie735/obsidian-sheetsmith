@@ -78,6 +78,8 @@ import {
 	STATE_DEFINITIONS,
 	RING_END_DEFINITIONS,
 	ringEndSamples,
+	RING_MARK_DEFINITIONS,
+	ringMarkSamples,
 	ROSTER_CARD_FORM_ROWS,
 	rosterCardDefinitions,
 	poolGrantSamples,
@@ -142,6 +144,7 @@ type StateName =
 	| 'modifier-states-roster-card-two'
 	| 'modifier-states-ring-end'
 	| 'modifier-states-ring-end-off'
+	| 'modifier-set-ring-mark'
 	| 'modifier-options'
 	| `group-target-${GroupTargetVariant}`
 	| `pool-grant-${PoolGrantVariant}`;
@@ -232,6 +235,7 @@ function samplesFor(name: StateName): Sample[] {
 	}
 	if (name === 'modifier-states-ring-end') return ringEndSamples(true);
 	if (name === 'modifier-states-ring-end-off') return ringEndSamples(false);
+	if (name === 'modifier-set-ring-mark') return ringMarkSamples();
 	if (name === 'modifier-options') return modifierOptionsSamples();
 	if (name.startsWith('group-target-')) {
 		return groupTargetSamples(name.slice('group-target-'.length) as GroupTargetVariant);
@@ -259,21 +263,20 @@ let formsTint: string | null = null;
  */
 function layoutFor(name: StateName): Layout {
 	const built = withTint(harnessLayout(samplesFor(name)), formsTint);
+	/** The layout with `definitions` ahead of its own, so the editor opens on them. */
+	const enrol = (definitions: readonly unknown[]): Layout => ({
+		...built,
+		modifiers: [...definitions, ...(built.modifiers ?? [])] as Layout['modifiers'],
+	});
 	// The states sheets enrol in Cat Form, which goes ahead of the layout's own
 	// so the editor opens on a change aimed at a level.
 	if (name === 'modifier-states' || name === 'modifier-states-cycle') {
-		return {
-			...built,
-			modifiers: [...STATE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(STATE_DEFINITIONS);
 	}
 	// The dropdowns sheet's form enrols in Beast shape, which goes ahead of the
 	// layout's own so the editor opens on a change choosing an option.
 	if (name === 'modifier-options') {
-		return {
-			...built,
-			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(OPTION_DEFINITIONS);
 	}
 	// The group-target sheets declare the groups their rows aim at.
 	if (name.startsWith('group-target-')) {
@@ -281,23 +284,18 @@ function layoutFor(name: StateName): Layout {
 	}
 	// The ring-end sheets enrol in Cat Form, whether or not it is in play.
 	if (name === 'modifier-states-ring-end' || name === 'modifier-states-ring-end-off') {
-		return {
-			...built,
-			modifiers: [...RING_END_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(RING_END_DEFINITIONS);
+	}
+	// The ring-mark sheet's form in play raises Nature in both components.
+	if (name === 'modifier-set-ring-mark') {
+		return enrol(RING_MARK_DEFINITIONS);
 	}
 	if (name in ROSTER_CARD_FORM_ROWS) {
 		const rows = ROSTER_CARD_FORM_ROWS[name as keyof typeof ROSTER_CARD_FORM_ROWS];
-		return {
-			...built,
-			modifiers: [...rosterCardDefinitions(rows), ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(rosterCardDefinitions(rows));
 	}
 	if (name !== 'notes') return built;
-	return {
-		...built,
-		modifiers: [...NOTE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-	};
+	return enrol(NOTE_DEFINITIONS);
 }
 
 /** The layout with Wild Shape's `tint` set, where the query asks for one. */
@@ -1189,6 +1187,7 @@ function applyQuery(): void {
 			wanted === 'modifier-states-roster-card-two' ||
 			wanted === 'modifier-states-ring-end' ||
 			wanted === 'modifier-states-ring-end-off' ||
+			wanted === 'modifier-set-ring-mark' ||
 			wanted === 'modifier-options' ||
 			GROUP_TARGET_STATES.includes(wanted ?? '') ||
 			POOL_GRANT_STATES.includes(wanted ?? '')

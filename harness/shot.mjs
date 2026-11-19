@@ -3751,6 +3751,73 @@ export const DEFAULTS = [
 		size: '1400,1500',
 	},
 	/*
+	 * The halo on a ring a modifier set (`docs/features/modifier-set-ring-mark.md`):
+	 * the Skills Table and the Checks Roster over the same six rows. Persuasion
+	 * (raised), Medicine (lowered) and Nature (raised by Cat Form in play, tinted
+	 * and tagged) are marked; Arcana and History, where the modifier agrees with
+	 * the note, and Survival, which nothing reaches, are not. The Inspiration
+	 * flag is turned on over a stored off, so it is marked too. Both palettes,
+	 * forced colors, 1400 and 520, Text 20 and 24, a phone, a focused marked
+	 * ring and Nature's row framed. Heights measured through each view's query:
+	 * the sheet ends at 1030 at 1400, 1090 at 520 and 1890 on a phone.
+	 */
+	...['light', 'dark'].flatMap((theme) => [
+		{
+			name: `modifier-set-ring-mark-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=modifier-set-ring-mark`,
+			size: '1400,1100',
+		},
+		{
+			name: `modifier-set-ring-mark-narrow-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=modifier-set-ring-mark&width=520`,
+			size: '620,1200',
+		},
+	]),
+	{
+		name: 'modifier-set-ring-mark-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark',
+		size: '1400,1100',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-set-ring-mark-narrow-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&width=520',
+		size: '620,1200',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-set-ring-mark-text-20',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&text=20',
+		size: '1400,1300',
+	},
+	{
+		name: 'modifier-set-ring-mark-text-24',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&text=24',
+		size: '1400,1500',
+	},
+	{
+		name: 'modifier-set-ring-mark-phone',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark',
+		size: '380,2000',
+		platform: 'phone',
+	},
+	// Persuasion's ring focused: where the accent outline meets the dots.
+	{
+		name: 'modifier-set-ring-mark-focus',
+		query: `surface=sheet&theme=light&state=modifier-set-ring-mark&bar=off&focus=${encodeURIComponent(
+			"[data-sheetsmith-component='skills'] .sheetsmith-level-ring",
+		)}`,
+		size: '1400,700',
+		frame: '[data-sheetsmith-component="skills"]',
+	},
+	// Nature under Cat Form's tint: its halo, its tag and its door in one frame.
+	{
+		name: 'modifier-set-ring-mark-form',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&bar=off',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="skills"]',
+	},
+	/*
 	 * The Lore row's modifier form open on `skills.investigation = 2 in
 	 * Training`: Value, the Sets operator, and the position legend under Amount.
 	 */
