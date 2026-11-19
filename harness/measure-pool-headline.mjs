@@ -58,6 +58,16 @@
  *  7. **The Pool's order** — at `100/120`, a Pool whose number is drawn below
  *     full size has already wrapped its ceiling.
  *  8. **The Pool's ceiling** — inside the content box, its dotted mark included.
+ *  9. **The qualifiers' sizes** (`docs/features/pool-ceiling-text-size.md`),
+ *     at the default size, `text=24`, and under phone and tablet staging: a
+ *     Pool's temporary points draw a Card pill's size and never more than
+ *     their ceiling; a ceiling the character owns draws its separator's size,
+ *     and at least 16px on a phone or a tablet; a Track length field and a
+ *     record's ceiling, which wear the ceiling's classes, keep
+ *     `--font-ui-small`; and a Stat block's uses reading, attached to the
+ *     `state=forms` sample's run in the shape `stat-block.ts` builds (the
+ *     sample draws no numerals), keeps its `/` and ceiling at
+ *     `--font-ui-medium`.
  *
  * **The baseline** is `styles.css` as the git ref `BASELINE` names (default
  * `HEAD`, the version branch before this feature lands), swapped in for the
@@ -66,8 +76,15 @@
  * the feature has landed `HEAD` holds it, so pass the ref before it to compare.
  *
  * **Printed and not failed**: check 8 for a one-unit Pool on the 520 sheet,
- * whose ceiling is `--font-ui-medium` chrome wider than the card
- * (`docs/BACKLOG.md` § UI). Its lines are marked `residue`.
+ * whose ceiling, at the sheet's qualifier size and not a headline, is wider
+ * than the card (`docs/BACKLOG.md` § UI). Its lines are marked `residue`.
+ *
+ * **And check 4's card heights at `text=24`, where the ceiling grows**
+ * (`docs/features/pool-ceiling-text-size.md`): a Pool's card, and a Card in a
+ * grid row with one, may be exactly 1px taller than the baseline, its
+ * headline's width unchanged. Each is printed as `moved`, one line each, so the
+ * land stop can name them; anything else that moves still fails. Against a
+ * baseline that already holds that change there is nothing to print.
  */
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -130,6 +147,22 @@ const CONDITIONS = [
 	{ name: 'one-unit Load, default 520', sheet: 520, text: 0, load: 1 },
 	{ name: 'one-unit Load, text=24 520', sheet: 520, text: 24, load: 1 },
 ];
+
+/**
+ * Check 4's expected movers at `text=24`: every Pool, and the Cards sharing
+ * Hit points' grid row on the 1400 sheet, whose row a Pool's taller reading
+ * sets. Named rather than inferred, so a Card moving anywhere else is a finding.
+ * **By exactly the measured 1px**: the 20.8px ceiling, baseline-aligned under
+ * the 42px number, reaches 1px further down the reading's line than the number
+ * does. A larger move, or any shrink, is not that cause and fails.
+ */
+const ROW_WITH_A_POOL = ['armour_class', 'passive_perception'];
+const CEILING_LINE_PX = 1;
+const mayMove = (condition, one, was) =>
+	condition.text === 24 &&
+	(one.kind === 'pool' || ROW_WITH_A_POOL.includes(one.component)) &&
+	Math.abs(one.height - was.height - CEILING_LINE_PX) <= 0.05;
+let moved = 0;
 
 /** Where a check holds the floor: the default size, `text=24` and phone. */
 const FLOOR_CHECKED = (condition) => condition.text === 0 || condition.text === 24;
@@ -339,18 +372,33 @@ for (const fallback of [false, true]) {
 				const before = await browser.evaluate(measure(value, ceiling));
 				await browser.evaluate(swapStyles(null));
 				let compared = 0;
+				let movedHere = 0;
 				for (const [at, one] of all.entries()) {
 					const was = before[at];
 					if (was === undefined || was.label !== one.label) continue;
 					compared++;
-					if (Math.abs(was.width - one.width) > 0.05 || Math.abs(was.height - one.height) > 0.05) {
+					const widthMoved = Math.abs(was.width - one.width) > 0.05;
+					const heightMoved = Math.abs(was.height - one.height) > 0.05;
+					if (!widthMoved && heightMoved && mayMove(condition, one, was)) {
+						moved++;
+						movedHere++;
+						console.log(
+							`moved    ${value.padEnd(12)} ${one.kind.padEnd(4)} ${`${one.component} ${one.label}`.padEnd(30)}` +
+								` card height ${was.height} -> ${one.height}, headline ${one.width} wide as before`,
+						);
+					} else if (widthMoved || heightMoved) {
 						fail(
 							`${condition.name} ${value}: ${one.component} ${one.label} drew ${one.width} wide in a ${one.height} card, against ${was.width} in ${was.height} before`,
 						);
 					}
 				}
 				if (compared === 0) fail(`${condition.name} ${value}: compared nothing against the baseline`);
-				else console.log(`PASS     ${value.padEnd(12)} baseline: ${compared} headlines, width and card height unchanged`);
+				else {
+					console.log(
+						`PASS     ${value.padEnd(12)} baseline: ${compared} headlines, width unchanged` +
+							(movedHere === 0 ? ', card height unchanged' : `, ${movedHere} card heights moved as expected (above)`),
+					);
+				}
 			}
 			const toggled = await browser.evaluate(toggleMoves);
 			if (toggled.count === 0 || toggled.moved > 0) {
@@ -428,10 +476,136 @@ for (const fallback of [false, true]) {
 	}
 }
 
+/**
+ * Check 9: the qualifiers' sizes. One page per condition, no values injected:
+ * the sample's own Pools, pills, Track rows and records, and a Stat block
+ * uses reading attached as `stat-block.ts` builds it.
+ */
+const QUALIFIER_CONDITIONS = [
+	{ name: 'default', text: 0, viewport: 1400, platform: null },
+	{ name: 'text=24', text: 24, viewport: 1400, platform: null },
+	{ name: 'phone', text: 0, viewport: 380, platform: 'phone' },
+	{ name: 'tablet', text: 0, viewport: 1024, platform: 'tablet' },
+];
+const qualifiers = `(() => {
+	const round = (n) => Math.round(n * 10) / 10;
+	const px = (el) => (el ? round(parseFloat(getComputedStyle(el).fontSize)) : null);
+	const small = (el) => {
+		const probe = document.createElement('span');
+		probe.style.fontSize = 'var(--font-ui-small)';
+		el.parentElement.appendChild(probe);
+		const size = px(probe);
+		probe.remove();
+		return size;
+	};
+	const pills = [...document.querySelectorAll('.sheetsmith-card-has-derived .sheetsmith-card-value > .sheetsmith-card-input')].map(px);
+	return {
+		pill: pills.length > 0 && new Set(pills).size === 1 ? pills[0] : pills,
+		pools: [...document.querySelectorAll('.sheetsmith-pool')].map((card) => ({
+			label: card.querySelector('.sheetsmith-pool-current')?.getAttribute('aria-label') ?? '?',
+			temp: px(card.querySelector('.sheetsmith-pool-temp-input')),
+			separator: px(card.querySelector('.sheetsmith-pool-separator')),
+			owned: px(card.querySelector('.sheetsmith-pool-ceiling .sheetsmith-pool-max-input')),
+		})),
+		borrowed: [
+			...[...document.querySelectorAll('.sheetsmith-track-row-length-input')].map((el) => ['track length', px(el), small(el)]),
+			...[...document.querySelectorAll('.sheetsmith-record-field .sheetsmith-pool-max')].map((el) => ['record ceiling', px(el), small(el)]),
+		],
+	};
+})()`;
+/**
+ * A copy of the uses reading `stat-block.ts` builds (beside its `reading`, which
+ * points back here): `state=forms` draws a uses run of two rings, under the
+ * six past which the numerals appear, so the reading is attached by hand. A
+ * change to that markup has to be made here too, or this measures a stale copy.
+ */
+const statUses = `(() => {
+	const round = (n) => Math.round(n * 10) / 10;
+	const px = (el) => round(parseFloat(getComputedStyle(el).fontSize));
+	const run = document.querySelector('.sheetsmith-stat-block-uses-run');
+	if (run === null) return null;
+	const reading = document.createElement('span');
+	reading.className = 'sheetsmith-pool-ceiling sheetsmith-stat-block-uses-count';
+	for (const [cls, text] of [['sheetsmith-stat-block-uses-value', '7'], ['sheetsmith-pool-separator', '/'], ['sheetsmith-pool-max', '12']]) {
+		const span = document.createElement('span');
+		span.className = cls;
+		span.textContent = text;
+		reading.append(span);
+	}
+	run.append(reading);
+	const probe = document.createElement('span');
+	probe.style.fontSize = 'var(--font-ui-medium)';
+	reading.append(probe);
+	const medium = px(probe);
+	probe.remove();
+	const out = {
+		separator: px(reading.querySelector('.sheetsmith-pool-separator')),
+		max: px(reading.querySelector('.sheetsmith-pool-max')),
+		medium,
+	};
+	reading.remove();
+	return out;
+})()`;
+console.log('\n== qualifier sizes ==');
+for (const condition of QUALIFIER_CONDITIONS) {
+	for (const state of ['populated', 'forms']) {
+		const { took, unstage } = await loadStaged(
+			browser,
+			`file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${condition.text}`,
+			{ width: condition.viewport, height: 1900, platform: condition.platform },
+		);
+		if (took === false) {
+			fail(`qualifiers ${condition.name}: ${condition.platform} staging did not take`);
+			continue;
+		}
+		if (state === 'forms') {
+			const uses = await browser.evaluate(statUses);
+			measured++;
+			if (uses === null) fail(`qualifiers ${condition.name}: no Stat block uses run in state=forms`);
+			else if (uses.separator !== uses.medium || uses.max !== uses.medium) {
+				fail(`qualifiers ${condition.name}: Stat block uses reads / ${uses.separator} and ${uses.max} against --font-ui-medium ${uses.medium}`);
+			} else console.log(`PASS     ${condition.name.padEnd(8)} Stat block uses / and ceiling at --font-ui-medium, ${uses.medium}`);
+			await unstage();
+			continue;
+		}
+		const sizes = await browser.evaluate(qualifiers);
+		const withTemp = sizes.pools.filter((one) => one.temp !== null);
+		const owned = sizes.pools.filter((one) => one.owned !== null);
+		if (withTemp.length === 0 || owned.length === 0 || sizes.borrowed.length === 0 || typeof sizes.pill !== 'number') {
+			fail(`qualifiers ${condition.name}: measured nothing, or Card pills disagree: ${JSON.stringify(sizes)}`);
+		}
+		for (const one of sizes.pools) {
+			measured++;
+			const why = [];
+			if (one.temp !== null && one.temp !== sizes.pill) why.push(`temp ${one.temp} is not a Card pill's ${sizes.pill}`);
+			if (one.temp !== null && one.separator !== null && one.temp > one.separator) why.push(`temp ${one.temp} outranks its ceiling ${one.separator}`);
+			if (one.owned !== null && one.owned !== one.separator) why.push(`owned ceiling ${one.owned} is not its separator's ${one.separator}`);
+			if (one.owned !== null && condition.platform !== null && one.owned < 16) why.push(`owned ceiling ${one.owned} under 16px`);
+			if (why.length > 0) failed++;
+			console.log(
+				`${(why.length > 0 ? 'FAIL' : 'PASS').padEnd(8)} ${condition.name.padEnd(8)} pool ${one.label.padEnd(24)}` +
+					` ceiling ${one.separator} temp ${one.temp ?? '-'} owned ${one.owned ?? '-'} pill ${sizes.pill}` +
+					(why.length > 0 ? `  <- ${why.join('; ')}` : ''),
+			);
+		}
+		const off = sizes.borrowed.filter(([, size, token]) => size !== token);
+		measured += sizes.borrowed.length;
+		for (const [what, size, token] of off) {
+			fail(`qualifiers ${condition.name}: a ${what} draws ${size} against --font-ui-small ${token}`);
+		}
+		if (off.length === 0) {
+			console.log(`PASS     ${condition.name.padEnd(8)} ${sizes.borrowed.length} Track length fields and record ceilings at --font-ui-small`);
+		}
+		await unstage();
+	}
+}
+
 await browser.close();
 if (measured === 0) {
 	console.log('FAIL  measured no headline: the sample or the selectors moved');
 	process.exit(1);
 }
-console.log(`\n${measured} measured, ${failed} failed, ${residue} printed as the one-unit Pool ceiling residue`);
+console.log(
+	`\n${measured} measured, ${failed} failed, ${residue} printed as the one-unit Pool ceiling residue, ${moved} as an expected card-height move`,
+);
 process.exit(failed === 0 ? 0 : 1);
