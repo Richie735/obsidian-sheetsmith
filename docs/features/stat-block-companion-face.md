@@ -185,6 +185,21 @@ NPCs, in Picture.*, while the Familiar's stay **Edit familiars**. The press and
 every reference to it use one noun, so they agree. Every other string keeps the
 lowercased noun (*No npcs yet.*, *Add npc*, In play's strings).
 
+**Since widened to every string, on Record set and Stat block alike.** Keeping the
+acronym on the press alone put **Edit NPCs** over **Add npc** on one block, which
+is the drift `docs/PATTERNS.md` §1's one-step tier exists to stop: two spellings
+of one noun. `nounInSentence` in `ui/noun-in-sentence.ts`, beside `isAcronym`,
+is now the one spelling every mid-sentence string takes (*Add NPC*, *No NPCs
+yet.*, *2 NPCs*, *Unnamed NPC*, *Write anything about this NPC.*, the refusal and
+problem lines), and the block's `pressNoun` and `lower` collapsed into it. It is
+not only the record noun's: a table zone's **Add** names its first column through
+it too, so a column keyed `NPC` reads **Add NPC**. A sentence that opens on the noun (*NPC added*) writes
+it as the author did, as before. Two questions stay open and undecided: whether a
+mixed-case or proper-noun name (*Wild Shape*, *iPhone*), which still lowercases,
+should keep its case too; and the article before an acronym, since *a NPC* is
+written where *an NPC* is meant (*A NPC needs a name*, *choose a NPC*), as *a
+npc* was before.
+
 - **Edit <noun>s** (the press), and **Done** (the way back). Done's accessible
   name is **Done editing <noun>s**, which starts with its visible word (label in
   name).
@@ -319,7 +334,7 @@ block')`. Each criterion is its test's name:
 - [x] `says No <noun>s yet. with Done and Add behind the press once the last record is deleted`
 - [x] `draws the picture on an open record's line at rest, after the chevron, and none while closed`
 - [x] `says a companion's picture failure as Set it under Edit <noun>s, in Picture.`
-- [x] `keeps an all-capitals noun's case on Edit and every string naming it, and lowercases any other`: *Edit NPCs*, *Done editing NPCs* and *Set it under Edit NPCs, in Picture.* beside *Add npc*; *Edit familiars* and *Done editing familiars*
+- [x] `keeps an all-capitals noun's case on Edit and every string beside it, and lowercases any other`: *Edit NPCs*, *Done editing NPCs* and *Set it under Edit NPCs, in Picture.* beside *Add NPC* (widened from *Add npc*, The words); *Edit familiars* and *Done editing familiars*
 - [x] The existing record-picture tests (*Set it under Every form, in Picture.*, the thumbnail first in the In play head and in each two-on name row) pass unchanged
 - [x] `draws a companion's name at title size open or closed, by the stamped class`: the plain cell carries `sheetsmith-stat-block-name-read` whether its record is open or closed, and the chevron's press leaves the class in place
 - [x] A `src/styles.test.ts` (or sheet stylesheet) check that the title-size rule's selector list names `.sheetsmith-stat-block-name-read` and sets `--font-ui-large`, so the size cannot regress to depending on open state
