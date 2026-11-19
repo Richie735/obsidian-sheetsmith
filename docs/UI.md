@@ -364,7 +364,19 @@ be the control's at another font size reads the factor, never the length.
 
 - **Relative units for anything that should scale with the sheet's own type**
   [judgement]. The card's headline number is `1.75em`, not a pixel size, so the
-  card scales with whatever sets the sheet's size. The value under it, the
+  card scales with whatever sets the sheet's size. **In a card too narrow for
+  three digits at that size it shrinks with the card**, through
+  `--sheetsmith-headline-size`: `clamp()` from a floor, through the size at
+  which three digits fit the card (`52cqi - 2px`, no `em`, since that size does
+  not depend on the text size), to the `1.75em` cap. The floor is one
+  minor-third step (1.2) above the largest qualifier on the card, the ceiling's
+  `--font-ui-medium` or the own-value pill's `--sheetsmith-qualifier-small`, so
+  the number never flattens into what is under it, and never under 18.67px,
+  14pt, where bold text is large text and needs 3:1 rather than 4.5:1 (a Pool's
+  over state is accent, about 3.2 to 3.9:1), which also keeps a field there from
+  zooming iOS on tap. Below the floor a value is marked, not
+  shrunk further (§9, "A headline that does not fit";
+  `docs/features/headline-narrow-cell.md`). The value under it, the
   pill under a derived number (a Card's, a Card set tile's, a Roster card's
   score) and a Pool's temporary points, is `--sheetsmith-qualifier-small`: the
   app's `--font-ui-small` as a floor under 13/15 of the sheet's `em`, so the
@@ -422,7 +434,13 @@ sheet.
   a `Canvas` backplate behind text, which put `SelectedItemText` black on black.
   A glyph on a partly lit segment is not a case, since part of it sits on
   `Canvas`, so it keeps the mode's own colour and plate
-  (`docs/features/forced-colors-track-and-table.md`).
+  (`docs/features/forced-colors-track-and-table.md`). **The one other case is a
+  headline cut because it does not fit**, whose glyphs are transparent so the
+  mark over them reads alone: the mode repaints a transparent fill as
+  `CanvasText`, which put the clipped digits back under the mark. The cut number
+  paints nothing else, so the mode loses nothing, and a mark inside it takes
+  `CanvasText` by keyword (`headline-narrow-card-forced-colors`,
+  `docs/features/headline-narrow-cell.md`).
 - **`prefers-contrast: more` raises every line that is a surface's or a control's
   only edge to `--text-muted`, and leaves the rest** [judgement; seen block by
   block in `sheet-contrast-more`, `-dark` and `sheet-record-groups-contrast-more`].
@@ -459,6 +477,14 @@ sheet.
 - **`prefers-reduced-motion: reduce` removes transitions**, and every animated
   rule needs the companion block.
 - **`.sheetsmith-sr-only`** carries text for assistive tech only.
+- **A mark standing in for text is `aria-hidden`, and the text it stands in for
+  stays where it was** [judgement]. A headline that does not fit draws `⋯` over
+  its own digits made transparent (§9), so the value is still the derived's text
+  or the field's `value`, which is what a screen reader reads, and a field's
+  place in the accessibility tree does not change. A cut derived holding its tab
+  stop is the one change: a button named by the card's title and the whole
+  value, described by the breakdown twin where there is one, all three given up
+  with the stop (`docs/features/headline-narrow-cell.md`).
 - **`aria-label` replaces a name; `title` adds to one.** A control whose text is
   on screen keeps that text as its accessible name, and anything supplementary —
   where a link goes, what a glyph is called — rides in `title`. An `aria-label`
@@ -773,6 +799,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Thing | Where | Used by |
 | --- | --- | --- |
 | The card | `.sheetsmith-card`, `.sheetsmith-card-single` | Card, Card set, Pool, Passport's face |
+| A headline that does not fit | `ui/headline-fit.ts`, `view/headline-fit.ts`; `.sheetsmith-headline`, `-host`, `-cut`, `-mark` | Card, Card set, Pool (`docs/features/headline-narrow-cell.md`). **Shrunk first, then marked**: the size is CSS (§5), and where a value still does not fit at the floor its digits' fill goes transparent and they stay laid out, and `⋯`, the midline ellipsis, is drawn over the number's box in its weight and colour, its modified underline kept; in forced colors the cut number alone takes `forced-color-adjust: none`, since the mode repaints the fill. A focused field shows its digits; a focused derived stays marked. The module reads `scrollWidth` against `clientWidth` and sets a state, never a size, so a view's one `ResizeObserver` may call it without looping. **The reveal is the control's own**: a typed number (a Card's field, a Pool's) shows its digits while focused, the mark taking no pointer; a computed one opens its whole value in the popover it already opens, before its breakdown, and is a tab stop only while cut, kept until blur if it comes to fit while focused, and a button named by the card's title and the value and described by the breakdown twin while it holds that stop. A card's menu takes the size and no mark: it ellipsises its own label |
 | A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
 | A stat's name, value and reading as one line of a table | `.sheetsmith-roster-band-inner`, `.sheetsmith-roster-band-value` | Roster's band head. **Reuses rather than restyles**: the name takes `.sheetsmith-group-heading`, the score `.sheetsmith-card-input`, the reading `.sheetsmith-card-derived`. What is new: the band-inner wrapper, a `<div>` inside the table's own `<td>` rather than `display: flex` on the `<td>` itself, which the engine boxes in an anonymous table-cell and loses the `colSpan`-driven width; and the value/reading centring sub-group `.sheetsmith-roster-band-value`, needed only because a band head's own width is not a card's |
 | A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image, Record set, Passport — **six consumers**, which is what took it from a comment in each file to a name in this table |
@@ -887,8 +914,8 @@ that numbers hold still while they are stepped, and one summary line must not ca
 one fixed number field and one elastic one. Left-aligning a two-digit box answers
 the gap without buying the movement.
 
-**A Pool's value field is fixed at `4ch` wherever it fits, and elastic from `2ch`
-only below its container threshold** [judgement]. That is not a departure from
+**A Pool's value field is fixed at `4ch` wherever it fits, and elastic from
+`min(2ch, 100%)` only below its container threshold** [judgement]. That is not a departure from
 the ruling above, which is about fields on a summary line and stands as it is.
 Below `calc(4.6em + 44px)` of card, a narrow cell has no room for the four-character
 slot beside a ceiling, so the slot drops to two and grows with its digits
@@ -900,7 +927,12 @@ holds still there is the `4ch` floor the narrow rule exists to lift. Also
 accepted: below the threshold the gap between the number and its ceiling
 varies with the number's digit count, about 14px for one digit and about 4px
 for three, because the field sizes to its content, and the ceiling's muted
-colour is what carries the grouping.
+colour is what carries the grouping. The `2ch` floor is capped at the row, since
+in a one-unit cell on a 520px sheet a bare `2ch` beat the field's `max-width`
+and passed the card. **Below the card width three digits fit at, the number
+also shrinks, after the slot and the ceiling have given way**, and is marked
+where it still does not fit (`docs/features/headline-narrow-cell.md`, which
+reverses `pool-headline-narrow-fit.md`'s "the number never shrinks").
 
 **A disclosure opens a block in place, pushing its siblings inside a box that
 does not grow** [judgement]. Record set is the first of these and the rules are
@@ -1163,7 +1195,11 @@ warnings rather than errors**: the dotted, muted 2px mark then returns.
 `white-space: pre-wrap`, so a newline is already a line — and a second kind of
 panel beside a row of cards is what this section opens against. What that costs
 is per-line styling: a suppressed contributor cannot be drawn faint, so the
-parenthetical saying it was not applied carries that instead.
+parenthetical saying it was not applied carries that instead. **A number cut
+because it does not fit opens with its whole value**, then a blank line and the
+breakdown: the breakdown's total is the sum of the contributions, not the value,
+so the value has to be said, and one popover is still one surface
+(`docs/features/headline-narrow-cell.md`).
 
 **What it did cost was the bubble's width**, and this is the one rule the
 breakdown changed rather than reused. The cap was `20em` — about 34 characters —

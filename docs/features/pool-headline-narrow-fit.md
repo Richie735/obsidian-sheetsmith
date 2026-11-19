@@ -203,6 +203,13 @@ type. It also makes a Pool's number stop matching a Card's on the same row, whic
 is the reason the two share one token. SPEC §4.2 says "the number is the thing
 being read", and the ceiling is the part "not worth the card's centre line"
 (the max-input rule's comment). So the ceiling is what moves.
+*Since reversed (2026-11-18):* the number does shrink now, below the card width
+three digits fit at, after the slot and the ceiling have given way here, and is
+marked where it still does not fit. Both objections are answered there rather
+than overruled: the size is a function of the card's width alone, through one
+token Card and Pool share, so two cards of one width still draw one size, and it
+drops only where the full-size number could not be read at all
+(`docs/features/headline-narrow-cell.md`).
 
 **What SPEC §4.2's reasoning keeps.** The comment above `.sheetsmith-pool-reading`
 centres `12 / 54` as one reading. On one line, which is every case but the

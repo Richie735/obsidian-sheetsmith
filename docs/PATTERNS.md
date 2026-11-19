@@ -317,9 +317,10 @@ src/
                    from these at build time and is not edited directly
   view/            sheet view, layout editor pane, auto-open, reset flow,
                    and what a layout file's registration and file events do.
-                   Its pure helpers, cell-focus, cell-scroll and sheet-posture,
-                   are DOM over a root and know no view, which is what lets
-                   the harness import them rather than copy them
+                   Its passes over a drawn sheet — focus, scroll, posture,
+                   decorations, the headline fit — are DOM over a root that
+                   import nothing from obsidian and know no view, which is
+                   what lets the harness import them rather than copy them
   ui/              generic building blocks that know nothing of components
   starters/        the layouts the plugin ships and the flow that installs one.
                    The sources are real layout files, inlined into main.js at
@@ -778,6 +779,23 @@ still wants it.
   pattern over the text can tell which, so beyond the guard the rule is held in
   review.
 - **Config guard first.** Render the error, return, build nothing.
+
+### A `ResizeObserver` belongs to the view
+
+**One per view, owned by the view, observing what one render stamped, and
+disconnected before every rebuild and when the view closes** [checked:
+`view/headline-fit.test.ts`]. `view/headline-fit.ts` is the first, and the
+precedent for any later one. A component never makes its own: it would be one
+observer per card per render with nothing to disconnect it, since a rebuild
+replaces the component's DOM without telling it. So a component *stamps* what
+it wants watched (`ui/headline-fit.ts`'s `stampHeadline`) and refits it itself
+after setting a value in code, which resizes nothing an observer sees; the view
+watches the stamped elements after `renderGrid`, the arrangement
+`placement-decorations.ts` already has, and so does the harness through the
+same module. **What the callback does must not resize what it observes**, or it
+loops: the fit check reads widths and sets a class that changes no box, and the
+measure script holds that toggling it moves nothing
+(`docs/features/headline-narrow-cell.md`).
 
 ### The paint closure
 
