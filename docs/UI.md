@@ -389,7 +389,12 @@ be the control's at another font size reads the factor, never the length.
   under it, uncapped, never outrank it. A ceiling the character types is the
   same size by a rule of its own, and never under 16px under `.is-mobile`,
   where iOS zooms a smaller field on tap
-  (`docs/features/pool-ceiling-text-size.md`).
+  (`docs/features/pool-ceiling-text-size.md`). **In the app that zoom does not
+  fire**: Obsidian 1.15.1's viewport sets `maximum-scale=1.0, user-scalable=no`,
+  and a tap into a 15px pill or temporary-points field on an iPhone 17 did not
+  zoom (checked 2026-11-19). So the ceiling's 16px stays as a guard against a
+  host that drops it, and no other field takes one; a zoom seen on a later iOS
+  or Obsidian reopens it (`docs/features/qualifier-input-phone-floor.md`).
   The words ranked with the card's heading — *Temp*, an abbreviation, a note —
   stay at the heading's fixed size until it moves.
 - **What sets the sheet's size is not the vault's text-size setting**, which
