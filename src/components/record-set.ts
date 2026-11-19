@@ -155,6 +155,7 @@ import {
 } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
 import { element } from '../ui/element';
+import { nounInSentence } from '../ui/noun-in-sentence';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 
@@ -343,7 +344,7 @@ function namesKey(groupBy: string | undefined, key: string | undefined): boolean
  * message names every type this component offers, which is the fix.
  */
 function configError(config: RecordSetConfig): string | null {
-	const noun = recordNoun(config).toLowerCase();
+	const noun = nounInSentence(recordNoun(config));
 	const seen = new Set<string>();
 	for (const field of config.fields ?? []) {
 		const key = (field.key ?? '').trim();
@@ -848,8 +849,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 			parts.push(
 				which === 0
-					? `\nSample text, so an open ${noun.toLowerCase()} shows where its prose starts and where it stops.\n`
-					: `\nSample text again, so a second ${noun.toLowerCase()} shows how two of them sit under one another.\n`,
+					? `\nSample text, so an open ${nounInSentence(noun)} shows where its prose starts and where it stops.\n`
+					: `\nSample text again, so a second ${nounInSentence(noun)} shows how two of them sit under one another.\n`,
 			);
 			if (which === 0) parts.push('\n');
 		}
@@ -1253,7 +1254,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 			const length = Array.from(text).length;
 			if (length > GROUP_NAME_LIMIT) {
-				return `Not saved. A group name is at most ${GROUP_NAME_LIMIT} characters, and this is ${length}. Shorten it, or put the detail in the ${noun.toLowerCase()}'s body.`;
+				return `Not saved. A group name is at most ${GROUP_NAME_LIMIT} characters, and this is ${length}. Shorten it, or put the detail in the ${nounInSentence(noun)}'s body.`;
 			}
 			return null;
 		};
@@ -1375,7 +1376,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			'span',
 			'sheetsmith-record-add-label',
 			add,
-			`Add ${noun.toLowerCase()}`,
+			`Add ${nounInSentence(noun)}`,
 		);
 		add.addEventListener('click', () => {
 			status.textContent = `${noun} added`;
