@@ -163,6 +163,7 @@ import {
 	tintColourOf,
 } from '../types';
 import { element } from '../ui/element';
+import { nounInSentence } from '../ui/noun-in-sentence';
 
 /** The key a stored uses count sits under in the preamble's fence. */
 const USES_KEY = 'uses';
@@ -796,8 +797,8 @@ function sampleZone(zone: BodyZone, noun: string, at: number): string {
 		);
 		return `|${headers.join('|')}|\n|${headers.map(() => '---').join('|')}|\n|${cells.join('|')}|`;
 	}
-	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${noun.toLowerCase()} shows where an *entry* starts.`;
-	return `Sample text, so an open ${noun.toLowerCase()} shows where its prose starts.`;
+	if (zone.type === 'features') return `**Sample.** Sample text, so an open ${nounInSentence(noun)} shows where an *entry* starts.`;
+	return `Sample text, so an open ${nounInSentence(noun)} shows where its prose starts.`;
 }
 
 /** What one field holds in a sample, or null where it stores nothing. */
@@ -1230,15 +1231,13 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		}
 
 		const noun = recordNoun(config);
-		const lower = noun.toLowerCase();
 		/*
-		 * **The noun a companion's Edit press names keeps an all-capitals noun's
-		 * case**, so the Fate block says *Edit NPCs* rather than *Edit npcs*; any
-		 * other noun is lowercased as everywhere else. Every string naming that
-		 * press uses it, so the button and each reference to it agree. The other
-		 * strings keep `lower` (`docs/features/stat-block-companion-face.md`).
+		 * **The noun as every string here writes it mid-sentence**, one spelling
+		 * for the Edit press and everything beside it, so the Fate block's *Edit
+		 * NPCs* sits over *Add NPC* rather than *Add npc*
+		 * (`docs/features/stat-block-companion-face.md`, The words).
 		 */
-		const pressNoun = isAcronym(noun) ? noun : lower;
+		const word = nounInSentence(noun);
 		const records = entries(data);
 		const toggle = exclusiveField(config);
 		const exclusive = toggle !== null;
@@ -1450,7 +1449,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			const turningOn = at !== null && !alreadyOn;
 			let said: string;
 			if (at === null) {
-				said = `No ${lower} active`;
+				said = `No ${word} active`;
 			} else {
 				const named = recordLabel(records[at]?.name ?? '', noun);
 				said = `${named} active`;
@@ -1473,8 +1472,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 * block's at rest. The sentence and an Add that lands on the edit face.
 		 */
 		function drawEmpty(): void {
-			element('p', 'sheetsmith-stat-block-empty', content, `No ${lower}s yet.`);
-			const add = element('button', 'sheetsmith-stat-block-action', content, `Add ${lower}`);
+			element('p', 'sheetsmith-stat-block-empty', content, `No ${word}s yet.`);
+			const add = element('button', 'sheetsmith-stat-block-action', content, `Add ${word}`);
 			add.type = 'button';
 			add.addEventListener('click', () => addRecord());
 		}
@@ -1526,13 +1525,13 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				'div',
 				`sheetsmith-stat-block-title${active.length === 0 ? ' sheetsmith-stat-block-title-none' : ''}`,
 				playHead,
-				active.length === 0 ? `No ${lower} active` : spokenList(names),
+				active.length === 0 ? `No ${word} active` : spokenList(names),
 			);
 			if (hasUses(config)) drawUses(playHead);
 			const pick = element('div', 'sheetsmith-stat-block-pick', playHead);
 			const menu = element('div', 'sheetsmith-record-menu sheetsmith-stat-block-menu', pick);
 			const select = element('select', 'sheetsmith-record-select sheetsmith-stat-block-select', menu);
-			select.setAttribute('aria-label', `${config.label}: ${lower} in play`);
+			select.setAttribute('aria-label', `${config.label}: ${word} in play`);
 			const none = element('option', '', select, 'None');
 			none.value = '';
 			for (const { record, at } of readable) {
@@ -1583,8 +1582,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					'sheetsmith-stat-block-empty',
 					content,
 					config.spendOnPick === true && hasUses(config)
-						? `No ${lower} is active. Choosing one spends a use.`
-						: `No ${lower} is active.`,
+						? `No ${word} is active. Choosing one spends a use.`
+						: `No ${word} is active.`,
 				);
 				if (readable.length > 0) {
 					const briefed = briefZone(config);
@@ -1593,7 +1592,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 						readable.map(({ record, at }) => brief(record, at)),
 						{
 							id: config.id,
-							listName: `${config.label}: choose a ${lower}`,
+							listName: `${config.label}: choose a ${word}`,
 							thumb: (into, source, named, onError) => paintThumb(into, source, named, onError, true),
 							tiles: (into, at) => briefTiles(into, at),
 							...(briefed === null
@@ -1635,7 +1634,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 
 			const every = element('button', 'sheetsmith-record-add sheetsmith-stat-block-switch', foot);
 			every.type = 'button';
-			element('span', 'sheetsmith-record-add-label', every, `Every ${lower} (${records.length})`);
+			element('span', 'sheetsmith-record-add-label', every, `Every ${word} (${records.length})`);
 			every.addEventListener('click', () => setFace(LIBRARY_FACE));
 		}
 
@@ -1659,7 +1658,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			}
 			const list = element('div', 'sheetsmith-stat-block-list', content);
 			if (records.length === 0) {
-				element('p', 'sheetsmith-stat-block-empty', list, `No ${lower}s yet.`);
+				element('p', 'sheetsmith-stat-block-empty', list, `No ${word}s yet.`);
 			}
 			records.forEach((record, at) => {
 				const named = recordLabel(record.name, noun);
@@ -1740,7 +1739,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					const failures = element('div', 'sheetsmith-stat-block-problems', detail);
 					thumb = drawThumb(nameHost, record, named, failures, false, {
 						before: nameCell,
-						where: `Edit ${pressNoun}s`,
+						where: `Edit ${word}s`,
 					});
 					thumb?.toggleAttribute('hidden', !startsOpen);
 				} else {
@@ -1775,7 +1774,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				// edit face. No Add beside it, because adding is editing.
 				const edit = element('button', 'sheetsmith-record-add sheetsmith-stat-block-edit', foot);
 				edit.type = 'button';
-				element('span', 'sheetsmith-record-add-label', edit, `Edit ${pressNoun}s`);
+				element('span', 'sheetsmith-record-add-label', edit, `Edit ${word}s`);
 				edit.addEventListener('click', () => swapFace(edit, LIBRARY_FACE));
 				return;
 			}
@@ -1791,13 +1790,13 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				// what it leaves: the face that edits the list.
 				const done = element('button', 'sheetsmith-record-add sheetsmith-stat-block-done', foot);
 				done.type = 'button';
-				done.setAttribute('aria-label', `Done editing ${pressNoun}s`);
+				done.setAttribute('aria-label', `Done editing ${word}s`);
 				element('span', 'sheetsmith-record-add-label', done, 'Done');
 				done.addEventListener('click', () => swapFace(done, PLAY_FACE));
 			}
 			const add = element('button', 'sheetsmith-record-add sheetsmith-stat-block-add', foot);
 			add.type = 'button';
-			element('span', 'sheetsmith-record-add-label', add, `Add ${lower}`);
+			element('span', 'sheetsmith-record-add-label', add, `Add ${word}`);
 			add.addEventListener('click', () => addRecord());
 		}
 
@@ -2573,11 +2572,6 @@ function choosesOneOption(outcome: ModifierOutcome): string | null {
  * form is edited. The words go into its accessible name too, ahead of what it
  * says about the parts, so the name contains the label a voice command reads.
  */
-/** Whether a noun is written in capitals throughout, `NPC`, and so keeps its case. */
-export function isAcronym(noun: string): boolean {
-	return noun.length > 1 && /\p{Lu}/u.test(noun) && noun === noun.toUpperCase();
-}
-
 function labelGlyph(cell: HTMLElement): void {
 	const button = cell.querySelector<HTMLButtonElement>('button');
 	if (button === null) return;

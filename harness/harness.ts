@@ -134,6 +134,7 @@ type StateName =
 	| 'companion-picture'
 	| 'companion-mook'
 	| 'companion-npc'
+	| 'companion-npc-list'
 	| 'companion-empty'
 	| 'markdown'
 	| 'modifier-states'
@@ -224,6 +225,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'companion-picture') return companionSamples('picture');
 	if (name === 'companion-mook') return companionSamples('mook');
 	if (name === 'companion-npc') return companionSamples('npc');
+	if (name === 'companion-npc-list') return companionSamples('npc-list');
 	if (name === 'companion-empty') return companionSamples('empty');
 	if (name === 'markdown') return markdownSamples();
 	if (name === 'modifier-states') return modifierStatesSamples('all');
@@ -1177,6 +1179,7 @@ function applyQuery(): void {
 			wanted === 'companion-picture' ||
 			wanted === 'companion-mook' ||
 			wanted === 'companion-npc' ||
+			wanted === 'companion-npc-list' ||
 			wanted === 'companion-empty' ||
 			wanted === 'markdown' ||
 			wanted === 'modifier-states' ||

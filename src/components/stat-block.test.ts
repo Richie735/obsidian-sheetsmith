@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isAcronym, statBlock, StatBlockConfig, StatBlockData } from './stat-block';
+import { statBlock, StatBlockConfig, StatBlockData } from './stat-block';
 import { ModifierPush, RenderContext } from '../types';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { parseModifierPart } from '../parse/modifier-cell';
@@ -871,6 +871,21 @@ describe('a companion block', () => {
 		expect(thug().querySelector('.sheetsmith-stat-block-add-entry')?.textContent).toBe('Add entry');
 	});
 
+	it('names a table zone\'s Add for its first column, keeping an all-capitals word\'s case', () => {
+		const bare = NPC_BODY.replace('#### Skills\n\n| Skill | Rating |\n|---|---|\n| Fight | 1 |\n\n', '');
+		const addOf = (first: string) => {
+			document.body.replaceChildren();
+			const zones = (NPCS.zones ?? []).map((zone) =>
+				zone.key === 'skills' ? { ...zone, columns: [{ key: first }, { key: 'Rating', type: 'number' as const }] } : zone,
+			);
+			const { el } = render(bare, { ...NPCS, zones });
+			toEdit(el);
+			return details(el)[0]?.querySelector('.sheetsmith-stat-block-add-action')?.textContent;
+		};
+		expect(addOf('NPC')).toBe('Add NPC');
+		expect(addOf('Feature')).toBe('Add feature');
+	});
+
 	it('keeps a collapsed text zone closed at rest, and draws it open behind Edit', () => {
 		const { el } = npcs(NPC_BODY, { openRecords: [1] });
 		const baron = () => details(el)[1] as HTMLElement;
@@ -936,7 +951,7 @@ describe('a companion block', () => {
 		toEdit(el);
 		expect(el.querySelectorAll('.sheetsmith-record-name-input')).toHaveLength(2);
 		expect(el.querySelectorAll('.sheetsmith-record-remove')).toHaveLength(2);
-		expect(footWords(el)).toEqual(['Done', 'Add npc']);
+		expect(footWords(el)).toEqual(['Done', 'Add NPC']);
 		expect(done(el)?.getAttribute('aria-label')).toBe('Done editing NPCs');
 		done(el)?.click();
 		expect(el.querySelector('.sheetsmith-record-name-input')).toBeNull();
@@ -996,10 +1011,10 @@ describe('a companion block', () => {
 		const none = '\n```sheet\nuses: 1\n```\n';
 		const faces: number[] = [];
 		const { el, edits } = npcs(none, { onActivateTab: (at) => faces.push(at) });
-		expect(el.querySelector('.sheetsmith-stat-block-empty')?.textContent).toBe('No npcs yet.');
+		expect(el.querySelector('.sheetsmith-stat-block-empty')?.textContent).toBe('No NPCs yet.');
 		expect(el.querySelector('.sheetsmith-stat-block-foot')?.childElementCount).toBe(0);
 		const add = el.querySelector<HTMLButtonElement>('.sheetsmith-stat-block-action') as HTMLButtonElement;
-		expect(add.textContent).toBe('Add npc');
+		expect(add.textContent).toBe('Add NPC');
 		add.click();
 		expect(faces).toEqual([1]);
 		expect(edits[0]?.added).toEqual([{ name: 'NPC' }]);
@@ -1016,10 +1031,10 @@ describe('a companion block', () => {
 		remove.click();
 		document.body.replaceChildren();
 		const { el } = npcs(applied(first.edits[0] as StatBlockData, one, NPCS_CONFIG), { activeTab: 1 });
-		expect(el.querySelector('.sheetsmith-stat-block-empty')?.textContent).toBe('No npcs yet.');
-		expect(footWords(el)).toEqual(['Done', 'Add npc']);
+		expect(el.querySelector('.sheetsmith-stat-block-empty')?.textContent).toBe('No NPCs yet.');
+		expect(footWords(el)).toEqual(['Done', 'Add NPC']);
 		done(el)?.click();
-		expect(el.querySelector('.sheetsmith-stat-block-action')?.textContent).toBe('Add npc');
+		expect(el.querySelector('.sheetsmith-stat-block-action')?.textContent).toBe('Add NPC');
 		expect(footWords(el)).toEqual([]);
 	});
 
@@ -1068,20 +1083,19 @@ describe('a companion block', () => {
 		expect(stamped()).toEqual([true, true]);
 	});
 
-	it('keeps an all-capitals noun\'s case on Edit and every string naming it, and lowercases any other', () => {
+	it('keeps an all-capitals noun\'s case on Edit and every string beside it, and lowercases any other', () => {
 		const { el } = npcs(NPC_BODY, { resource: () => null, openRecords: [1] });
 		expect(footWords(el)).toEqual(['Edit NPCs']);
 		expect(el.textContent).toContain('Set it under Edit NPCs, in Picture.');
 		toEdit(el);
 		expect(done(el)?.getAttribute('aria-label')).toBe('Done editing NPCs');
-		// Every other string keeps the lowercased noun.
-		expect(footWords(el)).toEqual(['Done', 'Add npc']);
+		// And so does every other string beside it, one spelling for all of them.
+		expect(footWords(el)).toEqual(['Done', 'Add NPC']);
 		document.body.replaceChildren();
 		const owl = render(NPC_BODY, { ...NPCS, recordName: 'Familiar' }, { activeTab: 1 });
 		expect(done(owl.el)?.getAttribute('aria-label')).toBe('Done editing familiars');
 		done(owl.el)?.click();
 		expect(footWords(owl.el)).toEqual(['Edit familiars']);
-		expect([isAcronym('NPC'), isAcronym('Familiar'), isAcronym('A'), isAcronym('NPC 2')]).toEqual([true, false, false, true]);
 	});
 
 	it('draws a record whose fence will not read with its name, its problem and its prose, read-only at rest', () => {

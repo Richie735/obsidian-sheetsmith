@@ -65,6 +65,7 @@ import {
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
+import { nounInSentence } from '../ui/noun-in-sentence';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { revealWhenTruncated } from '../ui/truncation';
 
@@ -281,8 +282,8 @@ export function recordRefusals(host: Pick<RecordHost, 'noun'>): {
 	 */
 	const refuseLink = (text: string): string | null =>
 		fencedLinkRefusal(text, {
-			subject: `A ${noun.toLowerCase()}'s fields`,
-			instead: `Put it in the ${noun.toLowerCase()}'s name or its body instead.`,
+			subject: `A ${nounInSentence(noun)}'s fields`,
+			instead: `Put it in the ${nounInSentence(noun)}'s name or its body instead.`,
 		});
 
 	/** The whole sentence a refused commit says, or null where the text is fine. */
@@ -438,7 +439,7 @@ export function drawRecordName(
 				 */
 				handle.sync(record.name);
 				status.textContent = keptRatherThanBlank(
-					noun.toLowerCase(),
+					nounInSentence(noun),
 					named,
 				);
 				return;
@@ -606,7 +607,7 @@ export function drawRecordNumber(
 	let ceilingLayer: HTMLElement | null = null;
 	/** The field's own title, and what a formula ceiling adds to it. */
 	const ceilingTitle = (text: string): string => {
-		const base = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
+		const base = `Maximum ${name}, held by this ${nounInSentence(noun)}.`;
 		const trimmed = text.trim();
 		return trimmed === '' || typedCeiling(trimmed) !== null
 			? base
@@ -1198,7 +1199,7 @@ export function drawRecordBody(
 	// moves the cursor to the end of the control and focusing scrolls it into
 	// view, which is the one position in the text nobody asked for.
 	input.setSelectionRange(0, 0);
-	input.placeholder = options.placeholder ?? `Write anything about this ${noun.toLowerCase()}.`;
+	input.placeholder = options.placeholder ?? `Write anything about this ${nounInSentence(noun)}.`;
 	input.setAttribute('aria-label', options.label ?? `${named} body`);
 	// Its text is transparent unfocused and the prose is drawn over it, so
 	// its squiggles would be too.
@@ -1269,7 +1270,7 @@ export function drawRecordBody(
 			}
 			const record = startsRecord(next);
 			if (record !== null) {
-				return `Not saved. "${record.trim()}" would start a new ${noun.toLowerCase()} in this list — use "${subheading}" instead.`;
+				return `Not saved. "${record.trim()}" would start a new ${nounInSentence(noun)} in this list — use "${subheading}" instead.`;
 			}
 			return options.refuse?.(next) ?? null;
 		},

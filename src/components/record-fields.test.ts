@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { editRecords, fieldWrite, recordEntries, RecordField } from './record-fields';
+import {
+	countOf,
+	editRecords,
+	fieldWrite,
+	recordCount,
+	recordEntries,
+	RecordField,
+	recordLabel,
+} from './record-fields';
 import { joinRecords, splitRecords } from '../parse/records';
 
 /*
@@ -63,5 +71,14 @@ describe('fieldWrite', () => {
 
 	it('skips a record with no ceiling on full rather than writing zero', () => {
 		expect(fieldWrite(hp, 'full', undefined, '5', null)).toBeNull();
+	});
+});
+
+describe('the record noun mid-sentence', () => {
+	// The casing rule itself is `ui/noun-in-sentence.test.ts`'s.
+	it('writes every counting and naming string through it', () => {
+		expect([countOf(1, 'NPC'), countOf(2, 'NPC'), countOf(2, 'Feature')]).toEqual(['1 NPC', '2 NPCs', '2 features']);
+		expect([recordCount(3, 3, 'NPC'), recordCount(3, 3, 'Feature')]).toEqual(['every NPC', 'every feature']);
+		expect([recordLabel('', 'NPC'), recordLabel(' ', 'Feature')]).toEqual(['Unnamed NPC', 'Unnamed feature']);
 	});
 });
