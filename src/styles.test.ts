@@ -2633,6 +2633,17 @@ function declarations(body: string): string[] {
  * comma inside it, and the `selectors()` split at the top of this file would
  * read it as two halves of nothing.
  */
+/**
+ * Every rule in the built stylesheet whose selector list names `selector`, with
+ * `at`, its index in file order, for a test that holds one rule after another
+ * (`docs/UI.md` §4: `@container` and a lifted selector win on order).
+ */
+function rulesNaming(selector: string): (Rule & { at: number })[] {
+	return rules(CSS_WITHOUT_COMMENTS)
+		.map((rule, at) => ({ ...rule, at }))
+		.filter((rule) => selectorList(rule.selector).includes(selector));
+}
+
 function selectorList(selector: string): string[] {
 	const found: string[] = [];
 	let depth = 0;
@@ -4882,7 +4893,7 @@ describe('a headline number shrinks with a narrow card, to a floor above its qua
 	it('declares the floor and the size as the spec writes them', () => {
 		const tokens = declarations(bodyOf('body'));
 		expect(tokens).toContain(
-			'--sheetsmith-headline-floor: max(18.67px, calc(1.2 * max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))))',
+			'--sheetsmith-headline-floor: max(18.67px, calc(1.2 * var(--sheetsmith-qualifier-medium)))',
 		);
 		expect(tokens).toContain(
 			'--sheetsmith-headline-size: clamp(var(--sheetsmith-headline-floor), calc(52cqi - 2px), var(--sheetsmith-card-value-size))',
@@ -4951,14 +4962,18 @@ describe('the qualifiers beside a headline follow the sheet\'s size', () => {
 	 * `--font-ui-small`, which no `em` reaches, so at `text=24` the number grew
 	 * and they did not. Both values now take one token, `--sheetsmith-qualifier-small`:
 	 * the app's `--font-ui-small` as a floor under 13/15 of the sheet's `em`.
-	 * The Pool's field is capped at its ceiling's `--font-ui-medium`, which
-	 * holds still, so it never outranks the ceiling. The words ranked with the
+	 * A Pool's ceiling takes `--sheetsmith-qualifier-medium`, the app's
+	 * `--font-ui-medium` as a floor under that same qualifier, so it is never
+	 * under the points and they need no cap
+	 * (`docs/features/pool-ceiling-text-size.md`). The words ranked with the
 	 * card's heading, *Temp* and a note, stay at the heading's `--font-ui-smaller`.
 	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
 	const bodyOf = (selector: string): string =>
-		rules(CSS_WITHOUT_COMMENTS).find(
+		all.find(
 			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
 		)?.body ?? '';
+	const OWNED = '.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input';
 
 	it('declares the token as the app token floored under its step in em', () => {
 		const tokens = declarations(bodyOf('body'));
@@ -4972,15 +4987,59 @@ describe('the qualifiers beside a headline follow the sheet\'s size', () => {
 		expect(declarations(bodyOf(selector))).toContain('font-size: var(--sheetsmith-qualifier-small)');
 	});
 
-	it("stops a Pool's temporary points at the ceiling's size", () => {
-		// The ceiling is `--font-ui-medium` and holds still, so the points
-		// under the number may grow to it and not past it.
+	it("declares the ceiling's token as the app's medium size floored under the qualifier", () => {
+		expect(declarations(bodyOf('body'))).toContain(
+			'--sheetsmith-qualifier-medium: max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))',
+		);
+	});
+
+	it("sizes a Pool's ceiling on that token, a typed one included", () => {
+		// The typed one by a rule of its own: `.sheetsmith-pool-max` alone is
+		// (0,1,0) and lost to Obsidian's `input[type='text']`, which drew it at 13px.
+		const sized = all.filter(
+			(one) =>
+				one.context.length === 0 &&
+				declarations(one.body).includes('font-size: var(--sheetsmith-qualifier-medium)'),
+		);
+		// The count first, so a renamed selector cannot pass on nothing (PATTERNS §10).
+		expect(sized).toHaveLength(2);
+		expect(sized.map((one) => one.selector.replace(/\s+/g, ' ')).sort()).toEqual(
+			[OWNED, '.sheetsmith-pool-separator, .sheetsmith-pool-max'].sort(),
+		);
+	});
+
+	it('holds a typed ceiling at 16px or more on a phone or a tablet, after the rule it lifts', () => {
+		// iOS zooms the page on a tap into a field under 16px, an iPad as well
+		// as a phone, so the guard reads `.is-mobile` rather than `.is-phone`.
+		const at = (selector: string) => rulesNaming(selector).filter((one) => one.context.length === 0);
+		const guard = at(`.is-mobile ${OWNED}`);
+		const base = at(OWNED);
+		expect(guard).toHaveLength(1);
+		expect(base).toHaveLength(1);
+		expect(declarations(guard[0]?.body ?? '')).toContain(
+			'font-size: max(16px, var(--sheetsmith-qualifier-medium))',
+		);
+		// The typed ceiling is muted like the span it stands in for, past the
+		// app's `input[type='text']` colour.
+		expect(declarations(base[0]?.body ?? '')).toContain('color: var(--text-muted)');
+		expect(guard[0]?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
+	});
+
+	it("sizes a Pool's temporary points on the qualifier, uncapped", () => {
 		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-temp-input'))).toContain(
-			'font-size: min(var(--sheetsmith-qualifier-small), var(--font-ui-medium))',
+			'font-size: var(--sheetsmith-qualifier-small)',
 		);
-		expect(declarations(bodyOf('.sheetsmith-pool-max'))).toContain(
-			'font-size: var(--font-ui-medium)',
+		// No rule naming the field caps its size: the ceiling is never under the
+		// qualifier now, so a `min(` would only stop the points short of a Card pill.
+		const temp = all.filter((one) =>
+			selectorList(one.selector).some((sel) => sel.includes('.sheetsmith-pool-temp-input')),
 		);
+		expect(temp.length).toBeGreaterThan(3);
+		for (const one of temp) {
+			for (const line of declarations(one.body).filter((d) => d.startsWith('font-size:'))) {
+				expect(line).not.toContain('min(');
+			}
+		}
 	});
 
 	it('keeps the words under a heading at the heading\'s fixed size', () => {
@@ -5018,22 +5077,16 @@ describe("a pool's reading fits a narrow card", () => {
 	 */
 	const READING = '.sheetsmith-pool-reading';
 	const FIELD = '.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current';
-	const all = rules(CSS_WITHOUT_COMMENTS);
 
-	/** Every rule whose selector list names `selector`, in file order. */
-	const naming = (selector: string) =>
-		all
-			.map((rule, at) => ({ ...rule, at }))
-			.filter((rule) => selectorList(rule.selector).includes(selector));
 	const valueIn = (body: string, property: string): string | undefined =>
 		declarations(body)
 			.find((one) => one.startsWith(`${property}:`))
 			?.slice(property.length + 1)
 			.trim();
 
-	const reading = naming(READING).filter((rule) => rule.context.length === 0);
-	const base = naming(FIELD).filter((rule) => rule.context.length === 0);
-	const narrow = naming(FIELD).filter((rule) =>
+	const reading = rulesNaming(READING).filter((rule) => rule.context.length === 0);
+	const base = rulesNaming(FIELD).filter((rule) => rule.context.length === 0);
+	const narrow = rulesNaming(FIELD).filter((rule) =>
 		rule.context.some((at) => at.startsWith('@container')),
 	);
 
@@ -5065,35 +5118,50 @@ describe("a pool's reading fits a narrow card", () => {
 		expect(rule?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
 	});
 
-	it('puts the threshold at four characters, the gap and the widest ceiling', () => {
+	it('puts the threshold at four characters and the widest ceiling in em, and the chrome in px', () => {
 		/*
-		 * Measured in the harness at a 16px sheet, where the card's value size
-		 * draws `4ch` at 73.4px (`docs/features/pool-headline-narrow-fit.md`):
-		 * 4.59em. The rest is fixed-px chrome the sheet's `em` does not reach, so
-		 * it is px (`docs/UI.md` §5): the reading's `--size-2-1` gap, the widest
-		 * three-digit ceiling at 38.7px (a max the character owns, with its
-		 * padding), and the 2px the reading's row sits inside the card's
-		 * content box. Each part is rounded up, never down, and by less than the
-		 * next step, so the threshold neither clips a reading that fits nor
-		 * narrows a slot that has room.
+		 * `docs/features/pool-ceiling-text-size.md`, measured in the harness. The
+		 * card's value size draws `4ch` at 73.4px on a 16px sheet: 4.59em. The
+		 * widest three-digit ceiling, a `/120` the character owns, follows the
+		 * sheet at the qualifier's 13/15em, and its digits less the padding and
+		 * gap measure 43.4px at `text=24`'s 20.8px qualifier: 43.4 / 24 em. What
+		 * the sheet's `em` does not reach is px (`docs/UI.md` §5): the reading's
+		 * gap, the 2px the row sits inside the card's content box and the
+		 * ceiling's 10px of padding and gap.
+		 *
+		 * Where the app's `--font-ui-medium` holds the ceiling above 13/15 of the
+		 * sheet, the `em` part undercounts it: on a phone the sheet is 16px and
+		 * the token 16px, so the ceiling's digits are 16/(13/15 × 16) of what
+		 * the `em` part gives them, and the px part has to cover the difference.
 		 */
 		const FOUR_CH_EM = 73.4 / 16;
+		const CEILING_EM = 43.4 / 24;
 		// Obsidian's value for `--size-2-1`, which the app's own CSS defines and
 		// no test here can read: that the reading declares that token is held by
 		// the wrap test above, and that the token is 2px only by this constant.
 		const GAP_PX = 2;
-		const CEILING_PX = 38.7;
 		const ROW_INSET_PX = 2;
+		const CEILING_CHROME_PX = 10;
 		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		expect(prelude).toBe('@container (max-width: calc(6.4em + 20px))');
 		const match = /^@container \(max-width: calc\(([\d.]+)em \+ ([\d.]+)px\)\)$/.exec(prelude);
 		expect(match, `unreadable threshold: ${prelude}`).not.toBeNull();
 		const em = Number(match?.[1]);
 		const px = Number(match?.[2]);
-		expect(em).toBeGreaterThanOrEqual(FOUR_CH_EM);
-		expect(em - FOUR_CH_EM).toBeLessThan(0.1);
-		const chrome = GAP_PX + CEILING_PX + ROW_INSET_PX;
+		// The `em` part is the slot and the ceiling's share, rounded up by less
+		// than a step.
+		expect(em).toBeGreaterThanOrEqual(FOUR_CH_EM + CEILING_EM);
+		expect(em - (FOUR_CH_EM + CEILING_EM)).toBeLessThan(0.1);
+		const chrome = GAP_PX + ROW_INSET_PX + CEILING_CHROME_PX;
 		expect(px).toBeGreaterThanOrEqual(chrome);
-		expect(px - chrome).toBeLessThan(2);
+		// A 16px token on a 16px sheet: the ceiling's digits at 16px against
+		// the `em` part's 13/15 of 16, the remainder carried by the px part.
+		const SHEET = 16;
+		const TOKEN = 16;
+		const digitsAtToken = CEILING_EM * SHEET * (TOKEN / ((13 / 15) * SHEET));
+		const need = FOUR_CH_EM * SHEET + digitsAtToken + chrome;
+		expect(em * SHEET + px).toBeGreaterThanOrEqual(need);
+		expect(em * SHEET + px - need).toBeLessThan(2);
 	});
 });
 
