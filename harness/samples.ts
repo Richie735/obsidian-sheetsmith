@@ -5369,9 +5369,13 @@ export function markdownSamples(): Sample[] {
  *   Baron Corvan closed after it with every zone filled, his changes raising a
  *   Refresh card beside the block;
  * - `npc`: the same block with Baron Corvan first and open, the Thug closed;
+ * - `npc-list`: the `npc` block with a Record set beside it whose `recordName`
+ *   is also NPC, so the block's **Edit NPCs** and the list's **Add NPC** are on
+ *   one sheet and can be seen agreeing on an all-capitals noun's case
+ *   (`nounInSentence` in `ui/noun-in-sentence.ts`);
  * - `empty`: the Familiar block holding no record.
  */
-export type CompanionVariant = 'familiar' | 'picture' | 'mook' | 'npc' | 'empty';
+export type CompanionVariant = 'familiar' | 'picture' | 'mook' | 'npc' | 'npc-list' | 'empty';
 
 export function companionSamples(variant: CompanionVariant): Sample[] {
 	if (variant === 'familiar' || variant === 'picture' || variant === 'empty') {
@@ -5505,7 +5509,56 @@ export function companionSamples(variant: CompanionVariant): Sample[] {
 			} as ComponentConfig,
 			body: ['', ...(variant === 'mook' ? [...thug, ...baron] : [...baron, ...thug])].join('\n'),
 		},
+		...(variant === 'npc-list' ? [npcRoster()] : []),
 	];
+}
+
+/**
+ * A Record set of NPCs, the `npc-list` state's second subject: the same
+ * all-capitals noun on a plain list, so its **Add NPC**, its group count read
+ * as *2 NPCs* and an open record's *Write anything about this NPC.* sit beside
+ * the Stat block's **Edit NPCs**. Rows 1 to 6 between the block and Refresh, so
+ * neither shot of the block moves. The Thug's body is empty, so opening it
+ * draws the placeholder.
+ */
+function npcRoster(): Sample {
+	return {
+		config: {
+			id: 'npc_roster',
+			type: 'record-set',
+			label: 'Contacts',
+			position: { col: 7, row: 1, width: 4, height: 6 },
+			recordName: 'NPC',
+			groupBy: 'Faction',
+			fields: [
+				{ key: 'Faction', type: 'text' },
+				{ key: 'Stress', type: 'number', max: 3 },
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'### Thug',
+			'```sheet',
+			'Faction: River march',
+			'Stress: 0',
+			'```',
+			'',
+			'### Baron Corvan',
+			'```sheet',
+			'Faction: River march',
+			'Stress: 1',
+			'```',
+			'Owes the party a favor he would rather forget.',
+			'',
+			'### Sister Hale',
+			'```sheet',
+			'Faction: The abbey',
+			'Stress: 0',
+			'```',
+			'Keeps the abbey\'s ledgers.',
+			'',
+		].join('\n'),
+	};
 }
 
 /**
