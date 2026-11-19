@@ -4862,6 +4862,68 @@ describe('the pool\'s buffer field holds three digits', () => {
 	});
 });
 
+describe('a headline number shrinks with a narrow card, to a floor above its qualifiers', () => {
+	/*
+	 * `docs/features/headline-narrow-cell.md`. The size is a clamp between a
+	 * floor one minor-third step above the largest qualifier and the full
+	 * headline size, through the width at which three digits fit. None of it is
+	 * visible to happy-dom, which lays nothing out; `harness/measure-pool-headline.mjs`
+	 * measures it in a browser. This holds the arithmetic as written, and which
+	 * rules read it.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const bodyOf = (selector: string): string =>
+		all.find(
+			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
+		)?.body ?? '';
+	const sizedBy = (token: string) =>
+		all.filter((one) => declarations(one.body).includes(`font-size: var(${token})`));
+
+	it('declares the floor and the size as the spec writes them', () => {
+		const tokens = declarations(bodyOf('body'));
+		expect(tokens).toContain(
+			'--sheetsmith-headline-floor: max(18.67px, calc(1.2 * max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))))',
+		);
+		expect(tokens).toContain(
+			'--sheetsmith-headline-size: clamp(var(--sheetsmith-headline-floor), calc(52cqi - 2px), var(--sheetsmith-card-value-size))',
+		);
+	});
+
+	it('sizes exactly the four headlines on it', () => {
+		const taking = sizedBy('--sheetsmith-headline-size').map((one) => one.selector.replace(/\s+/g, ' '));
+		// The count first, so a renamed selector cannot leave this passing on
+		// nothing (`docs/PATTERNS.md` §10).
+		expect(taking).toHaveLength(4);
+		expect(taking.sort()).toEqual(
+			[
+				'.sheetsmith-card > .sheetsmith-card-derived',
+				'.sheetsmith-view .sheetsmith-card-select',
+				'.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input',
+				'.sheetsmith-view .sheetsmith-pool-current',
+			].sort(),
+		);
+	});
+
+	it.each([
+		// A Roster band's score borrows the card's field class outside a card's
+		// value slot, which is why the headline rule names the slot.
+		'.sheetsmith-view .sheetsmith-card-input',
+		// A Roster band head's reading borrows the derived's class outside a card.
+		'.sheetsmith-card-derived',
+		'.sheetsmith-view .sheetsmith-passport-name-input',
+		'.sheetsmith-stat-block-vital-value',
+	])('leaves %s at the full headline size', (selector) => {
+		expect(declarations(bodyOf(selector))).toContain('font-size: var(--sheetsmith-card-value-size)');
+	});
+
+	it('caps a card\'s derived at its card, so a long value clips where the fit check can see it', () => {
+		const body = declarations(bodyOf('.sheetsmith-card > .sheetsmith-card-derived'));
+		expect(body).toContain('max-width: 100%');
+		expect(body).toContain('overflow: hidden');
+		expect(body).toContain('white-space: nowrap');
+	});
+});
+
 describe('the qualifiers beside a headline follow the sheet\'s size', () => {
 	/*
 	 * A Pool's temporary points and the pill under a derived number sat at
@@ -4974,7 +5036,9 @@ describe("a pool's reading fits a narrow card", () => {
 
 	it('lowers the slot to two characters below the threshold, after the base rule', () => {
 		const rule = narrow[0];
-		expect(valueIn(rule?.body ?? '', 'min-width')).toBe('2ch');
+		// Capped at the row (`docs/features/headline-narrow-cell.md`): in a
+		// 15.2px cell a bare `2ch` beat the `max-width` and passed the card.
+		expect(valueIn(rule?.body ?? '', 'min-width')).toBe('min(2ch, 100%)');
 		// `@container` adds no specificity, so equal selectors are settled by
 		// order (docs/UI.md §4): the narrow rule has to come later.
 		expect(rule?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);

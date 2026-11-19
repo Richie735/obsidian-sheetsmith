@@ -84,6 +84,44 @@ body {
 	   follows the sheet's `em` and the card scales with whatever sets the
 	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
+	/* **The smallest a headline number draws in a narrow card**
+	   (`docs/features/headline-narrow-cell.md`). One step of a minor-third
+	   scale, 1.2, above the largest qualifier any card carries: the ceiling's
+	   `--font-ui-medium` or the own-value pill's `--sheetsmith-qualifier-small`
+	   (a Pool's temporary points are the smaller of the two, so never the
+	   larger). 1.2 is the smallest ratio that reads as a rank rather than as two
+	   near sizes.
+
+	   **Never under 18.67px**, which is 14pt: the size at which bold text is
+	   large text and needs 3:1 rather than 4.5:1 (`legibility.md` §3). A Pool's
+	   number in its over state is `--interactive-accent`, about 3.2 to 3.9:1 on
+	   the card, and at the 18px the step alone gives at the default size it fell
+	   into the 4.5:1 band. Above 16px too, so a field at the floor never zooms
+	   iOS on tap (19.2 on a phone, where the step already clears both).
+
+	   **Not the app's own step, 15/13**, the ratio from `--font-ui-small` to
+	   `--font-ui-medium` and the obvious derivation: the qualifier token is
+	   `13em / 15` of the sheet, so 15/13 of it is exactly `1em`, and above
+	   17.3px the floor became the sheet's own `1em`, the floor the ruling
+	   refuses (SPEC §13). Read off the element that uses it, as the qualifier
+	   token is. */
+	--sheetsmith-headline-floor: max(18.67px, calc(1.2 * max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))));
+	/* **The headline's size: full wherever three digits fit, then down with the
+	   card to the floor.** Three digits at the bold tabular headline measure
+	   1.921em, and a Card's field pads 2px a side, so three digits fit a content
+	   box `C` while `1.921 s + 4 <= C`: the largest such size is
+	   `(C - 4) / 1.921`, `52.05cqi - 2.08px`, rounded so the line fits rather
+	   than clips. `cqi` resolves on the nearest query container, which is the
+	   card, and the `em` of both bounds on the card's own size.
+
+	   **The middle term has no `em`, by construction**: it is the size at which
+	   three digits fit, which does not depend on the text size, so any `em`
+	   added to it is a size at which they no longer do (measured for
+	   `calc(0.5em + 39cqi)`: a two-unit card at `text=24` clipped `100` by 9px).
+	   A larger sheet moves both bounds and so the width at which shrinking
+	   starts. Nothing here reads the value, so a value change never changes the
+	   size. */
+	--sheetsmith-headline-size: clamp(var(--sheetsmith-headline-floor), calc(52cqi - 2px), var(--sheetsmith-card-value-size));
 	/* **The value under that number, in the same unit**: the pill under a
 	   derived number (a Card's, a Card set tile's, a Roster card's score) and
 	   a Pool's temporary points. They were `--font-ui-small`, which no `em`
@@ -1584,6 +1622,15 @@ body {
 	letter-spacing: -0.02em;
 }
 
+/* **The card's own headline field shrinks with a narrow card**
+   (`--sheetsmith-headline-size`, `docs/features/headline-narrow-cell.md`).
+   Scoped to the card's value slot so a Roster band's score, which borrows
+   `.sheetsmith-card-input` in a slot of its own, keeps the full size. The pill
+   under a derived number overrides this below on order, at the same weight. */
+.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input {
+	font-size: var(--sheetsmith-headline-size);
+}
+
 .sheetsmith-view .sheetsmith-card-input:hover {
 	background-color: var(--background-modifier-hover);
 }
@@ -1633,7 +1680,10 @@ body {
 	   loses its last letters with nothing saying so. The card's label already
 	   ellipsises for the same reason. */
 	text-overflow: ellipsis;
-	font-size: var(--sheetsmith-card-value-size);
+	/* The headline's size, so a row of cards of one width draws one size
+	   (`docs/features/headline-narrow-cell.md`). No mark: it ellipsises its own
+	   label, and its menu shows the rest. */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
 	line-height: 1.05;
@@ -1724,6 +1774,19 @@ body {
 	   than a warning appearing from nowhere. A colour fade, not motion, so
 	   reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
+}
+
+/* **A card's computed headline shrinks with a narrow card, and is capped at
+   it** (`docs/features/headline-narrow-cell.md`). Scoped to a card's own
+   derived, so a Roster band head's reading, which borrows the class outside a
+   card, keeps the full size. The cap is what was missing: a flex item with no
+   cap passed the card instead of clipping, and a clipped box is what the fit
+   check (`ui/headline-fit.ts`) can measure and mark. */
+.sheetsmith-card > .sheetsmith-card-derived {
+	max-width: 100%;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: var(--sheetsmith-headline-size);
 }
 
 /* One focus treatment for every field on a card. The same gesture in the
@@ -3493,7 +3556,10 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--sheetsmith-card-value-size);
+	/* The card's headline size, shrinking with a narrow card exactly as a
+	   Card's does, so two cards of one width draw one size
+	   (`docs/features/headline-narrow-cell.md`). */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	/* Tracking and leading are size-specific, and this is the same size the
 	   card's number uses — so it takes the same values, or the two read
@@ -3520,9 +3586,11 @@ body {
    input falls back to its intrinsic ~20-character size, which is a blown-out
    card rather than a graceful degradation, so it is pinned at `4ch`.
 
-   **The number never gives way** (`docs/features/pool-headline-narrow-fit.md`).
+   **The row never squeezes the number** (`docs/features/pool-headline-narrow-fit.md`).
    `flex-shrink: 0`, so the reading's row never squeezes the field under its own
-   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`).
+   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`). Its *size*
+   gives way only later, below the card width three digits fit at, through the
+   headline token (`docs/features/headline-narrow-cell.md`).
    `max-width: 100%` is for the engines with no field-sizing: there the pinned
    `4ch` is capped at the row rather than run off the card. Where `min-width`
    is the larger, it wins over `max-width`, which is why the narrow card's
@@ -3567,7 +3635,12 @@ body {
    specificity and the later rule wins on order (`docs/UI.md` §4). */
 @container (max-width: calc(4.6em + 44px)) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
-		min-width: 2ch;
+		/* Capped at the row too: in a one-unit cell on a 520px sheet the
+		   content box is 15.2px, and a bare `2ch` floor beat the `max-width`
+		   cap and pushed the field 10.8px past the card
+		   (`docs/features/headline-narrow-cell.md`). Above the threshold the
+		   headline is at full size and `4ch` fits, so that floor needs none. */
+		min-width: min(2ch, 100%);
 	}
 
 }

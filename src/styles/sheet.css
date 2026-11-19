@@ -733,6 +733,15 @@
 	letter-spacing: -0.02em;
 }
 
+/* **The card's own headline field shrinks with a narrow card**
+   (`--sheetsmith-headline-size`, `docs/features/headline-narrow-cell.md`).
+   Scoped to the card's value slot so a Roster band's score, which borrows
+   `.sheetsmith-card-input` in a slot of its own, keeps the full size. The pill
+   under a derived number overrides this below on order, at the same weight. */
+.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input {
+	font-size: var(--sheetsmith-headline-size);
+}
+
 .sheetsmith-view .sheetsmith-card-input:hover {
 	background-color: var(--background-modifier-hover);
 }
@@ -782,7 +791,10 @@
 	   loses its last letters with nothing saying so. The card's label already
 	   ellipsises for the same reason. */
 	text-overflow: ellipsis;
-	font-size: var(--sheetsmith-card-value-size);
+	/* The headline's size, so a row of cards of one width draws one size
+	   (`docs/features/headline-narrow-cell.md`). No mark: it ellipsises its own
+	   label, and its menu shows the rest. */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
 	line-height: 1.05;
@@ -873,6 +885,19 @@
 	   than a warning appearing from nowhere. A colour fade, not motion, so
 	   reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
+}
+
+/* **A card's computed headline shrinks with a narrow card, and is capped at
+   it** (`docs/features/headline-narrow-cell.md`). Scoped to a card's own
+   derived, so a Roster band head's reading, which borrows the class outside a
+   card, keeps the full size. The cap is what was missing: a flex item with no
+   cap passed the card instead of clipping, and a clipped box is what the fit
+   check (`ui/headline-fit.ts`) can measure and mark. */
+.sheetsmith-card > .sheetsmith-card-derived {
+	max-width: 100%;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: var(--sheetsmith-headline-size);
 }
 
 /* One focus treatment for every field on a card. The same gesture in the
@@ -2642,7 +2667,10 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--sheetsmith-card-value-size);
+	/* The card's headline size, shrinking with a narrow card exactly as a
+	   Card's does, so two cards of one width draw one size
+	   (`docs/features/headline-narrow-cell.md`). */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	/* Tracking and leading are size-specific, and this is the same size the
 	   card's number uses — so it takes the same values, or the two read
@@ -2669,9 +2697,11 @@ body {
    input falls back to its intrinsic ~20-character size, which is a blown-out
    card rather than a graceful degradation, so it is pinned at `4ch`.
 
-   **The number never gives way** (`docs/features/pool-headline-narrow-fit.md`).
+   **The row never squeezes the number** (`docs/features/pool-headline-narrow-fit.md`).
    `flex-shrink: 0`, so the reading's row never squeezes the field under its own
-   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`).
+   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`). Its *size*
+   gives way only later, below the card width three digits fit at, through the
+   headline token (`docs/features/headline-narrow-cell.md`).
    `max-width: 100%` is for the engines with no field-sizing: there the pinned
    `4ch` is capped at the row rather than run off the card. Where `min-width`
    is the larger, it wins over `max-width`, which is why the narrow card's
@@ -2716,7 +2746,12 @@ body {
    specificity and the later rule wins on order (`docs/UI.md` §4). */
 @container (max-width: calc(4.6em + 44px)) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
-		min-width: 2ch;
+		/* Capped at the row too: in a one-unit cell on a 520px sheet the
+		   content box is 15.2px, and a bare `2ch` floor beat the `max-width`
+		   cap and pushed the field 10.8px past the card
+		   (`docs/features/headline-narrow-cell.md`). Above the threshold the
+		   headline is at full size and `4ch` fits, so that floor needs none. */
+		min-width: min(2ch, 100%);
 	}
 
 }
