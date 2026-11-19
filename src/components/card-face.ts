@@ -13,6 +13,13 @@
  */
 
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
+import {
+	headlineValue,
+	holdsHeadlineStop,
+	isHeadlineCut,
+	refitHeadline,
+	stampHeadline,
+} from '../ui/headline-fit';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { sameNumber } from './effective-value';
@@ -250,6 +257,9 @@ function setDerived(el: HTMLElement, derived: CardFaceDerived): void {
 	} else {
 		el.removeAttribute('title');
 	}
+	// A new value inside a capped box resizes nothing the view's observer would
+	// see, so the number is measured again here (`ui/headline-fit.ts`).
+	refitHeadline(el);
 }
 
 /**
@@ -434,6 +444,11 @@ export function renderCardFace(
 	 */
 	let describedBy: string | null = null;
 	let derivedEl: HTMLElement | null = null;
+	/**
+	 * What a press on the derived opens, or null where the press is the card's
+	 * router's to send on. Set where the derived is drawn.
+	 */
+	let derivedOpens: (() => string | null) | null = null;
 	/** The breakdown, where this number has one, for the press routing below. */
 	const breakdown = options.derived?.modifiers ?? null;
 	if (options.derived) {
@@ -441,7 +456,72 @@ export function renderCardFace(
 		// A per-keystroke live region is noise; announcements happen once
 		// per commit, via the status element below.
 		if (!options.value) derivedEl.setAttribute('aria-label', options.title);
-		setDerived(derivedEl, options.derived);
+		/*
+		 * The card's headline, marked where it does not fit and revealed in the
+		 * popover it already opens (`docs/features/headline-narrow-cell.md`). Its
+		 * own host, and a tab stop while cut: a read-only number is the one value
+		 * a sighted reader without a pointer could not otherwise see.
+		 *
+		 * **While it holds that stop it is a button** (the module sets the role),
+		 * so it is named and described here as one: by the card's title and the
+		 * whole value, since what is drawn is a mark, and by the breakdown twin
+		 * the card's field points at, where there is one. Given up with the stop,
+		 * so an uncut number's name and description are what they always were.
+		 */
+		const cutAnchor = derivedEl;
+		const restingLabel = cutAnchor.getAttribute('aria-label');
+		stampHeadline(cutAnchor, cutAnchor, {
+			stop: {
+				onHold: (held) => {
+					if (held) {
+						cutAnchor.setAttribute('aria-label', `${options.title}, ${headlineValue(cutAnchor)}`);
+						if (describedBy !== null) cutAnchor.setAttribute('aria-describedby', describedBy);
+						return;
+					}
+					if (restingLabel === null) cutAnchor.removeAttribute('aria-label');
+					else cutAnchor.setAttribute('aria-label', restingLabel);
+					cutAnchor.removeAttribute('aria-describedby');
+				},
+			},
+		});
+		setDerived(cutAnchor, options.derived);
+		/*
+		 * **What a press on the derived opens, decided once**, for the click, for
+		 * Enter and Space, and for the card's router, which stands aside wherever
+		 * this answers. A cut number opens its whole value, then the breakdown
+		 * after a blank line where it has one: the breakdown's `Total +3` is the
+		 * sum of the contributions, not the value, so the value has to be said.
+		 * Uncut, the press is what it was: the breakdown where there is one, and
+		 * nothing of its own otherwise, so the router sends it to the nearest
+		 * control. One popover, one builder, no second hover surface.
+		 */
+		derivedOpens = () => {
+			if (isHeadlineCut(cutAnchor)) {
+				const value = headlineValue(cutAnchor);
+				return breakdown === null ? value : `${value}\n\n${breakdown}`;
+			}
+			return breakdown;
+		};
+		const openDerived = () => {
+			const text = derivedOpens?.() ?? null;
+			if (text !== null) showPopover(cutAnchor, text);
+		};
+		// One listener rather than a branch of the card's hit target, because a
+		// computed card with no controls installs no `onclick` at all.
+		cutAnchor.addEventListener('click', openDerived);
+		/*
+		 * Enter and Space while the number holds its stop, through the same
+		 * decision as a press. Focus alone opens nothing. A number that came to
+		 * fit while focused keeps the stop until blur, and its key then does what
+		 * a press would: the breakdown where it has one, and nothing where the
+		 * whole value is now drawn and there is nothing more to show.
+		 */
+		cutAnchor.addEventListener('keydown', (event) => {
+			if (event.key !== 'Enter' && event.key !== ' ') return;
+			if (!holdsHeadlineStop(cutAnchor)) return;
+			event.preventDefault();
+			openDerived();
+		});
 		if (breakdown !== null) {
 			/*
 			 * A dotted underline and `cursor: help`, opening the shared popover
@@ -450,14 +530,10 @@ export function renderCardFace(
 			 * and on touch it is an ordinary tap — a read-only number has no
 			 * other use for one, so the tap is free to mean "why this number?".
 			 *
-			 * Its own listener rather than a branch of the card's hit target,
-			 * because a card with `hideValue` and no note has no controls and so
-			 * installs no `onclick` at all — and the routing below stands aside
-			 * for it rather than focusing the field underneath.
+			 * The press itself is `openDerived` above, which the routing below
+			 * stands aside for rather than focusing the field underneath.
 			 */
 			stampModifiedHost(derivedEl, options.publishes, container);
-			const anchor = derivedEl;
-			anchor.addEventListener('click', () => showPopover(anchor, breakdown));
 			/*
 			 * The same text where a pointer is not available. `showPopover`
 			 * already sets `role="tooltip"` and `aria-describedby` while it is
@@ -468,7 +544,10 @@ export function renderCardFace(
 			 * That is the existing computed cell's gap carried across rather than
 			 * one this introduces — making a value display focusable would add a
 			 * tab stop per modified card, which is a change to the card's
-			 * keyboard model and not to this.
+			 * keyboard model and not to this. The one exception is a number cut
+			 * because it does not fit, above: it is the only value a sighted
+			 * reader without a pointer could not see at all, so it is a stop
+			 * while cut and only then (`docs/features/headline-narrow-cell.md`).
 			 */
 			const twin = container.createDiv('sheetsmith-sr-only');
 			twin.id = `sheetsmith-breakdown-${++breakdowns}`;
@@ -694,7 +773,7 @@ export function renderCardFace(
 				showDerived(true);
 				if (!status) return;
 				status.textContent = derivedEl
-					? `${options.title} ${next}, ${derivedEl.textContent ?? ''}`
+					? `${options.title} ${next}, ${headlineValue(derivedEl)}`
 					: `${options.title} ${next}`;
 			},
 			announceRestore: (restored) => {
@@ -735,6 +814,18 @@ export function renderCardFace(
 				// (SPEC §4.2); reachable the moment a third one does not.
 				if (input.value.trim() === stored.trim()) input.value = atRest;
 			});
+		}
+		/*
+		 * **A field with no derived above it is the card's headline**, marked where
+		 * it does not fit and revealed by editing it: focused, the stylesheet shows
+		 * its digits (`docs/features/headline-narrow-cell.md`). The pill under a
+		 * derived is a qualifier, not a headline, and is never marked. Measured
+		 * again on blur, after the swap above has put the number at rest back,
+		 * since a value set in code resizes nothing the view's observer sees.
+		 */
+		if (!options.derived) {
+			stampHeadline(input, value);
+			input.addEventListener('blur', () => refitHeadline(input));
 		}
 	}
 
@@ -803,7 +894,7 @@ export function renderCardFace(
 	if (status) container.appendChild(status);
 
 	// The breakdown reaches the keyboard through the control the reader is already
-	// on, because the number itself is not a tab stop (see above).
+	// on, because the number itself is a tab stop only while it is cut (see above).
 	if (describedBy !== null && controls[0]) {
 		controls[0].setAttribute('aria-describedby', describedBy);
 	}
@@ -818,11 +909,15 @@ export function renderCardFace(
 		// stealing focus from a field the click already landed in.
 		container.onclick = (event) => {
 			if (controls.some((candidate) => candidate === event.target)) return;
-			// The derived owns its own press where it has a breakdown to show, so
-			// the routing stands aside rather than focusing the field under it.
-			// Everywhere else on the card the press still goes to the nearest
-			// control — the padding under the note belongs to the note.
-			if (derivedEl?.contains(event.target as Node | null) === true && breakdown) {
+			// The derived owns its own press wherever it opens something
+			// (`derivedOpens`), so the routing stands aside rather than focusing
+			// the field under it. Everywhere else on
+			// the card the press still goes to the nearest control — the padding
+			// under the note belongs to the note.
+			if (
+				derivedEl?.contains(event.target as Node | null) === true &&
+				(derivedOpens?.() ?? null) !== null
+			) {
 				return;
 			}
 			const selection = doc.getSelection?.();

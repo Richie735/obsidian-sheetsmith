@@ -733,6 +733,15 @@
 	letter-spacing: -0.02em;
 }
 
+/* **The card's own headline field shrinks with a narrow card**
+   (`--sheetsmith-headline-size`, `docs/features/headline-narrow-cell.md`).
+   Scoped to the card's value slot so a Roster band's score, which borrows
+   `.sheetsmith-card-input` in a slot of its own, keeps the full size. The pill
+   under a derived number overrides this below on order, at the same weight. */
+.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input {
+	font-size: var(--sheetsmith-headline-size);
+}
+
 .sheetsmith-view .sheetsmith-card-input:hover {
 	background-color: var(--background-modifier-hover);
 }
@@ -782,7 +791,10 @@
 	   loses its last letters with nothing saying so. The card's label already
 	   ellipsises for the same reason. */
 	text-overflow: ellipsis;
-	font-size: var(--sheetsmith-card-value-size);
+	/* The headline's size, so a row of cards of one width draws one size
+	   (`docs/features/headline-narrow-cell.md`). No mark: it ellipsises its own
+	   label, and its menu shows the rest. */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
 	line-height: 1.05;
@@ -873,6 +885,145 @@
 	   than a warning appearing from nowhere. A colour fade, not motion, so
 	   reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
+}
+
+/* **A card's computed headline shrinks with a narrow card, and is capped at
+   it** (`docs/features/headline-narrow-cell.md`). Scoped to a card's own
+   derived, so a Roster band head's reading, which borrows the class outside a
+   card, keeps the full size. The cap is what was missing: a flex item with no
+   cap passed the card instead of clipping, and a clipped box is what the fit
+   check (`ui/headline-fit.ts`) can measure and mark. */
+.sheetsmith-card > .sheetsmith-card-derived {
+	max-width: 100%;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: var(--sheetsmith-headline-size);
+}
+
+/* **A headline that does not fit is marked, never shown as part of its
+   digits** (`ui/headline-fit.ts`, `docs/features/headline-narrow-cell.md`).
+   Three headlines take it: a card's derived, a card's own field and a Pool's
+   field. `ui/headline-fit.ts` stamps `.sheetsmith-headline` on the number and
+   `.sheetsmith-headline-host` on the box the mark is laid over (the derived
+   itself, a card's value slot, a Pool's reading), and toggles `-cut` on both
+   from the number's own `scrollWidth` against its `clientWidth`. Nothing here
+   changes a box, so the check that reads the widths cannot loop on its own
+   answer. */
+.sheetsmith-headline-host {
+	position: relative;
+}
+
+/* While cut, the digits go transparent and stay laid out, so the box and the
+   value in the DOM, which is what a screen reader reads, are what they were.
+   `:not(input:focus)` is the reveal for a field: focused, it shows its value
+   and scrolls it natively. A focused derived stays marked, since its reveal is
+   the popover and its digits would only show clipped.
+
+   **The glyphs' fill, not `color`.** A derived fades its `color` over 200ms and
+   a Pool's field over 260ms (the `?` giving way, the settle after a refused
+   step), so a transparent `color` faded the digits out under a mark that
+   appears at once, and back in on a reveal. `-webkit-text-fill-color` paints
+   the glyphs and transitions on nothing here, so cutting and revealing are
+   instant while those two fades keep working. Its underline still takes
+   `color`, so a modified number drops it while cut: the mark carries it.
+   At (0,4,0), past every rule a headline takes. */
+.sheetsmith-view .sheetsmith-headline.sheetsmith-headline-cut:not(input:focus) {
+	-webkit-text-fill-color: transparent;
+	text-decoration: none;
+}
+
+/* The mark: `⋯`, the midline ellipsis, one character, in the number's weight and size, centred over
+   the number's box. Not `####`, which is three digits wide and so fails in
+   exactly the cells where three digits do. Capped at the host, since at 18px
+   it is 16px wide against a one-unit cell's 15.2. Hidden from assistive tech
+   by `aria-hidden`, and from the pointer here, so a press lands on the field
+   exactly as it does uncut. Attached only while the number is cut. */
+.sheetsmith-headline-mark {
+	position: absolute;
+	inset-inline: 0;
+	top: 0;
+	display: none;
+	overflow: hidden;
+	white-space: nowrap;
+	text-align: center;
+	color: var(--text-normal);
+	font-size: var(--sheetsmith-headline-size);
+	font-weight: var(--font-bold);
+	line-height: 1.05;
+	/* Inside a derived it would inherit the derived's transparent fill. */
+	-webkit-text-fill-color: currentColor;
+	pointer-events: none;
+}
+
+/* Inside a derived, whose own size is already the headline's: the token's `em`
+   would otherwise resolve against the derived and draw the mark 1.75 times
+   larger. */
+.sheetsmith-card-derived > .sheetsmith-headline-mark {
+	font-size: 1em;
+}
+
+/* Shown while cut and not focused: inside the derived it marks, or after the
+   field it marks, which is always an earlier sibling in its host. */
+.sheetsmith-headline-cut:not(input:focus) > .sheetsmith-headline-mark,
+.sheetsmith-headline-cut:not(input:focus) ~ .sheetsmith-headline-mark {
+	display: block;
+}
+
+/* **Forced colors repaints the glyphs' fill**, so the clipped digits came back
+   under the mark (`headline-narrow-card-forced-colors`). The cut number alone
+   keeps its own colours there: it draws nothing but its transparent glyphs and
+   no fill of its own, so nothing the mode would repaint is lost. A departure
+   from `docs/UI.md` §6's use of `forced-color-adjust: none`, which is for a
+   glyph on a fill the plugin painted, and argued here: the alternative is
+   hiding the number from layout, which would change its box and so the fit
+   check's own answer. The mark inside a derived inherits the adjustment, so it
+   takes the mode's text colour by keyword; the mark beside a field is not
+   inside it and is repainted as usual. */
+@media (forced-colors: active) {
+.sheetsmith-view .sheetsmith-headline.sheetsmith-headline-cut:not(input:focus) {
+		forced-color-adjust: none;
+		/* What the mode would have repainted, said in its own keywords, since it
+		   no longer repaints this element: no hover surface, and a focus ring
+		   (a cut derived is a tab stop) in the system's highlight. */
+		background-color: transparent;
+		outline-color: Highlight;
+	}
+
+.sheetsmith-headline-cut:not(input:focus) > .sheetsmith-headline-mark {
+		color: CanvasText;
+	}
+
+}
+
+/* A number marked as modified keeps its underline on the mark, since its own
+   transparent digits take the underline's colour with them. The bare line
+   value, `.sheetsmith-modified`'s own spelling. */
+.sheetsmith-modified > .sheetsmith-headline-mark,
+.sheetsmith-modified ~ .sheetsmith-headline-mark {
+	text-decoration: underline;
+}
+
+/* The number's own colour where a Pool's state recolours it. */
+.sheetsmith-pool-spent ~ .sheetsmith-headline-mark {
+	color: var(--text-muted);
+}
+
+.sheetsmith-pool-over ~ .sheetsmith-headline-mark {
+	color: var(--interactive-accent);
+}
+
+/* A cut derived owns its press: it opens the value in the popover, as a
+   modified number opens its breakdown. While cut it is a tab stop
+   (`ui/headline-fit.ts`), so it takes a focus ring, an outline so forced colors
+   keeps it (docs/UI.md §6). */
+.sheetsmith-card-derived.sheetsmith-headline-cut {
+	cursor: help;
+}
+
+.sheetsmith-card-derived.sheetsmith-headline:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+	border-radius: var(--radius-s);
 }
 
 /* One focus treatment for every field on a card. The same gesture in the
@@ -2642,7 +2793,10 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--sheetsmith-card-value-size);
+	/* The card's headline size, shrinking with a narrow card exactly as a
+	   Card's does, so two cards of one width draw one size
+	   (`docs/features/headline-narrow-cell.md`). */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	/* Tracking and leading are size-specific, and this is the same size the
 	   card's number uses — so it takes the same values, or the two read
@@ -2669,9 +2823,11 @@ body {
    input falls back to its intrinsic ~20-character size, which is a blown-out
    card rather than a graceful degradation, so it is pinned at `4ch`.
 
-   **The number never gives way** (`docs/features/pool-headline-narrow-fit.md`).
+   **The row never squeezes the number** (`docs/features/pool-headline-narrow-fit.md`).
    `flex-shrink: 0`, so the reading's row never squeezes the field under its own
-   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`).
+   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`). Its *size*
+   gives way only later, below the card width three digits fit at, through the
+   headline token (`docs/features/headline-narrow-cell.md`).
    `max-width: 100%` is for the engines with no field-sizing: there the pinned
    `4ch` is capped at the row rather than run off the card. Where `min-width`
    is the larger, it wins over `max-width`, which is why the narrow card's
@@ -2716,7 +2872,12 @@ body {
    specificity and the later rule wins on order (`docs/UI.md` §4). */
 @container (max-width: calc(4.6em + 44px)) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
-		min-width: 2ch;
+		/* Capped at the row too: in a one-unit cell on a 520px sheet the
+		   content box is 15.2px, and a bare `2ch` floor beat the `max-width`
+		   cap and pushed the field 10.8px past the card
+		   (`docs/features/headline-narrow-cell.md`). Above the threshold the
+		   headline is at full size and `4ch` fits, so that floor needs none. */
+		min-width: min(2ch, 100%);
 	}
 
 }

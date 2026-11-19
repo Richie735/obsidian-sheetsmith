@@ -4283,6 +4283,7 @@ export const DEFAULTS = [
 		hover: '.sheetsmith-record-input-text',
 	},
 	...poolHeadlineViews(),
+	...headlineNarrowViews(),
 	/*
 	 * Temporary points a modifier grants (`docs/features/granted-temporary-points.md`):
 	 * a Pool beside a Stat block's form in play, a Record set's spell and a
@@ -4385,6 +4386,138 @@ function poolHeadlineViews() {
 			frame: cell('Hit points'),
 			pad: 6,
 		},
+	];
+}
+
+/**
+ * Every headline in a narrow cell (`docs/features/headline-narrow-cell.md`),
+ * framed to one cell per shot, on the 520px sheet at the default size and at
+ * `text=24`, holding `100` and then `355000`, which is marked wherever it does
+ * not fit.
+ *
+ * The cells: **Load**, a two-unit Card whose derived reads Carried, so a value
+ * typed into Carried is Load's headline; a **Strength** tile of Abilities, a
+ * Card set tile whose derived is `floor((value + mod.self - 10) / 2)` with a
+ * belt's `+2` in it, so `208` reads `+100` and `710008` reads `+355000`, the
+ * sign a fourth character; a **Gold** coin of Currency, a tile with
+ * no derived, so its own field is the headline; and **Hit points**, a Pool
+ * moved to two units and to one by `&place=`. Every value arrives by `&type=`,
+ * so what is shot is what a commit and its rebuild draw.
+ *
+ * Then the reveal and the mark's other palettes: Load cut with its popover
+ * open, the Gold coin and a one-unit Hit points cut and focused, and the
+ * marked Load in the dark theme and in forced colors. The pad sits under the grid's 8px gap, as
+ * `poolHeadlineViews` argues.
+ */
+function headlineNarrowViews() {
+	const typed = (selector, text) => `type=${encodeURIComponent(`${selector}|${text}`)}`;
+	const field = (label) => `.sheetsmith-card-input[aria-label='${label}']`;
+	const tile = (label) => `.sheetsmith-card:has(> .sheetsmith-card-value > ${field(label)})`;
+	const POOL = ".sheetsmith-pool-current[aria-label='Hit points']";
+	const LOAD = '[data-sheetsmith-component="load"]';
+	const HP = '[data-sheetsmith-component="hit_points"]';
+	/** Each cell, and how a value is put into it. */
+	const cells = [
+		{ id: 'card', frame: LOAD, value: (v) => typed(field('Carried'), v) },
+		/*
+		 * The sample's items push Strength by 4 inside the parenthesis, so
+		 * `204` reads `+99`: the tile's three-character reading, since its sign
+		 * makes `+100` four. `710006` reads `+355000`. The view is named for
+		 * what the tile shows.
+		 */
+		{
+			id: 'tile',
+			frame: tile('Strength'),
+			shows: (v) => (v === '100' ? '99' : v),
+			value: (v) => typed(field('Strength'), v === '100' ? '204' : String(2 * Number(v) + 6)),
+		},
+		{ id: 'coin', frame: tile('Gold'), value: (v) => typed(field('Gold'), v) },
+		{ id: 'pool-two', frame: HP, place: 'hit_points:5,2', value: (v) => typed(POOL, v) },
+		{ id: 'pool-one', frame: HP, place: 'hit_points:5,1', value: (v) => typed(POOL, v) },
+	];
+	const conditions = [
+		{ id: 'default-520', query: 'surface=sheet&theme=light&width=520' },
+		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24' },
+	];
+	const view = (name, query, frame, extra = {}) => ({
+		name,
+		query,
+		size: '1400,1900',
+		frame,
+		pad: 6,
+		...extra,
+	});
+	const cellQuery = (condition, cell, value) =>
+		[condition.query, cell.place === undefined ? null : `place=${cell.place}`, cell.value(value)]
+			.filter((part) => part !== null)
+			.join('&');
+	const MARKED = 'surface=sheet&theme=light&width=520';
+	const LOAD_MARKED = `${typed(field('Carried'), '355000')}`;
+	return [
+		...conditions.flatMap((condition) =>
+			['100', '355000'].flatMap((value) =>
+				cells.map((cell) =>
+					view(
+						`headline-narrow-${cell.id}-${condition.id}-${cell.shows?.(value) ?? value}`,
+						cellQuery(condition, cell, value),
+						cell.frame,
+					),
+				),
+			),
+		),
+		/*
+		 * The reveal: a press on a cut derived opens its value, then its
+		 * breakdown. Load at one unit, where its own `13` is already cut, since
+		 * `&press=` runs before `&type=` would have committed a longer value.
+		 * Framed on the bubble, which hangs off the body above the card.
+		 */
+		view(
+			'headline-narrow-card-popover',
+			`${MARKED}&place=load:11,1&press=${encodeURIComponent(`${LOAD} .sheetsmith-card-derived`)}`,
+			'.sheetsmith-popover',
+			{ pad: 90 },
+		),
+		/*
+		 * A cut field, focused: its digits and no mark. The focus names the
+		 * field by its cut state, which exists only after the typed value has
+		 * committed and been measured, so the harness focuses it after the
+		 * typing rather than before (`harness.ts`, `focusWanted`).
+		 */
+		view(
+			'headline-narrow-coin-focused',
+			`${MARKED}&${typed(field('Gold'), '355000')}&focus=${encodeURIComponent(`${field('Gold')}.sheetsmith-headline-cut`)}`,
+			tile('Gold'),
+		),
+		view('headline-narrow-card-dark', `surface=sheet&theme=dark&width=520&${LOAD_MARKED}`, LOAD),
+		/*
+		 * Forced colors by the browser's own flag, which repaints, as the other
+		 * forced-colors views take it: emulating the media feature answers the
+		 * queries and repaints nothing, so a transparent glyph would pass
+		 * unseen.
+		 */
+		view('headline-narrow-card-forced-colors', `${MARKED}&${LOAD_MARKED}`, LOAD, {
+			flags: ['--force-high-contrast'],
+		}),
+		/*
+		 * The cut derived focused, in forced colors: its ring in the system's
+		 * highlight, since the cut number keeps its own colours there. `&focus=`
+		 * paints what a Tab paints here, the derived having no pointer focus.
+		 */
+		view(
+			'headline-narrow-card-forced-colors-focused',
+			`${MARKED}&${LOAD_MARKED}&focus=${encodeURIComponent(`${LOAD} .sheetsmith-card-derived.sheetsmith-headline-cut`)}`,
+			LOAD,
+			{ flags: ['--force-high-contrast'] },
+		),
+		/*
+		 * A cut Pool field, focused: its digits and no mark, the Pool half of
+		 * the reveal. Named by its cut state for the reason the coin's is.
+		 */
+		view(
+			'headline-narrow-pool-one-focused',
+			`${MARKED}&place=hit_points:5,1&${typed(POOL, '355000')}&focus=${encodeURIComponent(`${POOL}.sheetsmith-headline-cut`)}`,
+			HP,
+		),
 	];
 }
 

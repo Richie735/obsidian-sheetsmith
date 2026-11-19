@@ -39,6 +39,7 @@ import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
 import { applyDecorations, bufferLinesIn, choiceLinesIn, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
+import { createHeadlineFit, resizeObserverOf } from '../src/view/headline-fit';
 import { revealWhenTruncated } from '../src/ui/truncation';
 import { closePopover } from '../src/ui/popover';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
@@ -670,6 +671,21 @@ const openRecords = new Map<string, Set<number>>([
  */
 let sheetRoot: HTMLElement | null = null;
 
+/**
+ * The sheet's headline fit pass, one for the page as the view owns one
+ * (`view/headline-fit.ts`), disconnected before every rebuild.
+ */
+const headlineFit = createHeadlineFit(resizeObserverOf(document.body));
+/*
+ * The one door a measuring script has into it. A value injected straight into
+ * a capped field or derived resizes nothing an observer sees, as a component's
+ * own repaint does not, and the component refits on that paint; a script
+ * setting `value` from outside has no paint, so it asks here
+ * (`harness/measure-pool-headline.mjs`).
+ */
+(window as unknown as { sheetsmithRefitHeadlines: () => void }).sheetsmithRefitHeadlines = () =>
+	headlineFit.refitAll();
+
 function renderSheet(into: HTMLElement): void {
 	/*
 	 * The view's own first step on a rebuild (`SheetView.renderSheet`): every
@@ -678,6 +694,7 @@ function renderSheet(into: HTMLElement): void {
 	 * here and nowhere in the app, which is the instrument and not the plugin.
 	 */
 	closePopover();
+	headlineFit.disconnect();
 	const view = into.createDiv('sheetsmith-view');
 	sheetRoot = view;
 
@@ -765,6 +782,10 @@ function renderSheet(into: HTMLElement): void {
 		),
 		revealWhenTruncated,
 	);
+
+	// The view's own pass after the decorations: every stamped headline fitted
+	// and watched for a resize.
+	headlineFit.watch(grid);
 
 	/*
 	 * The view's own last step: a modifier form the render before this one left
