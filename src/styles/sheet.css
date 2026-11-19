@@ -1878,6 +1878,40 @@
 	);
 }
 
+/* A ring a modifier set to a level other than the note's wears a dotted halo
+   just outside its own box (`docs/features/modifier-set-ring-mark.md`), on an
+   empty, a partly filled and a full ring alike. `ring-control.ts` stamps the
+   class exactly where it sets the ring's `aria-description`, from the one
+   value, so the halo and the words come and go together.
+
+   **Dotted, the word this sheet already has for "a modifier moved it"**: the
+   Pool ceiling's rule, a granted temporary pill's, and a dropdown a modifier
+   chose all take this 2px dotted `--text-muted` mark. Not Track's dashed,
+   which says *granted*, a slot a modifier added; a ring is lowered and emptied
+   by a Sets as well as raised, and there that word would be wrong. Not the
+   ring's own border dashed, which vanishes against an accent fill.
+
+   A `::before`, since the `::after` is the hit target, taking no press and no
+   layout. A border and never a background or shadow, so forced colors repaints
+   it `CanvasText` and keeps its style with no branch here; under more contrast
+   the ring's border is this colour already. A child of the ring, so it scales
+   with the ring on `:active`.
+
+   **3px out, not 4**: the halo then spans 27px of a 30px row and clears its
+   rules, a form's outline and the table's frame by about 1.5px a side, where
+   at 4px it touched them and read as part of the row's frame. The focus
+   outline at its 2px offset runs 2 to 4px out, over the halo's 1 to 3px, so
+   the dots show inside the accent ring; a wider offset would cross the row
+   rule. */
+.sheetsmith-view .sheetsmith-level-ring-set::before {
+	content: '';
+	position: absolute;
+	inset: -3px;
+	border: 2px dotted var(--text-muted);
+	border-radius: 50%;
+	pointer-events: none;
+}
+
 /* A row the character added carries its own name, and the name is a field: it
    is the row's own data and the one cell a fixed card never had. It takes the
    same invisible-until-asked-for chrome as every other cell, and the name

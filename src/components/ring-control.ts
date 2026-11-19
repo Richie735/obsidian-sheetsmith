@@ -46,6 +46,22 @@
 import { LevelColumn, levelName, paintLevelRing } from './level-ring';
 import { bindLongPress } from '../ui/popover';
 
+/**
+ * The class a ring takes while it draws a level other than the one the note
+ * stores, which the stylesheet draws as a dotted halo
+ * (`docs/features/modifier-set-ring-mark.md`).
+ *
+ * **Here and not in `paintLevelRing`**, beside `-on` and `-part` as another
+ * state class the stylesheet reads: the painter's other consumer, the layout
+ * editor's level sample, has no stored level and must not learn of one (the
+ * header above). Toggled by the very value that sets `aria-description` — the
+ * `ownLevel` answer, which a state ring gives exactly where drawn and stored
+ * differ — so a ring that says nothing of the reader's own draws no halo, and
+ * on every paint, so the halo goes the instant a press makes the two agree
+ * rather than at the next rebuild.
+ */
+export const RING_SET_CLASS = 'sheetsmith-level-ring-set';
+
 /** What a caller hands over, and everything the control decides from. */
 export interface RingControlOptions {
 	/** The `<button>` the caller has already made, classed and placed. */
@@ -228,6 +244,10 @@ export function bindRingControl(options: RingControlOptions): RingControl {
 		const own = ownLevel?.(level) ?? null;
 		if (own === null) button.removeAttribute('aria-description');
 		else button.setAttribute('aria-description', own);
+		// The halo is the description's presence, not a second reading of
+		// `drawn`: one value decides both, so the picture and the words cannot
+		// disagree whatever a caller hands over.
+		button.classList.toggle(RING_SET_CLASS, own !== null);
 		// A tooltip repeating what is already legible is noise fired at every
 		// pass, as the card's label learned. Where the name is on screen the only
 		// thing that can be missing is the level's word; where it is not, the
