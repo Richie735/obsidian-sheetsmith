@@ -29,6 +29,7 @@ import {
 	STEP_PX,
 } from './components/record-line-fit';
 import { EDGE_GUTTER } from './ui/popover';
+import { RING_SET_CLASS } from './components/ring-control';
 import { TINT_COLOURS } from './types';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -4422,6 +4423,43 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 				/\.sheetsmith-table-level[^,{]*::after/.test(rule.selector),
 		);
 		expect(afterRing).toEqual([]);
+	});
+});
+
+describe('the mark on a ring a modifier set (docs/features/modifier-set-ring-mark.md)', () => {
+	const naming = () =>
+		rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+			selectorList(rule.selector).some((one) => one.includes(`.${RING_SET_CLASS}`)),
+		);
+
+	it('is a dotted muted border on a ::before outside the ring, taking no press', () => {
+		const halo = naming().find((rule) =>
+			selectorList(rule.selector).includes(`.sheetsmith-view .${RING_SET_CLASS}::before`),
+		);
+		const said = declarations(halo?.body ?? '');
+		expect(halo?.context).toEqual([]);
+		expect(said).toEqual(
+			expect.arrayContaining([
+				"content: ''",
+				'position: absolute',
+				'inset: -3px',
+				'border: 2px dotted var(--text-muted)',
+				'border-radius: 50%',
+				'pointer-events: none',
+			]),
+		);
+		// The `::after` is the ring's hit target, and stays that.
+		expect(naming().some((rule) => rule.selector.includes('::after'))).toBe(false);
+	});
+
+	it('is carried by no background and no box-shadow, which forced colors would drop', () => {
+		const all = naming();
+		expect(all.length).toBeGreaterThan(0);
+		for (const rule of all) {
+			for (const one of declarations(rule.body)) {
+				expect(one, rule.selector).not.toMatch(/^(background|box-shadow|outline)/);
+			}
+		}
 	});
 });
 

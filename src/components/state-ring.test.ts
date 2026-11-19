@@ -13,6 +13,7 @@ import { ComponentConfig, ComponentDefinition, StateAccount, StateShape } from '
 import { closePopover } from '../ui/popover';
 import { finishRowDoor, lastValueCell, STATE_DOOR_CLASS, STATE_STRIP_CLASS } from './state-ring';
 import { ROW_END_CLASS, stateAccountText } from './modifier-breakdown';
+import { RING_SET_CLASS } from './ring-control';
 
 /*
  * A ring a modifier set, through the real sheet: the acceptance cases of
@@ -154,6 +155,7 @@ describe('the Druid case: Cat Form makes the druid proficient in Stealth', () =>
 		const ring = el.querySelector<HTMLButtonElement>('.sheetsmith-level-ring');
 		expect(ring?.getAttribute('aria-label')).toBe('Stealth Training: Proficient');
 		expect(ring?.getAttribute('aria-description')).toBe('Set by a modifier; your own: Untrained');
+		expect(ring?.classList.contains(RING_SET_CLASS)).toBe(true);
 		const { door, text } = doorOf(el);
 		expect(door?.getAttribute('aria-label')).toBe('Modifiers on Stealth');
 		expect(text).toBe('Your own: Untrained\n\nGear · Cat Form — at least Proficient\n\nNow Proficient');
@@ -420,6 +422,7 @@ describe('a Track flag a modifier set', () => {
 		const ring = el.querySelector<HTMLButtonElement>('.sheetsmith-track-flag');
 		expect(ring?.getAttribute('aria-pressed')).toBe('true');
 		expect(ring?.getAttribute('aria-description')).toBe('Set by a modifier; your own: off');
+		expect(ring?.classList.contains(RING_SET_CLASS)).toBe(true);
 		expect(env.sheet('inspiration')).toBe(true);
 		expect(env.sheet('inspiration.value')).toBe(false);
 		expect(changes).toEqual([]);
@@ -616,6 +619,9 @@ describe('a refused level, on each component that reads one in a row', () => {
 		expect(row?.querySelector('.sheetsmith-level-ring')?.getAttribute('aria-label')).toBe(
 			'Stealth Training: Untrained',
 		);
+		// And draws no halo: a refusal draws the note's level, so nothing differs
+		// to mark (`docs/features/modifier-set-ring-mark.md`).
+		expect(row?.querySelector('.sheetsmith-level-ring')?.classList.contains(RING_SET_CLASS)).toBe(false);
 		expect(doorOf(row as HTMLElement).text).toBe(`${refusal}\n\nNow Untrained`);
 		const foot = el.querySelector('tfoot .sheetsmith-table-value');
 		expect(foot?.textContent).toBe('?');
@@ -661,11 +667,11 @@ describe('a refused level, on each component that reads one in a row', () => {
 			[],
 			FUNCTIONS,
 		).draw(0);
-		const total = Array.from(el.querySelectorAll('tr'))
-			.find((tr) => tr.textContent?.includes('Stealth'))
-			?.querySelector('.sheetsmith-table-computed .sheetsmith-table-value');
+		const row = Array.from(el.querySelectorAll('tr')).find((tr) => tr.textContent?.includes('Stealth'));
+		const total = row?.querySelector('.sheetsmith-table-computed .sheetsmith-table-value');
 		expect(total?.textContent).toBe('?');
 		expect(total?.getAttribute('title')).toBe(refusal);
+		expect(row?.querySelector('.sheetsmith-level-ring')?.classList.contains(RING_SET_CLASS)).toBe(false);
 	});
 });
 
