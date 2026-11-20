@@ -6381,8 +6381,9 @@ describe('the sheet in forced colors (docs/features/sheet-contrast-pass.md)', ()
 		from
 			.filter((rule) => rule.selector.includes(field) && /forced-color-adjust\s*:/.test(rule.body))
 			.map((rule) => rule.selector);
+	const LONGHANDS = 'text-decoration-(?:style|color|thickness)';
 
-	it('would notice an opacity outside the mode, or a field taken out of it', () => {
+	it('would notice an opacity outside the mode, a field taken out of it, or a longhand', () => {
 		const planted = rules(
 			'.sheetsmith-view .sheetsmith-x-input:not(:focus) { opacity: 0; }\n' +
 				'.sheetsmith-view .sheetsmith-x-input:hover { opacity: 0.5; }\n' +
@@ -6393,6 +6394,9 @@ describe('the sheet in forced colors (docs/features/sheet-contrast-pass.md)', ()
 			'.sheetsmith-view .sheetsmith-x-input:not(:focus)',
 		]);
 		expect(adjusted(planted, 'sheetsmith-x-input')).toEqual(['.sheetsmith-view .sheetsmith-x-input']);
+		expect(
+			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { text-decoration-style: dotted; } }', LONGHANDS),
+		).toHaveLength(1);
 	});
 
 	/*
@@ -6431,4 +6435,25 @@ describe('the sheet in forced colors (docs/features/sheet-contrast-pass.md)', ()
 			expect(adjusted(all, field)).toEqual([]);
 		});
 	}
+
+	/*
+	 * §2. The app's opacity still applies over `LinkText`, so an unresolved link
+	 * drew at 4.40:1 and differed from a resolved one by brightness alone. Full
+	 * strength, and a dotted rule as the shape the mode cannot repaint away. A
+	 * border, because the decoration longhands are the spelling the
+	 * browser-support lint refuses — which this also holds across the sheet.
+	 */
+	it('draws an unresolved link at full strength with a dotted rule', () => {
+		const link = forced.filter((rule) =>
+			selectorList(rule.selector).includes('.sheetsmith-view .internal-link.is-unresolved'),
+		);
+		expect(link).toHaveLength(1);
+		expect(declarations(link[0]?.body ?? '')).toEqual([
+			'opacity: 1',
+			'text-decoration: none',
+			'border-bottom: 1px dotted',
+			'padding-bottom: 1px',
+		]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, LONGHANDS)).toEqual([]);
+	});
 });

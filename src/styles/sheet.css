@@ -2112,6 +2112,30 @@
 	}
 }
 
+/* **In forced colors an unresolved link is full strength and marked by a dotted
+   rule instead of an underline.** The mode repaints the colour to `LinkText` and
+   keeps the opacity, so at rest the glyphs measured 4.40:1 on `Canvas`, under the
+   text floor, and brightness was the only thing telling them from a resolved
+   link's 7.84:1. So the state moves to a shape the mode cannot take away: a 1px
+   dotted `border-bottom`, against a resolved link's solid underline. A border
+   because `text-decoration-style` is the spelling the browser-support lint
+   refuses (above); on an inline anchor it draws under each line fragment and
+   takes no layout space, so a wrapped link is marked on both lines and no line
+   moves. Dotted rather than dashed, which is a Track's "granted" and reads closer
+   to solid; and not merely dropping the underline, which tells the two apart only
+   while the theme underlines resolved links
+   (`docs/features/sheet-contrast-pass.md`). */
+@media (forced-colors: active) {
+	.sheetsmith-view .internal-link.is-unresolved {
+		opacity: 1;
+		text-decoration: none;
+		border-bottom: 1px dotted;
+		/* One pixel between the glyphs' bottom and the rule, so a descender
+		   does not meet it. Inline padding moves no line box. */
+		padding-bottom: 1px;
+	}
+}
+
 /* A cell whose text holds a wikilink is two things at once: a link to follow and
    text to edit. An input cannot contain an anchor, so they are two elements —
    stacked in one grid cell rather than swapped, because the field has to stay in

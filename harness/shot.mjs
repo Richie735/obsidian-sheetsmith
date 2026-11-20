@@ -4784,11 +4784,14 @@ function markdownViews() {
 		// (`docs/features/sheet-contrast-pass.md`): focused, the source alone;
 		// emptied, the placeholder; refused, the draft and the error under the
 		// box. The `#` is escaped or the query ends at it. Forced colors draws one
-		// palette, so a theme twin would be the same PNG.
+		// palette, so a theme twin would be the same PNG. Then the unresolved
+		// link wrapped across two lines, at a sheet width where *Torch of* ends
+		// one line and *Revealing* starts the next, for its dotted rule on both.
 		...[
 			{ suffix: '-focused', query: '&focus=.sheetsmith-rich-text-input' },
 			{ suffix: '-empty', query: '&type=.sheetsmith-rich-text-input|' },
 			{ suffix: '-refused', query: '&type=.sheetsmith-rich-text-input|%23%23 Heading%0AA draft' },
+			{ suffix: '-wrapped', query: '&width=620' },
 		].map(({ suffix, query }) => ({
 			name: `sheet-markdown-forced${suffix}`,
 			query: `surface=sheet&state=markdown&theme=light${query}`,
