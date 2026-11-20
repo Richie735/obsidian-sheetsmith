@@ -5498,7 +5498,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		expect(value?.body).toMatch(/font-size:\s*var\(--sheetsmith-card-value-size\)/);
 	});
 
-	it('raises the tiles, the boxes and the head rule under more contrast, after their base rules', () => {
+	it('raises the tiles and the boxes under more contrast, after their base rules', () => {
 		// Equal weight, so only order decides: a block above the base rules lost.
 		const css = CSS_WITHOUT_COMMENTS;
 		const more = [...css.matchAll(/@media \(prefers-contrast: more\) \{/g)]
@@ -5512,8 +5512,6 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		for (const selector of [
 			'.sheetsmith-stat-block-vital',
 			'.sheetsmith-stat-block-panel',
-			'.sheetsmith-stat-block-play-head',
-			'.sheetsmith-stat-block-record > .sheetsmith-record-summary',
 			'.sheetsmith-table-box.sheetsmith-stat-block-actions',
 		]) {
 			expect(block, selector).toContain(selector);
@@ -5522,13 +5520,59 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		for (const at of [
 			base(/\n\.sheetsmith-stat-block-vital \{/),
 			base(/\n\.sheetsmith-stat-block-panel \{/),
-			base(/\n\.sheetsmith-stat-block-play-head,\s*\n\.sheetsmith-stat-block-record > /),
 			base(/\n\.sheetsmith-view \.sheetsmith-table-box\.sheetsmith-stat-block-actions \{/),
 			base(/\n\.sheetsmith-table-box \{/),
 		]) {
 			expect(at).toBeGreaterThan(0);
 			expect(more ?? 0).toBeGreaterThan(at);
 		}
+	});
+
+	/*
+	 * `docs/features/sheet-contrast-pass.md` §3. The open line's rule is reached
+	 * through a `:has()` at (0,4,0), and the more-contrast block named it as
+	 * `.sheetsmith-stat-block-record > .sheetsmith-record-summary` at (0,2,0), so
+	 * the hairline stayed at 1.22:1 while the order test above went green. The
+	 * rule now reads a token and more contrast sets the token on the block, so
+	 * neither weight nor order decides; this holds both halves, and that no
+	 * more-contrast rule goes back to naming the line by a selector.
+	 */
+	it('rules the head and an open form through a token more contrast raises', () => {
+		const ruled = all.filter(
+			(rule) =>
+				rule.context.length === 0 &&
+				selectorList(rule.selector).includes('.sheetsmith-stat-block-play-head') &&
+				selectorList(rule.selector).some((one) => one.includes('[aria-expanded=\'true\']')),
+		);
+		expect(ruled).toHaveLength(1);
+		expect(declarations(ruled[0]?.body ?? '')).toContain(
+			'border-bottom: 1px solid var(--sheetsmith-stat-block-rule)',
+		);
+
+		const token = (context: string[]) =>
+			all
+				.filter(
+					(rule) =>
+						rule.context.join() === context.join() &&
+						selectorList(rule.selector).includes('.sheetsmith-stat-block'),
+				)
+				.flatMap((rule) => declarations(rule.body))
+				.filter((one) => one.startsWith('--sheetsmith-stat-block-rule:'));
+		expect(token([])).toEqual(['--sheetsmith-stat-block-rule: var(--background-modifier-border)']);
+		expect(token(['@media (prefers-contrast: more)'])).toEqual([
+			'--sheetsmith-stat-block-rule: var(--text-muted)',
+		]);
+
+		const named = all.filter(
+			(rule) =>
+				rule.context.includes('@media (prefers-contrast: more)') &&
+				selectorList(rule.selector).some(
+					(one) =>
+						one === '.sheetsmith-stat-block-play-head' ||
+						one.startsWith('.sheetsmith-stat-block-record > .sheetsmith-record-summary'),
+				),
+		);
+		expect(named.map((rule) => rule.selector)).toEqual([]);
 	});
 
 	it('sets the attack table on the tiles\' surface and its header a gentle step off it, theme variables only', () => {

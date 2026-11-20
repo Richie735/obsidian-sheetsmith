@@ -3171,6 +3171,12 @@ export const DEFAULTS = [
 		media: { 'prefers-contrast': 'more' },
 	},
 	{
+		name: 'sheet-forms-library-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
 		// **Every form** in both palettes and at a phone's width, the edit form
 		// drawn through the same anatomy as In play: Brown Bear open, Wolf closed
 		// with its vitals on its line.
@@ -4807,7 +4813,7 @@ function markdownViews() {
  * block with no `exclusive`, read as In play reads at rest and edited behind
  * **Edit**. The Familiar, the Fate mook first and the main NPC first, each at
  * rest and behind the press (`-edit`), in light, dark, a true 380px, more
- * contrast and forced colours, from one loop as the tint views are. Each frames
+ * contrast in both themes and forced colours, from one loop as the tint views are. Each frames
  * the one Stat block its state draws, so a scoped shot reproduces its width.
  * Then the Familiar's Notes opened at rest, its picture at two widths, and the
  * empty block.
@@ -4823,6 +4829,7 @@ function companionViews() {
 		{ suffix: '-dark', query: '&theme=dark', size: '1400,1500' },
 		{ suffix: '-narrow', query: '&theme=light&width=380', size: '380,2400' },
 		{ suffix: '-contrast-more', query: '&theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-contrast-more-dark', query: '&theme=dark', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
 		{ suffix: '-forced-colors', query: '&theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
 	];
 	const faces = [

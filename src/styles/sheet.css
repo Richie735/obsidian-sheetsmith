@@ -9318,6 +9318,13 @@ a.sheetsmith-notice-action {
 .sheetsmith-stat-block {
 	container-type: inline-size;
 	container-name: sheetsmith-stat-block;
+	/* The head's rule and an open form's, as a token rather than a colour, so
+	   more contrast raises it by setting the token here and no selector has to
+	   outweigh the open line's `:has()` at (0,4,0) — which the plain summary
+	   selector in the more-contrast block never did
+	   (`docs/features/sheet-contrast-pass.md`). The `--sheetsmith-in-play-edge`
+	   token is the precedent. */
+	--sheetsmith-stat-block-rule: var(--background-modifier-border);
 }
 
 /* The label and the uses counter on one line, the rings wrapping under the
@@ -9987,7 +9994,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-stat-block-play-head,
 .sheetsmith-stat-block-record > .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true']) {
 	padding-bottom: var(--size-4-3);
-	border-bottom: 1px solid var(--background-modifier-border);
+	border-bottom: 1px solid var(--sheetsmith-stat-block-rule);
 }
 
 .sheetsmith-stat-block-play-head {
@@ -10686,13 +10693,18 @@ a.sheetsmith-notice-action {
    take them: every tile, every text section's box, the head's rule and an open
    form's rule at `--text-muted`. Here, after every base rule it overrides and
    at their weight, so source order is what wins — the block above the base
-   rules lost to them, which is the regression `styles.test.ts` now holds. */
+   rules lost to them, which is the regression `styles.test.ts` now holds.
+   **The head's rule and an open form's are raised through their token**, set
+   on the block, since the open line's `:has()` outweighs any selector this list
+   could name for it at (0,2,0) and drew its hairline at 1.22:1. */
 @media (prefers-contrast: more) {
+	.sheetsmith-stat-block {
+		--sheetsmith-stat-block-rule: var(--text-muted);
+	}
+
 	.sheetsmith-stat-block-vital,
 	.sheetsmith-stat-block-panel,
-	.sheetsmith-stat-block-play-head,
 	.sheetsmith-stat-block-form-name,
-	.sheetsmith-stat-block-record > .sheetsmith-record-summary,
 	.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions,
 	.sheetsmith-view .sheetsmith-stat-block-select,
 	.sheetsmith-view .sheetsmith-stat-block-revert {
