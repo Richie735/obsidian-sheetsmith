@@ -250,7 +250,12 @@ Items 3 to 6 are the default order; a layout reorders and re-heads them with
    reach**, joined by ` · `. What a line reads is built from the names the sheet
    publishes today, `<component> · <key>` for a named entry and the component's
    label for a bare one — published names have no labels of their own yet (the
-   owner deferred that contract change; it is a BACKLOG row at land):
+   owner deferred that contract change; it is a BACKLOG row at land). *Since
+   amended: a published name now carries its own label, full and short, and the
+   list reads its parts rather than the name (`docs/features/published-name-labels.md`),
+   so the bear reads* Abilities: STR sets to 4 · DEX sets to 0 · CON sets to 3
+   *and* Saves: CON sets to 5, *each line led by its component where the list
+   draws more than one. As built here:*
    - a named entry is its key and its outcome, grouped under its component:
      *STR sets to 4 · DEX sets to 0 · CON sets to 3*;
    - a bare component is its label — though an `=` on one is a vital (item 3), so
@@ -268,7 +273,9 @@ Items 3 to 6 are the default order; a layout reorders and re-heads them with
    (its Constitution save), its armour class a
    tile. Where every change a field makes is a tile, the section keeps
    its heading and glyph and draws no *No changes*. **Where it
-   falls short of the owner's example** (*STR +4 · DEX +0 · CON +3* / *AC 11* /
+   falls short of the owner's example** (*closed by
+   `docs/features/published-name-labels.md`: the label half now reads* AC 11 *and*
+   Perception; *the sign half stands, by decision*) (*STR +4 · DEX +0 · CON +3* / *AC 11* /
    *Perception at least +3*): the bare label is the component's whole label,
    *Armour class* rather than *AC*, and a Table row is its key, lower case,
    *perception* rather than *Perception*, because the row's label is not
