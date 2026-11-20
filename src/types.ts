@@ -216,6 +216,15 @@ export interface ComponentConfig {
 	type: string;
 	/** Display name, and the section heading in the note body. */
 	label: string;
+	/**
+	 * What a tight surface calls the component, beside `label`
+	 * (`docs/features/published-name-labels.md`): the vitals strip's *AC* where
+	 * the label is *Armor class*. Display text and nothing else — no section,
+	 * formula or target keys on it — and never derived from the label, so absent
+	 * means every surface draws the label. Shared and owned by the editor, as
+	 * `label` is, because the walk reads it off every publishing component.
+	 */
+	short?: string;
 	position: GridPosition;
 	/**
 	 * The components this one contains, each placed on this component's own
@@ -560,6 +569,22 @@ export interface ConfigFieldSpec<
 	 */
 	memberGroups?: MemberGroupsSpec;
 	/**
+	 * For an `'entries'`, `'rows'` or `'track-rows'` field only: that each item
+	 * is a published name, so its detail line takes a **Short** input stored
+	 * under `short` (`docs/features/published-name-labels.md`). On
+	 * `memberGroups`' precedent — the field says the items take one, so the
+	 * editor learns nothing about which component it is drawing — but carrying
+	 * no words: the footnote under the list says the same thing on every list,
+	 * so it is the editor's one copy rather than six declared copies of one
+	 * sentence (`docs/PATTERNS.md` §1). Absent on a list whose items are not
+	 * published names, a Card's `options`.
+	 *
+	 * **One sentence of the component's own may follow it**, `also`, for what is
+	 * true of its items alone: a Card set's card draws the key, which a Passport's
+	 * or a Roster's list does not, so the editor cannot say it for every list.
+	 */
+	shortLabel?: true | { also: string };
+	/**
 	 * That this field's own commit addresses one entry's line inside a
 	 * character's `sheet` fence, and where that fence is — Card's `key`,
 	 * Passport's `nameKey`, or, for an `'entries'` or `'track-rows'` field,
@@ -831,6 +856,7 @@ export const EDITOR_OWNED_KEYS = [
 	'id',
 	'type',
 	'label',
+	'short',
 	'position',
 	'reset',
 	'children',
@@ -1111,6 +1137,30 @@ export type ScopeEntry = {
 	 * membership. Read only by `formula/modifier-targets.ts`'s one walk.
 	 */
 	groups?: readonly string[];
+	/**
+	 * The text a reader knows this entry by, from the component's own
+	 * configuration — a Card set entry's `name`, a Table row's `label` — or a
+	 * fixed word from `src/en.ts` for a name the component builds itself
+	 * (`docs/features/published-name-labels.md`). Absent where there is none, and
+	 * the key is shown. **Display text, never identity**: nothing resolves
+	 * through it, and a surface composes it only through `formula/name-label.ts`.
+	 * Meaningful only on a `named` entry; the bare name is the component's own
+	 * label.
+	 */
+	label?: string;
+	/**
+	 * The author's tight form of `label`, as typed (`STR` for *Strength*). Absent
+	 * where none was typed, and a tight surface then draws `label` whole: it is
+	 * never computed from the label or the key.
+	 */
+	short?: string;
+	/**
+	 * That `label` is a fixed word for a name the component builds itself
+	 * (`Maximum`, `Temporary`), which names nothing without its component, so a
+	 * surface drawing the entry alone leads it with the component wherever it
+	 * draws it. Set by the component that chose the word, never inferred.
+	 */
+	ownWord?: true;
 } & ScopeEntrySource;
 
 /**
@@ -1129,8 +1179,39 @@ export interface UnnamedMember {
 	key: string;
 	/** The row as a reader sees it, for every sentence that has to name it. */
 	label: string;
+	/** The author's tight form of `label`, as `ScopeEntry.short` is. */
+	short?: string;
 	/** The groups it is in, by group name. Never empty. */
 	groups: readonly string[];
+}
+
+/**
+ * One part of a published name's display text
+ * (`docs/features/published-name-labels.md`). `full` has already fallen back to
+ * the key; `short` is the author's text as typed, or absent.
+ */
+export interface LabelPart {
+	full: string;
+	short?: string;
+	/** An entry's text is its component's own word (`ScopeEntry.ownWord`). */
+	ownWord?: true;
+}
+
+/**
+ * What a published name is called, as parts: never a joined string something
+ * later splits. Built only by `formula/modifier-targets.ts`'s walk, and turned
+ * into text only by `formula/name-label.ts`.
+ */
+export interface NameLabel {
+	/**
+	 * The publishing component: its id, which groups lines and is never shown,
+	 * its label (the id where it has none) and its `short`.
+	 */
+	component: LabelPart & { id: string };
+	/** The entry under `named`, absent for the component's own bare name. */
+	entry?: LabelPart;
+	/** The column a state change names on the entry's row, as its key. */
+	column?: string;
 }
 
 /**
@@ -2083,8 +2164,14 @@ export interface ModifierBreakdown {
 export interface ModifierTarget {
 	/** The published name, as a formula and a definition's target spell it. */
 	name: string;
-	/** What to show for it, which is the component's own label. */
+	/** What to show for it: the full breadcrumb, `Abilities · Strength`. */
 	label: string;
+	/**
+	 * The parts `label` was composed from, for a surface that draws another
+	 * width (`docs/features/published-name-labels.md`). Set by the walk on every
+	 * target it builds; absent only on one built by hand, which reads `label`.
+	 */
+	parts?: NameLabel;
 }
 
 /**
@@ -2127,6 +2214,14 @@ export interface ModifierOutcome {
 	 */
 	target: string;
 	targetLabel: string;
+	/**
+	 * What the target is called, as parts, wherever `target` is a name this
+	 * layout publishes (`docs/features/published-name-labels.md`): a surface
+	 * drawing a width other than `targetLabel`'s full one composes from these
+	 * through `formula/name-label.ts`. Absent on a stray, on a part aimed at
+	 * groups, and on a target the layout does not publish.
+	 */
+	targetName?: NameLabel;
 	/**
 	 * Whether this row is changing its target's value. The glyph reads this and
 	 * nothing else.
@@ -2192,9 +2287,9 @@ export interface ModifierOutcome {
 	 * (`docs/features/table-row-modifier-target.md` D10), where it is aimed at
 	 * groups, or carries the reserved member condition: a refused one reaches
 	 * no value, and its sentence is the one thing `said` holds. `targetLabel` then names the groups by their labels; this carries
-	 * the counts, which `targetLabel` cannot, since it holds one name (BACKLOG
-	 * § Patterns row 146). Absent on every part aimed at one value, so such an
-	 * outcome is the object it was.
+	 * the counts, which `targetLabel` cannot, since it holds one name
+	 * (`docs/features/published-name-labels.md`). Absent on every part aimed at
+	 * one value, so such an outcome is the object it was.
 	 */
 	reach?: GroupReach;
 }
@@ -2209,7 +2304,7 @@ export interface GroupReach {
 	 * The first value it reaches and does not change, and why, where its
 	 * condition holds and some refused or suppressed it. Null where none did.
 	 */
-	missed: { label: string; reason: string } | null;
+	missed: { parts: NameLabel; reason: string } | null;
 	/** How many more it misses past `missed`. */
 	more: number;
 	/**
@@ -2411,8 +2506,10 @@ export interface StateTarget {
 	name: string;
 	/** The change's `column`, or absent where the name's own value is the state. */
 	column?: string;
-	/** What a picker shows: `Abilities · stealth · Training`, or `Inspiration`. */
+	/** What a picker shows: `Skills · Stealth · Training`, or `Inspiration`. */
 	label: string;
+	/** The parts `label` was composed from, `column` included. */
+	parts: NameLabel;
 	shape: StateShape;
 }
 
@@ -2447,6 +2544,8 @@ export interface ChoiceTarget {
 	name: string;
 	/** What a picker shows: the component's label, `Size`. */
 	label: string;
+	/** The parts `label` was composed from. */
+	parts: NameLabel;
 	shape: ChoiceShape;
 }
 
@@ -2498,8 +2597,10 @@ export interface ChoiceAccount {
 export interface BufferTarget {
 	/** The published name a grant's `target` spells: `hp.temp`. */
 	name: string;
-	/** What a picker shows: `HP · temp`. */
+	/** What a picker shows: `HP · Temporary`. */
 	label: string;
+	/** The parts `label` was composed from. */
+	parts: NameLabel;
 	/** What a sentence calls the buffer (`BufferShape.label`): `HP`. */
 	called: string;
 }

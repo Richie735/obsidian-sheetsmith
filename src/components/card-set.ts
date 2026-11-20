@@ -7,6 +7,7 @@
  */
 
 import { referencesName } from '../formula/expression';
+import { entryLabel } from '../formula/name-label';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
 	ComponentConfig,
@@ -31,6 +32,11 @@ export interface CardSetEntry {
 	key: string;
 	/** Full display name, e.g. "Strength" over "STR". */
 	name?: string;
+	/**
+	 * The author's tight form of the name, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
 	/**
 	 * The modifier groups this entry's number is in
 	 * (`docs/features/table-row-modifier-target.md` D4). A set has no default:
@@ -90,6 +96,9 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		{
 			key: 'entries',
 			kind: 'entries',
+			// The card draws the entry's key as its abbreviation, which is not
+			// the Short: said here, since only this list's items have a card.
+			shortLabel: { also: 'The card shows the key.' },
 			label: 'Entries',
 			// The set's own words for its two columns. Held here rather than in
 			// the editor's list field, which serves three vocabularies now and
@@ -282,6 +291,9 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			const raw = data?.values[entry.key];
 			named[entry.key] = withGroups(
 				{
+					// The entry's name for a reader, never its key: the key is
+					// the card's abbreviation and stays so (published-name-labels).
+					...entryLabel(entry.name, entry.short),
 					value: raw,
 					display:
 						config.derived === undefined

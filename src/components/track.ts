@@ -70,6 +70,8 @@ import { levelGlyph, levelName, parseLevel } from './level-ring';
 import { bindRingControl } from './ring-control';
 import { stateRing } from './state-ring';
 import { flagShape } from '../formula/modifier-states';
+import { entryLabel, ownWord } from '../formula/name-label';
+import { TEXT } from '../en';
 import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
 import {
@@ -123,6 +125,11 @@ export interface TrackRow {
 	key: string;
 	/** Display name beside the run. Falls back to the key. */
 	name?: string;
+	/**
+	 * The author's tight form of the name, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
 	/** This run's own length. Falls back to the component's `count`. */
 	count?: string | number;
 	/**
@@ -1151,6 +1158,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		{
 			key: 'rows',
 			kind: 'track-rows',
+			shortLabel: true,
 			label: 'Rows',
 			// A row's name column is headed "Name" and not "Full name": a row
 			// is named for what it is — a spell level, a death save — where a
@@ -1424,7 +1432,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			if (isRowSet(config)) {
 				const named: Record<string, ScopeEntry> = {};
 				for (const row of config.rows ?? []) {
-					named[row.key] = entry(row.key, row.name ?? row.key);
+					named[row.key] = { ...entryLabel(row.name, row.short), ...entry(row.key, row.name ?? row.key) };
 				}
 				return { named };
 			}
@@ -1433,7 +1441,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// from every formula reading it — the continuity a raised count gets
 			// on the read side. A checklist publishes none, exactly as a numeric
 			// row set does: a set of runs has no one ceiling to name.
-			return { self: entry(VALUE_KEY, config.label), named: { count: { value: 1 } } };
+			return {
+				self: entry(VALUE_KEY, config.label),
+				named: { count: { ...ownWord(TEXT.trackLength), value: 1 } },
+			};
 		}
 
 		/*
@@ -1475,7 +1486,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// differs.
 			const named: Record<string, ScopeEntry> = {};
 			for (const [index, row] of (config.rows ?? []).entries()) {
-				named[row.key] = run(row.key, (resolve) => {
+				named[row.key] = { ...entryLabel(row.name, row.short), ...run(row.key, (resolve) => {
 					const count = countFor(
 						config,
 						row,
@@ -1497,18 +1508,18 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					// taking the others with it.
 					const held = filled(row.key);
 					return held === undefined ? undefined : count - held;
-				});
+				}) };
 			}
 			return { named };
 		}
 
 		const named: Record<string, ScopeEntry> = {};
 		if (config.levels !== undefined) {
-			named.count = { value: config.levels.length - 1 };
+			named.count = { ...ownWord(TEXT.trackLength), value: config.levels.length - 1 };
 		} else if (config.count !== undefined) {
 			// A formula like a Pool's max, evaluated lazily because it may
 			// reference another component.
-			named.count = { display: { field: 'count', scope: {} } };
+			named.count = { ...ownWord(TEXT.trackLength), display: { field: 'count', scope: {} } };
 		}
 		return { self: run(VALUE_KEY), named };
 	},

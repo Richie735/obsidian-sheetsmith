@@ -435,6 +435,12 @@ function parseComponent(
 		);
 	}
 	const named = `${where} ("${label}")`;
+	// A tight label is display text the walk reads off every publishing
+	// component, so a value it cannot draw is refused here, as a label is,
+	// rather than by each surface. Blank is absent, not a fault.
+	if (value.short !== undefined && typeof value.short !== 'string') {
+		throw new LayoutParseError(`${named} needs its "short" to be a string, or no "short" at all.`);
+	}
 	const position = parsePosition(value.position, named);
 	const reset = parseReset(value.reset, named);
 	const children = parseChildren(value.children, named, depth);

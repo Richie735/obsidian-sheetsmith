@@ -316,7 +316,9 @@ name (ruling 4 unmet, so an Attacks list is unreachable), and the reach line.
   of 6 values. Not Saves · str: a larger item bonus applies.`, and `and 2 more`
   past one (`Not Saves · str and 2 more: …`). A group outcome carries its labels and
   counts in new members of `ModifierOutcome` rather than in `targetLabel`, which
-  holds a key and is BACKLOG row 146, left as it is.
+  held a key and was BACKLOG row 146, left as it was here. *Closed by
+  `published-name-labels.md`: the reach line now names the member by the row a
+  reader sees, `Not Saving throws · Strength`.*
 
 - **D11. Pickers offer groups beside names.** `fillTargetOptions` gains a
   **Modifier groups** optgroup, first, listing each declared group by label, its

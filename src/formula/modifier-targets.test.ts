@@ -9,7 +9,7 @@ import {
 import { buildSheetScope, publishedComponent } from './sheet';
 import { table, TableConfig } from '../components/table';
 import { track, TrackConfig } from '../components/track';
-import { ScopeEntry } from '../types';
+import { ModifierTarget, ScopeEntry } from '../types';
 
 /*
  * Which published names accept a modifier (SPEC §5, §7).
@@ -22,6 +22,11 @@ import { ScopeEntry } from '../types';
 /** A source as the check sees one, with what a case is not about left alone. */
 function source(over: Partial<ModifierTargetSource>): ModifierTargetSource {
 	return { id: 'x', label: 'X', values: {}, formulas: [], ...over };
+}
+
+/** A target's name and label alone: the parts are `name-label.test.ts`'s to hold. */
+function plain(targets: readonly ModifierTarget[]): { name: string; label: string }[] {
+	return targets.map(({ name, label }) => ({ name, label }));
 }
 
 describe('acceptingTargets', () => {
@@ -40,16 +45,16 @@ describe('acceptingTargets', () => {
 		});
 
 	it('offers a name whose own component reads mod.self', () => {
-		expect(acceptingTargets([card('armour_class', '10 + mod.self')])).toEqual([
+		expect(plain(acceptingTargets([card('armour_class', '10 + mod.self')]))).toEqual([
 			{ name: 'armour_class', label: 'armour_class' },
 		]);
 	});
 
 	it('offers every name of a component that reads mod.self, one per entry', () => {
 		expect(
-			acceptingTargets([
+			plain(acceptingTargets([
 				card('abilities', 'floor((value - 10) / 2) + mod.self', ['STR', 'DEX']),
-			]),
+			])),
 		).toEqual([
 			{ name: 'abilities.STR', label: 'abilities · STR' },
 			{ name: 'abilities.DEX', label: 'abilities · DEX' },
@@ -60,10 +65,10 @@ describe('acceptingTargets', () => {
 		// `mod.armour_class` written anywhere on the layout makes it accepting,
 		// which is why the absolute spelling costs nothing to allow.
 		expect(
-			acceptingTargets([
+			plain(acceptingTargets([
 				card('armour_class', '10'),
 				card('shield', 'mod.armour_class'),
-			]),
+			])),
 		).toEqual([{ name: 'armour_class', label: 'armour_class' }]);
 	});
 
@@ -81,7 +86,7 @@ describe('acceptingTargets', () => {
 		// this as accepting nothing on a character whose item is stowed. A text
 		// scan cannot be fooled by a branch not taken.
 		expect(
-			acceptingTargets([card('armour_class', 'if(worn, 10 + mod.self, 10)')]),
+			plain(acceptingTargets([card('armour_class', 'if(worn, 10 + mod.self, 10)')])),
 		).toEqual([{ name: 'armour_class', label: 'armour_class' }]);
 	});
 

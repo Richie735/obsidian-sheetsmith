@@ -3191,6 +3191,14 @@ export const DEFAULTS = [
 		frame: '.sheetsmith-stat-block',
 	},
 	{
+		// The forms sample's Abilities Card set selected in the editor: **Short
+		// label** under **Label**, and each entry's **Short** on its detail line
+		// with the one footnote under the list (`docs/features/published-name-labels.md`).
+		name: 'editor-forms-short-labels',
+		query: 'surface=editor&theme=light&state=forms&open=abilities',
+		size: '1500,2000',
+	},
+	{
 		// Every form with every form closed, so each line's vitals summary shows.
 		name: 'sheet-forms-library-closed',
 		query:

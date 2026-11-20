@@ -17,7 +17,7 @@
  */
 
 import { GRID_POSITION_KEYS } from '../types';
-import { configToken, idToken, labelToken, positionToken } from './config-panel';
+import { configToken, idToken, labelToken, positionToken, shortLabelToken } from './config-panel';
 import { previewToken } from './canvas';
 import { disclosureToken, menuToken, rowToken } from './tree';
 
@@ -25,6 +25,7 @@ import { disclosureToken, menuToken, rowToken } from './tree';
 const WHOLE: readonly ((id: string) => string)[] = [
 	idToken,
 	labelToken,
+	shortLabelToken,
 	rowToken,
 	previewToken,
 	disclosureToken,

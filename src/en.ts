@@ -71,6 +71,21 @@ export const TEXT = {
 	 * spelling.
 	 */
 	grantLegend: "Whole points. The highest grant, or the pool's own, applies.",
+	/**
+	 * What a name a component builds for itself is called, wherever a reader
+	 * sees a published name: a picker, a breakdown, a form's change line, a reach
+	 * line (`docs/features/published-name-labels.md`). Full labels with no short,
+	 * so a tight surface draws them whole. A Pool's `<id>.max` and `<id>.temp`.
+	 */
+	poolMaximum: 'Maximum',
+	poolTemporary: 'Temporary',
+	/** A numeric Track's `<id>.count`. */
+	trackLength: 'Length',
+	/** A Stat block's `<id>.active` and `<id>.uses`. */
+	statBlockActive: 'Active',
+	statBlockUsesLeft: 'Uses left',
+	/** A Passport's name, `<id>.<nameKey>`. */
+	passportName: 'Name',
 } as const;
 
 /**

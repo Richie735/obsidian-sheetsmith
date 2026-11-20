@@ -1363,6 +1363,31 @@ Forcing the identifying half to one shape would put four tokens on every line
 where the reader needs two, and the token it added would be the one they are
 already looking at.
 
+**A published name has two widths, and the surface picks one** [judgement;
+held by `formula/name-label.test.ts`, `src/published-name-labels.test.ts` and
+`src/name-label-sites.test.ts`] (`docs/features/published-name-labels.md`). A
+name is drawn from parts — its component's label and short, its entry's — and
+`formula/name-label.ts` is the one place they become text. **Short where space is
+the constraint and the component is on screen or in the line lead**: a form's
+change list (*Saves · CON sets to 5*), a vitals tile's caption (*AC* over *11*),
+a closed form's summary (*AC 11*). **Full wherever the text is a sentence, a
+tooltip, a picker or an accessible name**: the reach line (*Not Saving throws ·
+Strength*), the **Value** select, a group's member count, a breakdown line, and a
+glyph's composed name. A short is the author's text or absent, never derived, so
+a name with no short draws its full label on every short surface; and where a
+short was drawn the full form rides in `title`, which adds to a name rather than
+replacing it (§6), decided by whether a short is present and never by comparing
+two strings. **On the change list the component leads a line wherever the list
+draws more than one line**, joined to its entries by a colon on every theme
+(*Saves: CON sets to 5*), since a glyph survives forced colors where the muted
+colour does not; the breadcrumb's dot stays for a name's own breadcrumb. The In
+play brief's one line takes the same leads. The rule is the contributor rule
+above read on targets: a count,
+never a comparison, so an ability and its save may both read *CON* and are told
+apart by their leads. And always where an entry's text is the component's own
+word (*Maximum*, *Temporary*), which names nothing alone: a lone grant reads *HP:
+Temporary grants 10*.
+
 **An add is signed; a set and an at least are not, on every surface**
 [judgement]. An add reads `item +2`; a set reads `sets to 40` and an at least
 reads `at least 30` — on a breakdown line, a row's popup and `title`, an

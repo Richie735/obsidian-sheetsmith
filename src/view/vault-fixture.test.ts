@@ -884,7 +884,7 @@ describe('what a modifier cell says about its own row', () => {
 			'Belt of Giant Strength ;Bracers of Defence +1',
 		);
 		expect(modifierRowText(said)).toBe(
-			['Abilities · STR — item +2', 'Armour class — circumstance +1'].join('\n'),
+			['Abilities · Strength — item +2', 'Armour class — circumstance +1'].join('\n'),
 		);
 		expect(modifierRowName('Modifiers', said)).toBe('Modifiers: 2 applying');
 	});
@@ -920,9 +920,9 @@ describe('what a modifier cell says about its own row', () => {
 		// will, so it is spelled by its outcome — which is the same builder every
 		// other surface uses.
 		const said = applied('Lucky charm', 'abilities.STR += 1 as luck');
-		expect(modifierRowText(said)).toBe('Abilities · STR — luck +1');
+		expect(modifierRowText(said)).toBe('Abilities · Strength — luck +1');
 		expect(modifierRowName('Modifiers', said)).toBe(
-			'Modifiers: Abilities · STR — luck +1',
+			'Modifiers: Abilities · Strength — luck +1',
 		);
 	});
 
@@ -948,7 +948,7 @@ describe('what a modifier cell says about its own row', () => {
 		expect(outcome.applies).toBe(true);
 		expect(outcome.typed?.bonusType).toBe('luck');
 		expect(modifierOutcomeText('abilities.STR += 1 as luck', outcome)).toBe(
-			'Abilities · STR — luck +1',
+			'Abilities · Strength — luck +1',
 		);
 	});
 
@@ -976,7 +976,7 @@ describe('what a modifier cell says about its own row', () => {
 		);
 		expect(outcome.applies).toBe(false);
 		expect(modifierOutcomeText('Gauntlets of Ogre Power', outcome)).toBe(
-			'Abilities · STR — item +1\nNot applied: a larger item bonus applies',
+			'Abilities · Strength — item +1\nNot applied: a larger item bonus applies',
 		);
 	});
 
@@ -1488,7 +1488,7 @@ describe('the notes the fixture recipe names (docs/features/modifier-notes.md)',
 		);
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe(
-			'Abilities · STR cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
+			'Abilities · Strength cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
 		);
 		expect(built.modifiers.breakdown('abilities.STR').notes).toBeUndefined();
 	});

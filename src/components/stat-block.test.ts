@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { statBlock, StatBlockConfig, StatBlockData } from './stat-block';
-import { ModifierPush, RenderContext } from '../types';
+import { ModifierPush, NameLabel, RenderContext } from '../types';
+import { nameText } from '../formula/name-label';
+import { ModifierTargetSource, publishedEntries } from '../formula/modifier-targets';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { parseModifierPart } from '../parse/modifier-cell';
 import { outcomeView } from '../test/modifier-views';
@@ -265,6 +267,13 @@ describe('what the records push and publish', () => {
 		const named = statBlock.scopeValues?.(read(BODY), config).named ?? {};
 		expect(named.active?.value).toBe(true);
 		expect(named.uses?.compute?.(() => 2)).toBe(1);
+		// Names the Stat block builds itself take `src/en.ts`'s words
+		// (`docs/features/published-name-labels.md`).
+		expect(named.active?.label).toBe('Active');
+		expect(named.uses?.label).toBe('Uses left');
+		// Marked as the block's own words, so a line holding one is always led.
+		expect(named.active?.ownWord).toBe(true);
+		expect(named.uses?.ownWord).toBe(true);
 		const bare = statBlock.scopeValues?.(read(BODY, { ...config, exclusive: '', uses: '' }), {
 			...config,
 			exclusive: '',
@@ -601,6 +610,28 @@ describe('a rest', () => {
 });
 
 /** A sheet whose published names take modifiers, which is all the form needs. */
+/**
+ * What the stub's targets are called, as the walk would carry them: parts, with
+ * no `short`, so the list draws every full label. A target missing here is one
+ * the layout does not publish, and its outcome carries no `targetName`.
+ */
+const STUB_NAMES: Readonly<Record<string, NameLabel>> = {
+	'abilities.STR': { component: { id: 'abilities', full: 'Abilities' }, entry: { full: 'STR' } },
+	'abilities.DEX': { component: { id: 'abilities', full: 'Abilities' }, entry: { full: 'DEX' } },
+	'skills.perception': { component: { id: 'skills', full: 'Skills' }, entry: { full: 'Perception' } },
+	'speed.walk': { component: { id: 'speed', full: 'Speed' }, entry: { full: 'walk' } },
+	'speed.climb': { component: { id: 'speed', full: 'Speed' }, entry: { full: 'climb' } },
+	armour_class: { component: { id: 'armour_class', full: 'Armour class' } },
+};
+
+/** The `targetName` and full `targetLabel` the sheet would hand a part aimed at this target. */
+function stubName(target: string): { targetLabel: string; targetName?: NameLabel } {
+	const name = STUB_NAMES[target];
+	return name === undefined
+		? { targetLabel: target }
+		: { targetLabel: nameText(name, 'full', { component: true }), targetName: name };
+}
+
 function modifierContext(): NonNullable<RenderContext<StatBlockData>['modifiers']> {
 	const target = { name: 'armour_class', label: 'Armour class' };
 	return {
@@ -615,7 +646,7 @@ function modifierContext(): NonNullable<RenderContext<StatBlockData>['modifiers'
 				outcomeView({
 					typed: parsed.effect,
 					target: parsed.effect.target,
-					targetLabel: parsed.effect.target,
+					...stubName(parsed.effect.target),
 					applies: true,
 					amount: Number.isFinite(Number(parsed.effect.amount)) ? Number(parsed.effect.amount) : 1,
 				}),
@@ -1143,7 +1174,8 @@ describe('the changes list', () => {
 		const { el } = render(BODY, {}, { modifiers: labelled() });
 		toLibrary(el);
 		const detail = el.querySelector('.sheetsmith-stat-block-detail') as HTMLElement;
-		expect(lines(detail)).toEqual(['STR sets to 4', 'Perception at least 3']);
+		// Two lines, so each is led by the component it reaches.
+		expect(lines(detail)).toEqual(['Abilities: STR sets to 4', 'Skills: Perception at least 3']);
 		expect(vitals(detail)).toContain('Armour class11');
 		const glyph = detail.querySelector('.sheetsmith-stat-block-edit-changes');
 		expect(glyph?.textContent).toBe('Edit changes');
@@ -1156,7 +1188,7 @@ describe('the changes list', () => {
 			'Modifiers: abilities.STR = 4; abilities.DEX = 0; skills.perception >= 3',
 		);
 		const { el } = render(body, {}, { modifiers: labelled() });
-		expect(lines(el)).toEqual(['STR sets to 4 · DEX sets to 0', 'Perception at least 3']);
+		expect(lines(el)).toEqual(['Abilities: STR sets to 4 · DEX sets to 0', 'Skills: Perception at least 3']);
 
 		// A part that changes nothing says why in words, not by colour alone.
 		const base = labelled();
@@ -1188,7 +1220,7 @@ describe('the changes list', () => {
 		expect(set?.querySelector('.sheetsmith-stat-block-vital-value')?.textContent).toBe('11');
 		expect(lines(el).join(' ')).not.toContain('Armour class');
 		// An `=` on one entry of a set, and an at-least, stay in the list.
-		expect(lines(el)).toEqual(['STR sets to 4', 'Perception at least 3']);
+		expect(lines(el)).toEqual(['Abilities: STR sets to 4', 'Skills: Perception at least 3']);
 	});
 
 	it('reads a Sets and an At least on a sub-entry unsigned, so neither reads as an add', () => {
@@ -1277,6 +1309,169 @@ describe('the changes list', () => {
 			one.textContent?.includes('Modifiers'),
 		);
 		expect(head?.querySelector('.sheetsmith-record-modifier')).not.toBeNull();
+	});
+});
+
+describe('a form\'s changes named by their labels (docs/features/published-name-labels.md)', () => {
+	const SAVES = { id: 'saves', full: 'Saving throws', short: 'Saves' };
+	const ABILITIES = { id: 'abilities', full: 'Abilities' };
+	/** The walk's parts for each target, the sample's shorts on. */
+	const SHORTS: Readonly<Record<string, NameLabel>> = {
+		'abilities.STR': { component: ABILITIES, entry: { full: 'Strength', short: 'STR' } },
+		'abilities.CON': { component: ABILITIES, entry: { full: 'Constitution', short: 'CON' } },
+		'saves.CON': { component: SAVES, entry: { full: 'Constitution', short: 'CON' } },
+		'skills.perception': { component: { id: 'skills', full: 'Skills' }, entry: { full: 'Perception' } },
+		armour_class: { component: { id: 'armour_class', full: 'Armour class', short: 'AC' } },
+		hp: { component: { id: 'hp', full: 'HP' } },
+		'hp.max': { component: { id: 'hp', full: 'HP' }, entry: { full: 'Maximum', ownWord: true } },
+		'hp.temp': { component: { id: 'hp', full: 'HP' }, entry: { full: 'Temporary', ownWord: true } },
+		// Two components sharing one label, told apart by id alone.
+		'left.a': { component: { id: 'left', full: 'Gear' }, entry: { full: 'A' } },
+		'right.b': { component: { id: 'right', full: 'Gear' }, entry: { full: 'B' } },
+	};
+
+	/** Every short taken off, as a layout that declares none reads. */
+	function withoutShorts(names: Readonly<Record<string, NameLabel>>): Record<string, NameLabel> {
+		return Object.fromEntries(
+			Object.entries(names).map(([name, label]) => [
+				name,
+				{
+					component: { id: label.component.id, full: label.component.full },
+					...(label.entry === undefined ? {} : { entry: { full: label.entry.full } }),
+				},
+			]),
+		);
+	}
+
+	/** A sheet's answer for typed parts, named as the walk names them. */
+	function named(names: Readonly<Record<string, NameLabel>>): ReturnType<typeof modifierContext> {
+		const base = modifierContext();
+		return {
+			...base,
+			outcomes: (part: string) => {
+				const parsed = parseModifierPart(part);
+				if (parsed.kind !== 'typed') return [];
+				const target = parsed.effect.target;
+				const name = names[target];
+				return [
+					outcomeView({
+						typed: parsed.effect,
+						target,
+						targetLabel: name === undefined ? target : nameText(name, 'full', { component: true }),
+						...(name === undefined ? {} : { targetName: name }),
+						...(target === 'hp.temp' ? { grant: true as const } : {}),
+						applies: true,
+						amount: Number(parsed.effect.amount),
+					}),
+				];
+			},
+		};
+	}
+
+	const formWith = (parts: string): string =>
+		BODY.replace('Modifiers: abilities.STR = 4; armour_class = 11; skills.perception >= 3', `Modifiers: ${parts}`);
+	const lines = (root: HTMLElement): (string | null)[] =>
+		Array.from(root.querySelectorAll('.sheetsmith-stat-block-section .sheetsmith-stat-block-change')).map(
+			(line) => line.textContent,
+		);
+	const BEAR = 'abilities.STR = 4; abilities.CON = 3; armour_class = 11; skills.perception >= 3; saves.CON = 5';
+
+	it('reads the bear in its shorts, each line led by its component, muted', () => {
+		const { el } = render(formWith(BEAR), {}, { modifiers: named(SHORTS) });
+		const tile = el.querySelector('.sheetsmith-stat-block-vital-set');
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-label')?.textContent).toBe('AC');
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-label')?.getAttribute('title')).toBe('Armour class');
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-value')?.textContent).toBe('11');
+		expect(lines(el)).toEqual([
+			'Abilities: STR sets to 4 · CON sets to 3',
+			'Skills: Perception at least 3',
+			'Saves: CON sets to 5',
+		]);
+		const leads = Array.from(el.querySelectorAll('.sheetsmith-stat-block-change-lead'));
+		expect(leads.map((lead) => lead.textContent)).toEqual(['Abilities', 'Skills', 'Saves']);
+		// A lead drawn at its short says its full label; one with none adds nothing.
+		expect(leads.map((lead) => lead.getAttribute('title'))).toEqual([null, null, 'Saving throws']);
+	});
+
+	it('draws exactly the full labels where no short was typed, and no lead where one line is drawn', () => {
+		const { el } = render(formWith(BEAR), {}, { modifiers: named(withoutShorts(SHORTS)) });
+		const tile = el.querySelector('.sheetsmith-stat-block-vital-set');
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-label')?.textContent).toBe('Armour class');
+		expect(tile?.querySelector('.sheetsmith-stat-block-vital-label')?.hasAttribute('title')).toBe(false);
+		expect(lines(el)).toContain('Saving throws: Constitution sets to 5');
+		expect(lines(el)).toContain('Abilities: Strength sets to 4 · Constitution sets to 3');
+		document.body.replaceChildren();
+		const one = render(formWith('abilities.STR = 4; abilities.CON = 3'), {}, { modifiers: named(withoutShorts(SHORTS)) });
+		expect(lines(one.el)).toEqual(['Strength sets to 4 · Constitution sets to 3']);
+		expect(one.el.querySelector('.sheetsmith-stat-block-change-lead')).toBeNull();
+	});
+
+	it('titles an item drawn at its short with its full text, and an item with no short with none', () => {
+		const { el } = render(formWith(BEAR), {}, { modifiers: named(SHORTS) });
+		const items = Array.from(el.querySelectorAll('.sheetsmith-stat-block-change-item'));
+		const save = items.find((item) => item.textContent === 'CON sets to 5');
+		expect(save?.getAttribute('title')).toBe('Saving throws · Constitution sets to 5');
+		const perception = items.find((item) => item.textContent === 'Perception at least 3');
+		expect(perception?.hasAttribute('title')).toBe(false);
+	});
+
+	it('closes the bear on its short: … · AC 11', () => {
+		const { el } = render(formWith(BEAR), {}, { modifiers: named(SHORTS) });
+		toLibrary(el);
+		expect(el.querySelector('.sheetsmith-stat-block-summary')?.textContent).toBe('HP 22/34 · AC 11');
+		document.body.replaceChildren();
+		const plain = render(formWith(BEAR), {}, { modifiers: named(withoutShorts(SHORTS)) });
+		toLibrary(plain.el);
+		expect(plain.el.querySelector('.sheetsmith-stat-block-summary')?.textContent).toBe('HP 22/34 · Armour class 11');
+	});
+
+	it('draws the key where a name has no label, from the walk\'s own parts, on every short surface', () => {
+		// Parts as the walk builds them for components and entries that carry no
+		// text: the component's id and the entry's key are the only names there are.
+		const walked: Record<string, NameLabel> = {};
+		const sources: ModifierTargetSource[] = [
+			{ id: 'abilities', values: { named: { STR: { value: '1' } } } },
+			{ id: 'skills', values: { named: { perception: { value: '1' } } } },
+			{ id: 'armour_class', values: { self: { value: '1' } } },
+		];
+		for (const source of sources) {
+			for (const { name, parts } of publishedEntries(source)) walked[name] = parts;
+		}
+		const { el } = render(formWith('abilities.STR = 4; armour_class = 11; skills.perception >= 3'), {}, {
+			modifiers: named(walked),
+		});
+		expect(lines(el)).toEqual(['abilities: STR sets to 4', 'skills: perception at least 3']);
+		const tile = el.querySelector('.sheetsmith-stat-block-vital-set .sheetsmith-stat-block-vital-label');
+		expect(tile?.textContent).toBe('armour_class');
+		expect(tile?.hasAttribute('title')).toBe(false);
+		expect(el.querySelector('.sheetsmith-stat-block-change-item[title]')).toBeNull();
+		toLibrary(el);
+		expect(el.querySelector('.sheetsmith-stat-block-summary')?.textContent).toBe('HP 22/34 · armour_class 11');
+	});
+
+	it('tells the ability\'s CON from the save\'s on a brief\'s one line, led as the open list leads them', () => {
+		const { el } = render(formWith(BEAR).replace('Active: yes', 'Active: no'), {}, { modifiers: named(SHORTS) });
+		const brief = el.querySelector('.sheetsmith-stat-block-brief .sheetsmith-stat-block-brief-changes');
+		expect(brief?.textContent).toBe(
+			'Abilities: STR sets to 4 · CON sets to 3 · Skills: Perception at least 3 · Saves: CON sets to 5',
+		);
+	});
+
+	it('draws two components sharing one label on two lines', () => {
+		const { el } = render(formWith('left.a += 1; right.b += 2'), {}, { modifiers: named(SHORTS) });
+		expect(lines(el)).toEqual(['Gear: A +1', 'Gear: B +2']);
+	});
+
+	it('draws a Pool\'s own number and its maximum on two lines, and a grant as a led line like any other', () => {
+		const { el } = render(formWith('hp += 5; hp.max += 10; hp.temp >= 10'), {}, { modifiers: named(SHORTS) });
+		expect(lines(el)).toEqual(['HP +5', 'HP: Maximum +10 · Temporary grants 10']);
+		document.body.replaceChildren();
+		const grant = render(formWith('hp.temp >= 10; skills.perception >= 3'), {}, { modifiers: named(SHORTS) });
+		expect(lines(grant.el)).toEqual(['HP: Temporary grants 10', 'Skills: Perception at least 3']);
+		// Alone on its field too: `Temporary` is the Pool's own word and names no pool.
+		document.body.replaceChildren();
+		const alone = render(formWith('hp.temp >= 10'), {}, { modifiers: named(SHORTS) });
+		expect(lines(alone.el)).toEqual(['HP: Temporary grants 10']);
 	});
 });
 
@@ -2446,8 +2641,9 @@ describe('the briefs with no form on', () => {
 		const set = Array.from(bear.querySelectorAll('.sheetsmith-stat-block-vital-set')).map((tile) => tile.textContent);
 		document.body.replaceChildren();
 		const play = render(BODY, {}, { modifiers: labelled }).el;
-		const items = Array.from(play.querySelectorAll('.sheetsmith-stat-block-change-item')).map((one) => one.textContent);
-		expect(brief).toBe(items.join(' · '));
+		// The open list's lines, leads and all, on one line.
+		const said = Array.from(play.querySelectorAll('.sheetsmith-stat-block-change')).map((one) => one.textContent);
+		expect(brief).toBe(said.join(' · '));
 		expect(brief).not.toBe('');
 		expect(set).toEqual(
 			Array.from(play.querySelectorAll('.sheetsmith-stat-block-vital-set')).map((tile) => tile.textContent),

@@ -11133,7 +11133,35 @@ a.sheetsmith-notice-action {
 	gap: var(--size-2-1);
 }
 
+/* **A wrapped line hangs under its own start**, so its continuation cannot read
+   as a new line. Since a lead names a line's component only on its first row
+   (`docs/features/published-name-labels.md`), a flush-left continuation such as
+   *CON sets to 3* read as an unled line of its own, directly above *Saves · CON
+   sets to 5*, at the same gap. `docs/UI.md` §9 refuses a hanging indent in the
+   breakdown bubble because a newline under `pre-wrap` starts no block; here
+   each change is its own `li`, so `text-indent` addresses exactly its first
+   row. */
+.sheetsmith-stat-block-change {
+	padding-inline-start: var(--size-4-4);
+	text-indent: calc(-1 * var(--size-4-4));
+}
+
 .sheetsmith-stat-block-change-separator {
+	color: var(--text-muted);
+}
+
+/* The component a line of entries reaches, where the list draws more than one
+   line (`docs/features/published-name-labels.md`), before a colon: muted, the abbreviation's
+   colour, so the entries are what the eye reads and the lead says whose they
+   are. One reading, like an item. */
+.sheetsmith-stat-block-change-lead {
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+/* The colon after a lead, in its colour: the glyph is what says "lead", so the
+   structure survives forced colors, where the muted colour does not. */
+.sheetsmith-stat-block-change-joint {
 	color: var(--text-muted);
 }
 

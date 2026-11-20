@@ -23,6 +23,7 @@
  */
 
 import { ScopeEntry, UnnamedMember } from '../types';
+import { authoredShort } from '../formula/name-label';
 
 /** Why a `groups` that is not a list of names refuses the configuration (D6). */
 export const GROUPS_NOT_A_LIST =
@@ -117,8 +118,11 @@ export function unnamedMember(
 	position: number,
 	label: string,
 	groups: readonly string[],
+	/** The row's own tight label, where the author typed one. */
+	short?: unknown,
 ): UnnamedMember {
-	return { key: memberSlot(id, position), label, groups };
+	const tight = authoredShort(short);
+	return { key: memberSlot(id, position), label, ...(tight === undefined ? {} : { short: tight }), groups };
 }
 
 /**

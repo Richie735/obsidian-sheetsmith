@@ -47,6 +47,7 @@
  */
 
 import { isName, referencesName } from '../formula/expression';
+import { entryLabel } from '../formula/name-label';
 import { coerceValue } from '../formula/resolve';
 import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { claimRows } from '../parse/row-claims';
@@ -135,6 +136,12 @@ export interface RosterColumn {
 
 export interface RosterRow {
 	label: string;
+	/**
+	 * The author's tight form of the row's label, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
+
 	/** The stat this row hangs off: a key into this component's own `stats`. */
 	stat?: string;
 	/** The name a formula reads this row's published value by, as
@@ -161,6 +168,11 @@ export interface RosterRow {
 export interface RosterStat {
 	key: string;
 	name?: string;
+	/**
+	 * The author's tight form of the name, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
 }
 
 export interface RosterConfig extends ComponentConfig {
@@ -537,6 +549,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		{
 			key: 'stats',
 			kind: 'entries',
+			shortLabel: true,
 			label: 'Stats',
 			entryColumns: [
 				{ key: 'key', heading: 'Key' },
@@ -584,6 +597,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		{
 			key: 'rows',
 			kind: 'rows',
+			shortLabel: true,
 			label: 'Rows',
 			statsField: 'stats',
 			// `types.ts`'s `rowFlag`, on `entryFlag`'s own precedent: a per-row
@@ -755,6 +769,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			const key = (stat.key ?? '').trim();
 			const raw = data?.stats?.[key];
 			named[key] = {
+				...entryLabel(stat.name, stat.short),
 				value: raw,
 				display:
 					config.derived === undefined
@@ -785,7 +800,9 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 				if (rowKey === '') {
 					// A row with no key in some group is listed, not published (D5).
 					if (groups.length > 0) {
-						unnamed.push(unnamedMember(config.id, view.position, rowLabel(view.row.label), groups));
+						unnamed.push(
+							unnamedMember(config.id, view.position, rowLabel(view.row.label), groups, view.row.short),
+						);
 					}
 					continue;
 				}
@@ -795,6 +812,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 					const own = columnState(column);
 					named[rowKey] = withGroups(
 						{
+							...entryLabel(displayText(view.row.label), view.row.short),
 							value: typedValue(column, cell(column)),
 							...(own === undefined ? {} : { state: { ...own, column: column.key } }),
 							...withStates,
@@ -805,6 +823,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 				}
 				named[rowKey] = withGroups(
 					{
+						...entryLabel(displayText(view.row.label), view.row.short),
 						compute: (resolve, state) =>
 							resolve(
 								`columns.${columnIndex(config, column)}.formula`,

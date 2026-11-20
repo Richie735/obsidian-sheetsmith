@@ -103,6 +103,7 @@
 			"id": "hp",
 			"type": "pool",
 			"label": "Hit points",
+			"short": "HP",
 			"maxSource": "character",
 			"hasTemp": true,
 			"reset": [
@@ -169,27 +170,33 @@
 			"entries": [
 				{
 					"key": "STR",
-					"name": "Strength"
+					"name": "Strength",
+					"short": "STR"
 				},
 				{
 					"key": "DEX",
-					"name": "Dexterity"
+					"name": "Dexterity",
+					"short": "DEX"
 				},
 				{
 					"key": "CON",
-					"name": "Constitution"
+					"name": "Constitution",
+					"short": "CON"
 				},
 				{
 					"key": "INT",
-					"name": "Intelligence"
+					"name": "Intelligence",
+					"short": "INT"
 				},
 				{
 					"key": "WIS",
-					"name": "Wisdom"
+					"name": "Wisdom",
+					"short": "WIS"
 				},
 				{
 					"key": "CHA",
-					"name": "Charisma"
+					"name": "Charisma",
+					"short": "CHA"
 				}
 			],
 			"derived": "mod(value + mod.self)",
@@ -204,11 +211,13 @@
 			"id": "saves",
 			"type": "table",
 			"label": "Saving throws",
+			"short": "Saves",
 			"rowHeader": "Save",
 			"namePosition": 1,
 			"rows": [
 				{
 					"label": "Strength",
+					"short": "STR",
 					"values": {
 						"ability": "abilities.STR"
 					},
@@ -216,6 +225,7 @@
 				},
 				{
 					"label": "Dexterity",
+					"short": "DEX",
 					"values": {
 						"ability": "abilities.DEX"
 					},
@@ -223,6 +233,7 @@
 				},
 				{
 					"label": "Constitution",
+					"short": "CON",
 					"values": {
 						"ability": "abilities.CON"
 					},
@@ -230,6 +241,7 @@
 				},
 				{
 					"label": "Intelligence",
+					"short": "INT",
 					"values": {
 						"ability": "abilities.INT"
 					},
@@ -237,6 +249,7 @@
 				},
 				{
 					"label": "Wisdom",
+					"short": "WIS",
 					"values": {
 						"ability": "abilities.WIS"
 					},
@@ -244,6 +257,7 @@
 				},
 				{
 					"label": "Charisma",
+					"short": "CHA",
 					"values": {
 						"ability": "abilities.CHA"
 					},
@@ -613,6 +627,7 @@
 							"id": "armour_class",
 							"type": "card",
 							"label": "Armor class",
+							"short": "AC",
 							"derived": "10 + abilities.DEX + mod.self",
 							"signed": false,
 							"hideValue": true,

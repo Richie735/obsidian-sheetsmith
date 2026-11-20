@@ -79,6 +79,7 @@ import { series } from '../parse/spelled';
 import { roundSum } from '../formula/expression';
 import { positionWord } from '../formula/modifier-states';
 import { optionWord } from '../formula/modifier-choices';
+import { nameText } from '../formula/name-label';
 
 /**
  * The mark on a number something has been pushed at.
@@ -1004,7 +1005,7 @@ export function modifierOutcomeText(
  * ```
  * ```
  * Saving throws — item +1
- * Changes 5 of 6 values. Not Saves · str: a larger item bonus applies.
+ * Changes 5 of 6 values. Not Saving throws · Strength: a larger item bonus applies.
  * ```
  *
  * **The many-values half is said once, here, at the source row**: each member's
@@ -1022,7 +1023,7 @@ function reachLines(
 		const more = reach.more === 0 ? '' : ` and ${reach.more} more`;
 		const reason = reach.missed.reason.replace(/\.?$/, '.');
 		lines.push(
-			`Changes ${reach.changed} of ${reach.values} values. Not ${reach.missed.label}${more}: ${reason}`,
+			`Changes ${reach.changed} of ${reach.values} values. Not ${nameText(reach.missed.parts, 'full', { component: true })}${more}: ${reason}`,
 		);
 	} else {
 		const count = `Reaches ${reach.values} ${reach.values === 1 ? 'value' : 'values'}`;

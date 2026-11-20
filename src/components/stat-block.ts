@@ -79,6 +79,8 @@ import {
 } from '../parse/zones';
 import { cellParts } from '../parse/modifier-cell';
 import { optionWord } from '../formula/modifier-choices';
+import { TEXT } from '../en';
+import { nameText, ownWord, partText, usesShort } from '../formula/name-label';
 import {
 	joinRecords,
 	RecordSection,
@@ -1055,10 +1057,14 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		if (configError(config) !== null) return {};
 		const named: Record<string, ScopeEntry> = {};
 		if (exclusiveField(config) !== null) {
-			named.active = { value: entries(data).some((record) => isOn(config, record)) };
+			named.active = {
+				...ownWord(TEXT.statBlockActive),
+				value: entries(data).some((record) => isOn(config, record)),
+			};
 		}
 		if (hasUses(config)) {
 			named[USES_KEY] = {
+				...ownWord(TEXT.statBlockUsesLeft),
 				compute: (resolve) => usesLeft(data, usesCeiling((field) => resolve(field, {}))),
 			};
 		}
@@ -1819,9 +1825,13 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				// What the form changes, in In play's words and without In play's
 				// reasons: a form that is off pushes nothing, so every change would
 				// read as not applying, which says nothing about choosing it.
-				changes: allChanges(record)
-					.filter((change) => !change.vital)
-					.map((change) => change.text)
+				// Grouped and led as the open list leads them, so the ability's CON
+				// and the save's CON read apart here too, on one line.
+				changes: changeLines(allChanges(record))
+					.map(({ lead, items }) => {
+						const said = items.map((item) => item.text).join(' · ');
+						return lead === null ? said : `${lead.text}${LEAD_JOINT}${said}`;
+					})
 					.join(' · '),
 				tint: tintOf(config, record),
 				...(picture === undefined ? {} : { picture }),
@@ -2227,14 +2237,18 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			kind: string,
 			label: string,
 			face: VitalFace,
+			/** The full label, where `label` is an author's short (`docs/UI.md` §6). */
+			title?: string,
 		): { item: HTMLElement; value: HTMLElement } {
 			if (face === 'brief') {
 				const item = element('span', `sheetsmith-stat-block-brief-stat ${kind}`, strip);
-				element('span', 'sheetsmith-stat-block-brief-stat-label', item, label);
+				const caption = element('span', 'sheetsmith-stat-block-brief-stat-label', item, label);
+				if (title !== undefined) caption.title = title;
 				return { item, value: element('span', 'sheetsmith-stat-block-brief-stat-value', item) };
 			}
 			const item = element('div', `sheetsmith-stat-block-vital ${kind}`, strip);
-			element('div', 'sheetsmith-component-label sheetsmith-stat-block-vital-label', item, label);
+			const caption = element('div', 'sheetsmith-component-label sheetsmith-stat-block-vital-label', item, label);
+			if (title !== undefined) caption.title = title;
 			return { item, value: element('div', 'sheetsmith-stat-block-vital-value', item) };
 		}
 
@@ -2268,7 +2282,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 		 * in words beside its muted number, as the list would.
 		 */
 		function drawSetVital(strip: HTMLElement, change: FormChange, face: VitalFace): string {
-			const { value } = vitalTile(strip, 'sheetsmith-stat-block-vital-set', change.label, face);
+			const { value } = vitalTile(strip, 'sheetsmith-stat-block-vital-set', change.label, face, change.labelTitle);
 			// A brief is a form that is not on, so whether it applies *now* is not
 			// its question: it says what the form sets, as `briefChanges` does.
 			const idle = face !== 'brief' && !change.applies;
@@ -2295,7 +2309,7 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			for (const part of cellParts(raw)) {
 				const outcomes = context.modifiers?.outcomes(part, (held ??= values()), config.label) ?? [];
 				if (outcomes.length === 0) {
-					said.push({ group: part, label: part, text: part, applies: true, why: null, vital: false });
+					said.push({ group: part, lead: null, ownWord: false, label: part, text: part, applies: true, why: null, vital: false });
 					continue;
 				}
 				for (const outcome of outcomes) {
@@ -2311,10 +2325,17 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 						: (outcome.suppressed ?? (outcome.condition === false ? 'its condition does not hold now' : null));
 					const option = choosesOneOption(outcome);
 					const vital = setsOneNumber(outcome) || option !== null;
+					// A vital's caption is the bare name at short width, its full
+					// label in `title` where a short was drawn.
+					const caption = outcome.targetName ?? null;
 					said.push({
 						group: item.group,
-						label: outcome.targetLabel,
+						lead: item.lead,
+						ownWord: outcome.targetName?.entry?.ownWord === true,
+						label: caption === null ? outcome.targetLabel : nameText(caption, 'short'),
+						...(caption !== null && usesShort(caption) ? { labelTitle: nameText(caption, 'full') } : {}),
 						text: option ?? (vital ? String(outcome.amount) : item.text),
+						...(vital || item.title === undefined ? {} : { title: item.title }),
 						applies: outcome.applies,
 						why,
 						vital,
@@ -2377,14 +2398,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				(next) => context.onChange({ records: { [at]: { fields: { [field.key]: next } } } }),
 			);
 			if (editing) labelGlyph(glyphCell);
-			const groups = new Map<string, { text: string; applies: boolean }[]>();
-			for (const change of changes) {
-				if (change.vital) continue;
-				const list = groups.get(change.group) ?? [];
-				list.push({ text: changeText(change), applies: change.applies });
-				groups.set(change.group, list);
-			}
-			if (groups.size === 0) {
+			const lines = changeLines(changes);
+			if (lines.length === 0) {
 				// Every change it makes is read in the strip: the heading stays, as
 				// the label of the glyph that edits them.
 				if (!changes.some((change) => change.vital)) element('p', 'sheetsmith-stat-block-empty', body, 'No changes');
@@ -2392,16 +2407,28 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 			}
 			const list = element('ul', 'sheetsmith-stat-block-changes', body);
 			list.setAttribute('aria-label', `${named} ${fieldLabel(field)}`);
-			for (const items of groups.values()) {
+			for (const { lead, items } of lines) {
 				const line = element('li', 'sheetsmith-stat-block-change', list);
+				if (lead !== null) {
+					// The joint is a colon, a glyph, so the lead reads as a lead in
+					// forced colors, where the muted colour is gone.
+					const span = element('span', 'sheetsmith-stat-block-change-lead', line, lead.text);
+					if (lead.title !== undefined) span.title = lead.title;
+					element('span', 'sheetsmith-stat-block-change-joint', line, LEAD_JOINT);
+				}
 				items.forEach((item, index) => {
+					// Between two items is the list's separator, as on the closed
+					// line and the brief.
 					if (index > 0) element('span', 'sheetsmith-stat-block-change-separator', line, ' · ');
-					element(
+					const span = element(
 						'span',
 						item.applies ? 'sheetsmith-stat-block-change-item' : 'sheetsmith-stat-block-change-item sheetsmith-stat-block-change-idle',
 						line,
-						item.text,
+						changeText(item),
 					);
+					// The full breadcrumb, where the item drew an author's short
+					// (`docs/UI.md` §6: `title` adds to a name).
+					if (item.title !== undefined) span.title = item.why === null ? item.title : `${item.title} (${item.why})`;
 				});
 			}
 		}
@@ -2482,54 +2509,116 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 };
 
 /**
- * One change as a compact item, and the component it is grouped under.
+ * One change as a compact item, and the line it is grouped on.
  *
- * The target's published label is `Abilities · STR` for a component's named
- * entry and `Armour class` for a bare one, which is all the sheet publishes:
- * a named entry is drawn by its key and grouped under its component, a bare
- * one by its label.
+ * **Read off the outcome's parts, never off its label**
+ * (`docs/features/published-name-labels.md`): `targetLabel` is a sentence's
+ * full breadcrumb and nothing here splits it. A named entry is drawn by its
+ * entry part at short width — `STR`, or `Strength` where the author typed no
+ * short — on a line led by its component part; a bare name by its component
+ * part at short width, on a line of its own with no lead, so `HP +5` never sits
+ * under an `HP ·` lead. A grant is a led line like any other: `HP · Temporary
+ * grants 10`.
+ *
+ * **Lines are grouped by structure, not by text**: the component's id and
+ * whether the target is its bare name. Two components sharing one label draw
+ * two lines, since matching their labels would be code reading a label. A group
+ * part, a target the layout does not publish, and a stray key on the target or
+ * the part as written, as they always did.
  *
  * **What it says is `outcomeWords`, on every operator**, so the list's words are
  * the cell title's, the popover's and the accessible name's: `STR sets to 4`,
  * `walk sets to 40`, `climb at least 30`, `STR item +2`. A set and an at least
  * are unsigned because they are a value the number becomes, not an amount added
- * to it, and a sign reads as one: `walk +40` under a Walk of 40 whose own value
- * is 30 read as 70. Signing a set aimed at a named entry, on the reading that an
- * entry of a set is a modifier and a component's own number a total, is the
- * rule this replaced — a target's own number may be a total either way, as
- * Walk's is, and the published name carries no sign to read instead
- * (`docs/UI.md` §9).
+ * to it, and a sign reads as one (`docs/UI.md` §9).
  */
 function compactChange(
 	part: string,
 	outcome: ModifierOutcome,
-): { group: string; text: string } {
-	if (outcome.definition === null && outcome.typed === null) return { group: part, text: part };
-	const at = outcome.targetLabel.indexOf(' · ');
-	const group = at < 0 ? outcome.targetLabel : outcome.targetLabel.slice(0, at);
-	const lead = at < 0 ? outcome.targetLabel : outcome.targetLabel.slice(at + 3);
+): { group: string; lead: FormChange['lead']; text: string; title?: string } {
+	if (outcome.definition === null && outcome.typed === null) return { group: part, lead: null, text: part };
 	const said = outcomeWords(outcome);
-	// A grant leads with the buffer's whole label, `HP · temp grants 10`: its
-	// short half names no pool, and two pools' temporary points would read alike
-	// (`docs/features/granted-temporary-points.md`).
-	if (outcome.grant === true) return { group, text: `${outcome.targetLabel} ${said}` };
-	return { group: at < 0 ? outcome.target : group, text: `${lead} ${said}` };
+	const name = outcome.targetName;
+	if (name === undefined) return { group: outcome.target, lead: null, text: `${outcome.targetLabel} ${said}` };
+	const bare = name.entry === undefined;
+	return {
+		// A NUL cannot occur in a part or a published name, so a structural key
+		// never meets one of the text keys above.
+		group: `\u0000${name.component.id}\u0000${bare ? 'self' : 'named'}`,
+		lead: bare
+			? null
+			: {
+					text: partText(name.component, 'short'),
+					...(name.component.short === undefined ? {} : { title: name.component.full }),
+				},
+		text: `${nameText(name, 'short')} ${said}`,
+		...(usesShort(name) ? { title: `${nameText(name, 'full', { component: true })} ${said}` } : {}),
+	};
 }
 
-/** One change a form's modifier field makes, as the form reads it. */
+/** What follows a change line's lead: `Abilities: STR sets to 4`. */
+const LEAD_JOINT = ': ';
+
+/** One change line: its lead where it takes one, and its items. */
+interface ChangeLine {
+	lead: FormChange['lead'];
+	items: FormChange[];
+}
+
+/**
+ * A form's changes as lines, every one the strip does not read: grouped by
+ * `FormChange.group` in first-seen order, each led or not. One reading for the
+ * open list and the brief's one line, so an ability's CON and a save's CON read
+ * apart on both.
+ *
+ * **The component leads a line wherever there is more than one line**
+ * (`docs/features/published-name-labels.md`): `docs/UI.md` §9's breakdown rule
+ * for a contributor, read on targets. A count of lines, never a comparison of
+ * labels. **And always where an entry's text is its component's own word**,
+ * since *Temporary grants 10* alone says nothing of whose. A line of the bare
+ * name, a group part's and a stray's carry none.
+ */
+function changeLines(changes: readonly FormChange[]): ChangeLine[] {
+	const groups = new Map<string, FormChange[]>();
+	for (const change of changes) {
+		if (change.vital) continue;
+		const list = groups.get(change.group) ?? [];
+		list.push(change);
+		groups.set(change.group, list);
+	}
+	const leads = groups.size > 1;
+	return [...groups.values()].map((items) => ({
+		lead: leads || items.some((item) => item.ownWord) ? (items[0]?.lead ?? null) : null,
+		items,
+	}));
+}
+
 /**
  * The face a tile is drawn for: **Every form** edits it, **In play** reads it
  * with its controls live, and a brief reads it with none.
  */
 type VitalFace = 'edit' | 'play' | 'brief';
 
+/** One change a form's modifier field makes, as the form reads it. */
 interface FormChange {
-	/** The component it is grouped under in the list. */
+	/** The line it is drawn on: its component and whether it is the bare name. */
 	group: string;
-	/** The target's published label, which heads it in the strip. */
+	/**
+	 * What leads its line where the list draws more than one: the component
+	 * part at short width, with the full label as a `title` where that was an
+	 * author's short. Null on a bare name's line, a group part's and a stray's.
+	 */
+	lead: { text: string; title?: string } | null;
+	/** Whether its entry's text is its component's own word, which always takes the lead. */
+	ownWord: boolean;
+	/** What heads it in the strip: the bare name at short width. */
 	label: string;
+	/** The full label, where `label` drew an author's short. */
+	labelTitle?: string;
 	/** What it says: `STR sets to 4` in the list, the bare number in the strip. */
 	text: string;
+	/** The item at full width, where `text` drew an author's short. */
+	title?: string;
 	applies: boolean;
 	/** Why it is not applying, in words, or null. */
 	why: string | null;
@@ -2539,19 +2628,19 @@ interface FormChange {
 
 /**
  * Whether an outcome sets a component's single number outright: an `=` whose
- * target is a component's own value rather than one entry or row of it — the
- * published label carries no ` · ` — and whose amount works out. Such a change
- * is one of the form's stats, as HP and Speed are, so it is read in the vitals
- * strip. An addition, an at-least, and an `=` on a part of a component stay in
- * the list.
+ * target is a component's own bare name rather than one entry or row of it —
+ * its parts carry no entry — and whose amount works out. Such a change is one
+ * of the form's stats, as HP and Speed are, so it is read in the vitals strip.
+ * An addition, an at-least, and an `=` on a part of a component stay in the
+ * list.
  */
 function setsOneNumber(outcome: ModifierOutcome): boolean {
 	const operator = outcome.change?.operator ?? outcome.typed?.operator ?? 'add';
 	return (
 		operator === 'override' &&
 		outcome.amount !== null &&
-		outcome.target !== '' &&
-		!outcome.targetLabel.includes(' · ')
+		outcome.targetName !== undefined &&
+		outcome.targetName.entry === undefined
 	);
 }
 

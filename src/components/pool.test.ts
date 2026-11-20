@@ -144,7 +144,10 @@ describe('pool.scopeValues', () => {
 
 	it('publishes the max as a lazily evaluated display', () => {
 		const published = pool.scopeValues?.({ current: '22' }, config);
+		// Under its fixed word, `src/en.ts`'s, since the name is the Pool's own.
 		expect(published?.named?.max).toEqual({
+			label: 'Maximum',
+			ownWord: true,
 			display: { field: 'max', scope: {} },
 		});
 	});
@@ -158,7 +161,7 @@ describe('pool.scopeValues', () => {
 	it('publishes temp only when the layout asks for it', () => {
 		expect(
 			pool.scopeValues?.({ temp: '4' }, { ...config, hasTemp: true })?.named?.temp,
-		).toEqual({ value: '4', buffer: { label: 'HP', spent: {} } });
+		).toEqual({ label: 'Temporary', ownWord: true, value: '4', buffer: { label: 'HP', spent: {} } });
 		expect(pool.scopeValues?.({ temp: '4' }, config)?.named?.temp).toBeUndefined();
 	});
 
@@ -2447,7 +2450,7 @@ describe('a pool whose max the character owns', () => {
 			pool.scopeValues?.({ current: '22', max: '31' }, { ...config, ...owned }),
 		).toEqual({
 			self: { value: '22' },
-			named: { max: { value: '31' } },
+			named: { max: { label: 'Maximum', ownWord: true, value: '31' } },
 		});
 	});
 

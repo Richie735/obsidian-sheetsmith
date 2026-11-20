@@ -37,6 +37,7 @@
 
 import { setIcon } from 'obsidian';
 import { isName, roundSum } from '../formula/expression';
+import { entryLabel } from '../formula/name-label';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import { claimRows as sharedClaimRows, RowClaims } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
@@ -198,6 +199,11 @@ export interface TableRow {
 	 * case-insensitively. See claimRows.
 	 */
 	label: string;
+	/**
+	 * The author's tight form of the row's label, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
 	/**
 	 * The name a formula reads this row's published value by, as
 	 * `<component id>.<key>`. Only meaningful with a published column, and
@@ -1030,6 +1036,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		{
 			key: 'rows',
 			kind: 'rows',
+			shortLabel: true,
 			label: 'Rows',
 			description:
 				'The rows every character using this layout has. Each row may define named expressions its computed columns can read, e.g. "ability" as abilities.DEX, so one column formula serves the whole list. A row may also carry a key, which is the name a formula elsewhere reads that row\'s published value by.',
@@ -1363,12 +1370,16 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				if (declared === null || key === '') {
 					// A row with no name in some group is listed, not published (D5).
 					if (groups.length > 0) {
-						unnamed.push(unnamedMember(config.id, view.position, rowLabel(view.label), groups));
+						unnamed.push(
+							unnamedMember(config.id, view.position, rowLabel(view.label), groups, view.row?.short),
+						);
 					}
 					continue;
 				}
 				const cell = storedCells(data, view);
 				const name = `${config.id}.${key}`;
+				// The row's own text for a reader, its links drawn as their text.
+				const labelled = entryLabel(displayText(view.label), view.row?.short);
 				if (columnType(published) !== 'computed') {
 					// A stored cell is its own answer, and it is the same answer
 					// the card shows, so the bare name and `.value` agree until a
@@ -1380,6 +1391,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					const own = columnState(published);
 					named[key] = withGroups(
 						{
+							...labelled,
 							value: typedValue(published, cell(published)),
 							...(own === undefined ? {} : { state: { ...own, column: published.key } }),
 							...withStates,
@@ -1392,6 +1404,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// publish: a formula reading one fails as an unknown name (§4.2).
 				named[key] = withGroups(
 					{
+						...labelled,
 						compute: (resolve, state) =>
 							resolve(
 								`columns.${at}.formula`,
