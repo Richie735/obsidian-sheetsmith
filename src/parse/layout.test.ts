@@ -771,6 +771,33 @@ describe('parseLayout', () => {
 		expect(() => parseLayout(bad)).toThrow(/id/);
 	});
 
+	it('refuses a short label that is not a string, naming the key, and keeps one that is', () => {
+		// `docs/features/published-name-labels.md`: the walk reads it off every
+		// publishing component, so a value no surface can draw is the parser's.
+		const layout = (short: unknown): string =>
+			JSON.stringify({
+				name: 'L',
+				components: [
+					{ id: 'ac', type: 'card', label: 'Armor class', short, position: { col: 1, row: 1, width: 1, height: 1 } },
+				],
+			});
+		expect(() => parseLayout(layout(3))).toThrow(
+			'Component 1 ("Armor class") needs its "short" to be a string, or no "short" at all.',
+		);
+		expect(parseLayout(layout('AC')).components[0]?.short).toBe('AC');
+		// Blank is absent to every reader, not a fault in the file.
+		expect(() => parseLayout(layout('  '))).not.toThrow();
+	});
+
+	it('writes no short label a file did not hold, and keeps every one it did', () => {
+		// Nothing writes a `short` the file did not hold (published-name-labels).
+		expect(serialiseLayout(parseLayout(VALID))).not.toContain('"short"');
+		const source = readFileSync('src/starters/5e.json', 'utf8');
+		const once = serialiseLayout(parseLayout(source));
+		expect(serialiseLayout(parseLayout(once))).toBe(once);
+		expect(once.match(/"short"/g)?.length).toBe(source.match(/"short"/g)?.length);
+	});
+
 	it('rejects a malformed position', () => {
 		const bad = JSON.stringify({
 			name: 'L',

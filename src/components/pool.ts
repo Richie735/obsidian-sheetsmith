@@ -25,6 +25,8 @@ import { commitWindow } from '../interaction/commit-window';
 import { stepButton } from '../interaction/hold-repeat';
 import { bindScrub } from '../interaction/scrub';
 import { readFenced, writeFenced } from '../parse/fenced';
+import { TEXT } from '../en';
+import { ownWord } from '../formula/name-label';
 import { publishedFieldNames } from '../formula/resolve';
 import {
 	drainBuffer,
@@ -804,15 +806,16 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// from either mode, which is the point of the name: a formula
 			// elsewhere on the sheet asks a pool for its ceiling without
 			// knowing where that pool keeps it.
-			named[MAX_KEY] = { value: data?.max };
+			named[MAX_KEY] = { ...ownWord(TEXT.poolMaximum), value: data?.max };
 		} else if (config.max !== undefined) {
-			named[MAX_KEY] = { display: { field: 'max', scope: {} } };
+			named[MAX_KEY] = { ...ownWord(TEXT.poolMaximum), display: { field: 'max', scope: {} } };
 		}
 		if (config.hasTemp === true) {
 			// A buffer a grant may raise, carrying the note's spent records so the
 			// walk folds them without learning this fence (D3). Absent records are
 			// the static read the targets come from.
 			named[TEMP_KEY] = {
+				...ownWord(TEXT.poolTemporary),
 				value: data?.temp,
 				buffer: { label: config.label, spent: recordsOf(data) },
 			};

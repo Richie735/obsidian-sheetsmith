@@ -95,6 +95,7 @@ import {
 	modifierTargetSource,
 	ModifierTargetSource,
 	namedGroups,
+	namesAnything,
 } from '../formula/modifier-targets';
 import { vocabularySource } from '../formula/vocabulary';
 import { fencedKeyProblem } from '../parse/fenced';
@@ -115,7 +116,9 @@ import {
 	ListContext,
 	moveItem,
 	renderColumnsEditor,
+	ItemDetail,
 	renderEntriesEditor,
+	setOptional,
 	renderRowsEditor,
 } from './list-fields';
 import { renderModifierDefinitions } from './modifier-definitions-field';
@@ -189,6 +192,11 @@ export function idToken(id: string): string {
 /** The focus token of a component's **Label** field. */
 export function labelToken(id: string): string {
 	return `label-${id}`;
+}
+
+/** The focus token of a component's **Short label** field. */
+export function shortLabelToken(id: string): string {
+	return `short-label-${id}`;
 }
 
 /**
@@ -473,6 +481,41 @@ export class ConfigPanel {
 		});
 		button.dataset.sheetsmithFocus = PANEL_BACK_TOKEN;
 		button.addEventListener('click', () => this.host.returnToOutline());
+	}
+
+	/**
+	 * **Short label**, directly under **Label**: what a tight surface calls the
+	 * component (`docs/features/published-name-labels.md`). Shared and owned by
+	 * this panel, as **Label** is, since the walk reads it off every publishing
+	 * component and no component declares it.
+	 *
+	 * **Drawn only where the component publishes a name** (`namesAnything`), on
+	 * the static read the walk itself takes, so a container, a Rich text or an
+	 * Image never offers a field nothing would read. Blank is absent, through
+	 * `setOptional`, as an item's **Short** is.
+	 */
+	private renderShortLabel(
+		form: HTMLElement,
+		config: ComponentConfig,
+		definition: ComponentDefinition | undefined,
+	): void {
+		if (!namesAnything(modifierTargetSource(config, definition))) return;
+		new Setting(form)
+			.setName('Short label')
+			.setDesc(
+				"A shorter name for tight spaces, such as a form's change list. Empty uses the label. Formulas and notes never read it.",
+			)
+			.addText((text) => {
+				text.setValue(config.short ?? '');
+				text.inputEl.dataset.sheetsmithFocus = shortLabelToken(config.id);
+				onCommit(text, (raw) => {
+					const before = config.short;
+					setOptional(config as unknown as Record<string, unknown>, 'short', raw);
+					if (config.short === before) return;
+					this.host.persist();
+					this.host.redraw();
+				});
+			});
 	}
 
 	/**
@@ -944,6 +987,8 @@ export class ConfigPanel {
 				});
 			});
 
+		this.renderShortLabel(form, config, definition);
+
 		// A child of a container that shows one at a time fills the region it is
 		// given, so none of its four numbers is read by anything. Withdrawn rather
 		// than shown inert: a field that edits a number nothing reads is worse
@@ -1076,6 +1121,14 @@ export class ConfigPanel {
 		// The layout's modifier groups, which a `groups` field and a row's own
 		// groups offer (`docs/features/table-row-modifier-target.md` D12).
 		const declaredGroups = parseModifierGroups(layout).groups;
+		/** What a list field asks each item's detail line to draw, from its own declarations. */
+		const itemDetail = (field: ConfigFieldSpec): ItemDetail => ({
+			...(field.memberGroups === undefined
+				? {}
+				: { members: { spec: field.memberGroups, declared: declaredGroups } }),
+			...(field.shortLabel === undefined ? {} : { short: true }),
+			...(typeof field.shortLabel === 'object' ? { shortAlso: field.shortLabel.also } : {}),
+		});
 		let currentGroup: string | undefined;
 		for (const field of definition.configFields) {
 			if (
@@ -1140,9 +1193,7 @@ export class ConfigPanel {
 							// which shares this list shape but stores nothing under
 							// either column (`types.ts`, `EntryAddress`).
 							field.addressesEntry,
-							field.memberGroups === undefined
-								? undefined
-								: { spec: field.memberGroups, declared: declaredGroups },
+							itemDetail(field),
 						);
 					}
 				} else if (field.kind === 'zones') {
@@ -1168,9 +1219,7 @@ export class ConfigPanel {
 						this.host.listContext(),
 						field.statsField,
 						field.rowFlag,
-						field.memberGroups === undefined
-							? undefined
-							: { spec: field.memberGroups, declared: declaredGroups },
+						itemDetail(field),
 					);
 				} else {
 					renderColumnsEditor(

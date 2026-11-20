@@ -495,7 +495,7 @@ describe('a Table whose published column is itself a level (D3)', () => {
 		const outcome = modifiers.outcomes('skills.stealth = 2 in Training', { label: 'Cat Form', values: {} }, '')[0];
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe(
-			'Skills · stealth already is "Training", so this change needs no column. Clear it.',
+			'Skills · Stealth already is "Training", so this change needs no column. Clear it.',
 		);
 	});
 

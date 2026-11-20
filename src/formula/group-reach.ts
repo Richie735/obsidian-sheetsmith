@@ -24,16 +24,19 @@
  * Pure, so Constraint 5 holds. Upstream of `modifiers.ts`, which imports it.
  */
 
-import { ModifierGroup } from '../types';
+import { ModifierGroup, NameLabel } from '../types';
 import { groupTargetOf } from '../parse/modifier-cell';
 import { Enrolment } from './modifier-definitions';
 
-/** One value in a group: the name or slot key it is reached by, and its label. */
+/** One value in a group: the name or slot key it is reached by, and what it is called. */
 export interface GroupMember {
 	/** A published name, or an unnamed member's slot key (`attacks[3]`). */
 	name: string;
-	/** What a sentence calls it: `Saves · str`, `Attacks · Longsword`. */
-	label: string;
+	/**
+	 * What a sentence calls it, as parts: `Saving throws · Strength`, `Attacks ·
+	 * Longsword` at full width (`docs/features/published-name-labels.md`).
+	 */
+	parts: NameLabel;
 }
 
 /** The sheet's groups: which are declared, and which values are in each. */

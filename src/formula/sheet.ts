@@ -50,6 +50,7 @@ import {
 	ChoiceAccount,
 	ChoiceReader,
 	ChoiceTarget,
+	NameLabel,
 } from '../types';
 import {
 	FormulaError,
@@ -98,6 +99,7 @@ import {
 	stateVerdict,
 } from './modifier-states';
 import { suppressionWording } from './suppression-wording';
+import { nameText, withColumn } from './name-label';
 import {
 	ChoiceLookup,
 	choiceShapesOf,
@@ -775,6 +777,34 @@ export function sheetModifiers(
 	for (const target of modifiers.published) labels.set(target.name, target.label);
 	for (const target of modifiers.targets) labels.set(target.name, target.label);
 	const label = (name: string): string => labels.get(name) ?? name;
+	/*
+	 * **The same name as parts, beside the label**
+	 * (`docs/features/published-name-labels.md`), so a surface drawing another
+	 * width composes rather than splitting `targetLabel`. Only a published name
+	 * has parts; a target this layout does not publish has none, and its outcome
+	 * carries no `targetName`.
+	 */
+	const nameParts = new Map<string, NameLabel>();
+	for (const target of [...modifiers.published, ...modifiers.targets]) {
+		if (target.parts !== undefined) nameParts.set(target.name, target.parts);
+	}
+	/** An outcome's `targetName`, the column on the parts where it names one. */
+	const targetName = (name: string, column: string | null = null): { targetName?: NameLabel } => {
+		const parts = nameParts.get(name);
+		if (parts === undefined) return {};
+		return { targetName: column === null ? parts : { ...parts, column } };
+	};
+	/**
+	 * A column state's full label, composed with the column on the parts. A
+	 * target this layout does not publish has no parts, and none is made up for
+	 * it: what `label` says of it, then the column.
+	 */
+	const columnLabel = (name: string, column: string): string => {
+		const parts = nameParts.get(name);
+		return parts === undefined
+			? withColumn(label(name), column)
+			: nameText({ ...parts, column }, 'full', { component: true });
+	};
 	/**
 	 * What has been pushed at a name, with its floor's verdict on the line
 	 * (`withFloorVerdict`). A name holding an at least that nothing has evaluated
@@ -827,11 +857,13 @@ export function sheetModifiers(
 			change: found.change,
 			typed: found.typed,
 			target: fields.target,
-			// The column goes on the label, so the row's popup says which ring.
+			// The column goes on the label, so the row's popup says which ring:
+			// on the parts, composed, never appended to a string.
+			...targetName(fields.target, fields.column),
 			targetLabel:
 				fields.column === null
 					? label(fields.target)
-					: `${label(fields.target)} · ${fields.column}`,
+					: columnLabel(fields.target, fields.column),
 			...(verdict.kind !== 'stray' && verdict.shape !== null ? { state: verdict.shape } : {}),
 		};
 		const refused = (suppressed: string, amount: number | null = null): ModifierOutcome => ({
@@ -892,6 +924,7 @@ export function sheetModifiers(
 			typed: found.typed,
 			target: fields.target,
 			targetLabel: label(fields.target),
+			...targetName(fields.target),
 			...(verdict.kind === 'stray' || fields.option === null
 				? {}
 				: { choice: { shape: verdict.shape, option: fields.option } }),
@@ -963,6 +996,7 @@ export function sheetModifiers(
 			typed: found.typed,
 			target: fields.target,
 			targetLabel: label(fields.target),
+			...targetName(fields.target),
 			grant: true as const,
 		};
 		const refused = (suppressed: string, amount: number | null = null): ModifierOutcome => ({
@@ -1048,7 +1082,7 @@ export function sheetModifiers(
 				: noteRefusal(found.fields.target);
 		const withRefusal = refused === null ? {} : { noteLine: refused };
 		if (found.kind === 'noted') {
-			const outcome = enrolmentOutcome(found, settled, label);
+			const outcome = { ...enrolmentOutcome(found, settled, label), ...targetName(found.fields.target) };
 			return refused === null
 				? outcome
 				: { ...outcome, applies: false, suppressed: refused };
@@ -1065,6 +1099,7 @@ export function sheetModifiers(
 				typed: found.typed,
 				target: found.contribution.target,
 				targetLabel: named,
+				...targetName(found.contribution.target),
 				applies: false,
 				amount: found.contribution.amount,
 				condition: found.conditional ? true : null,
@@ -1074,6 +1109,7 @@ export function sheetModifiers(
 		}
 		return {
 			...enrolmentOutcome(found, settled, label),
+			...(found.kind === 'unknown' ? {} : targetName(found.fields.target)),
 			...withRefusal,
 		};
 	};
@@ -1177,7 +1213,7 @@ export function sheetModifiers(
 				missed:
 					first === undefined
 						? null
-						: { label: first.member.label, reason: first.outcome.suppressed ?? '' },
+						: { parts: first.member.parts, reason: first.outcome.suppressed ?? '' },
 				more: Math.max(0, misses.length - 1),
 				said,
 			},

@@ -30,6 +30,7 @@ import {
 import { Layout } from '../parse/layout';
 import { parseModifierGroups, readGroupLine, spellGroupLine } from '../parse/modifier-groups';
 import { series } from '../parse/spelled';
+import { nameText } from '../formula/name-label';
 import {
 	groupIndex,
 	ModifierTargetSource,
@@ -99,7 +100,9 @@ function spec(layout: Layout, sources: readonly ModifierTargetSource[]): LineLis
 				const members = index.members.get(group.name) ?? [];
 				const said = memberLine(
 					members.length,
-					members.map((member) => member.label),
+					// Each member's full breadcrumb, the row a reader sees
+					// (`docs/features/published-name-labels.md`).
+					members.map((member) => nameText(member.parts, 'full', { component: true })),
 					open.get(group.name) ?? [],
 				);
 				into.createDiv('sheetsmith-group-members', (el) => {

@@ -431,9 +431,10 @@ export function renderRowsEditor(
 	context: ListContext,
 	statsField?: string,
 	rowFlag?: { key: string; label: string },
-	/** Each row's own modifier groups, where the field declares them (D12). */
-	members?: MemberGroupsLine,
+	/** What each row's detail line holds besides its values: its own groups, its short label. */
+	detail: ItemDetail = {},
 ): void {
+	const { members } = detail;
 	if (!Array.isArray(record[key])) record[key] = [];
 	const rows = record[key] as RowEntry[];
 	const statChoices: readonly StatChoice[] =
@@ -789,17 +790,15 @@ export function renderRowsEditor(
 				return `Remove the row "${row.label}"? It carries ${written} ${written === 1 ? 'expression' : 'expressions'}, and character notes keep their "${row.label}" data either way.`;
 			},
 		);
-		if (members !== undefined) {
-			memberGroupsLine(
-				scroller,
-				row,
-				record.groups,
-				members,
-				row.label,
-				`${prefix}-row-${index}-groups`,
-				context,
-			);
-		}
+		itemDetailLine(
+			scroller,
+			row,
+			record.groups,
+			detail,
+			row.label,
+			`${prefix}-row-${index}-groups`,
+			context,
+		);
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
@@ -832,6 +831,7 @@ export function renderRowsEditor(
 	// Beside the row-value note, under the buttons: a note about every row
 	// drawn under the last one read as that row's.
 	if (members !== undefined) memberGroupsNote(listEl, members);
+	if (detail.short === true) shortLabelNote(listEl, 'row', detail.shortAlso);
 	addValue.addEventListener('click', () => {
 		let name = 'ability';
 		let counter = 2;
@@ -981,9 +981,85 @@ function memberGroupsNote(listEl: HTMLElement, members: MemberGroupsLine): void 
 }
 
 /**
- * The detail line under one row or entry naming the groups it is in: the
- * shared chips, the inherited ones drawn faint beside its own, and **Same
- * groups as the table** where the component has a default to leave.
+ * What a row's or entry's detail line holds besides the list's own columns,
+ * as the field declares it: its own modifier groups (D12), and a **Short**
+ * label where its items are published names
+ * (`docs/features/published-name-labels.md`). Both absent draws no line.
+ */
+export interface ItemDetail {
+	members?: MemberGroupsLine;
+	/** The field's `shortLabel`: each item takes a **Short** input, stored under `short`. */
+	short?: boolean;
+	/** The field's own sentence after the **Short** footnote, where it declares one. */
+	shortAlso?: string;
+}
+
+/**
+ * The detail line under one row or entry: its **Short** label first, where the
+ * field declares one, then the groups it is in. Drawn only where it holds one of
+ * them, so a list declaring neither draws exactly as it did.
+ */
+function itemDetailLine(
+	parent: HTMLElement,
+	entry: Record<string, unknown>,
+	defaults: unknown,
+	detail: ItemDetail,
+	name: string,
+	token: string,
+	context: ListContext,
+): void {
+	const { members } = detail;
+	const own = ownGroups(entry.groups);
+	const groups = members !== undefined && (members.declared.length > 0 || own.length > 0);
+	if (detail.short !== true && !groups) return;
+	const line = parent.createDiv('sheetsmith-entry-detail');
+	if (detail.short === true) shortLabelField(line, entry, name, `${token}-short`, context);
+	if (members !== undefined && groups) memberGroupsLine(line, entry, defaults, members, name, token, context);
+}
+
+/**
+ * One item's **Short** label: what a tight surface calls it, as typed. Blank is
+ * absent, so the commit removes the key rather than storing spaces. Its name
+ * holds the visible word and the item's, since the line has no header and a
+ * row of these reads alike to a screen reader (`docs/UI.md` §6).
+ */
+function shortLabelField(
+	line: HTMLElement,
+	entry: Record<string, unknown>,
+	name: string,
+	token: string,
+	context: ListContext,
+): void {
+	const field = labelled(line, 'Short');
+	field.addClass('sheetsmith-detail-field-short');
+	const input = field.createEl('input', {
+		type: 'text',
+		attr: { 'aria-label': `Short label for ${name}` },
+	});
+	input.value = typeof entry.short === 'string' ? entry.short : '';
+	input.dataset.sheetsmithFocus = token;
+	input.addEventListener('change', () => {
+		const before = typeof entry.short === 'string' ? entry.short : '';
+		setOptional(entry, 'short', input.value);
+		const after = typeof entry.short === 'string' ? entry.short : '';
+		input.value = after;
+		if (after !== before) context.persist();
+	});
+}
+
+/**
+ * The list's one footnote for its items' **Short** labels, under the list and
+ * its buttons, on `memberGroupsNote`'s argument: once, not on every row.
+ */
+function shortLabelNote(listEl: HTMLElement, noun: 'row' | 'entry', also?: string): void {
+	const said = `Short is what tight spaces call each ${noun}, such as STR for Strength. Empty uses the full name. Formulas and notes never read it.`;
+	listEl.createDiv('sheetsmith-entry-footnote', (el) => el.setText(also === undefined ? said : `${said} ${also}`));
+}
+
+/**
+ * The groups one row or entry is in, on its detail line: the shared chips, the
+ * inherited ones drawn faint beside its own, and **Same groups as the table**
+ * where the component has a default to leave.
  *
  * **Drawn only once the layout declares a group, or the entry already names
  * one**, so a layout with none draws every list exactly as it did. Choosing a
@@ -992,7 +1068,7 @@ function memberGroupsNote(listEl: HTMLElement, members: MemberGroupsLine): void 
  * it on removes the key.
  */
 function memberGroupsLine(
-	parent: HTMLElement,
+	detail: HTMLElement,
 	entry: Record<string, unknown>,
 	defaults: unknown,
 	members: MemberGroupsLine,
@@ -1001,8 +1077,6 @@ function memberGroupsLine(
 	context: ListContext,
 ): void {
 	const own = ownGroups(entry.groups);
-	if (members.declared.length === 0 && own.length === 0) return;
-	const detail = parent.createDiv('sheetsmith-entry-detail');
 	detail.addClass('sheetsmith-member-groups');
 	const field = labelled(detail, TEXT.modifierGroups);
 	field.addClass('sheetsmith-detail-field-wide');
@@ -2189,9 +2263,10 @@ export function renderEntriesEditor(
 	 * under either column (`types.ts`, `EntryAddress`).
 	 */
 	address?: EntryAddress,
-	/** Each entry's own modifier groups, where the field declares them (D12). */
-	members?: MemberGroupsLine,
+	/** What each entry's detail line holds: its own groups, its short label. */
+	detail: ItemDetail = {},
 ): void {
+	const { members } = detail;
 	// A third content column changes both grids — the header's and the
 	// row's — and neither can be inferred from the markup, so the list
 	// says so once and the stylesheet reads it.
@@ -2524,17 +2599,15 @@ export function renderEntriesEditor(
 				return `Remove the row "${name}"? Its segments formula is lost. Character notes keep their "${name}" data either way.`;
 			},
 		);
-		if (members !== undefined) {
-			memberGroupsLine(
-				listEl,
-				entry,
-				record.groups,
-				members,
-				label,
-				`attr-${prefix}-${index}-groups`,
-				context,
-			);
-		}
+		itemDetailLine(
+			listEl,
+			entry,
+			record.groups,
+			detail,
+			label,
+			`attr-${prefix}-${index}-groups`,
+			context,
+		);
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
@@ -2559,4 +2632,5 @@ export function renderEntriesEditor(
 	// Under the footer, where a list-level note belongs, rather than under the
 	// last entry, where it read as that entry's.
 	if (members !== undefined) memberGroupsNote(listEl, members);
+	if (detail.short === true) shortLabelNote(listEl, withCount ? 'row' : 'entry', detail.shortAlso);
 }

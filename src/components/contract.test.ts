@@ -1689,6 +1689,23 @@ describe.each(types)('component "%s"', (type) => {
 		}
 	});
 
+	it('declares a short label only on a list whose items the editor can give one, and never as a field', () => {
+		/*
+		 * `docs/features/published-name-labels.md`. The component's own `short`
+		 * is shared and the editor's (**Short label**, under **Label**), so a
+		 * field redeclaring it would draw a second input writing one key; the
+		 * item's is drawn by the two list editors, on the detail line of an
+		 * `'entries'`, `'rows'` or `'track-rows'` list, and declared anywhere else
+		 * it draws nothing and says nothing.
+		 */
+		expect(EDITOR_OWNED_KEYS).toContain('short');
+		for (const field of component?.configFields ?? []) {
+			expect(field.key, `${type} redeclares the shared short label`).not.toBe('short');
+			if (field.shortLabel === undefined) continue;
+			expect(['entries', 'rows', 'track-rows'], `${field.key} cannot draw a short label`).toContain(field.kind);
+		}
+	});
+
 	it('gives every two-column list field its own column names', () => {
 		/*
 		 * The editor's entries table serves three vocabularies — a Card set's

@@ -87,6 +87,8 @@
  */
 
 import { setIcon } from 'obsidian';
+import { TEXT } from '../en';
+import { entryLabel, ownWord } from '../formula/name-label';
 import { ArmRegister, armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { bindEditable } from '../interaction/editable';
 import {
@@ -204,6 +206,11 @@ export interface PassportField {
 	key: string;
 	name?: string;
 	/**
+	 * The author's tight form of the name, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
+	/**
 	 * This field holds several values rather than one, drawn as one chip per
 	 * part and stored on one line separated by semicolons
 	 * (`docs/features/passport-field-lists.md`). Absent means one value,
@@ -276,6 +283,7 @@ function storableFields(config: PassportConfig): PassportField[] {
 		out.push({
 			key,
 			...(field.name === undefined ? {} : { name: field.name }),
+			...(field.short === undefined ? {} : { short: field.short }),
 			...(field.list === true ? { list: true } : {}),
 		});
 	}
@@ -1097,6 +1105,7 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		{
 			key: 'fields',
 			kind: 'entries',
+			shortLabel: true,
 			label: 'Fields',
 			// This component's own words for the two columns. Held here rather than
 			// in the editor's shared list field, which serves four vocabularies now
@@ -1262,10 +1271,10 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		// layout named, so `passport.name` is a word no formula can compare in
 		// precisely the way `passport.class` is. Nothing here has to know which of
 		// them the face draws large.
-		named[nameKey(config)] = { value: data?.values?.[nameKey(config)] };
+		named[nameKey(config)] = { ...ownWord(TEXT.passportName), value: data?.values?.[nameKey(config)] };
 		for (const field of storableFields(config)) {
 			const raw = data?.values?.[field.key];
-			named[field.key] = { value: raw };
+			named[field.key] = { ...entryLabel(field.name, field.short), value: raw };
 		}
 		return { named };
 	},

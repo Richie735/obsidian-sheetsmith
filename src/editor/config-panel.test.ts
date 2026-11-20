@@ -943,7 +943,8 @@ describe('modifier groups in the pane (docs/features/table-row-modifier-target.m
 			line.lastElementChild?.getAttribute('title') ?? null,
 		]);
 		expect(lines).toEqual([
-			['Saving throws', '2 values', 'Saves · str, Saves · dex'],
+			// Each member's full breadcrumb, the row a reader sees, never its key.
+			['Saving throws', '2 values', 'Saves · Strength, Saves · Dexterity'],
 			['Attacks', 'Only rows a character adds to Attacks are in this group.', null],
 			['Defences', 'No value is in this group yet.', null],
 		]);
@@ -980,5 +981,85 @@ describe('modifier groups in the pane (docs/features/table-row-modifier-target.m
 		);
 		// Read off the configuration, so a table publishing nothing still names its typo.
 		expect(harness.container.textContent).toContain('"unpublished_typo" is not a modifier group this layout declares.');
+	});
+});
+
+describe('a short label (docs/features/published-name-labels.md)', () => {
+	const at = (col: number) => ({ col, row: 1, width: 1, height: 2 });
+	const layout: Layout = {
+		name: 'Shorts',
+		components: [
+			{ id: 'armour', type: 'card', label: 'Armor class', position: at(1) },
+			{ id: 'hp', type: 'pool', label: 'Hit points', position: at(2), max: '10' } as ComponentConfig,
+			{
+				id: 'abilities',
+				type: 'card-set',
+				label: 'Abilities',
+				position: at(3),
+				entries: [{ key: 'STR', name: 'Strength' }],
+			} as ComponentConfig,
+			{
+				id: 'saves',
+				type: 'table',
+				label: 'Saving throws',
+				position: at(4),
+				rows: [{ label: 'Strength', key: 'str' }],
+				columns: [{ key: 'Bonus', type: 'number', publish: true }],
+			} as ComponentConfig,
+			{ id: 'about', type: 'group', label: 'About', position: at(5) },
+			{ id: 'backstory', type: 'rich-text', label: 'Backstory', position: at(6) },
+			{ id: 'portrait', type: 'image', label: 'Portrait', position: at(7) },
+		],
+	};
+
+	async function select(id: string): Promise<void> {
+		harness = await open(layout);
+		control(harness, `edit-${id}`).click();
+		await settle(harness.pane);
+	}
+
+	it.each(['armour', 'hp', 'abilities', 'saves'])('offers Short label under Label on %s, which publishes a name', async (id) => {
+		await select(id);
+		const names = Array.from(harness.container.querySelectorAll('.setting-item-name')).map((el) => el.textContent);
+		expect(names.indexOf('Short label')).toBe(names.indexOf('Label') + 1);
+	});
+
+	it.each(['about', 'backstory', 'portrait'])('offers no Short label on %s, which publishes nothing', async (id) => {
+		await select(id);
+		expect(has(harness, 'short-label-' + id)).toBe(false);
+	});
+
+	it('stores what is typed trimmed, and removes the key when it is cleared', async () => {
+		await select('armour');
+		type(control<HTMLInputElement>(harness, 'short-label-armour'), '  AC ');
+		await settle(harness.pane);
+		expect((await harness.stored()).components[0]?.short).toBe('AC');
+		type(control<HTMLInputElement>(harness, 'short-label-armour'), '   ');
+		await settle(harness.pane);
+		expect('short' in ((await harness.stored()).components[0] ?? {})).toBe(false);
+	});
+
+	it('draws a Short input on each entry and row, with one footnote under the list', async () => {
+		await select('abilities');
+		const short = harness.container.querySelector<HTMLInputElement>('.sheetsmith-detail-field-short input');
+		// Named for the entry as its other controls are, by its key (`Remove STR`).
+		expect(short?.getAttribute('aria-label')).toBe('Short label for STR');
+		const notes = Array.from(harness.container.querySelectorAll('.sheetsmith-entry-footnote')).filter((note) =>
+			note.textContent?.startsWith('Short is'),
+		);
+		expect(notes).toHaveLength(1);
+		// A Card set's card draws the key, so its list says so; a Table's does not.
+		expect(notes[0]?.textContent?.endsWith('Formulas and notes never read it. The card shows the key.')).toBe(true);
+		if (short === null) throw new Error('no Short input');
+		type(short, 'STR');
+		await settle(harness.pane);
+		const stored = (await harness.stored()).components[2] as unknown as { entries: { short?: string }[] };
+		expect(stored.entries[0]?.short).toBe('STR');
+
+		await select('saves');
+		expect(harness.container.querySelector('.sheetsmith-detail-field-short input')?.getAttribute('aria-label')).toBe(
+			'Short label for Strength',
+		);
+		expect(harness.container.textContent).not.toContain('The card shows the key.');
 	});
 });

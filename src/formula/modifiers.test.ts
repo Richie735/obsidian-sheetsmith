@@ -2247,12 +2247,12 @@ describe('a change aimed at modifier groups (docs/features/table-row-modifier-ta
 			['empty', { name: 'empty', label: 'Empty' }],
 		]),
 		members: new Map([
-			['save', SAVES.map((name) => ({ name, label: name }))],
+			['save', SAVES.map((name) => ({ name, parts: { component: { id: name, full: name } } }))],
 			[
 				'check',
 				[
-					{ name: 'saves.dex', label: 'saves.dex' },
-					{ name: 'perception', label: 'Perception' },
+					{ name: 'saves.dex', parts: { component: { id: 'saves', full: 'saves' }, entry: { full: 'dex' } } },
+					{ name: 'perception', parts: { component: { id: 'perception', full: 'Perception' } } },
 				],
 			],
 		]),

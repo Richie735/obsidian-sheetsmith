@@ -14,6 +14,7 @@ import { table, TableConfig } from './table';
 import { modifierOutcomeText } from './modifier-breakdown';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { makeFieldResolver } from '../formula/resolve';
+import { nameText } from '../formula/name-label';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, ComponentDefinition, ModifierGroup } from '../types';
 
@@ -281,7 +282,7 @@ describe("the source row's reach line", () => {
 			['Ring', 'yes', 'saves.str += 2 as item'],
 		]);
 		expect(outcome.applies).toBe(true);
-		expect(text.split('\n')[1]).toMatch(/^Changes 5 of 6 values\. Not Saves · str: /);
+		expect(text.split('\n')[1]).toMatch(/^Changes 5 of 6 values\. Not Saves · STR: /);
 	});
 
 	it('says why an undeclared group, an empty group and a member condition change nothing', () => {
@@ -308,7 +309,11 @@ describe("the source row's reach line", () => {
 		const { outcome, text } = reach('@check = 1 in Training');
 		expect(outcome.applies).toBe(false);
 		expect(outcome.reach?.values).toBe(2);
-		expect(outcome.reach?.missed?.label).toBe('Perception');
+		// The member's parts, composed at full width (published-name-labels).
+		const missed = outcome.reach?.missed;
+		expect(missed === null || missed === undefined ? null : nameText(missed.parts, 'full', { component: true })).toBe(
+			'Perception',
+		);
 		expect(text.split('\n')[1]).toMatch(/^Changes 0 of 2 values\. Not Perception and 1 more: /);
 	});
 

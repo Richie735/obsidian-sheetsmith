@@ -588,6 +588,19 @@ describe('what a passport publishes', () => {
 		return buildSheet(layout, prepared);
 	}
 
+	it('labels its name by its fixed word and each field by its name (published-name-labels)', () => {
+		const named = passport.scopeValues?.(null, {
+			...config,
+			fields: [{ key: 'class', name: 'Class', short: 'Cls' }, { key: 'level' }],
+		})?.named;
+		// The name is the Passport's own, so it takes `src/en.ts`'s word.
+		expect(named?.name?.label).toBe('Name');
+		expect(named?.name?.ownWord).toBe(true);
+		expect(named?.class).toEqual({ label: 'Class', short: 'Cls', value: undefined });
+		// A field with no name carries none, and the walk reads its key.
+		expect(named?.level?.label).toBeUndefined();
+	});
+
 	it('publishes one name per declared field, and no bare id', () => {
 		const { env } = envFor(BODY);
 		expect(evaluate('passport.level', env.sheet, callsFrom(env))).toBe(5);

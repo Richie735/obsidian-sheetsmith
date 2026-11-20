@@ -8,6 +8,7 @@ import {
 } from './modifier-form';
 import { definitionView, outcomeView } from '../test/modifier-views';
 import { ModifierChangeView } from '../types';
+import { acceptingTargets } from '../formula/modifier-targets';
 
 /*
  * What the form authors itself, as opposed to what it draws for somebody else
@@ -222,10 +223,21 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 		label: 'Training',
 	};
 	const STATES = [
-		{ name: 'abilities.stealth', column: 'Training', label: 'Abilities · stealth · Training', shape: TRAINING },
+		{
+			name: 'abilities.stealth',
+			column: 'Training',
+			label: 'Abilities · stealth · Training',
+			parts: {
+				component: { id: 'abilities', full: 'Abilities' },
+				entry: { full: 'stealth' },
+				column: 'Training',
+			},
+			shape: TRAINING,
+		},
 		{
 			name: 'inspiration',
 			label: 'Inspiration',
+			parts: { component: { id: 'inspiration', full: 'Inspiration' } },
 			shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' },
 		},
 	];
@@ -412,7 +424,17 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 			published: [],
 			states: [
 				...STATES,
-				{ name: 'skills.stealth', column: 'Skill in hand', label: 'Skills · stealth · Skill in hand', shape: TRAINING },
+				{
+					name: 'skills.stealth',
+					column: 'Skill in hand',
+					label: 'Skills · stealth · Skill in hand',
+					parts: {
+						component: { id: 'skills', full: 'Skills' },
+						entry: { full: 'stealth' },
+						column: 'Skill in hand',
+					},
+					shape: TRAINING,
+				},
 			],
 			bonusTypes: [],
 			icon: () => undefined,
@@ -465,7 +487,14 @@ describe('a change that sets a level or a flag (docs/features/non-number-modifie
 });
 
 describe('a change that grants temporary points (docs/features/granted-temporary-points.md)', () => {
-	const BUFFERS = [{ name: 'hp.temp', label: 'HP · temp', called: 'HP' }];
+	const BUFFERS = [
+		{
+			name: 'hp.temp',
+			label: 'HP · temp',
+			parts: { component: { id: 'hp', full: 'HP' }, entry: { full: 'temp' } },
+			called: 'HP',
+		},
+	];
 	const ACCEPT = [{ name: 'armour_class', label: 'Armour class' }];
 
 	it('offers Temporary points after the levels and flags and before the notes', () => {
@@ -474,7 +503,14 @@ describe('a change that grants temporary points (docs/features/granted-temporary
 			select,
 			ACCEPT,
 			[{ name: 'passive', label: 'Passive perception' }],
-			[{ name: 'inspiration', label: 'Inspiration', shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' } }],
+			[
+				{
+					name: 'inspiration',
+					label: 'Inspiration',
+					parts: { component: { id: 'inspiration', full: 'Inspiration' } },
+					shape: { flag: true, positions: 2, words: ['off', 'on'], label: 'Inspiration' },
+				},
+			],
 			BUFFERS,
 		);
 		expect(Array.from(select.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
@@ -572,6 +608,7 @@ describe('a change that chooses a dropdown\'s option (docs/features/text-value-m
 	const SIZE = {
 		name: 'size',
 		label: 'Size',
+		parts: { component: { id: 'size', full: 'Size' } },
 		shape: {
 			label: 'Size',
 			options: ['Small', 'Medium', 'Large'].map((value) => ({ value, label: value })).concat([
@@ -809,5 +846,28 @@ describe('a change aimed at modifier groups (docs/features/table-row-modifier-ta
 			'Skills',
 		]);
 		body.remove();
+	});
+});
+
+describe('the Value select names a target by its labels (docs/features/published-name-labels.md)', () => {
+	it('shows the full breadcrumb from the walk and stores the name', () => {
+		// The sheet's form and the layout editor's **Changes** both fill their
+		// select through `fillTargetOptions` (`editor/modifier-definitions-field.ts`).
+		const accepting = acceptingTargets([
+			{
+				id: 'abilities',
+				label: 'Abilities',
+				short: 'Abl',
+				values: { named: { STR: { value: '10', label: 'Strength', short: 'STR' } } },
+				formulas: ['mod(value + mod.self)'],
+			},
+		]);
+		const select = document.createElement('select');
+		fillTargetOptions(select, accepting, []);
+		const option = Array.from(select.options).find((one) => one.value === 'abilities.STR');
+		// Full width on a picker: never the short, never the key.
+		expect(option?.textContent).toBe('Abilities · Strength');
+		select.value = 'abilities.STR';
+		expect(select.value).toBe('abilities.STR');
 	});
 });
