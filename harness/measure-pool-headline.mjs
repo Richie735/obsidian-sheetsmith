@@ -68,6 +68,11 @@
  *     `state=forms` sample's run in the shape `stat-block.ts` builds (the
  *     sample draws no numerals), keeps its `/` and ceiling at
  *     `--font-ui-medium`.
+ * 10–15. **How a qualifier gives way** (`docs/features/qualifier-fit-and-size.md`):
+ *     a typed ceiling's slash gap and the threshold's regimes, the one-unit
+ *     residue, the own-value pill giving up its padding, and the wrapped and
+ *     unwrapped *Temp* pill, and (16) that an edited one-unit ceiling leaves
+ *     its card unscrolled. Listed where they run, at the end.
  *
  * **The baseline** is `styles.css` as the git ref `BASELINE` names (default
  * `HEAD`, the version branch before this feature lands), swapped in for the
@@ -77,7 +82,8 @@
  *
  * **Printed and not failed**: check 8 for a one-unit Pool on the 520 sheet,
  * whose ceiling, at the sheet's qualifier size and not a headline, is wider
- * than the card (`docs/BACKLOG.md` § UI). Its lines are marked `residue`.
+ * than the card (`docs/BACKLOG.md` § UI). Its lines are marked `residue`, and
+ * fail only past the bound `RESIDUE_BOUND` names (Ruling A, `docs/UI.md` §5).
  *
  * **And check 4's card heights at `text=24`, where the ceiling grows**
  * (`docs/features/pool-ceiling-text-size.md`): a Pool's card, and a Card in a
@@ -163,6 +169,19 @@ const mayMove = (condition, one, was) =>
 	(one.kind === 'pool' || ROW_WITH_A_POOL.includes(one.component)) &&
 	Math.abs(one.height - was.height - CEILING_LINE_PX) <= 0.05;
 let moved = 0;
+
+/**
+ * Check 8's residue, bounded: how far a one-unit Pool's ceiling's box may pass
+ * its card's content box on the 520 sheet, a calculated one and a typed one,
+ * since its padding gave way and the rest overflows by `docs/UI.md` §5's
+ * Ruling A (`docs/features/qualifier-fit-and-size.md`). The reading centres
+ * `safe`, so an overflowing ceiling starts at the content's start and passes
+ * it at its end only, by its width less the content's: a `/120` is 34 and 36px
+ * at the default size, 45.4 and 47.4 at `text=24`, against 15.2, the typed
+ * bound a rounding tenth over. Check 11 holds the two at `/120`, and the
+ * slash's ink inside the card's clip.
+ */
+const RESIDUE_BOUND = { 0: { calculated: 18.8, typed: 20.8 }, 24: { calculated: 30.2, typed: 32.3 } };
 
 /** Where a check holds the floor: the default size, `text=24` and phone. */
 const FLOOR_CHECKED = (condition) => condition.text === 0 || condition.text === 24;
@@ -332,6 +351,7 @@ const fail = (line) => {
 	failed++;
 	console.log(`FAIL  ${line}`);
 };
+const pass = (line) => console.log(`PASS     ${line}`);
 
 for (const fallback of [false, true]) {
 	console.log(`\n== field-sizing ${fallback ? 'off (simulated)' : 'on'} ==`);
@@ -394,8 +414,8 @@ for (const fallback of [false, true]) {
 				}
 				if (compared === 0) fail(`${condition.name} ${value}: compared nothing against the baseline`);
 				else {
-					console.log(
-						`PASS     ${value.padEnd(12)} baseline: ${compared} headlines, width unchanged` +
+					pass(
+						`${value.padEnd(12)} baseline: ${compared} headlines, width unchanged` +
 							(movedHere === 0 ? ', card height unchanged' : `, ${movedHere} card heights moved as expected (above)`),
 					);
 				}
@@ -439,8 +459,11 @@ for (const fallback of [false, true]) {
 				// 8. The ceiling stays in the card, but for the one-unit residue.
 				const isResidue = one.kind === 'pool' && one.span === 1 && !one.nested && condition.sheet === 520;
 				const ceilingOut = one.ceilOver !== null && one.ceilOver > 0.5;
-				if (ceilingOut && isResidue) residue++;
-				else if (ceilingOut) why.push('ceiling passes the card');
+				if (ceilingOut && isResidue) {
+					residue++;
+					const bound = RESIDUE_BOUND[condition.text]?.calculated ?? Infinity;
+					if (one.ceilOver > bound + 0.05) why.push(`ceiling passes the card by ${one.ceilOver}, over its residue bound ${bound}`);
+				} else if (ceilingOut) why.push('ceiling passes the card');
 				if (why.length > 0) failed++;
 				const verdict = why.length > 0 ? 'FAIL' : ceilingOut ? 'residue' : 'PASS';
 				console.log(
@@ -470,7 +493,7 @@ for (const fallback of [false, true]) {
 			const drawn = new Set(two.map((one) => one.size));
 			const line = two.map((one) => `${one.component} ${one.size}`).join(', ');
 			if (two.length !== 3 || drawn.size !== 1) fail(`${condition.name}: one width, several sizes: ${line}`);
-			else console.log(`PASS     one width, one size: ${line}`);
+			else pass(`one width, one size: ${line}`);
 		}
 		await unstage();
 	}
@@ -564,7 +587,7 @@ for (const condition of QUALIFIER_CONDITIONS) {
 			if (uses === null) fail(`qualifiers ${condition.name}: no Stat block uses run in state=forms`);
 			else if (uses.separator !== uses.medium || uses.max !== uses.medium) {
 				fail(`qualifiers ${condition.name}: Stat block uses reads / ${uses.separator} and ${uses.max} against --font-ui-medium ${uses.medium}`);
-			} else console.log(`PASS     ${condition.name.padEnd(8)} Stat block uses / and ceiling at --font-ui-medium, ${uses.medium}`);
+			} else pass(`${condition.name.padEnd(8)} Stat block uses / and ceiling at --font-ui-medium, ${uses.medium}`);
 			await unstage();
 			continue;
 		}
@@ -594,8 +617,407 @@ for (const condition of QUALIFIER_CONDITIONS) {
 			fail(`qualifiers ${condition.name}: a ${what} draws ${size} against --font-ui-small ${token}`);
 		}
 		if (off.length === 0) {
-			console.log(`PASS     ${condition.name.padEnd(8)} ${sizes.borrowed.length} Track length fields and record ceilings at --font-ui-small`);
+			pass(`${condition.name.padEnd(8)} ${sizes.borrowed.length} Track length fields and record ceilings at --font-ui-small`);
 		}
+		await unstage();
+	}
+}
+
+/**
+ * Checks 10 to 15: `docs/features/qualifier-fit-and-size.md`. Each against the
+ * baseline stylesheet where it says "unchanged", on the same page with the
+ * same values, as check 4 is.
+ *
+ * 10. **A typed ceiling's slash gap** — 3px from its slash's box to its digits'
+ *     (1px of padding past the 2px gap), a calculated ceiling's 2, every Pool,
+ *     at 1400 and 520, default and `text=24`. And **no Pool changes regime**:
+ *     every value field's `min-width` is the baseline's.
+ * 11. **The one-unit residue, re-bounded** — Hit points (calculated) and Rolled
+ *     HP (typed) at one unit on 520, at `/120`: the typed ceiling 2px wider
+ *     than the calculated, and passing the card by at most 9.4 and 10.4px a
+ *     side at the default size, 15.1 and 16.1 at `text=24`.
+ * 12. **The own-value pill gives up its padding** — a one-unit Load at 520,
+ *     default, shows `0` whole, inside the card, and its card's height is the
+ *     baseline's; a two-unit Carried at 520, `text=24`, shows `100` whole;
+ *     every own-value pill at 1400 (a Card's, a Card set tile's, a Roster
+ *     card's score) and every Card set tile's at 520 is the baseline's width.
+ * 13. **A wrapped *Temp* pill closes up** — Hit points at two units with `100`
+ *     in its points, on 520: the ink from *Temp* to its value is within 3px of
+ *     the ink room above *Temp*, default and `text=24`.
+ * 14. **An unwrapped one does not move** — every pill on one line is 32px
+ *     tall, and every Pool whose pill does not wrap is the baseline's height,
+ *     at 1400 and 520, default and `text=24`.
+ * 15. **The points field is a pointer's height** — at least 20px at the
+ *     default size.
+ */
+const QUALIFIER_FIT = [
+	{ name: 'default 1400', sheet: 0, text: 0 },
+	{ name: 'text=24 1400', sheet: 0, text: 24 },
+	{ name: 'default 520', sheet: 520, text: 0 },
+	{ name: 'text=24 520', sheet: 520, text: 24 },
+];
+
+/** The plain sheet: slash gaps, regimes, pill widths, temp pills, Pool heights. */
+const fitPlain = `(() => {
+	const round = (n) => Math.round(n * 10) / 10;
+	const pools = [...document.querySelectorAll('.sheetsmith-pool')].filter((card) => card.getBoundingClientRect().width > 0);
+	const ink = (el) => {
+		const st = getComputedStyle(el);
+		const ctx = document.createElement('canvas').getContext('2d');
+		// Spelt from its parts: the \`font\` shorthand carries \`tabular-nums\`,
+		// which a canvas refuses, falling back to 10px sans-serif.
+		ctx.font = [st.fontStyle, st.fontWeight, st.fontSize, st.fontFamily].join(' ');
+		const text = el instanceof HTMLInputElement ? el.value : el.textContent;
+		const shown = st.textTransform === 'uppercase' ? text.toUpperCase() : text;
+		const m = ctx.measureText(shown);
+		const r = el.getBoundingClientRect();
+		let baseline;
+		if (el instanceof HTMLInputElement) {
+			// A one-line field centres its line box in its content box.
+			const top = r.top + parseFloat(st.borderTopWidth) + parseFloat(st.paddingTop);
+			const height = el.clientHeight - parseFloat(st.paddingTop) - parseFloat(st.paddingBottom);
+			baseline = top + (height - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2 + m.fontBoundingBoxAscent;
+		} else {
+			const probe = document.createElement('span');
+			probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+			el.append(probe);
+			baseline = probe.getBoundingClientRect().bottom;
+			probe.remove();
+		}
+		return { top: baseline - m.actualBoundingBoxAscent, bottom: baseline + m.actualBoundingBoxDescent };
+	};
+	// A cell's grid rows, [start, end), and its grid's identity, from its area.
+	const rowsOf = (cell) => {
+		const m = /^(\\d+) \\/ \\d+ \\/ span (\\d+)/.exec(cell?.style.gridArea ?? '');
+		const grid = cell?.parentElement;
+		if (!grid.dataset.measureGrid) grid.dataset.measureGrid = String(Math.random());
+		return m === null ? null : { grid: grid.dataset.measureGrid, start: Number(m[1]), end: Number(m[1]) + Number(m[2]) };
+	};
+	return {
+		cells: [...document.querySelectorAll('.sheetsmith-cell')].map(rowsOf).filter((one) => one !== null),
+		pools: pools.map((card) => {
+			const sep = card.querySelector('.sheetsmith-pool-separator');
+			const max = card.querySelector('.sheetsmith-pool-max');
+			const temp = card.querySelector('.sheetsmith-pool-temp');
+			const label = temp?.querySelector('.sheetsmith-pool-temp-label');
+			const field = temp?.querySelector('.sheetsmith-pool-temp-input');
+			let gap = null;
+			if (sep && max) {
+				const typed = max instanceof HTMLInputElement;
+				gap = round(max.getBoundingClientRect().left + (typed ? parseFloat(getComputedStyle(max).paddingLeft) : 0) - sep.getBoundingClientRect().right);
+			}
+			let wrapped = null;
+			let above = null;
+			let between = null;
+			if (temp && label && field && temp.getBoundingClientRect().width > 0) {
+				// On a second line where the field's middle is below the word: its
+				// box reaches into the line above by its negative margin.
+				const fr = field.getBoundingClientRect();
+				wrapped = fr.top + fr.height / 2 > label.getBoundingClientRect().bottom;
+				const t = temp.getBoundingClientRect();
+				const l = ink(label);
+				const f = ink(field);
+				above = round(l.top - (t.top + parseFloat(getComputedStyle(temp).borderTopWidth)));
+				between = round(f.top - l.bottom);
+			}
+			const cur = card.querySelector('.sheetsmith-pool-current').getBoundingClientRect();
+			const ceilBox = card.querySelector('.sheetsmith-pool-ceiling')?.getBoundingClientRect();
+			return {
+				component: card.closest('.sheetsmith-cell')?.getAttribute('data-sheetsmith-component') ?? '?',
+				rows: rowsOf(card.closest('.sheetsmith-cell')),
+				ceilWraps: ceilBox === undefined ? null : ceilBox.top >= cur.bottom - 1,
+				typed: max instanceof HTMLInputElement,
+				ceiling: ceilBox === undefined ? null : [ceilBox.left, ceilBox.top, ceilBox.width].map(round).join(),
+				fits: ceilBox === undefined ? null : ceilBox.width <= card.querySelector('.sheetsmith-pool-reading').getBoundingClientRect().width + 0.05,
+				gap,
+				regime: getComputedStyle(card.querySelector('.sheetsmith-pool-current')).minWidth,
+				height: round(card.getBoundingClientRect().height),
+				temp: temp && temp.getBoundingClientRect().width > 0 ? round(temp.getBoundingClientRect().height) : null,
+				field: field ? round(field.getBoundingClientRect().height) : null,
+				wrapped,
+				above,
+				between,
+			};
+		}),
+		pills: [...document.querySelectorAll('.sheetsmith-card-value')]
+			.filter((pill) => pill.getBoundingClientRect().width > 0 && pill.closest('.sheetsmith-card-has-derived, .sheetsmith-roster-card, .sheetsmith-card'))
+			.map((pill) => ({
+				label: pill.querySelector('input, select')?.getAttribute('aria-label') ?? '?',
+				tile: pill.closest('.sheetsmith-card-set') !== null,
+				width: round(pill.getBoundingClientRect().width),
+			})),
+	};
+})()`;
+
+/** One pill's value injected, and whether its field shows it whole. */
+const pillShows = (component, value) => `(() => {
+	const card = document.querySelector('[data-sheetsmith-component="${component}"] .sheetsmith-card');
+	const pill = card.querySelector('.sheetsmith-card-value');
+	const input = pill.querySelector('.sheetsmith-card-input');
+	input.value = ${JSON.stringify(value)};
+	const st = getComputedStyle(input);
+	const probe = document.createElement('span');
+	probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font:' + st.font;
+	probe.textContent = ${JSON.stringify(value)};
+	card.append(probe);
+	const digits = probe.getBoundingClientRect().width;
+	probe.remove();
+	const inner = input.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
+	const c = card.getBoundingClientRect();
+	const cs = getComputedStyle(card);
+	const left = c.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+	const right = c.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+	const p = pill.getBoundingClientRect();
+	const round = (n) => Math.round(n * 10) / 10;
+	return {
+		whole: inner >= digits - 0.5 && input.scrollWidth <= input.clientWidth,
+		inner: round(inner),
+		digits: round(digits),
+		over: round(Math.max(left - p.left, p.right - right)),
+		height: round(c.height),
+	};
+})()`;
+
+/** Both one-unit ceilings at `/120`: each one's width and how far it passes its card. */
+const ceilingsAt120 = `(() => {
+	const round = (n) => Math.round(n * 10) / 10;
+	const out = {};
+	for (const component of ['hit_points', 'rolled_health']) {
+		const card = document.querySelector('[data-sheetsmith-component="' + component + '"] .sheetsmith-pool');
+		card.scrollLeft = 0;
+		const max = card.querySelector('.sheetsmith-pool-max');
+		if (max instanceof HTMLInputElement) max.value = '120';
+		else max.textContent = '120';
+		const ceil = card.querySelector('.sheetsmith-pool-ceiling').getBoundingClientRect();
+		const sepEl = card.querySelector('.sheetsmith-pool-separator');
+		const sep = sepEl.getBoundingClientRect();
+		// The slash's ink, from the font's metrics on its own origin, since
+		// its stroke leans past its advance.
+		const sepStyle = getComputedStyle(sepEl);
+		const ctx = document.createElement('canvas').getContext('2d');
+		ctx.font = [sepStyle.fontStyle, sepStyle.fontWeight, sepStyle.fontSize, sepStyle.fontFamily].join(' ');
+		const metrics = ctx.measureText(sepEl.textContent);
+		const range = document.createRange();
+		range.selectNodeContents(sepEl);
+		const origin = range.getBoundingClientRect().left;
+		const ink = { left: origin - metrics.actualBoundingBoxLeft, right: origin + metrics.actualBoundingBoxRight };
+		// How many of the ceiling's digits are drawn, in digits: what a
+		// reader is left to read after the slash.
+		const maxStyle = getComputedStyle(max);
+		const maxBox = max.getBoundingClientRect();
+		const pad = max instanceof HTMLInputElement ? parseFloat(maxStyle.paddingLeft) : 0;
+		const digit = (maxBox.width - 2 * pad) / 3;
+		const b = card.getBoundingClientRect();
+		const st = getComputedStyle(card);
+		// The card's \`overflow: hidden\` clips at its padding box, the inner
+		// edge of its border: what of the ceiling is drawn, and of its slash.
+		const clipLeft = b.left + parseFloat(st.borderLeftWidth);
+		const clipRight = b.right - parseFloat(st.borderRightWidth);
+		const left = clipLeft + parseFloat(st.paddingLeft);
+		const right = clipRight - parseFloat(st.paddingRight);
+		const seen = (r) => Math.max(0, Math.min(r.right, clipRight) - Math.max(r.left, clipLeft));
+		out[component] = {
+			typed: max instanceof HTMLInputElement,
+			width: round(ceil.width),
+			over: round(Math.max(left - ceil.left, ceil.right - right)),
+			visible: round(seen(ceil)),
+			clipped: round(ceil.width - seen(ceil)),
+			slash: sep.width === 0 ? 0 : round((seen(sep) / sep.width) * 100),
+			inkWhole: ink.left >= clipLeft - 0.05 && ink.right <= clipRight + 0.05,
+			start: round(left - ceil.left),
+			end: round(ceil.right - right),
+			digits: round(Math.max(0, Math.min(3, (clipRight - (maxBox.left + pad)) / digit))),
+		};
+	}
+	return out;
+})()`;
+
+console.log('\n== qualifier fit (docs/features/qualifier-fit-and-size.md) ==');
+for (const condition of QUALIFIER_FIT) {
+	const base = `surface=sheet&theme=light&width=${condition.sheet}&text=${condition.text}`;
+	// The plain sheet.
+	{
+		const { unstage } = await loadStaged(browser, `file://${root}index.html?${base}`, { width: 1400, height: 1900 });
+		const now = await browser.evaluate(fitPlain);
+		await browser.evaluate(swapStyles(baselineCss));
+		const was = await browser.evaluate(fitPlain);
+		await browser.evaluate(swapStyles(null));
+		// 10, the safe centring: with plain \`center\` put back over the built
+		// stylesheet, every ceiling that fits its line draws where it did.
+		await browser.evaluate(`(() => {
+			const style = document.createElement('style');
+			style.id = 'measure-plain-centre';
+			style.textContent = '.sheetsmith-pool-reading { justify-content: center !important; }';
+			document.head.append(style);
+			return document.body.offsetHeight;
+		})()`);
+		const centred = await browser.evaluate(fitPlain);
+		await browser.evaluate(`(() => { document.getElementById('measure-plain-centre').remove(); return document.body.offsetHeight; })()`);
+		const fitting = now.pools.filter((one) => one.fits === true);
+		const shifted = fitting.filter((one, at) => one.ceiling !== centred.pools[now.pools.indexOf(one)]?.ceiling);
+		measured++;
+		if (fitting.length === 0 || shifted.length > 0) fail(`${condition.name}: safe centring moved fitting ceilings: ${shifted.map((one) => one.component).join(', ') || 'none fit'}`);
+		else pass(`${condition.name.padEnd(13)} ${fitting.length} fitting ceilings where plain centring draws them`);
+		// 10.
+		for (const one of now.pools) {
+			if (one.gap === null) continue;
+			measured++;
+			const want = one.typed ? 3 : 2;
+			if (Math.abs(one.gap - want) > 0.3) fail(`${condition.name}: ${one.component}'s ${one.typed ? 'typed' : 'calculated'} ceiling sits ${one.gap}px from its slash, not ${want}`);
+		}
+		const typedGaps = now.pools.filter((one) => one.typed && one.gap !== null);
+		if (typedGaps.length === 0) fail(`${condition.name}: no typed ceiling measured`);
+		else pass(`${condition.name.padEnd(13)} slash gaps: typed ${[...new Set(typedGaps.map((one) => one.gap))].join(', ')}, calculated ${[...new Set(now.pools.filter((one) => !one.typed && one.gap !== null).map((one) => one.gap))].join(', ')}`);
+		const regimes = now.pools.filter((one, at) => one.regime !== was.pools[at]?.regime);
+		measured++;
+		if (regimes.length > 0) fail(`${condition.name}: ${regimes.map((one) => one.component).join(', ')} changed regime`);
+		else pass(`${condition.name.padEnd(13)} no Pool changes regime (${now.pools.length} Pools: ${[...new Set(now.pools.map((one) => one.regime))].join(', ')})`);
+		// 12, the widths that must not move.
+		const compared = now.pills.filter((one) => condition.sheet === 0 || one.tile);
+		const movedPills = compared.filter((one) => {
+			const before = was.pills.find((other) => other.label === one.label);
+			return before === undefined || Math.abs(before.width - one.width) > 0.05;
+		});
+		measured++;
+		if (compared.length === 0 || movedPills.length > 0) fail(`${condition.name}: pills moved: ${movedPills.map((one) => one.label).join(', ') || 'none compared'}`);
+		else pass(`${condition.name.padEnd(13)} ${compared.length} ${condition.sheet === 0 ? 'own-value pills' : 'Card set tile pills'} at the baseline's width`);
+		// 14 and 15.
+		for (const [at, one] of now.pools.entries()) {
+			if (one.temp === null) continue;
+			measured++;
+			if (!one.wrapped && Math.abs(one.temp - 32) > 0.5) fail(`${condition.name}: ${one.component}'s unwrapped temp pill is ${one.temp}px tall, not 32`);
+			if (condition.text === 0 && one.field < 20) fail(`${condition.name}: ${one.component}'s points field is ${one.field}px tall, under 20`);
+		}
+		// A typed ceiling 6px narrower can come back onto its number's line,
+		// which shortens its card, and with it the grid rows it shares: those
+		// are row 6's doing, named and printed, never the pill's.
+		const rowsMeet = (a, b) => a !== null && b !== null && a.grid === b.grid && a.start < b.end && b.start < a.end;
+		const reach = now.pools
+			.filter((one, at) => one.ceilWraps !== was.pools[at]?.ceilWraps)
+			.map((one) => one.rows);
+		for (let grown = true; grown; ) {
+			grown = false;
+			for (const cell of now.cells) {
+				if (reach.some((rows) => rowsMeet(rows, cell)) && !reach.some((rows) => rows.grid === cell.grid && rows.start <= cell.start && rows.end >= cell.end)) {
+					reach.push(cell);
+					grown = true;
+				}
+			}
+		}
+		const unwrapped = now.pools.filter((one) => one.wrapped !== true);
+		const movedBy = (one) => {
+			const before = was.pools.find((other) => other.component === one.component);
+			return before === undefined || Math.abs(before.height - one.height) > 0.05;
+		};
+		const grew = unwrapped.filter((one) => movedBy(one) && !reach.some((rows) => rowsMeet(rows, one.rows)));
+		for (const one of unwrapped.filter((one) => movedBy(one) && !grew.includes(one))) {
+			moved++;
+			const before = was.pools.find((other) => other.component === one.component);
+			console.log(
+				`moved    ${condition.name.padEnd(13)} ${one.component}: card ${before.height} -> ${one.height}, in grid rows a typed ceiling unwrapped in (${now.pools.filter((p, at) => p.ceilWraps !== was.pools[at]?.ceilWraps).map((p) => p.component).join(', ')})`,
+			);
+		}
+		measured++;
+		if (grew.length > 0) fail(`${condition.name}: unwrapped Pools moved: ${grew.map((one) => one.component).join(', ')}`);
+		else pass(`${condition.name.padEnd(13)} ${unwrapped.length - unwrapped.filter(movedBy).length} Pools with no wrapped pill at the baseline's height${unwrapped.some(movedBy) ? `, ${unwrapped.filter(movedBy).length} moved by row 6 (above)` : ''}; pills ${[...new Set(now.pools.filter((one) => one.temp !== null).map((one) => `${one.temp} tall, field ${one.field}`))].join('; ')}`);
+		// 12, Carried at its own two units.
+		if (condition.sheet === 520 && condition.text === 24) {
+			const carried = await browser.evaluate(pillShows('carried', '100'));
+			measured++;
+			if (!carried.whole) fail(`${condition.name}: Carried's 100 clips (${carried.digits} in ${carried.inner})`);
+			else pass(`${condition.name.padEnd(13)} two-unit Carried shows 100 whole (${carried.digits} in ${carried.inner})`);
+		}
+		await unstage();
+	}
+	if (condition.sheet !== 520) continue;
+	// The one-unit cells: 11 and 12.
+	{
+		const query = `${base}&place=hit_points:5,1&place=rolled_health:10,1&place=load:11,1`;
+		const { unstage } = await loadStaged(browser, `file://${root}index.html?${query}`, { width: 1400, height: 1900 });
+		const ceilings = await browser.evaluate(ceilingsAt120);
+		const bound = RESIDUE_BOUND[condition.text];
+		const calc = ceilings.hit_points;
+		const typed = ceilings.rolled_health;
+		measured++;
+		const why = [];
+		if (!typed.typed || calc.typed) why.push('the staging moved: Rolled HP should own its ceiling, Hit points not');
+		if (Math.abs(typed.width - calc.width - 2) > 0.3) why.push(`typed ${typed.width} against calculated ${calc.width}, not 2px wider`);
+		if (calc.end > bound.calculated + 0.05) why.push(`calculated passes by ${calc.end}, over ${bound.calculated}`);
+		if (typed.end > bound.typed + 0.05) why.push(`typed passes by ${typed.end}, over ${bound.typed}`);
+		// Ruling A: the overflow clips at its end, never at its slash.
+		for (const [name, one] of [['calculated', calc], ['typed', typed]]) {
+			if (one.start > 0.5) why.push(`${name} starts ${one.start}px before the content, so it overflows its start`);
+			if (!one.inkWhole) why.push(`${name}'s slash is cut by the card's clip`);
+		}
+		if (why.length > 0) fail(`${condition.name} one-unit /120: ${why.join('; ')}`);
+		else console.log(`residue  ${condition.name.padEnd(13)} one-unit /120 passes the content at its end by ${calc.end} calculated (${calc.width} wide), ${typed.end} typed (${typed.width}), within ${bound.calculated} and ${bound.typed}; both slashes' ink whole`);
+		// What renders, as against the box: the card clips the ceiling at its
+		// border's inner edge, 8px of padding past the content box a side.
+		console.log(
+			`residue  ${condition.name.padEnd(13)} one-unit /120 drawn: calculated ${calc.visible} of ${calc.width} (${calc.clipped} clipped, slash ${calc.slash}% seen, ${calc.digits} digits),` +
+				` typed ${typed.visible} of ${typed.width} (${typed.clipped} clipped, slash ${typed.slash}% seen, ${typed.digits} digits)`,
+		);
+		if (condition.text === 0) {
+			const load = await browser.evaluate(pillShows('load', '0'));
+			await browser.evaluate(swapStyles(baselineCss));
+			const loadWas = await browser.evaluate(pillShows('load', '0'));
+			await browser.evaluate(swapStyles(null));
+			measured++;
+			const loadWhy = [];
+			if (!load.whole) loadWhy.push(`0 clips (${load.digits} in ${load.inner})`);
+			if (load.over > 0.5) loadWhy.push(`the pill passes the card by ${load.over}`);
+			if (Math.abs(load.height - loadWas.height) > 0.05) loadWhy.push(`card ${load.height} tall against ${loadWas.height}`);
+			if (loadWhy.length > 0) fail(`${condition.name} one-unit Load: ${loadWhy.join('; ')}`);
+			else pass(`${condition.name.padEnd(13)} one-unit Load shows 0 whole (${load.digits} in ${load.inner}), pill inside the card, card ${load.height} tall as before`);
+		}
+		await unstage();
+	}
+	// 16, the stuck scroll: `120` typed into the one-unit typed ceiling by
+	// `&type=`, which focuses it, commits and blurs, as a player's edit does.
+	// The card is \`overflow: clip\`, so the focus has no scroll container to
+	// move; under \`hidden\` it scrolled the card to the caret and left it there,
+	// cutting the slash. Then the same with \`hidden\` put back and the focus
+	// repeated, so a check that cannot see the scroll fails too.
+	{
+		const TYPED = ".sheetsmith-pool-max-input[aria-label='Rolled HP maximum']";
+		const query = `${base}&place=rolled_health:10,1&type=${encodeURIComponent(`${TYPED}|120`)}`;
+		const { unstage } = await loadStaged(browser, `file://${root}index.html?${query}`, { width: 1400, height: 1900 });
+		const scroll = await browser.evaluate(`(() => {
+			const card = document.querySelector('[data-sheetsmith-component="rolled_health"] .sheetsmith-pool');
+			const field = card.querySelector(${JSON.stringify(TYPED)});
+			const after = card.scrollLeft;
+			const typed = field.value;
+			const style = document.createElement('style');
+			style.textContent = '.sheetsmith-view .sheetsmith-pool { overflow: hidden !important; }';
+			document.head.append(style);
+			field.focus();
+			field.setSelectionRange(field.value.length, field.value.length);
+			field.blur();
+			const hidden = card.scrollLeft;
+			style.remove();
+			card.scrollLeft = 0;
+			return { after, typed, hidden };
+		})()`);
+		measured++;
+		if (scroll.typed !== '120') fail(`${condition.name}: the stuck-scroll staging did not take (${scroll.typed})`);
+		else if (scroll.after !== 0) fail(`${condition.name}: an edited one-unit ceiling leaves its card scrolled ${scroll.after}px`);
+		else if (scroll.hidden === 0) fail(`${condition.name}: the stuck-scroll check cannot see a scroll (none under overflow: hidden either)`);
+		else pass(`${condition.name.padEnd(13)} an edited one-unit ceiling leaves its card at scrollLeft 0 (${scroll.hidden}px under overflow: hidden)`);
+		await unstage();
+	}
+	// The wrapped pill: 13.
+	{
+		const { unstage } = await loadStaged(browser, `file://${root}index.html?${base}${reported(2)}`, { width: 1400, height: 1900 });
+		await browser.evaluate(checkPlaced('hit_points', 2, true));
+		const now = await browser.evaluate(fitPlain);
+		await browser.evaluate(swapStyles(baselineCss));
+		const was = (await browser.evaluate(fitPlain)).pools.find((one) => one.component === 'hit_points');
+		await browser.evaluate(swapStyles(null));
+		const hp = now.pools.find((one) => one.component === 'hit_points');
+		measured++;
+		if (hp?.wrapped !== true) fail(`${condition.name}: Hit points' pill did not wrap at two units`);
+		else if (Math.abs(hp.between - hp.above) > 3) fail(`${condition.name}: wrapped Temp → value ${hp.between} against ${hp.above} above Temp (before ${was.between}, pill ${was.temp} → ${hp.temp})`);
+		else pass(`${condition.name.padEnd(13)} wrapped pill: ${hp.above} above Temp, ${hp.between} Temp → value, pill ${hp.temp} tall, card ${hp.height}, field ${hp.field}; before ${was.above}, ${was.between}, ${was.temp}, ${was.height}, ${was.field}`);
 		await unstage();
 	}
 }
