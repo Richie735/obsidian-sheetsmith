@@ -3825,6 +3825,63 @@ export const DEFAULTS = [
 		frame: '[data-sheetsmith-component="skills"]',
 	},
 	/*
+	 * The same halo under a theme whose corners are not round. The ring is a
+	 * `<button>`, so the app's `button` rule gives it the theme's
+	 * `--corner-shape`; the halo inherits it. The calibrated stylesheet sets
+	 * `round`, which hid a round halo round a squircle ring in every view above,
+	 * so these set the shape through `&corner=`: `superellipse(1.1)`, which a
+	 * community theme in real use sets, and `squircle`, the keyword, which is
+	 * `superellipse(2)` and so the plainer case to see. The views above are the
+	 * `round` case, unchanged. Same sizes as theirs.
+	 */
+	...[
+		['superellipse', 'superellipse(1.1)'],
+		['squircle', 'squircle'],
+	].flatMap(([slug, shape]) => {
+		const query = `surface=sheet&state=modifier-set-ring-mark&corner=${encodeURIComponent(shape)}`;
+		return [
+			...['light', 'dark'].flatMap((theme) => [
+				{
+					name: `modifier-set-ring-mark-${slug}-${theme}`,
+					query: `${query}&theme=${theme}`,
+					size: '1400,1100',
+				},
+				{
+					name: `modifier-set-ring-mark-${slug}-narrow-${theme}`,
+					query: `${query}&theme=${theme}&width=520`,
+					size: '620,1200',
+				},
+			]),
+			{
+				name: `modifier-set-ring-mark-${slug}-forced-colors`,
+				query: `${query}&theme=light`,
+				size: '1400,1100',
+				flags: ['--force-high-contrast'],
+			},
+			{
+				name: `modifier-set-ring-mark-${slug}-narrow-forced-colors`,
+				query: `${query}&theme=light&width=520`,
+				size: '620,1200',
+				flags: ['--force-high-contrast'],
+			},
+		];
+	}),
+	// The squircle's two checks the round views make at their own: where the
+	// focus outline meets the dots, and whether Text 24 still clears the frame.
+	{
+		name: 'modifier-set-ring-mark-squircle-focus',
+		query: `surface=sheet&theme=light&state=modifier-set-ring-mark&corner=squircle&bar=off&focus=${encodeURIComponent(
+			"[data-sheetsmith-component='skills'] .sheetsmith-level-ring",
+		)}`,
+		size: '1400,700',
+		frame: '[data-sheetsmith-component="skills"]',
+	},
+	{
+		name: 'modifier-set-ring-mark-squircle-text-24',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&corner=squircle&text=24',
+		size: '1400,1500',
+	},
+	/*
 	 * The Lore row's modifier form open on `skills.investigation = 2 in
 	 * Training`: Value, the Sets operator, and the position legend under Amount.
 	 */

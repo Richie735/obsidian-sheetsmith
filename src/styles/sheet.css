@@ -1934,6 +1934,15 @@
 	inset: -3px;
 	border: 2px dotted var(--text-muted);
 	border-radius: 50%;
+	/* **The ring's shape, not a circle.** The ring is a `<button>`, and the
+	   app's own `button` rule gives it `corner-shape: var(--button-corner-shape)`,
+	   which is the theme's `--corner-shape`, so under a theme that sets
+	   `superellipse(1.1)` the ring draws as a squircle. `corner-shape` does not
+	   inherit by default, so a halo with none of its own drew a round outline
+	   round a squircle. Inherited rather than restated: the shape is the app's
+	   and the theme's to choose, and a copy of `var(--button-corner-shape)` here
+	   would drift the moment either chose differently for the ring. */
+	corner-shape: inherit;
 	pointer-events: none;
 }
 
