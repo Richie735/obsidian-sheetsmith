@@ -1286,6 +1286,31 @@
 	outline: none;
 }
 
+/* **In a card too narrow for the pill's chrome beside three digits, the pill
+   gives up its inline padding, and its field too** (`docs/UI.md` §5, Ruling
+   A; `docs/features/qualifier-fit-and-size.md`). The chrome is 22px: the
+   pill's 8px a side, its 1px border a side and the field's 2px a side. Three
+   digits at `--sheetsmith-qualifier-small`, semibold and tabular, measure
+   1.68em of the sheet at the default size and at `text=24` (26.6px at 16,
+   40.3 at 24), so 1.7em, rounded up so it never undercounts: the query is
+   against the card's content box, the card being the container, at 49.2px
+   at the default size and 62.8 at `text=24`. Above it nothing changes, a
+   Card set tile included (72.8px at 520). In a one-unit cell on a 520px sheet
+   the field has 13px then, so one digit fits at the default size and the
+   rest clips, never marked (the BACKLOG row on it). Block padding is kept,
+   so no card changes height. A child selector, so only a card's own pill
+   answers, at (0,3,0) and (0,4,0), past the rules above. */
+@container (max-width: calc(1.7em + 22px)) {
+.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value {
+		padding-inline: 0;
+	}
+
+.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value > .sheetsmith-card-input {
+		padding-inline: 0;
+	}
+
+}
+
 /* A pill reading a number nobody typed: a score with modifiers layered over it,
    17 where 15 is stored.
 

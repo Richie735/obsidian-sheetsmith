@@ -5254,6 +5254,61 @@ describe("a pool's reading fits a narrow card", () => {
 	});
 });
 
+describe("a narrow card's own-value pill gives up its padding", () => {
+	/*
+	 * `docs/features/qualifier-fit-and-size.md`, row 2. Below the card width
+	 * the pill's chrome and three digits need, the pill and its field drop
+	 * their inline padding. happy-dom lays nothing out, so
+	 * `harness/measure-pool-headline.mjs` check 12 measures the result; this
+	 * holds the threshold's px to the base rules it counts, so a token moved
+	 * there cannot leave the threshold counting the old chrome.
+	 */
+	const PILL = '.sheetsmith-card-has-derived .sheetsmith-card-value';
+	const FIELD = '.sheetsmith-view .sheetsmith-card-input';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const bodyOf = (selector: string): string =>
+		all.find((one) => one.context.length === 0 && selectorList(one.selector).includes(selector))?.body ?? '';
+	const narrow = all.filter((one) => one.context.some((at) => at.startsWith('@container (max-width: calc(1.7em')));
+	// Obsidian's values for the tokens the base rules name, which no test here
+	// can read: that each rule names its token is asserted below.
+	const TOKEN_PX: Record<string, number> = { '--size-2-1': 2, '--size-4-2': 8 };
+	const inlinePx = (padding: string): number => {
+		const parts = padding.split(/\s+(?![^(]*\))/);
+		const inline = parts[1] ?? parts[0] ?? '';
+		if (inline === '0') return 0;
+		const token = /^var\((--[\w-]+)\)$/.exec(inline)?.[1] ?? '';
+		expect(TOKEN_PX[token], `unread padding: ${padding}`).toBeDefined();
+		return TOKEN_PX[token] ?? NaN;
+	};
+
+	it('counts the pill padding, its border and the field padding in px, and three digits in em', () => {
+		const pill = declarations(bodyOf(PILL));
+		const field = declarations(bodyOf(FIELD));
+		const pad = (list: string[]) => list.find((d) => d.startsWith('padding:'))?.slice('padding:'.length).trim() ?? '';
+		const border = pill.find((d) => d.startsWith('border:')) ?? '';
+		expect(border).toMatch(/^border: 1px solid /);
+		const chrome = 2 * inlinePx(pad(pill)) + 2 * 1 + 2 * inlinePx(pad(field));
+		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		expect(prelude).toBe('@container (max-width: calc(1.7em + 22px))');
+		const match = /calc\(([\d.]+)em \+ ([\d.]+)px\)/.exec(prelude);
+		expect(Number(match?.[2])).toBe(chrome);
+		// Three digits at the qualifier's size, semibold and tabular, measured
+		// at 26.6px on a 16px sheet and 40.3 at 24: 1.68em, rounded up.
+		expect(Number(match?.[1])).toBeGreaterThanOrEqual(40.3 / 24);
+		expect(Number(match?.[1]) - 40.3 / 24).toBeLessThan(0.05);
+	});
+
+	it("drops only a card's own pill's inline padding, and its field's", () => {
+		expect(narrow.map((one) => one.selector.replace(/\s+/g, ' ')).sort()).toEqual(
+			[
+				'.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value',
+				'.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value > .sheetsmith-card-input',
+			].sort(),
+		);
+		for (const one of narrow) expect(declarations(one.body)).toEqual(['padding-inline: 0']);
+	});
+});
+
 describe('a touch scrolls the canvas from any block but the selected one', () => {
 	/*
 	 * `docs/features/canvas-touch-select-step.md` §2 and §4. `touch-action` is
