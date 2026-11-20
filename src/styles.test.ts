@@ -2662,9 +2662,41 @@ function selectorList(selector: string): string[] {
 	return found;
 }
 
-/** (ids, classes and attributes and pseudo-classes, types) of one selector. */
+/**
+ * (ids, classes and attributes and pseudo-classes, types) of one selector, as
+ * CSS weighs it: `:not()`, `:is()` and `:has()` weigh their heaviest argument
+ * and not themselves, and `:where()` weighs nothing. Counted naively they read
+ * as a pseudo-class each plus their argument, which put
+ * `.a .b:not(:focus):not(:placeholder-shown)` at (0,6,0) against (0,4,0).
+ */
 function specificity(selector: string): [number, number, number] {
-	const bare = selector.replace(/::[\w-]+/g, ' ');
+	let rest = selector;
+	const total: [number, number, number] = [0, 0, 0];
+	// Take each functional pseudo-class out, innermost-agnostic: its argument
+	// list is read by balanced parentheses and weighed recursively.
+	for (;;) {
+		const match = /:(not|is|has|where)\(/.exec(rest);
+		if (match === null) break;
+		const open = match.index + match[0].length;
+		let depth = 1;
+		let close = open;
+		while (depth > 0 && close < rest.length) {
+			if (rest[close] === '(') depth += 1;
+			else if (rest[close] === ')') depth -= 1;
+			close += 1;
+		}
+		const argument = rest.slice(open, close - 1);
+		if (match[1] !== 'where') {
+			const heaviest = selectorList(argument)
+				.map((one) => specificity(one.replace(/^[>+~]\s*/, '')))
+				.reduce<[number, number, number]>((a, b) => (heavier(b, a) ? b : a), [0, 0, 0]);
+			total[0] += heaviest[0];
+			total[1] += heaviest[1];
+			total[2] += heaviest[2];
+		}
+		rest = rest.slice(0, match.index) + ' ' + rest.slice(close);
+	}
+	const bare = rest.replace(/::[\w-]+/g, ' ');
 	const ids = (bare.match(/#[\w-]+/g) ?? []).length;
 	const classes =
 		(bare.match(/\.[\w-]+/g) ?? []).length +
@@ -2674,14 +2706,32 @@ function specificity(selector: string): [number, number, number] {
 		.replace(/\[[^\]]*\]/g, ' ')
 		.split(/[\s>+~]+/)
 		.filter((one) => /^[a-z]/i.test(one)).length;
-	return [ids, classes, types];
+	return [ids + total[0], classes + total[1], types + total[2]];
 }
+
+/**
+ * Every declaration of `property` in a stylesheet's text, at any depth of
+ * at-rule, as `property: value`. `property` is a regular-expression fragment, so
+ * one scan can name a family of longhands.
+ */
+const propertyDeclarations = (text: string, property: string): string[] =>
+	text.match(new RegExp(`(?:^|[;{\\s])(?:${property})\\s*:[^;}]*`, 'gm')) ?? [];
 
 /** Whether `a` beats `b` on weight alone. */
 const heavier = (a: [number, number, number], b: [number, number, number]) =>
 	a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
 const same = (a: [number, number, number], b: [number, number, number]) =>
 	a.join() === b.join();
+
+describe('specificity weighs a functional pseudo-class by its argument', () => {
+	it('reads the weights CSS gives', () => {
+		expect(specificity('.a .b:not(:focus):not(:placeholder-shown)')).toEqual([0, 4, 0]);
+		expect(specificity('.a > .b:has(> .c[aria-expanded=\'true\'])')).toEqual([0, 4, 0]);
+		expect(specificity('.a:is(.b, #c)')).toEqual([1, 1, 0]);
+		expect(specificity(':where(.a .b) td')).toEqual([0, 0, 1]);
+		expect(specificity('input[type=\'text\']')).toEqual([0, 1, 1]);
+	});
+});
 
 describe('a rule reads the class that says why, never the elements drawn', () => {
 	/*
@@ -2849,19 +2899,16 @@ describe('no rule clips with `clip-path`', () => {
 	 * field reached for it once, to inset its dotted rule, and was refused at the
 	 * land stop (`docs/features/granted-temporary-points.md`).
 	 */
-	const declares = (text: string, property: string): string[] =>
-		text.match(new RegExp(`(?:^|[;{\\s])${property}\\s*:[^;}]*`, 'gm')) ?? [];
-
 	it('declares no `clip-path` anywhere in the stylesheet', () => {
-		expect(declares(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
 	});
 
 	it('would notice one', () => {
 		// The same scan finds the `clip` the visually-hidden rule does declare,
 		// so the empty list above is a finding, and one planted in an at-rule.
-		expect(declares(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
 		expect(
-			declares('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
+			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
 		).toHaveLength(1);
 	});
 });
@@ -5451,7 +5498,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		expect(value?.body).toMatch(/font-size:\s*var\(--sheetsmith-card-value-size\)/);
 	});
 
-	it('raises the tiles, the boxes and the head rule under more contrast, after their base rules', () => {
+	it('raises the tiles and the boxes under more contrast, after their base rules', () => {
 		// Equal weight, so only order decides: a block above the base rules lost.
 		const css = CSS_WITHOUT_COMMENTS;
 		const more = [...css.matchAll(/@media \(prefers-contrast: more\) \{/g)]
@@ -5465,8 +5512,6 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		for (const selector of [
 			'.sheetsmith-stat-block-vital',
 			'.sheetsmith-stat-block-panel',
-			'.sheetsmith-stat-block-play-head',
-			'.sheetsmith-stat-block-record > .sheetsmith-record-summary',
 			'.sheetsmith-table-box.sheetsmith-stat-block-actions',
 		]) {
 			expect(block, selector).toContain(selector);
@@ -5475,13 +5520,59 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		for (const at of [
 			base(/\n\.sheetsmith-stat-block-vital \{/),
 			base(/\n\.sheetsmith-stat-block-panel \{/),
-			base(/\n\.sheetsmith-stat-block-play-head,\s*\n\.sheetsmith-stat-block-record > /),
 			base(/\n\.sheetsmith-view \.sheetsmith-table-box\.sheetsmith-stat-block-actions \{/),
 			base(/\n\.sheetsmith-table-box \{/),
 		]) {
 			expect(at).toBeGreaterThan(0);
 			expect(more ?? 0).toBeGreaterThan(at);
 		}
+	});
+
+	/*
+	 * `docs/features/sheet-contrast-pass.md` §3. The open line's rule is reached
+	 * through a `:has()` at (0,4,0), and the more-contrast block named it as
+	 * `.sheetsmith-stat-block-record > .sheetsmith-record-summary` at (0,2,0), so
+	 * the hairline stayed at 1.22:1 while the order test above went green. The
+	 * rule now reads a token and more contrast sets the token on the block, so
+	 * neither weight nor order decides; this holds both halves, and that no
+	 * more-contrast rule goes back to naming the line by a selector.
+	 */
+	it('rules the head and an open form through a token more contrast raises', () => {
+		const ruled = all.filter(
+			(rule) =>
+				rule.context.length === 0 &&
+				selectorList(rule.selector).includes('.sheetsmith-stat-block-play-head') &&
+				selectorList(rule.selector).some((one) => one.includes('[aria-expanded=\'true\']')),
+		);
+		expect(ruled).toHaveLength(1);
+		expect(declarations(ruled[0]?.body ?? '')).toContain(
+			'border-bottom: 1px solid var(--sheetsmith-stat-block-rule)',
+		);
+
+		const token = (context: string[]) =>
+			all
+				.filter(
+					(rule) =>
+						rule.context.join() === context.join() &&
+						selectorList(rule.selector).includes('.sheetsmith-stat-block'),
+				)
+				.flatMap((rule) => declarations(rule.body))
+				.filter((one) => one.startsWith('--sheetsmith-stat-block-rule:'));
+		expect(token([])).toEqual(['--sheetsmith-stat-block-rule: var(--background-modifier-border)']);
+		expect(token(['@media (prefers-contrast: more)'])).toEqual([
+			'--sheetsmith-stat-block-rule: var(--text-muted)',
+		]);
+
+		const named = all.filter(
+			(rule) =>
+				rule.context.includes('@media (prefers-contrast: more)') &&
+				selectorList(rule.selector).some(
+					(one) =>
+						one === '.sheetsmith-stat-block-play-head' ||
+						one.startsWith('.sheetsmith-stat-block-record > .sheetsmith-record-summary'),
+				),
+		);
+		expect(named.map((rule) => rule.selector)).toEqual([]);
 	});
 
 	it('sets the attack table on the tiles\' surface and its header a gentle step off it, theme variables only', () => {
@@ -6311,5 +6402,102 @@ describe('a Roster card strip\'s state floor (docs/features/non-number-modifiers
 		const selectors = rules.map(([, selector]) => (selector ?? '').trim());
 		expect(selectors).toContain('.sheetsmith-roster-cards.sheetsmith-roster-cards-stateful');
 		for (const selector of selectors) expect(selector, selector).not.toContain('sheetsmith-state-door');
+	});
+});
+
+describe('the sheet in forced colors (docs/features/sheet-contrast-pass.md)', () => {
+	const FORCED = '@media (forced-colors: active)';
+	const all = rules(CSS_WITHOUT_COMMENTS).map((rule, at) => ({ ...rule, at }));
+	const forced = all.filter((rule) => rule.context.join() === FORCED);
+
+	/** Rules outside the mode hiding `field` by a zero opacity. */
+	const hiddenElsewhere = (from: Rule[], field: string): string[] =>
+		from
+			.filter(
+				(rule) =>
+					rule.context.join() !== FORCED &&
+					rule.selector.includes(field) &&
+					declarations(rule.body).some((one) => /^opacity: 0$/.test(one)),
+			)
+			.map((rule) => rule.selector);
+	/** Rules taking `field` out of the mode's repainting. */
+	const adjusted = (from: Rule[], field: string): string[] =>
+		from
+			.filter((rule) => rule.selector.includes(field) && /forced-color-adjust\s*:/.test(rule.body))
+			.map((rule) => rule.selector);
+	const LONGHANDS = 'text-decoration-(?:style|color|thickness)';
+
+	it('would notice an opacity outside the mode, a field taken out of it, or a longhand', () => {
+		const planted = rules(
+			'.sheetsmith-view .sheetsmith-x-input:not(:focus) { opacity: 0; }\n' +
+				'.sheetsmith-view .sheetsmith-x-input:hover { opacity: 0.5; }\n' +
+				'@media (forced-colors: active) { .sheetsmith-view .sheetsmith-x-input { opacity: 0; forced-color-adjust: none; } }',
+		);
+		// The ordinary rule's zero is found, a half opacity and the mode's own are not.
+		expect(hiddenElsewhere(planted, 'sheetsmith-x-input')).toEqual([
+			'.sheetsmith-view .sheetsmith-x-input:not(:focus)',
+		]);
+		expect(adjusted(planted, 'sheetsmith-x-input')).toEqual(['.sheetsmith-view .sheetsmith-x-input']);
+		expect(
+			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { text-decoration-style: dotted; } }', LONGHANDS),
+		).toHaveLength(1);
+	});
+
+	/*
+	 * §1. The mode repaints a prose field's `color: transparent` as `CanvasText`,
+	 * so its source drew under the rendered prose. Opacity hides it instead, only
+	 * while the field holds text, so an empty field's placeholder still shows,
+	 * and a refused draft is drawn again after it, so the reader's words stay
+	 * on screen. `forced-color-adjust` is the cut headline's answer and not this
+	 * one (`docs/UI.md` §6), so neither field takes it.
+	 */
+	for (const [field, refused] of [
+		['sheetsmith-rich-text-input', 'sheetsmith-rich-text-refused'],
+		['sheetsmith-record-body-input', 'sheetsmith-record-body-refused'],
+	] as const) {
+		it(`hides ${field}'s unfocused text by opacity, keeping its placeholder and a refused draft`, () => {
+			const hidden = forced.filter((rule) =>
+				selectorList(rule.selector).includes(
+					`.sheetsmith-view .${field}:not(:focus):not(:placeholder-shown)`,
+				),
+			);
+			expect(hidden).toHaveLength(1);
+			expect(declarations(hidden[0]?.body ?? '')).toEqual(['opacity: 0']);
+
+			const shown = forced.filter((rule) =>
+				selectorList(rule.selector).includes(`.sheetsmith-view .${refused} .${field}:not(:focus)`),
+			);
+			expect(shown).toHaveLength(1);
+			expect(declarations(shown[0]?.body ?? '')).toEqual(['opacity: 1']);
+			// Equal weight, (0,4,0), so the refused draft has to come after to win.
+			expect(specificity(hidden[0]?.selector ?? '')).toEqual([0, 4, 0]);
+			expect(specificity(shown[0]?.selector ?? '')).toEqual([0, 4, 0]);
+			expect(shown[0]?.at ?? 0).toBeGreaterThan(hidden[0]?.at ?? Infinity);
+
+			// No opacity rule outside the mode: the ordinary sheet keeps `color: transparent`.
+			expect(hiddenElsewhere(all, field)).toEqual([]);
+			expect(adjusted(all, field)).toEqual([]);
+		});
+	}
+
+	/*
+	 * §2. The app's opacity still applies over `LinkText`, so an unresolved link
+	 * drew at 4.40:1 and differed from a resolved one by brightness alone. Full
+	 * strength, and a dotted rule as the shape the mode cannot repaint away. A
+	 * border, because the decoration longhands are the spelling the
+	 * browser-support lint refuses — which this also holds across the sheet.
+	 */
+	it('draws an unresolved link at full strength with a dotted rule', () => {
+		const link = forced.filter((rule) =>
+			selectorList(rule.selector).includes('.sheetsmith-view .internal-link.is-unresolved'),
+		);
+		expect(link).toHaveLength(1);
+		expect(declarations(link[0]?.body ?? '')).toEqual([
+			'opacity: 1',
+			'text-decoration: none',
+			'border-bottom: 1px dotted',
+			'padding-bottom: 1px',
+		]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, LONGHANDS)).toEqual([]);
 	});
 });

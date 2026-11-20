@@ -3171,6 +3171,12 @@ export const DEFAULTS = [
 		media: { 'prefers-contrast': 'more' },
 	},
 	{
+		name: 'sheet-forms-library-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
 		// **Every form** in both palettes and at a phone's width, the edit form
 		// drawn through the same anatomy as In play: Brown Bear open, Wolf closed
 		// with its vitals on its line.
@@ -4780,6 +4786,25 @@ function markdownViews() {
 			query: 'surface=sheet&state=markdown&theme=light&renderer=none',
 			size: '1400,1200',
 		},
+		// The prose box in forced colors in each state its field can be in
+		// (`docs/features/sheet-contrast-pass.md`): focused, the source alone;
+		// emptied, the placeholder; refused, the draft and the error under the
+		// box. The `#` is escaped or the query ends at it. Forced colors draws one
+		// palette, so a theme twin would be the same PNG. Then the unresolved
+		// link wrapped across two lines, at a sheet width where *Torch of* ends
+		// one line and *Revealing* starts the next, for its dotted rule on both.
+		...[
+			{ suffix: '-focused', query: '&focus=.sheetsmith-rich-text-input' },
+			{ suffix: '-empty', query: '&type=.sheetsmith-rich-text-input|' },
+			{ suffix: '-refused', query: '&type=.sheetsmith-rich-text-input|%23%23 Heading%0AA draft' },
+			{ suffix: '-wrapped', query: '&width=620' },
+		].map(({ suffix, query }) => ({
+			name: `sheet-markdown-forced${suffix}`,
+			query: `surface=sheet&state=markdown&theme=light${query}`,
+			size: '1400,1200',
+			flags: ['--force-high-contrast'],
+			frame: '.sheetsmith-rich-text',
+		})),
 	];
 }
 
@@ -4788,7 +4813,7 @@ function markdownViews() {
  * block with no `exclusive`, read as In play reads at rest and edited behind
  * **Edit**. The Familiar, the Fate mook first and the main NPC first, each at
  * rest and behind the press (`-edit`), in light, dark, a true 380px, more
- * contrast and forced colours, from one loop as the tint views are. Each frames
+ * contrast in both themes and forced colours, from one loop as the tint views are. Each frames
  * the one Stat block its state draws, so a scoped shot reproduces its width.
  * Then the Familiar's Notes opened at rest, its picture at two widths, and the
  * empty block.
@@ -4804,6 +4829,7 @@ function companionViews() {
 		{ suffix: '-dark', query: '&theme=dark', size: '1400,1500' },
 		{ suffix: '-narrow', query: '&theme=light&width=380', size: '380,2400' },
 		{ suffix: '-contrast-more', query: '&theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-contrast-more-dark', query: '&theme=dark', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
 		{ suffix: '-forced-colors', query: '&theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
 	];
 	const faces = [
