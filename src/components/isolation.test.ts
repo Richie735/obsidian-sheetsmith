@@ -182,6 +182,15 @@ const ALLOWED = [
 	// A row's levels and flags, shared by Table and Roster on §1's one-step tier.
 	"import { overlayRowStates } from './row-states';",
 	"import { overlayRowStates } from '../components/row-states';",
+	// Which modifier groups a value is in, shared by Card, Card set, Table and
+	// Roster on §1's one-step tier for a policy
+	// (`docs/features/table-row-modifier-target.md` D4).
+	"import { rowGroups } from './member-groups';",
+	"import { rowGroups } from '../components/member-groups';",
+	// The chip list a group target is chosen in, shared by the sheet's form and
+	// the layout editor, so the two cannot disagree (D11, D12).
+	"import { renderGroupChips } from './group-chips';",
+	"import { renderGroupChips } from '../components/group-chips';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
@@ -331,6 +340,32 @@ describe('the app\'s own menu is imported in one file in src', () => {
 		// green over whatever it stopped reading.
 		expect(files).toBeGreaterThan(100);
 		expect(hits).toEqual(['tree-moves.ts']);
+	});
+});
+
+describe('a ResizeObserver is made in one file in src, the view\'s', () => {
+	/*
+	 * `docs/PATTERNS.md` §5, "A `ResizeObserver` belongs to the view": one per
+	 * view, owned by the view, observing what a render stamped. A component that
+	 * made its own would leave one observer per card per render with nothing to
+	 * disconnect it, since a rebuild replaces its DOM without telling it. The
+	 * lifecycle of the one there is is held in `view/headline-fit.test.ts`; this
+	 * is what holds that there is one.
+	 *
+	 * Code only, comments stripped: the word appears in prose where the view and
+	 * the fit module say why they are shaped this way. Shipping code only, since a
+	 * test stubbing the constructor is entitled to name it.
+	 */
+	it('names ResizeObserver in code in no file under src but view/headline-fit.ts', () => {
+		const named = (source: string): boolean =>
+			/\bResizeObserver\b/.test(source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''));
+		const { files, hits } = scan(SRC, named, true);
+		expect(files).toBeGreaterThan(100);
+		expect(hits).toEqual(['headline-fit.ts']);
+		// The scan reports a file's name, and `ui/` holds a `headline-fit.ts` too:
+		// the one hit is the view's.
+		expect(named(readFileSync(join(SRC, 'view', 'headline-fit.ts'), 'utf8'))).toBe(true);
+		expect(named(readFileSync(join(SRC, 'ui', 'headline-fit.ts'), 'utf8'))).toBe(false);
 	});
 });
 

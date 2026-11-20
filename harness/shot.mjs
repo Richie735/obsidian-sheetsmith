@@ -7,6 +7,7 @@
  *
  *   node harness/shot.mjs                          # every default view
  *   node harness/shot.mjs surface=settings theme=dark width=620
+ *   node harness/shot.mjs only=pool-ceiling- only=headline-narrow-   # named defaults
  *
  * Views are addressed by the harness's own query parameters, so anything
  * reachable by clicking is reachable by a shot. Output lands in harness/shots/,
@@ -3170,6 +3171,12 @@ export const DEFAULTS = [
 		media: { 'prefers-contrast': 'more' },
 	},
 	{
+		name: 'sheet-forms-library-contrast-more-dark',
+		query: 'surface=sheet&theme=dark&state=forms&press=.sheetsmith-stat-block-switch',
+		size: '1400,1700',
+		media: { 'prefers-contrast': 'more' },
+	},
+	{
 		// **Every form** in both palettes and at a phone's width, the edit form
 		// drawn through the same anatomy as In play: Brown Bear open, Wolf closed
 		// with its vitals on its line.
@@ -3182,6 +3189,14 @@ export const DEFAULTS = [
 		query: 'surface=sheet&theme=light&state=forms&width=380&press=.sheetsmith-stat-block-switch',
 		size: '380,3000',
 		frame: '.sheetsmith-stat-block',
+	},
+	{
+		// The forms sample's Abilities Card set selected in the editor: **Short
+		// label** under **Label**, and each entry's **Short** on its detail line
+		// with the one footnote under the list (`docs/features/published-name-labels.md`).
+		name: 'editor-forms-short-labels',
+		query: 'surface=editor&theme=light&state=forms&open=abilities',
+		size: '1500,2000',
 	},
 	{
 		// Every form with every form closed, so each line's vitals summary shows.
@@ -3751,6 +3766,130 @@ export const DEFAULTS = [
 		size: '1400,1500',
 	},
 	/*
+	 * The halo on a ring a modifier set (`docs/features/modifier-set-ring-mark.md`):
+	 * the Skills Table and the Checks Roster over the same six rows. Persuasion
+	 * (raised), Medicine (lowered) and Nature (raised by Cat Form in play, tinted
+	 * and tagged) are marked; Arcana and History, where the modifier agrees with
+	 * the note, and Survival, which nothing reaches, are not. The Inspiration
+	 * flag is turned on over a stored off, so it is marked too. Both palettes,
+	 * forced colors, 1400 and 520, Text 20 and 24, a phone, a focused marked
+	 * ring and Nature's row framed. Heights measured through each view's query:
+	 * the sheet ends at 1030 at 1400, 1090 at 520 and 1890 on a phone.
+	 */
+	...['light', 'dark'].flatMap((theme) => [
+		{
+			name: `modifier-set-ring-mark-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=modifier-set-ring-mark`,
+			size: '1400,1100',
+		},
+		{
+			name: `modifier-set-ring-mark-narrow-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=modifier-set-ring-mark&width=520`,
+			size: '620,1200',
+		},
+	]),
+	{
+		name: 'modifier-set-ring-mark-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark',
+		size: '1400,1100',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-set-ring-mark-narrow-forced-colors',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&width=520',
+		size: '620,1200',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		name: 'modifier-set-ring-mark-text-20',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&text=20',
+		size: '1400,1300',
+	},
+	{
+		name: 'modifier-set-ring-mark-text-24',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&text=24',
+		size: '1400,1500',
+	},
+	{
+		name: 'modifier-set-ring-mark-phone',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark',
+		size: '380,2000',
+		platform: 'phone',
+	},
+	// Persuasion's ring focused: where the accent outline meets the dots.
+	{
+		name: 'modifier-set-ring-mark-focus',
+		query: `surface=sheet&theme=light&state=modifier-set-ring-mark&bar=off&focus=${encodeURIComponent(
+			"[data-sheetsmith-component='skills'] .sheetsmith-level-ring",
+		)}`,
+		size: '1400,700',
+		frame: '[data-sheetsmith-component="skills"]',
+	},
+	// Nature under Cat Form's tint: its halo, its tag and its door in one frame.
+	{
+		name: 'modifier-set-ring-mark-form',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&bar=off',
+		size: '1400,1100',
+		frame: '[data-sheetsmith-component="skills"]',
+	},
+	/*
+	 * The same halo under a theme whose corners are not round. The ring is a
+	 * `<button>`, so the app's `button` rule gives it the theme's
+	 * `--corner-shape`; the halo inherits it. The calibrated stylesheet sets
+	 * `round`, which hid a round halo round a squircle ring in every view above,
+	 * so these set the shape through `&corner=`: `superellipse(1.1)`, which a
+	 * community theme in real use sets, and `squircle`, the keyword, which is
+	 * `superellipse(2)` and so the plainer case to see. The views above are the
+	 * `round` case, unchanged. Same sizes as theirs.
+	 */
+	...[
+		['superellipse', 'superellipse(1.1)'],
+		['squircle', 'squircle'],
+	].flatMap(([slug, shape]) => {
+		const query = `surface=sheet&state=modifier-set-ring-mark&corner=${encodeURIComponent(shape)}`;
+		return [
+			...['light', 'dark'].flatMap((theme) => [
+				{
+					name: `modifier-set-ring-mark-${slug}-${theme}`,
+					query: `${query}&theme=${theme}`,
+					size: '1400,1100',
+				},
+				{
+					name: `modifier-set-ring-mark-${slug}-narrow-${theme}`,
+					query: `${query}&theme=${theme}&width=520`,
+					size: '620,1200',
+				},
+			]),
+			{
+				name: `modifier-set-ring-mark-${slug}-forced-colors`,
+				query: `${query}&theme=light`,
+				size: '1400,1100',
+				flags: ['--force-high-contrast'],
+			},
+			{
+				name: `modifier-set-ring-mark-${slug}-narrow-forced-colors`,
+				query: `${query}&theme=light&width=520`,
+				size: '620,1200',
+				flags: ['--force-high-contrast'],
+			},
+		];
+	}),
+	// The squircle's two checks the round views make at their own: where the
+	// focus outline meets the dots, and whether Text 24 still clears the frame.
+	{
+		name: 'modifier-set-ring-mark-squircle-focus',
+		query: `surface=sheet&theme=light&state=modifier-set-ring-mark&corner=squircle&bar=off&focus=${encodeURIComponent(
+			"[data-sheetsmith-component='skills'] .sheetsmith-level-ring",
+		)}`,
+		size: '1400,700',
+		frame: '[data-sheetsmith-component="skills"]',
+	},
+	{
+		name: 'modifier-set-ring-mark-squircle-text-24',
+		query: 'surface=sheet&theme=light&state=modifier-set-ring-mark&corner=squircle&text=24',
+		size: '1400,1500',
+	},
+	/*
 	 * The Lore row's modifier form open on `skills.investigation = 2 in
 	 * Training`: Value, the Sets operator, and the position legend under Amount.
 	 */
@@ -4126,6 +4265,101 @@ export const DEFAULTS = [
 		query: 'surface=editor&theme=light&state=modifier-options',
 		size: '1500,2600',
 	},
+	/*
+	 * Modifiers aimed at groups (`docs/features/table-row-modifier-target.md`).
+	 * Seven views, each in both themes. The Value select open on its **Modifier
+	 * groups** optgroup is not one of them: a native `<select>`'s list is the
+	 * browser's own popup and a headless shot draws it closed, so the picker
+	 * views show the form open on a group part instead, its chips under the
+	 * select, and the optgroup is held by `modifier-form.test.ts`.
+	 */
+	...['light', 'dark'].flatMap((theme) => [
+		// The Dexterity save's breakdown: the cloak's one line, `via Saving throws`.
+		{
+			name: `group-target-saves-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-saves&bar=off&press=%5Bdata-sheetsmith-component%3D'saves'%5D%20tbody%20tr:nth-child(2)%20.sheetsmith-table-value.sheetsmith-modified`,
+			size: '1400,1100',
+		},
+		// The Strength save's breakdown with the ring worn: the cloak's line suppressed.
+		{
+			name: `group-target-stacking-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-stacking&bar=off&press=%5Bdata-sheetsmith-component%3D'saves'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-value.sheetsmith-modified`,
+			size: '1400,1100',
+		},
+		// The cloak's own row form, its reach line counting five of six.
+		{
+			name: `group-target-reach-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-stacking&bar=off&press=%5Bdata-sheetsmith-component%3D'gear'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button`,
+			size: '1400,1400',
+		},
+		// Bless reaching both Longsword rows a character added; the first one's breakdown.
+		{
+			name: `group-target-open-rows-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-saves&bar=off&press=%5Bdata-sheetsmith-component%3D'attacks'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-value.sheetsmith-modified`,
+			size: '1400,1100',
+		},
+		// The cloak's form open on its one group part: Value Saving throws, one chip.
+		{
+			name: `group-target-picker-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-saves&bar=off&press=%5Bdata-sheetsmith-component%3D'gear'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button&press=.sheetsmith-panel-line`,
+			size: '1400,1400',
+		},
+		// Frightened's form open: five groups as chips, one part.
+		{
+			name: `group-target-picker-chips-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-frightened&bar=off&press=%5Bdata-sheetsmith-component%3D'conditions'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button&press=.sheetsmith-panel-line`,
+			size: '1400,1400',
+		},
+		// The layout's Modifier groups list with each group's members counted.
+		{
+			name: `group-target-editor-${theme}`,
+			query: `surface=editor&theme=${theme}&state=group-target-saves`,
+			size: '1500,2600',
+		},
+		// The Skills table's form: its row default, and Acrobatics' own group beside
+		// it. Three rows, so it is also the short list for the description footnote:
+		// the whole list and the footnote under it are in the frame.
+		{
+			name: `group-target-editor-rows-${theme}`,
+			query: `surface=editor&theme=${theme}&state=group-target-saves&open=skills`,
+			size: '1500,2600',
+		},
+		// The same form over all eighteen 5e skills: the list's scroller moved to
+		// its last row, Survival, so the end of the list and the footnote under it
+		// are both in the frame, to judge whether the footnote reads as the list's
+		// rather than the last row's.
+		{
+			name: `group-target-editor-rows-long-${theme}`,
+			query: `surface=editor&theme=${theme}&state=group-target-long&open=skills&scroll=%5Bdata-sheetsmith-focus%3D%22skills-row-17-groups%22%5D`,
+			size: '1500,2600',
+		},
+		// Stealth out of the Skills table's row groups, Frightened on: its own
+		// popover reads +2 with no contributor and so no `via` line, while
+		// Athletics beside it drops to +1.
+		{
+			name: `group-target-inherit-off-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-inherit-off&bar=off&press=%5Bdata-sheetsmith-component%3D'skills'%5D%20tbody%20tr:nth-child(3)%20.sheetsmith-table-value`,
+			size: '1400,1100',
+		},
+		// Frightened's own form there: `Reaches 12 values`, one fewer than with
+		// Stealth in (group-target-picker-chips' sheet reads 13).
+		{
+			name: `group-target-inherit-off-reach-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-inherit-off&bar=off&press=%5Bdata-sheetsmith-component%3D'conditions'%5D%20tbody%20tr:nth-child(1)%20.sheetsmith-table-modifier-button`,
+			size: '1400,1400',
+		},
+		// Rows saying the undeclared-group, empty-group and reserved-clause
+		// sentences, one popup each: Old charm, Hollow token, Jack of All Trades.
+		...[
+			['undeclared', 'gear', 3],
+			['empty', 'gear', 4],
+			['where', 'conditions', 3],
+		].map(([which, id, row]) => ({
+			name: `group-target-errors-${which}-${theme}`,
+			query: `surface=sheet&theme=${theme}&state=group-target-errors&bar=off&press=%5Bdata-sheetsmith-component%3D'${id}'%5D%20tbody%20tr:nth-child(${row})%20.sheetsmith-table-modifier-button`,
+			size: '1400,1400',
+		})),
+	]),
 	{
 		name: 'sheet-text-groups-collapsed',
 		query:
@@ -4188,6 +4422,8 @@ export const DEFAULTS = [
 		hover: '.sheetsmith-record-input-text',
 	},
 	...poolHeadlineViews(),
+	...headlineNarrowViews(),
+	...poolCeilingViews(),
 	/*
 	 * Temporary points a modifier grants (`docs/features/granted-temporary-points.md`):
 	 * a Pool beside a Stat block's form in play, a Record set's spell and a
@@ -4227,6 +4463,22 @@ export const DEFAULTS = [
 ];
 
 /**
+ * `&type=` for a view builder: the selector and the text in one encoded
+ * parameter, `<selector>|<text>`, which is what `harness.ts` splits. One
+ * spelling for every builder below, so a change to the format is one edit.
+ * Declarations rather than `const`, since `DEFAULTS` above calls the builders
+ * before this line runs.
+ */
+function typed(selector, text) {
+	return `type=${encodeURIComponent(`${selector}|${text}`)}`;
+}
+
+/** A Pool's grid cell, named by its value field's accessible name, its label. */
+function poolCell(label) {
+	return `.sheetsmith-cell:has(.sheetsmith-pool-current[aria-label='${label}'])`;
+}
+
+/**
  * A Pool's reading in a narrow card (`docs/features/pool-headline-narrow-fit.md`),
  * framed to one Pool's cell per shot, in the five conditions the spec names and
  * the reported case.
@@ -4245,8 +4497,6 @@ export const DEFAULTS = [
  * card's border is a stray line along the frame's edge.
  */
 function poolHeadlineViews() {
-	const cell = (label) => `.sheetsmith-cell:has(.sheetsmith-pool-current[aria-label='${label}'])`;
-	const typed = (selector, text) => `type=${encodeURIComponent(`${selector}|${text}`)}`;
 	const REPORTED =
 		'surface=sheet&theme=light&text=24&place=hit_points:5,1&' +
 		typed(".sheetsmith-pool-temp-input[aria-label='Hit points temporary']", '100');
@@ -4262,7 +4512,7 @@ function poolHeadlineViews() {
 			['Stamina reserve', 'Reservoir'].map((label) => ({
 				...view,
 				name: `pool-headline-${id}-${label === 'Reservoir' ? 'reservoir' : 'stamina'}`,
-				frame: cell(label),
+				frame: poolCell(label),
 				pad: 6,
 			})),
 		),
@@ -4273,23 +4523,237 @@ function poolHeadlineViews() {
 			name: 'pool-headline-large-520-reservoir-dark',
 			query: 'surface=sheet&theme=dark&width=520&text=24',
 			size: '1400,1900',
-			frame: cell('Reservoir'),
+			frame: poolCell('Reservoir'),
 			pad: 6,
 		},
 		{
 			name: 'pool-headline-reported',
 			query: REPORTED,
 			size: '1400,1900',
-			frame: cell('Hit points'),
+			frame: poolCell('Hit points'),
 			pad: 6,
 		},
 		{
 			name: 'pool-headline-reported-three-digits',
 			query: `${REPORTED}&${typed(".sheetsmith-pool-current[aria-label='Hit points']", '100')}`,
 			size: '1400,1900',
-			frame: cell('Hit points'),
+			frame: poolCell('Hit points'),
 			pad: 6,
 		},
+	];
+}
+
+/**
+ * A Pool's ceiling and temporary points at the sheet's text size
+ * (`docs/features/pool-ceiling-text-size.md`), framed to one Pool per shot, at
+ * the default size and `text=24`, on the 1400 and the 520 sheet.
+ *
+ * Two Pools, because no sample Pool has both: **Hit points**, with temporary
+ * points under a calculated `/9`, and **Rolled HP**, whose ceiling the
+ * character owns, with `120` typed into it by `&type=`, so its digits are seen
+ * beside its `/` at one size. The pad sits under the grid's 8px gap, as
+ * `poolHeadlineViews` argues.
+ */
+function poolCeilingViews() {
+	const OWNED = typed(".sheetsmith-pool-max-input[aria-label='Rolled HP maximum']", '120');
+	const conditions = [
+		{ id: 'default-1400', query: 'surface=sheet&theme=light' },
+		{ id: 'default-520', query: 'surface=sheet&theme=light&width=520' },
+		{ id: 'large-1400', query: 'surface=sheet&theme=light&text=24' },
+		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24' },
+	];
+	const FIELD = ".sheetsmith-pool-ceiling .sheetsmith-pool-max-input[aria-label='Rolled HP maximum']";
+	// The sample's own `22`, not a typed `120`: the harness focuses a field
+	// already on screen before it types, and the commit's rebuild then drops
+	// that focus, so a typed and focused ceiling photographs unfocused.
+	const focused = `focus=${encodeURIComponent(FIELD)}`;
+	return [
+		...conditions.flatMap(({ id, query }) => [
+			{ name: `pool-ceiling-${id}-temp`, query, size: '1400,1900', frame: poolCell('Hit points'), pad: 6 },
+			{
+				name: `pool-ceiling-${id}-owned`,
+				query: `${query}&${OWNED}`,
+				size: '1400,1900',
+				frame: poolCell('Rolled HP'),
+				pad: 6,
+			},
+		]),
+		/*
+		 * The typed ceiling focused at `text=24`, where its ring is largest
+		 * against the slash beside it (`docs/features/qualifier-fit-and-size.md`):
+		 * with 1px of padding the ring is drawn half inside the field, and these
+		 * are where it is seen whole and clear of the slash. Forced colors
+		 * discards the box-shadow and draws the shared transparent outline
+		 * instead, wholly outside, so that path is shot too.
+		 */
+		...conditions
+			.filter(({ id }) => id.startsWith('large-'))
+			.map(({ id, query }) => ({
+				name: `pool-ceiling-${id}-owned-focused`,
+				query: `${query}&${focused}`,
+				size: '1400,1900',
+				frame: poolCell('Rolled HP'),
+				pad: 6,
+			})),
+		/*
+		 * Rolled HP moved to one unit with `120` typed, the design review's case:
+		 * the wrapped ceiling is wider than the cell, and the reading's
+		 * `safe center` starts it at the content's start, so the card's clip cuts
+		 * its end and the slash stays (`docs/features/qualifier-fit-and-size.md`).
+		 * Plain centring clipped both ends, and at `text=24` it read `120`.
+		 * `&type=` focuses the field; the card is `overflow: clip`, no scroll
+		 * container, so the focus no longer scrolls it sideways and leaves it
+		 * there, which these views once undid with `&scrollx=`.
+		 */
+		...[
+			['default', 'surface=sheet&theme=light&width=520'],
+			['large', 'surface=sheet&theme=light&width=520&text=24'],
+		].map(([id, query]) => ({
+			name: `pool-ceiling-one-${id}-520-owned`,
+			query: `${query}&place=rolled_health:10,1&${OWNED}`,
+			size: '1400,1900',
+			frame: poolCell('Rolled HP'),
+			pad: 6,
+		})),
+		{
+			name: 'pool-ceiling-large-1400-owned-focused-forced-colors',
+			query: `surface=sheet&theme=light&text=24&${focused}`,
+			size: '1400,1900',
+			frame: poolCell('Rolled HP'),
+			pad: 6,
+			flags: ['--force-high-contrast'],
+		},
+	];
+}
+
+/**
+ * Every headline in a narrow cell (`docs/features/headline-narrow-cell.md`),
+ * framed to one cell per shot, on the 520px sheet at the default size and at
+ * `text=24`, holding `100` and then `355000`, which is marked wherever it does
+ * not fit.
+ *
+ * The cells: **Load**, a two-unit Card whose derived reads Carried, so a value
+ * typed into Carried is Load's headline; a **Strength** tile of Abilities, a
+ * Card set tile whose derived is `floor((value + mod.self - 10) / 2)` with a
+ * belt's `+2` in it, so `208` reads `+100` and `710008` reads `+355000`, the
+ * sign a fourth character; a **Gold** coin of Currency, a tile with
+ * no derived, so its own field is the headline; and **Hit points**, a Pool
+ * moved to two units and to one by `&place=`. Every value arrives by `&type=`,
+ * so what is shot is what a commit and its rebuild draw.
+ *
+ * Then the reveal and the mark's other palettes: Load cut with its popover
+ * open, the Gold coin and a one-unit Hit points cut and focused, and the
+ * marked Load in the dark theme and in forced colors. The pad sits under the grid's 8px gap, as
+ * `poolHeadlineViews` argues.
+ */
+function headlineNarrowViews() {
+	const field = (label) => `.sheetsmith-card-input[aria-label='${label}']`;
+	const tile = (label) => `.sheetsmith-card:has(> .sheetsmith-card-value > ${field(label)})`;
+	const POOL = ".sheetsmith-pool-current[aria-label='Hit points']";
+	const LOAD = '[data-sheetsmith-component="load"]';
+	const HP = '[data-sheetsmith-component="hit_points"]';
+	/** Each cell, and how a value is put into it. */
+	const cells = [
+		{ id: 'card', frame: LOAD, value: (v) => typed(field('Carried'), v) },
+		/*
+		 * The sample's items push Strength by 4 inside the parenthesis, so
+		 * `204` reads `+99`: the tile's three-character reading, since its sign
+		 * makes `+100` four. `710006` reads `+355000`. The view is named for
+		 * what the tile shows.
+		 */
+		{
+			id: 'tile',
+			frame: tile('Strength'),
+			shows: (v) => (v === '100' ? '99' : v),
+			value: (v) => typed(field('Strength'), v === '100' ? '204' : String(2 * Number(v) + 6)),
+		},
+		{ id: 'coin', frame: tile('Gold'), value: (v) => typed(field('Gold'), v) },
+		{ id: 'pool-two', frame: HP, place: 'hit_points:5,2', value: (v) => typed(POOL, v) },
+		{ id: 'pool-one', frame: HP, place: 'hit_points:5,1', value: (v) => typed(POOL, v) },
+	];
+	const conditions = [
+		{ id: 'default-520', query: 'surface=sheet&theme=light&width=520' },
+		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24' },
+	];
+	const view = (name, query, frame, extra = {}) => ({
+		name,
+		query,
+		size: '1400,1900',
+		frame,
+		pad: 6,
+		...extra,
+	});
+	const cellQuery = (condition, cell, value) =>
+		[condition.query, cell.place === undefined ? null : `place=${cell.place}`, cell.value(value)]
+			.filter((part) => part !== null)
+			.join('&');
+	const MARKED = 'surface=sheet&theme=light&width=520';
+	const LOAD_MARKED = `${typed(field('Carried'), '355000')}`;
+	return [
+		...conditions.flatMap((condition) =>
+			['100', '355000'].flatMap((value) =>
+				cells.map((cell) =>
+					view(
+						`headline-narrow-${cell.id}-${condition.id}-${cell.shows?.(value) ?? value}`,
+						cellQuery(condition, cell, value),
+						cell.frame,
+					),
+				),
+			),
+		),
+		/*
+		 * The reveal: a press on a cut derived opens its value, then its
+		 * breakdown. Load at one unit, where its own `13` is already cut, since
+		 * `&press=` runs before `&type=` would have committed a longer value.
+		 * Framed on the bubble, which hangs off the body above the card.
+		 */
+		view(
+			'headline-narrow-card-popover',
+			`${MARKED}&place=load:11,1&press=${encodeURIComponent(`${LOAD} .sheetsmith-card-derived`)}`,
+			'.sheetsmith-popover',
+			{ pad: 90 },
+		),
+		/*
+		 * A cut field, focused: its digits and no mark. The focus names the
+		 * field by its cut state, which exists only after the typed value has
+		 * committed and been measured, so the harness focuses it after the
+		 * typing rather than before (`harness.ts`, `focusWanted`).
+		 */
+		view(
+			'headline-narrow-coin-focused',
+			`${MARKED}&${typed(field('Gold'), '355000')}&focus=${encodeURIComponent(`${field('Gold')}.sheetsmith-headline-cut`)}`,
+			tile('Gold'),
+		),
+		view('headline-narrow-card-dark', `surface=sheet&theme=dark&width=520&${LOAD_MARKED}`, LOAD),
+		/*
+		 * Forced colors by the browser's own flag, which repaints, as the other
+		 * forced-colors views take it: emulating the media feature answers the
+		 * queries and repaints nothing, so a transparent glyph would pass
+		 * unseen.
+		 */
+		view('headline-narrow-card-forced-colors', `${MARKED}&${LOAD_MARKED}`, LOAD, {
+			flags: ['--force-high-contrast'],
+		}),
+		/*
+		 * The cut derived focused, in forced colors: its ring in the system's
+		 * highlight, since the cut number keeps its own colours there. `&focus=`
+		 * paints what a Tab paints here, the derived having no pointer focus.
+		 */
+		view(
+			'headline-narrow-card-forced-colors-focused',
+			`${MARKED}&${LOAD_MARKED}&focus=${encodeURIComponent(`${LOAD} .sheetsmith-card-derived.sheetsmith-headline-cut`)}`,
+			LOAD,
+			{ flags: ['--force-high-contrast'] },
+		),
+		/*
+		 * A cut Pool field, focused: its digits and no mark, the Pool half of
+		 * the reveal. Named by its cut state for the reason the coin's is.
+		 */
+		view(
+			'headline-narrow-pool-one-focused',
+			`${MARKED}&place=hit_points:5,1&${typed(POOL, '355000')}&focus=${encodeURIComponent(`${POOL}.sheetsmith-headline-cut`)}`,
+			HP,
+		),
 	];
 }
 
@@ -4387,6 +4851,25 @@ function markdownViews() {
 			query: 'surface=sheet&state=markdown&theme=light&renderer=none',
 			size: '1400,1200',
 		},
+		// The prose box in forced colors in each state its field can be in
+		// (`docs/features/sheet-contrast-pass.md`): focused, the source alone;
+		// emptied, the placeholder; refused, the draft and the error under the
+		// box. The `#` is escaped or the query ends at it. Forced colors draws one
+		// palette, so a theme twin would be the same PNG. Then the unresolved
+		// link wrapped across two lines, at a sheet width where *Torch of* ends
+		// one line and *Revealing* starts the next, for its dotted rule on both.
+		...[
+			{ suffix: '-focused', query: '&focus=.sheetsmith-rich-text-input' },
+			{ suffix: '-empty', query: '&type=.sheetsmith-rich-text-input|' },
+			{ suffix: '-refused', query: '&type=.sheetsmith-rich-text-input|%23%23 Heading%0AA draft' },
+			{ suffix: '-wrapped', query: '&width=620' },
+		].map(({ suffix, query }) => ({
+			name: `sheet-markdown-forced${suffix}`,
+			query: `surface=sheet&state=markdown&theme=light${query}`,
+			size: '1400,1200',
+			flags: ['--force-high-contrast'],
+			frame: '.sheetsmith-rich-text',
+		})),
 	];
 }
 
@@ -4395,7 +4878,7 @@ function markdownViews() {
  * block with no `exclusive`, read as In play reads at rest and edited behind
  * **Edit**. The Familiar, the Fate mook first and the main NPC first, each at
  * rest and behind the press (`-edit`), in light, dark, a true 380px, more
- * contrast and forced colours, from one loop as the tint views are. Each frames
+ * contrast in both themes and forced colours, from one loop as the tint views are. Each frames
  * the one Stat block its state draws, so a scoped shot reproduces its width.
  * Then the Familiar's Notes opened at rest, its picture at two widths, and the
  * empty block.
@@ -4411,6 +4894,7 @@ function companionViews() {
 		{ suffix: '-dark', query: '&theme=dark', size: '1400,1500' },
 		{ suffix: '-narrow', query: '&theme=light&width=380', size: '380,2400' },
 		{ suffix: '-contrast-more', query: '&theme=light', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
+		{ suffix: '-contrast-more-dark', query: '&theme=dark', size: '1400,1500', media: { 'prefers-contrast': 'more' } },
 		{ suffix: '-forced-colors', query: '&theme=light', size: '1400,1500', flags: ['--force-high-contrast'] },
 	];
 	const faces = [
@@ -4524,7 +5008,7 @@ function placedScrollCueViews() {
 const args = process.argv.slice(2);
 
 /** The arguments `shot.mjs` reads itself, which never reach the page's query. */
-const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad'];
+const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad', 'only'];
 const own = (name) =>
 	args.filter((arg) => arg.startsWith(`${name}=`)).map((arg) => decodeURIComponent(arg.slice(name.length + 1)));
 
@@ -4551,8 +5035,23 @@ function holdOf(spec) {
 	return { at: spec.slice(0, at), by };
 }
 
+/**
+ * `only=<prefix>`, repeatable: the default views whose names start with one of
+ * the prefixes, each under its own name, so a re-shot of a family stays scoped
+ * without writing `custom.png`. Fails on matching nothing, since an empty run
+ * looks like a passing one.
+ */
+const only = own('only');
+const scoped = DEFAULTS.filter((view) => only.some((prefix) => view.name.startsWith(prefix)));
+if (only.length > 0 && scoped.length === 0) throw new Error(`No default view starts with ${only.join(' or ')}.`);
+if (only.length > 0 && args.some((arg) => !arg.startsWith('only='))) {
+	throw new Error('`only=` picks default views by name and takes no other argument.');
+}
+
 const views =
-	args.length === 0
+	only.length > 0
+		? scoped
+		: args.length === 0
 		? DEFAULTS
 		: [
 				{

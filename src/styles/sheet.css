@@ -733,6 +733,15 @@
 	letter-spacing: -0.02em;
 }
 
+/* **The card's own headline field shrinks with a narrow card**
+   (`--sheetsmith-headline-size`, `docs/features/headline-narrow-cell.md`).
+   Scoped to the card's value slot so a Roster band's score, which borrows
+   `.sheetsmith-card-input` in a slot of its own, keeps the full size. The pill
+   under a derived number overrides this below on order, at the same weight. */
+.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input {
+	font-size: var(--sheetsmith-headline-size);
+}
+
 .sheetsmith-view .sheetsmith-card-input:hover {
 	background-color: var(--background-modifier-hover);
 }
@@ -782,7 +791,10 @@
 	   loses its last letters with nothing saying so. The card's label already
 	   ellipsises for the same reason. */
 	text-overflow: ellipsis;
-	font-size: var(--sheetsmith-card-value-size);
+	/* The headline's size, so a row of cards of one width draws one size
+	   (`docs/features/headline-narrow-cell.md`). No mark: it ellipsises its own
+	   label, and its menu shows the rest. */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
 	line-height: 1.05;
@@ -873,6 +885,145 @@
 	   than a warning appearing from nowhere. A colour fade, not motion, so
 	   reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
+}
+
+/* **A card's computed headline shrinks with a narrow card, and is capped at
+   it** (`docs/features/headline-narrow-cell.md`). Scoped to a card's own
+   derived, so a Roster band head's reading, which borrows the class outside a
+   card, keeps the full size. The cap is what was missing: a flex item with no
+   cap passed the card instead of clipping, and a clipped box is what the fit
+   check (`ui/headline-fit.ts`) can measure and mark. */
+.sheetsmith-card > .sheetsmith-card-derived {
+	max-width: 100%;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: var(--sheetsmith-headline-size);
+}
+
+/* **A headline that does not fit is marked, never shown as part of its
+   digits** (`ui/headline-fit.ts`, `docs/features/headline-narrow-cell.md`).
+   Three headlines take it: a card's derived, a card's own field and a Pool's
+   field. `ui/headline-fit.ts` stamps `.sheetsmith-headline` on the number and
+   `.sheetsmith-headline-host` on the box the mark is laid over (the derived
+   itself, a card's value slot, a Pool's reading), and toggles `-cut` on both
+   from the number's own `scrollWidth` against its `clientWidth`. Nothing here
+   changes a box, so the check that reads the widths cannot loop on its own
+   answer. */
+.sheetsmith-headline-host {
+	position: relative;
+}
+
+/* While cut, the digits go transparent and stay laid out, so the box and the
+   value in the DOM, which is what a screen reader reads, are what they were.
+   `:not(input:focus)` is the reveal for a field: focused, it shows its value
+   and scrolls it natively. A focused derived stays marked, since its reveal is
+   the popover and its digits would only show clipped.
+
+   **The glyphs' fill, not `color`.** A derived fades its `color` over 200ms and
+   a Pool's field over 260ms (the `?` giving way, the settle after a refused
+   step), so a transparent `color` faded the digits out under a mark that
+   appears at once, and back in on a reveal. `-webkit-text-fill-color` paints
+   the glyphs and transitions on nothing here, so cutting and revealing are
+   instant while those two fades keep working. Its underline still takes
+   `color`, so a modified number drops it while cut: the mark carries it.
+   At (0,4,0), past every rule a headline takes. */
+.sheetsmith-view .sheetsmith-headline.sheetsmith-headline-cut:not(input:focus) {
+	-webkit-text-fill-color: transparent;
+	text-decoration: none;
+}
+
+/* The mark: `⋯`, the midline ellipsis, one character, in the number's weight and size, centred over
+   the number's box. Not `####`, which is three digits wide and so fails in
+   exactly the cells where three digits do. Capped at the host, since at 18px
+   it is 16px wide against a one-unit cell's 15.2. Hidden from assistive tech
+   by `aria-hidden`, and from the pointer here, so a press lands on the field
+   exactly as it does uncut. Attached only while the number is cut. */
+.sheetsmith-headline-mark {
+	position: absolute;
+	inset-inline: 0;
+	top: 0;
+	display: none;
+	overflow: hidden;
+	white-space: nowrap;
+	text-align: center;
+	color: var(--text-normal);
+	font-size: var(--sheetsmith-headline-size);
+	font-weight: var(--font-bold);
+	line-height: 1.05;
+	/* Inside a derived it would inherit the derived's transparent fill. */
+	-webkit-text-fill-color: currentColor;
+	pointer-events: none;
+}
+
+/* Inside a derived, whose own size is already the headline's: the token's `em`
+   would otherwise resolve against the derived and draw the mark 1.75 times
+   larger. */
+.sheetsmith-card-derived > .sheetsmith-headline-mark {
+	font-size: 1em;
+}
+
+/* Shown while cut and not focused: inside the derived it marks, or after the
+   field it marks, which is always an earlier sibling in its host. */
+.sheetsmith-headline-cut:not(input:focus) > .sheetsmith-headline-mark,
+.sheetsmith-headline-cut:not(input:focus) ~ .sheetsmith-headline-mark {
+	display: block;
+}
+
+/* **Forced colors repaints the glyphs' fill**, so the clipped digits came back
+   under the mark (`headline-narrow-card-forced-colors`). The cut number alone
+   keeps its own colours there: it draws nothing but its transparent glyphs and
+   no fill of its own, so nothing the mode would repaint is lost. A departure
+   from `docs/UI.md` §6's use of `forced-color-adjust: none`, which is for a
+   glyph on a fill the plugin painted, and argued here: the alternative is
+   hiding the number from layout, which would change its box and so the fit
+   check's own answer. The mark inside a derived inherits the adjustment, so it
+   takes the mode's text colour by keyword; the mark beside a field is not
+   inside it and is repainted as usual. */
+@media (forced-colors: active) {
+.sheetsmith-view .sheetsmith-headline.sheetsmith-headline-cut:not(input:focus) {
+		forced-color-adjust: none;
+		/* What the mode would have repainted, said in its own keywords, since it
+		   no longer repaints this element: no hover surface, and a focus ring
+		   (a cut derived is a tab stop) in the system's highlight. */
+		background-color: transparent;
+		outline-color: Highlight;
+	}
+
+.sheetsmith-headline-cut:not(input:focus) > .sheetsmith-headline-mark {
+		color: CanvasText;
+	}
+
+}
+
+/* A number marked as modified keeps its underline on the mark, since its own
+   transparent digits take the underline's colour with them. The bare line
+   value, `.sheetsmith-modified`'s own spelling. */
+.sheetsmith-modified > .sheetsmith-headline-mark,
+.sheetsmith-modified ~ .sheetsmith-headline-mark {
+	text-decoration: underline;
+}
+
+/* The number's own colour where a Pool's state recolours it. */
+.sheetsmith-pool-spent ~ .sheetsmith-headline-mark {
+	color: var(--text-muted);
+}
+
+.sheetsmith-pool-over ~ .sheetsmith-headline-mark {
+	color: var(--interactive-accent);
+}
+
+/* A cut derived owns its press: it opens the value in the popover, as a
+   modified number opens its breakdown. While cut it is a tab stop
+   (`ui/headline-fit.ts`), so it takes a focus ring, an outline so forced colors
+   keeps it (docs/UI.md §6). */
+.sheetsmith-card-derived.sheetsmith-headline-cut {
+	cursor: help;
+}
+
+.sheetsmith-card-derived.sheetsmith-headline:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+	border-radius: var(--radius-s);
 }
 
 /* One focus treatment for every field on a card. The same gesture in the
@@ -1091,6 +1242,7 @@
 	   scales with a 1.75em number is exactly how the two converged: at `Text → 24`
 	   the dots landed one pixel above the pill's border. */
 	margin-top: 0.4em;
+	max-width: 100%;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -1109,9 +1261,15 @@
 	border-color: var(--interactive-accent);
 }
 
+/* `4em` of its own size, so the slot grows with its digits, and capped at the
+   pill, which is capped at the card: at `text=24` the pill is 101px, past a
+   90.8px Card set tile at a 520px sheet by 5.2px, where three digits at that
+   size need 38. Shrinking the slot takes only the room around the digits. */
 .sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input {
 	width: 4em;
-	font-size: var(--font-ui-small);
+	min-width: 0;
+	max-width: 100%;
+	font-size: var(--sheetsmith-qualifier-small);
 	font-weight: var(--font-semibold);
 	/* Back to normal tracking: the tightening above is for large text. */
 	letter-spacing: normal;
@@ -1126,6 +1284,31 @@
 .sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input:focus {
 	box-shadow: none;
 	outline: none;
+}
+
+/* **In a card too narrow for the pill's chrome beside three digits, the pill
+   gives up its inline padding, and its field too** (`docs/UI.md` §5, Ruling
+   A; `docs/features/qualifier-fit-and-size.md`). The chrome is 22px: the
+   pill's 8px a side, its 1px border a side and the field's 2px a side. Three
+   digits at `--sheetsmith-qualifier-small`, semibold and tabular, measure
+   1.68em of the sheet at the default size and at `text=24` (26.6px at 16,
+   40.3 at 24), so 1.7em, rounded up so it never undercounts: the query is
+   against the card's content box, the card being the container, at 49.2px
+   at the default size and 62.8 at `text=24`. Above it nothing changes, a
+   Card set tile included (72.8px at 520). In a one-unit cell on a 520px sheet
+   the field has 13px then, so one digit fits at the default size and the
+   rest clips, never marked (the BACKLOG row on it). Block padding is kept,
+   so no card changes height. A child selector, so only a card's own pill
+   answers, at (0,3,0) and (0,4,0), past the rules above. */
+@container (max-width: calc(1.7em + 22px)) {
+.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value {
+		padding-inline: 0;
+	}
+
+.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value > .sheetsmith-card-input {
+		padding-inline: 0;
+	}
+
 }
 
 /* A pill reading a number nobody typed: a score with modifiers layered over it,
@@ -1171,7 +1354,7 @@
 /* The menu in the pill, on the field's own three rules: the pill is what
    reacts, and a second rectangle inside it would be a second control. */
 .sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select {
-	font-size: var(--font-ui-small);
+	font-size: var(--sheetsmith-qualifier-small);
 	font-weight: var(--font-semibold);
 	letter-spacing: normal;
 	color: var(--text-normal);
@@ -1720,6 +1903,49 @@
 	);
 }
 
+/* A ring a modifier set to a level other than the note's wears a dotted halo
+   just outside its own box (`docs/features/modifier-set-ring-mark.md`), on an
+   empty, a partly filled and a full ring alike. `ring-control.ts` stamps the
+   class exactly where it sets the ring's `aria-description`, from the one
+   value, so the halo and the words come and go together.
+
+   **Dotted, the word this sheet already has for "a modifier moved it"**: the
+   Pool ceiling's rule, a granted temporary pill's, and a dropdown a modifier
+   chose all take this 2px dotted `--text-muted` mark. Not Track's dashed,
+   which says *granted*, a slot a modifier added; a ring is lowered and emptied
+   by a Sets as well as raised, and there that word would be wrong. Not the
+   ring's own border dashed, which vanishes against an accent fill.
+
+   A `::before`, since the `::after` is the hit target, taking no press and no
+   layout. A border and never a background or shadow, so forced colors repaints
+   it `CanvasText` and keeps its style with no branch here; under more contrast
+   the ring's border is this colour already. A child of the ring, so it scales
+   with the ring on `:active`.
+
+   **3px out, not 4**: the halo then spans 27px of a 30px row and clears its
+   rules, a form's outline and the table's frame by about 1.5px a side, where
+   at 4px it touched them and read as part of the row's frame. The focus
+   outline at its 2px offset runs 2 to 4px out, over the halo's 1 to 3px, so
+   the dots show inside the accent ring; a wider offset would cross the row
+   rule. */
+.sheetsmith-view .sheetsmith-level-ring-set::before {
+	content: '';
+	position: absolute;
+	inset: -3px;
+	border: 2px dotted var(--text-muted);
+	border-radius: 50%;
+	/* **The ring's shape, not a circle.** The ring is a `<button>`, and the
+	   app's own `button` rule gives it `corner-shape: var(--button-corner-shape)`,
+	   which is the theme's `--corner-shape`, so under a theme that sets
+	   `superellipse(1.1)` the ring draws as a squircle. `corner-shape` does not
+	   inherit by default, so a halo with none of its own drew a round outline
+	   round a squircle. Inherited rather than restated: the shape is the app's
+	   and the theme's to choose, and a copy of `var(--button-corner-shape)` here
+	   would drift the moment either chose differently for the ring. */
+	corner-shape: inherit;
+	pointer-events: none;
+}
+
 /* A row the character added carries its own name, and the name is a field: it
    is the row's own data and the one cell a fixed card never had. It takes the
    same invisible-until-asked-for chrome as every other cell, and the name
@@ -1892,6 +2118,30 @@
 		/* `text-decoration-color` and `-line` from `--link-color-hover` and
 		   `--link-decoration-hover` stood here, and are the flagged spelling.
 		   `color` still changes on hover, which is the half a reader notices. */
+	}
+}
+
+/* **In forced colors an unresolved link is full strength and marked by a dotted
+   rule instead of an underline.** The mode repaints the colour to `LinkText` and
+   keeps the opacity, so at rest the glyphs measured 4.40:1 on `Canvas`, under the
+   text floor, and brightness was the only thing telling them from a resolved
+   link's 7.84:1. So the state moves to a shape the mode cannot take away: a 1px
+   dotted `border-bottom`, against a resolved link's solid underline. A border
+   because `text-decoration-style` is the spelling the browser-support lint
+   refuses (above); on an inline anchor it draws under each line fragment and
+   takes no layout space, so a wrapped link is marked on both lines and no line
+   moves. Dotted rather than dashed, which is a Track's "granted" and reads closer
+   to solid; and not merely dropping the underline, which tells the two apart only
+   while the theme underlines resolved links
+   (`docs/features/sheet-contrast-pass.md`). */
+@media (forced-colors: active) {
+	.sheetsmith-view .internal-link.is-unresolved {
+		opacity: 1;
+		text-decoration: none;
+		border-bottom: 1px dotted;
+		/* One pixel between the glyphs' bottom and the rule, so a descender
+		   does not meet it. Inline padding moves no line box. */
+		padding-bottom: 1px;
 	}
 }
 
@@ -2518,8 +2768,17 @@ body {
 	   cost is real and worth naming: the step buttons' invisible 44px targets
 	   reach about 2px past the card, and that 2px is clipped with them. Losing
 	   it off a 44px target is a fair trade for the bar sitting on the border,
-	   where it reads as the card's own edge rather than as a rule. */
+	   where it reads as the card's own edge rather than as a rule.
+
+	   **`clip`, not `hidden`** (`docs/features/qualifier-fit-and-size.md`):
+	   the same cut at the border's inner edge, but no scroll container. As
+	   `hidden` it was one, so focusing a typed ceiling wider than a one-unit
+	   cell scrolled the card sideways to the caret and left it there after
+	   the blur, cutting the slash the reading's safe centring keeps. `clip`
+	   is Chromium 90, Firefox 81 and Safari and iOS 16; `hidden` first for an
+	   iOS before 16, which drops the second and keeps the old scroll. */
 	overflow: hidden;
+	overflow: clip;
 	/* The whole card is the hit target for its value; see pool.ts. */
 	cursor: text;
 	/* The settle after a press. Going in is instant; see :active below. */
@@ -2601,12 +2860,23 @@ body {
    size. The ceiling is `nowrap`, so its `/` goes with it and it still reads as
    "of 120". No row gap: the two lines are one reading, and the ceiling's line
    is already smaller than the number's. Baseline alignment then holds within
-   each line only, which is the amendment SPEC §4.2 records. */
+   each line only, which is the amendment SPEC §4.2 records.
+
+   **`safe center`, so a ceiling wider than its line keeps its slash**
+   (`docs/UI.md` §5, Ruling A; `docs/features/qualifier-fit-and-size.md`).
+   Plain `center` overflowed a wrapped `/120` at both ends of a one-unit
+   cell, and the card's clip then cut the slash first, so at `text=24` it
+   read as a bare `120` under the marked number. `safe` falls back to the
+   line's start where an item overflows it, so the ceiling clips only at its
+   end; wherever it fits, `safe center` is `center`. The plain declaration
+   first, for an engine without `safe` in flexbox (Safari and iOS before
+   17.6, which drop the second; Chromium before 115 parses it and centres). */
 .sheetsmith-pool-reading {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
 	justify-content: center;
+	justify-content: safe center;
 	gap: 0 var(--size-2-1);
 	flex: 1;
 	min-width: 0;
@@ -2635,7 +2905,10 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--sheetsmith-card-value-size);
+	/* The card's headline size, shrinking with a narrow card exactly as a
+	   Card's does, so two cards of one width draw one size
+	   (`docs/features/headline-narrow-cell.md`). */
+	font-size: var(--sheetsmith-headline-size);
 	font-weight: var(--font-bold);
 	/* Tracking and leading are size-specific, and this is the same size the
 	   card's number uses — so it takes the same values, or the two read
@@ -2662,9 +2935,11 @@ body {
    input falls back to its intrinsic ~20-character size, which is a blown-out
    card rather than a graceful degradation, so it is pinned at `4ch`.
 
-   **The number never gives way** (`docs/features/pool-headline-narrow-fit.md`).
+   **The row never squeezes the number** (`docs/features/pool-headline-narrow-fit.md`).
    `flex-shrink: 0`, so the reading's row never squeezes the field under its own
-   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`).
+   digits, and the ceiling wraps instead (`.sheetsmith-pool-reading`). Its *size*
+   gives way only later, below the card width three digits fit at, through the
+   headline token (`docs/features/headline-narrow-cell.md`).
    `max-width: 100%` is for the engines with no field-sizing: there the pinned
    `4ch` is capped at the row rather than run off the card. Where `min-width`
    is the larger, it wins over `max-width`, which is why the narrow card's
@@ -2690,15 +2965,22 @@ body {
    from there. Two rather than one, so a single digit still gets a box the
    hover and focus ring do not clamp onto, and `9 → 10` moves nothing.
 
-   The threshold is that reading's width: `4ch` at the value size, which is
-   4.6em on the card (the query's `em` is the Pool card's, the query
-   container), plus 44px of fixed chrome — the reading's 2px gap, the widest
-   three-digit ceiling at 38.7px (a max the character owns, with its padding),
-   and the 2px the reading's row sits inside the card's content box, rounded
-   up. `em` plus `px` rather than either alone, because the number scales with
-   the sheet and the ceiling is a UI token the sheet's `em` does not reach
-   (`docs/UI.md` §5). It measures 118px at the default size and 154px at
-   `text=24`; above it nothing changes, so every Pool that fit is untouched.
+   The threshold is that reading's width, and since the ceiling follows the
+   sheet (`docs/features/pool-ceiling-text-size.md`) most of it is `em`: the
+   `4ch` slot at the value size, 4.59em on the card (the query's `em` is the
+   Pool card's, the query container), and the widest three-digit ceiling's
+   digits at the qualifier's size, a `/120` the character owns, 43.4px at
+   `text=24`'s 20.8, so 1.81em: 6.4em. The px is what the sheet's `em` does
+   not reach (`docs/UI.md` §5): the reading's 2px gap, the 2px the row sits
+   inside the card's content box and the ceiling's 4px of padding and gap
+   (a typed ceiling's 1px a side and the slash's 2px gap,
+   `docs/features/qualifier-fit-and-size.md`; 10 before its padding was
+   trimmed), 8px, which is exact where the ceiling follows the sheet, rounded
+   up by 6, to 14, for the regime where the app's `--font-ui-medium` holds it
+   above 13/15 of the sheet (a phone's 16px needs 4.9px more). It measures
+   116.4px at the harness's default and on a phone, 167.6 at `text=24`, 110 in
+   the app; it never undercounts, and overshoots by up to 6px at large sizes,
+   where a Pool in that band takes the `2ch` slot a little early.
 
    Below the threshold the box is elastic: `99 → 100` widens the number by a
    digit and can wrap the ceiling. Accepted, and recorded at `docs/UI.md` §9's
@@ -2707,9 +2989,14 @@ body {
 
    Below the base rule, at its own (0,3,0), since `@container` adds no
    specificity and the later rule wins on order (`docs/UI.md` §4). */
-@container (max-width: calc(4.6em + 44px)) {
+@container (max-width: calc(6.4em + 14px)) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
-		min-width: 2ch;
+		/* Capped at the row too: in a one-unit cell on a 520px sheet the
+		   content box is 15.2px, and a bare `2ch` floor beat the `max-width`
+		   cap and pushed the field 10.8px past the card
+		   (`docs/features/headline-narrow-cell.md`). Above the threshold the
+		   headline is at full size and `4ch` fits, so that floor needs none. */
+		min-width: min(2ch, 100%);
 	}
 
 }
@@ -2717,7 +3004,14 @@ body {
 .sheetsmith-pool-separator,
 .sheetsmith-pool-max {
 	color: var(--text-muted);
-	font-size: var(--font-ui-medium);
+	/* The app's `--font-ui-medium` at its own size, and the sheet's qualifier
+	   above it, so the ceiling grows with the number it bounds and is never
+	   smaller than the temporary points under it
+	   (`docs/features/pool-ceiling-text-size.md`). A Stat block's uses count
+	   wears this class on a `--font-ui-small` line, where the token's `em`
+	   term is under the floor, so it holds at `--font-ui-medium` at every size;
+	   a record's ceiling sets its own size below. */
+	font-size: var(--sheetsmith-qualifier-medium);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -2791,6 +3085,20 @@ body {
 	width: calc(3ch + 2 * var(--size-2-2));
 }
 
+/* A Pool's own ceiling's width where field-sizing is unsupported: the same
+   three characters inside the padding a side its size rule below names as
+   `--sheetsmith-pool-max-pad`, read here so the two cannot drift. Where
+   field-sizing is supported the field is its digits from the `1ch` floor
+   that follows. Scoped under the ceiling for that rule's reason, and at
+   (0,4,0), past the doubled width rule it narrows. */
+@supports not (field-sizing: content) {
+.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
+		width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad));
+		min-width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad));
+	}
+
+}
+
 @supports (field-sizing: content) {
 .sheetsmith-view .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
 		width: auto;
@@ -2798,6 +3106,42 @@ body {
 		field-sizing: content;
 	}
 
+}
+
+/* **A ceiling the character owns is the size of one the layout calculates**,
+   declared here rather than taken from `.sheetsmith-pool-max`: that class is
+   (0,1,0), and Obsidian's `input[type='text']` at (0,1,1) set the field's size
+   over it, so the typed digits drew 13px beside a 15px `/` and a phone drew
+   them at 15px, under the 16px at which iOS zooms the page on a tap
+   (`docs/features/pool-ceiling-text-size.md`). At (0,3,0), past the app's
+   rule and its `.is-mobile` one. Scoped under the Pool's ceiling, so a Track
+   row's length field, which wears `.sheetsmith-pool-max-input` too, keeps
+   its own `--font-ui-small`. The colour too, for the same reason: the app's
+   rule drew the typed digits `--text-normal` beside a muted `/`, where the
+   comment above says the field keeps the span's colour. Hover and focus
+   change only the background and the ring, so neither loses it.
+
+   **And 1px of inline padding a side, not `--size-2-2`**
+   (`docs/features/qualifier-fit-and-size.md`), so the typed digits start 3px
+   after the slash, nearly a calculated ceiling's 2, where the padding left 6.
+   The 1px is the room the hover fill and the focus ring keep around the
+   digits. A one-digit field is then 11.2x18 at the default size, which is
+   not the press target: the card is, through the Pool's nearest-field router
+   (`docs/UI.md` §7). The narrow-fit threshold above counts this padding. */
+.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input {
+	--sheetsmith-pool-max-pad: 1px;
+	padding-inline: var(--sheetsmith-pool-max-pad);
+	color: var(--text-muted);
+	font-size: var(--sheetsmith-qualifier-medium);
+}
+
+/* **And never under 16px on a phone or a tablet**, written into the rule
+   rather than left to `--font-ui-medium` happening to be 16px there: the zoom
+   is iOS WebKit's, so it reads Obsidian's platform class rather than a
+   pointer query, and a theme that lowers the token cannot bring it back.
+   Below the rule above, at (0,4,0). */
+.is-mobile .sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input {
+	font-size: max(16px, var(--sheetsmith-qualifier-medium));
 }
 
 /* The same answer the value gives, for the same reason: the card's hover
@@ -2822,6 +3166,23 @@ body {
 	box-shadow: 0 0 0 2px var(--interactive-accent);
 	outline: 2px solid transparent;
 	outline-offset: 0;
+}
+
+/* **The same 2px ring on a Pool's own ceiling, drawn half inside its box**
+   (`docs/features/qualifier-fit-and-size.md`). With 1px of padding the field
+   starts 2px after its slash, so a ring wholly outside it met the slash's box
+   and covered the tip of its ink, which leans 0.2px past its advance at the
+   default size and 0.4 at `text=24`. Half inside, it stands 1px clear of the
+   slash's box and lies over the padding, inside the digits' side bearings.
+   One width and colour, so the card still answers a press with one ring.
+   The forced-colors escape hatch, the shared transparent outline, moves in
+   by the same 1px, since the mode draws it where the shadow was and wholly
+   outside it met the slash the same way. */
+.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input:focus {
+	box-shadow:
+		inset 0 0 0 1px var(--interactive-accent),
+		0 0 0 1px var(--interactive-accent);
+	outline-offset: -1px;
 }
 
 /* An unresolved formula's "?", on a card, in a computed cell or a total, and in
@@ -3012,16 +3373,43 @@ body {
 /* Temporary points are the card's pill: a small qualifier hanging under the
    big number, which is the shape a card already uses for its stored
    value. As a second bordered rectangle on its own row it was a third
-   surface saying the same thing. */
+   surface saying the same thing.
+
+   **It wraps its word over its field rather than pass a narrow card**, and is
+   capped at the card. The pill is 81px at the harness's default size and
+   93.6px at `text=24`, where its field takes the qualifier's 20.8px like a
+   Card's pill (`docs/features/pool-ceiling-text-size.md`); a two-unit Pool on
+   a 520px sheet has 56px of content, and on one line the pill passed it and
+   was clipped. Wrapped, *Temp* sits centred over its three digits. At the
+   default size every card from a one-unit Pool on a 1400px sheet up holds the
+   line; at `text=24` that one-unit Pool, 90.5px of content, now wraps it. */
 .sheetsmith-pool-temp {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	justify-content: center;
+	max-width: 100%;
 	/* The settle after an absorption; going in is instant, as with a press. */
 	transition:
 		background-color 220ms ease-out,
 		border-color 220ms ease-out;
-	gap: var(--size-2-1);
-	margin-top: var(--size-2-1);
+	/* No row gap, as the reading above has none: wrapped, the word and its
+	   value are one qualifier, and the field's own 2px of block padding is
+	   the room between them. With it, *Temp* to its value measured 8px of ink
+	   at the default size and 10 at `text=24` against 5.5 above the word;
+	   without, 6 and 8 (`docs/features/qualifier-fit-and-size.md`). */
+	gap: 0 var(--size-2-1);
+	/* The Card pill's hang (`.sheetsmith-card-has-derived .sheetsmith-card-value`),
+	   in `em` for its reason: a fixed 4px under a number that grows left the
+	   pill nearly touching it at `text=24`. */
+	margin-top: 0.4em;
+	/* One line's height whatever the field's: the app's input height and the
+	   border, which is what the field's 30px box drew before it took the
+	   height of its digits (the width rule below), so a pill on one line is
+	   exactly as tall as it was, its lines centred in it, and only a wrapped
+	   pill, already taller, closes up. */
+	min-height: calc(var(--input-height) + 2px);
+	align-content: center;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -3045,7 +3433,10 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--font-ui-small);
+	/* The qualifier's size, as a Card's pill under its number: the ceiling
+	   beside the number is never under it, so the points cannot outrank it
+	   (`docs/features/pool-ceiling-text-size.md`). */
+	font-size: var(--sheetsmith-qualifier-small);
 	font-variant-numeric: tabular-nums;
 	text-align: center;
 }
@@ -3058,11 +3449,19 @@ body {
    buy nothing but a second place the count is set, and the pill would move
    under every commit. Not `field-sizing: content` for the reason the refused
    rule above gives. Named as `--sheetsmith-pool-temp-width` so the refused rule
-   floors on this width rather than on a copy of it. The width alone at (0,3,0),
-   past Obsidian's phone rule: see `.sheetsmith-table-input`'s. */
+   floors on this width rather than on a copy of it. The width at (0,3,0),
+   past Obsidian's phone rule: see `.sheetsmith-table-input`'s.
+
+   **And the height its digits need, not the app's fixed input height**
+   (`docs/features/qualifier-fit-and-size.md`), past the same rule. The 30px
+   box centred the digits well below *Temp* where the pill wraps, 13px of ink
+   apart against 5.5 above the word, so the pair read as a two-line box. The
+   pill keeps one line's height by its own floor (below the pill's rule), so
+   only a wrapped pill closes up. */
 .sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
 	--sheetsmith-pool-temp-width: calc(3ch + 2 * var(--size-2-2));
 	width: var(--sheetsmith-pool-temp-width);
+	height: auto;
 }
 
 /* **A granted field gives up the reach into the pill's padding**, so its border
@@ -5588,6 +5987,32 @@ a.sheetsmith-notice-action {
 	color: var(--text-normal);
 }
 
+/* **In forced colors the unfocused field is hidden by opacity, since the mode
+   repaints `color: transparent` as `CanvasText`** and the source drew under the
+   prose: `[[Torch of Revealing]]` under *Torch of Revealing*. Opacity is the one
+   property the mode leaves alone, so nothing has to be restated in system
+   keywords, and it changes neither the box nor the tab order the view's focus
+   restoration counts — `visibility: hidden` would take the field out of the
+   second. Not the cut headline's `forced-color-adjust: none` (`docs/UI.md` §6):
+   that answer was forced by a mark inside the number, and this field holds none.
+
+   `:not(:placeholder-shown)` keeps an empty field drawn, so its placeholder still
+   says the box is one click from being typed in; a refused draft is drawn again
+   after it, at equal weight, because there the layer is already hidden and the
+   field's text is the only copy of the reader's words
+   (`docs/features/sheet-contrast-pass.md`). */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-rich-text-input:not(:focus):not(:placeholder-shown) {
+		opacity: 0;
+	}
+
+	.sheetsmith-view
+		.sheetsmith-rich-text-refused
+		.sheetsmith-rich-text-input:not(:focus) {
+		opacity: 1;
+	}
+}
+
 /* The message sits under the box rather than in it: the box is full, both layers
    fill it, and the block's height is its placement — so the error takes its room
    from the box and nothing on the sheet moves. */
@@ -7061,8 +7486,9 @@ a.sheetsmith-notice-action {
    wears the card's abbreviation.
 
    **One declaration differs, and it is the one the borrowing has to fix.** The
-   pool's ceiling is `--font-ui-medium` because it qualifies a headline number at
-   the card's value size; a record's qualifies a value at `--font-ui-small`, so
+   pool's ceiling is `--sheetsmith-qualifier-medium` because it qualifies a
+   headline number at the card's value size; a record's qualifies a value at
+   `--font-ui-small`, so
    the shared size would draw the ceiling *larger* than the number it bounds and
    reorder the hierarchy (`legibility.md` §4). The colour and the tabular figures
    are the shared part and stay. */
@@ -7529,6 +7955,22 @@ a.sheetsmith-notice-action {
 	.sheetsmith-record-body-refused
 	.sheetsmith-record-body-input:not(:focus) {
 	color: var(--text-normal);
+}
+
+/* In forced colors the unfocused body is hidden by opacity, Rich text's answer
+   and for its reasons (at `.sheetsmith-rich-text-input`, above): the mode
+   repaints `color: transparent` as `CanvasText`, so the source drew under the
+   prose. An empty body keeps its placeholder and a refused draft stays drawn. */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-record-body-input:not(:focus):not(:placeholder-shown) {
+		opacity: 0;
+	}
+
+	.sheetsmith-view
+		.sheetsmith-record-body-refused
+		.sheetsmith-record-body-input:not(:focus) {
+		opacity: 1;
+	}
 }
 
 /* The fallback, where there is no app to render markdown: paragraphs with their
@@ -8885,6 +9327,13 @@ a.sheetsmith-notice-action {
 .sheetsmith-stat-block {
 	container-type: inline-size;
 	container-name: sheetsmith-stat-block;
+	/* The head's rule and an open form's, as a token rather than a colour, so
+	   more contrast raises it by setting the token here and no selector has to
+	   outweigh the open line's `:has()` at (0,4,0) — which the plain summary
+	   selector in the more-contrast block never did
+	   (`docs/features/sheet-contrast-pass.md`). The `--sheetsmith-in-play-edge`
+	   token is the precedent. */
+	--sheetsmith-stat-block-rule: var(--background-modifier-border);
 }
 
 /* The label and the uses counter on one line, the rings wrapping under the
@@ -9554,7 +10003,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-stat-block-play-head,
 .sheetsmith-stat-block-record > .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true']) {
 	padding-bottom: var(--size-4-3);
-	border-bottom: 1px solid var(--background-modifier-border);
+	border-bottom: 1px solid var(--sheetsmith-stat-block-rule);
 }
 
 .sheetsmith-stat-block-play-head {
@@ -9776,7 +10225,35 @@ a.sheetsmith-notice-action {
 	gap: var(--size-2-1);
 }
 
+/* **A wrapped line hangs under its own start**, so its continuation cannot read
+   as a new line. Since a lead names a line's component only on its first row
+   (`docs/features/published-name-labels.md`), a flush-left continuation such as
+   *CON sets to 3* read as an unled line of its own, directly above *Saves · CON
+   sets to 5*, at the same gap. `docs/UI.md` §9 refuses a hanging indent in the
+   breakdown bubble because a newline under `pre-wrap` starts no block; here
+   each change is its own `li`, so `text-indent` addresses exactly its first
+   row. */
+.sheetsmith-stat-block-change {
+	padding-inline-start: var(--size-4-4);
+	text-indent: calc(-1 * var(--size-4-4));
+}
+
 .sheetsmith-stat-block-change-separator {
+	color: var(--text-muted);
+}
+
+/* The component a line of entries reaches, where the list draws more than one
+   line (`docs/features/published-name-labels.md`), before a colon: muted, the abbreviation's
+   colour, so the entries are what the eye reads and the lead says whose they
+   are. One reading, like an item. */
+.sheetsmith-stat-block-change-lead {
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+/* The colon after a lead, in its colour: the glyph is what says "lead", so the
+   structure survives forced colors, where the muted colour does not. */
+.sheetsmith-stat-block-change-joint {
 	color: var(--text-muted);
 }
 
@@ -10253,13 +10730,18 @@ a.sheetsmith-notice-action {
    take them: every tile, every text section's box, the head's rule and an open
    form's rule at `--text-muted`. Here, after every base rule it overrides and
    at their weight, so source order is what wins — the block above the base
-   rules lost to them, which is the regression `styles.test.ts` now holds. */
+   rules lost to them, which is the regression `styles.test.ts` now holds.
+   **The head's rule and an open form's are raised through their token**, set
+   on the block, since the open line's `:has()` outweighs any selector this list
+   could name for it at (0,2,0) and drew its hairline at 1.22:1. */
 @media (prefers-contrast: more) {
+	.sheetsmith-stat-block {
+		--sheetsmith-stat-block-rule: var(--text-muted);
+	}
+
 	.sheetsmith-stat-block-vital,
 	.sheetsmith-stat-block-panel,
-	.sheetsmith-stat-block-play-head,
 	.sheetsmith-stat-block-form-name,
-	.sheetsmith-stat-block-record > .sheetsmith-record-summary,
 	.sheetsmith-view .sheetsmith-table-box.sheetsmith-stat-block-actions,
 	.sheetsmith-view .sheetsmith-stat-block-select,
 	.sheetsmith-view .sheetsmith-stat-block-revert {

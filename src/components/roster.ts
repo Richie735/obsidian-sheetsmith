@@ -47,6 +47,7 @@
  */
 
 import { isName, referencesName } from '../formula/expression';
+import { entryLabel } from '../formula/name-label';
 import { coerceValue } from '../formula/resolve';
 import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { claimRows } from '../parse/row-claims';
@@ -81,6 +82,15 @@ import {
 	stampRowEnd,
 } from './state-ring';
 import { columnState, overlayRowStates, refusalFirst, rowStateShapes } from './row-states';
+import {
+	groupsFault,
+	memberGroupsFault,
+	memberSlot,
+	membership,
+	rowGroups,
+	unnamedMember,
+	withGroups,
+} from './member-groups';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
 import { boundedText, formatComputed, typedValue, typeOf } from './typed-value';
@@ -96,6 +106,7 @@ import {
 	ScopeValues,
 	showsOwnLabel,
 	StateReader,
+	UnnamedMember,
 } from '../types';
 
 /** Column kinds a roster's rows may take: character data, minus a name's cell. */
@@ -125,11 +136,24 @@ export interface RosterColumn {
 
 export interface RosterRow {
 	label: string;
+	/**
+	 * The author's tight form of the row's label, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
+
 	/** The stat this row hangs off: a key into this component's own `stats`. */
 	stat?: string;
 	/** The name a formula reads this row's published value by, as
 	 * `<component id>.<key>`. Only meaningful with a published column. */
 	key?: string;
+	/**
+	 * More modifier groups this row is in, beside the roster's own `groups`
+	 * (`docs/features/table-row-modifier-target.md` D4). Adds to the default.
+	 */
+	groups?: string[];
+	/** `false` takes the row out of the roster's `groups`, leaving its own. */
+	inheritGroups?: boolean;
 	/**
 	 * Draws a rule beneath this row, stronger than the ordinary line between
 	 * rows — grouping, inside a band that already shares one stat. Suppressed
@@ -144,6 +168,11 @@ export interface RosterRow {
 export interface RosterStat {
 	key: string;
 	name?: string;
+	/**
+	 * The author's tight form of the name, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
 }
 
 export interface RosterConfig extends ComponentConfig {
@@ -169,6 +198,8 @@ export interface RosterConfig extends ComponentConfig {
 	 */
 	cardLayout?: boolean;
 	hideColumnHeadings?: boolean;
+	/** The modifier groups every row is in (D4). A stat is not a member in v1. */
+	groups?: string[];
 }
 
 export interface RosterRowData {
@@ -234,6 +265,11 @@ interface RowView {
 	declared: number;
 	/** Its position in the note's table, or null where the note has no row. */
 	at: number | null;
+	/**
+	 * Its place in the order the card draws its rows, band by band: what an
+	 * unnamed member's slot is keyed by (D5).
+	 */
+	position: number;
 }
 
 /**
@@ -261,6 +297,7 @@ function rowViews(config: RosterConfig, noteNames: readonly string[]): RowView[]
 		row,
 		declared: index,
 		at: claims.declared[index] ?? null,
+		position: 0,
 	}));
 	const bandOf = new Map(
 		statList(config).map((stat, index) => [(stat.key ?? '').trim(), index]),
@@ -270,7 +307,7 @@ function rowViews(config: RosterConfig, noteNames: readonly string[]): RowView[]
 	return views
 		.map((view, order) => ({ view, order }))
 		.sort((a, b) => bandIndex(a.view) - bandIndex(b.view) || a.order - b.order)
-		.map(({ view }) => view);
+		.map(({ view }, position) => ({ ...view, position }));
 }
 
 /** Row names by note position. Read fills every position. */
@@ -395,7 +432,14 @@ function publishedNameFor(
 	view: RowView,
 ): string | undefined {
 	if (column.publish !== true) return undefined;
-	return publishedName(config, view);
+	// A row with no key in some group reads its own slot, keyed by position,
+	// and publishes no name (`docs/features/table-row-modifier-target.md` D5).
+	return (
+		publishedName(config, view) ??
+		(rowGroups(view.row, config.groups).length === 0
+			? undefined
+			: memberSlot(config.id, view.position))
+	);
 }
 
 /**
@@ -444,6 +488,10 @@ function configError(config: RosterConfig): string | null {
 	if (seen.has(rowHeader)) {
 		return `A column is called "${config.rowHeader ?? DEFAULT_ROW_HEADER}", which is already the name column's heading.`;
 	}
+
+	// A `groups` that is not a list of names refuses the roster (D6).
+	const grouped = groupsFault(config.groups) ?? memberGroupsFault(config.rows);
+	if (grouped !== null) return grouped;
 
 	const labels = new Set<string>();
 	const keys = new Map<string, string>();
@@ -501,6 +549,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		{
 			key: 'stats',
 			kind: 'entries',
+			shortLabel: true,
 			label: 'Stats',
 			entryColumns: [
 				{ key: 'key', heading: 'Key' },
@@ -548,6 +597,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		{
 			key: 'rows',
 			kind: 'rows',
+			shortLabel: true,
 			label: 'Rows',
 			statsField: 'stats',
 			// `types.ts`'s `rowFlag`, on `entryFlag`'s own precedent: a per-row
@@ -555,6 +605,22 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			rowFlag: { key: 'dividerAfter', label: 'Divider after' },
 			description:
 				'The rows the layout declares, each naming the stat it hangs off. A row the note does not hold is drawn with blank cells; a note row the layout no longer declares stays in the file, unrendered and untouched.',
+			memberGroups: {
+				description: "A row's own groups add to the roster's row groups.",
+				inherit: {
+					label: 'Same groups as the roster',
+					description:
+						'Turn off "Same groups as the roster" to keep a row in its own groups only, so a modifier aimed at the roster\'s groups skips it.',
+					from: 'the roster',
+				},
+			},
+		},
+		{
+			key: 'groups',
+			kind: 'groups',
+			label: 'Row groups',
+			description:
+				"The groups every row is in. A modifier aimed at one changes each row's published value.",
 		},
 		{
 			key: 'columns',
@@ -703,6 +769,7 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			const key = (stat.key ?? '').trim();
 			const raw = data?.stats?.[key];
 			named[key] = {
+				...entryLabel(stat.name, stat.short),
 				value: raw,
 				display:
 					config.derived === undefined
@@ -724,41 +791,61 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		// The levels and flags a change may set on a named row by `column`, on
 		// Table's terms (D3): every one but the published column's.
 		const withStates = rowStateShapes(config.columns ?? []);
+		const unnamed: UnnamedMember[] = [];
 		for (const column of config.columns ?? []) {
 			if (column.publish !== true) continue;
 			for (const view of views) {
 				const rowKey = (view.row.key ?? '').trim();
-				if (rowKey === '') continue;
+				const groups = rowGroups(view.row, config.groups);
+				if (rowKey === '') {
+					// A row with no key in some group is listed, not published (D5).
+					if (groups.length > 0) {
+						unnamed.push(
+							unnamedMember(config.id, view.position, rowLabel(view.row.label), groups, view.row.short),
+						);
+					}
+					continue;
+				}
 				const cell = storedCells(data, view);
 				const name = `${config.id}.${rowKey}`;
 				if (typeOf(column) !== 'computed') {
 					const own = columnState(column);
-					named[rowKey] = {
-						value: typedValue(column, cell(column)),
-						...(own === undefined ? {} : { state: { ...own, column: column.key } }),
-						...withStates,
-					};
+					named[rowKey] = withGroups(
+						{
+							...entryLabel(displayText(view.row.label), view.row.short),
+							value: typedValue(column, cell(column)),
+							...(own === undefined ? {} : { state: { ...own, column: column.key } }),
+							...withStates,
+						},
+						groups,
+					);
 					continue;
 				}
-				named[rowKey] = {
-					compute: (resolve, state) =>
-						resolve(
-							`columns.${columnIndex(config, column)}.formula`,
-							rowScope(
-								config,
-								view,
-								cell,
-								statReadingFor(config, data, views, resolve),
-								state === undefined ? undefined : { name, read: state },
+				named[rowKey] = withGroups(
+					{
+						...entryLabel(displayText(view.row.label), view.row.short),
+						compute: (resolve, state) =>
+							resolve(
+								`columns.${columnIndex(config, column)}.formula`,
+								rowScope(
+									config,
+									view,
+									cell,
+									statReadingFor(config, data, views, resolve),
+									state === undefined ? undefined : { name, read: state },
+								),
+								publishedNameFor(config, column, view),
 							),
-							publishedNameFor(config, column, view),
-						),
-					...withStates,
-				};
+						...withStates,
+					},
+					groups,
+				);
 			}
 		}
 
-		return Object.keys(named).length === 0 ? {} : { named };
+		// A Roster's rows are all declared, so no row a character adds joins.
+		const members = membership(unnamed, []);
+		return Object.keys(named).length === 0 ? members : { named, ...members };
 	},
 
 	scopeRows(data, config): RowsSource | undefined {

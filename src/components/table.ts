@@ -37,6 +37,7 @@
 
 import { setIcon } from 'obsidian';
 import { isName, roundSum } from '../formula/expression';
+import { entryLabel } from '../formula/name-label';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import { claimRows as sharedClaimRows, RowClaims } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
@@ -59,6 +60,7 @@ import {
 	ScopeValues,
 	showsOwnLabel,
 	StateReader,
+	UnnamedMember,
 } from '../types';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
@@ -98,6 +100,16 @@ import {
 } from './state-ring';
 import { columnState, overlayRowStates, refusalFirst, rowStateShapes, stateColumn } from './row-states';
 import { flagText } from './stored-flag';
+import {
+	groupsFault,
+	memberGroupsFault,
+	memberSlot,
+	membership,
+	ownGroups,
+	rowGroups,
+	unnamedMember,
+	withGroups,
+} from './member-groups';
 import {
 	AnchoredPanel,
 	focusFirstControl,
@@ -188,6 +200,11 @@ export interface TableRow {
 	 */
 	label: string;
 	/**
+	 * The author's tight form of the row's label, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
+	/**
 	 * The name a formula reads this row's published value by, as
 	 * `<component id>.<key>`. Only meaningful with a published column, and
 	 * opt-in rather than derived from the label: a skills card must not claim
@@ -201,6 +218,17 @@ export interface TableRow {
 	 * `ability + Training * prof`, and the row says which ability it means.
 	 */
 	values?: Record<string, string>;
+	/**
+	 * More modifier groups this row is in, beside the table's own `groups`
+	 * (`docs/features/table-row-modifier-target.md` D4). Adds to the default and
+	 * never replaces it.
+	 */
+	groups?: string[];
+	/**
+	 * `false` takes the row out of the table's `groups`, leaving only its own.
+	 * Absent is `true`, the one way a row leaves the default (ruling 3).
+	 */
+	inheritGroups?: boolean;
 }
 
 export interface TableConfig extends ComponentConfig {
@@ -224,6 +252,12 @@ export interface TableConfig extends ComponentConfig {
 	 * same list.
 	 */
 	openRows?: boolean;
+	/**
+	 * The modifier groups every row is in, a character's own included (D4). A
+	 * row's published value is what a group reaches, so without a published
+	 * column these reach nothing, which the editor says.
+	 */
+	groups?: string[];
 	hideLabel?: boolean;
 }
 
@@ -382,6 +416,11 @@ interface RowView {
 	at: number | null;
 	/** Whether the character owns the row: theirs to rename and to delete. */
 	owned: boolean;
+	/**
+	 * Its place in the order the card draws its rows, declared first and then
+	 * the character's own: what an unnamed member's slot is keyed by (D5).
+	 */
+	position: number;
 }
 
 /**
@@ -421,6 +460,7 @@ function rowViews(config: TableConfig, data: TableData | null): RowView[] {
 		declared: index,
 		at: claims.declared[index] ?? null,
 		owned: false,
+		position: index,
 	}));
 	// A fixed card draws none of the character's own: a row the layout does not
 	// declare stays in the note, unrendered and untouched (SPEC §10).
@@ -431,6 +471,7 @@ function rowViews(config: TableConfig, data: TableData | null): RowView[] {
 				declared: null,
 				at,
 				owned: true,
+				position: views.length,
 			});
 		}
 	}
@@ -613,8 +654,29 @@ function publishedName(
 ): string | undefined {
 	if (config.columns?.[at]?.publish !== true) return undefined;
 	const key = (view.row?.key ?? '').trim();
-	if (view.declared === null || key === '') return undefined;
+	if (view.declared === null || key === '') {
+		/*
+		 * **A row with no name in some group has a slot of its own**, keyed by its
+		 * position (`docs/features/table-row-modifier-target.md` D5): what a group
+		 * reaches is this row's published cell, so `mod.self` here reads the slot
+		 * and nothing else can. It publishes no name — `scopeValues` lists it as
+		 * `unnamed` — so `attacks.Longsword` still fails as an unknown name, and a
+		 * row in no group still reads `mod.self` as 0.
+		 */
+		return viewGroups(config, view).length === 0
+			? undefined
+			: memberSlot(config.id, view.position);
+	}
 	return `${config.id}.${key}`;
+}
+
+/**
+ * The modifier groups one row is in (D4): the table's default and the row's
+ * own, and the default alone for a row the character added, which joins
+ * through it (ruling 4).
+ */
+function viewGroups(config: TableConfig, view: RowView): string[] {
+	return view.owned ? ownGroups(config.groups) : rowGroups(view.row, config.groups);
 }
 
 /**
@@ -764,6 +826,9 @@ function baseConfigError(config: TableConfig): string | null {
 			return `The column "${key}" has a level with a mark but no name.`;
 		}
 	}
+	// A `groups` that is not a list of names refuses the table (D6).
+	const grouped = groupsFault(config.groups) ?? memberGroupsFault(config.rows);
+	if (grouped !== null) return grouped;
 	const rowHeader = (
 		(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER
 	).toLowerCase();
@@ -971,9 +1036,26 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		{
 			key: 'rows',
 			kind: 'rows',
+			shortLabel: true,
 			label: 'Rows',
 			description:
 				'The rows every character using this layout has. Each row may define named expressions its computed columns can read, e.g. "ability" as abilities.DEX, so one column formula serves the whole list. A row may also carry a key, which is the name a formula elsewhere reads that row\'s published value by.',
+			memberGroups: {
+				description: "A row's own groups add to the table's row groups.",
+				inherit: {
+					label: 'Same groups as the table',
+					description:
+						'Turn off "Same groups as the table" to keep a row in its own groups only, so a modifier aimed at the table\'s groups skips it.',
+					from: 'the table',
+				},
+			},
+		},
+		{
+			key: 'groups',
+			kind: 'groups',
+			label: 'Row groups',
+			description:
+				"The groups every row is in, rows a character adds included. A modifier aimed at one changes each row's published value.",
 		},
 		/*
 		 * **The description says nothing about a target column, deliberately.**
@@ -1233,6 +1315,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		const columns = config.columns ?? [];
 		const views = rowViews(config, data);
 		const named: Record<string, ScopeEntry> = {};
+		const unnamed: UnnamedMember[] = [];
 
 		const rows = views.map((view) => ({
 			label: view.label,
@@ -1283,9 +1366,20 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			for (const view of views) {
 				const declared = view.declared;
 				const key = (view.row?.key ?? '').trim();
-				if (declared === null || key === '') continue;
+				const groups = viewGroups(config, view);
+				if (declared === null || key === '') {
+					// A row with no name in some group is listed, not published (D5).
+					if (groups.length > 0) {
+						unnamed.push(
+							unnamedMember(config.id, view.position, rowLabel(view.label), groups, view.row?.short),
+						);
+					}
+					continue;
+				}
 				const cell = storedCells(data, view);
 				const name = `${config.id}.${key}`;
+				// The row's own text for a reader, its links drawn as their text.
+				const labelled = entryLabel(displayText(view.label), view.row?.short);
 				if (columnType(published) !== 'computed') {
 					// A stored cell is its own answer, and it is the same answer
 					// the card shows, so the bare name and `.value` agree until a
@@ -1295,36 +1389,53 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					// blank, which in a number column is zero — the number the card
 					// shows.
 					const own = columnState(published);
-					named[key] = {
-						value: typedValue(published, cell(published)),
-						...(own === undefined ? {} : { state: { ...own, column: published.key } }),
-						...withStates,
-					};
+					named[key] = withGroups(
+						{
+							...labelled,
+							value: typedValue(published, cell(published)),
+							...(own === undefined ? {} : { state: { ...own, column: published.key } }),
+							...withStates,
+						},
+						groups,
+					);
 					continue;
 				}
 				// A computed column stores nothing, so there is no `.value` to
 				// publish: a formula reading one fails as an unknown name (§4.2).
-				named[key] = {
-					compute: (resolve, state) =>
-						resolve(
-							`columns.${at}.formula`,
-							rowScope(
-								config,
-								declared,
-								cell,
-								resolve,
-								state === undefined ? undefined : { name, read: state },
+				named[key] = withGroups(
+					{
+						...labelled,
+						compute: (resolve, state) =>
+							resolve(
+								`columns.${at}.formula`,
+								rowScope(
+									config,
+									declared,
+									cell,
+									resolve,
+									state === undefined ? undefined : { name, read: state },
+								),
+								// The name being published, so a `mod.self` in the
+								// column's formula reads this row's own slot.
+								publishedName(config, view, at),
 							),
-							// The name being published, so a `mod.self` in the
-							// column's formula reads this row's own slot.
-							publishedName(config, view, at),
-						),
-					...withStates,
-				};
+						...withStates,
+					},
+					groups,
+				);
 			}
 		}
 
-		return Object.keys(named).length === 0 ? {} : { named };
+		/*
+		 * **What a row the character adds will join**, read from the configuration
+		 * alone (D7), so the editor can tell a group whose only members are those
+		 * rows from one with none. Only where a column is published, since that is
+		 * the value a group reaches.
+		 */
+		const openGroups =
+			published !== undefined && config.openRows === true ? ownGroups(config.groups) : [];
+		const members = membership(unnamed, openGroups);
+		return Object.keys(named).length === 0 ? members : { named, ...members };
 	},
 
 	/**
@@ -2607,6 +2718,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							states: context.modifiers?.states ?? [],
 							buffers: context.modifiers?.buffers ?? [],
 							choices: context.modifiers?.choices ?? [],
+							groups: context.modifiers?.groups ?? [],
 							bonusTypes: context.modifiers?.bonusTypes ?? [],
 							// The one import from `obsidian` in this folder, passed on
 							// rather than taken again: the allowlist stays one name long.

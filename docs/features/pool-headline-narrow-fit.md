@@ -149,16 +149,31 @@ design falls back to wherever `field-sizing` is unsupported.
    for two reasons. First, the hover and focus ring do not clamp onto one numeral.
    Second, `9 → 10` does not re-centre the reading. In Chromium the field is
    `field-sizing: content`, so above `2ch` it is as wide as its digits.
-   - The threshold is where today's layout still fits a three-digit ceiling: `4ch`
-     at the value size (4.6em on the card), plus three px parts. They are the
-     reading's gap (`--size-2-1`, 2px), the widest three-digit ceiling (38.7px, a
-     max the character owns with its padding), and the 2px the reading's row
-     sits inside the card's content box. That is 42.7px, rounded up to 44.
+   - The threshold is where the layout still fits a three-digit ceiling beside
+     the `4ch` slot. *Since amended (2026-11-19):*
+     `docs/features/pool-ceiling-text-size.md`, once the ceiling followed the
+     sheet: `4ch` at the value size (4.59em on the card) plus the widest
+     three-digit ceiling's digits, a `/120` the character owns, at the
+     qualifier's size (43.4px at `text=24`'s 20.8, 1.81em), so 6.4em; and in px
+     the reading's gap (`--size-2-1`, 2px), the 2px the reading's row sits
+     inside the card's content box and the ceiling's 10px of padding and gap,
+     14px, rounded up to 20 for the regime where the app's `--font-ui-medium`
+     holds the ceiling above 13/15 of the sheet (a phone's 16px needs 4.9px
+     more). As first shipped it was `4.6em + 44px`, with the ceiling counted as
+     38.7px of fixed chrome; that 38.7 was a 13px field, since Obsidian's
+     `input[type='text']` set the owned ceiling's size over `.sheetsmith-pool-max`.
+     *Since amended again (2026-11-19):* `docs/features/qualifier-fit-and-size.md`
+     trimmed a typed ceiling's padding to 1px a side, so its 10px of padding and
+     gap became 4 and the threshold `calc(6.4em + 14px)`.
    - It is written as `em` plus `px`:
-     `@container (max-width: calc(4.6em + 44px))`. The value is in `em` and the
-     ceiling is fixed-px chrome (`docs/UI.md` §5). A container query's `em`
-     resolves on the Pool card, which is the query container. This was measured:
-     the threshold is 118px at the default size and 154px at `text=24`.
+     `@container (max-width: calc(6.4em + 14px))` since the second amendment
+     above, `calc(6.4em + 20px)` before it. The value and the ceiling
+     follow the sheet and are in `em`; the gaps, padding and inset are chrome the
+     sheet's `em` does not reach (`docs/UI.md` §5). A container query's `em`
+     resolves on the Pool card, which is the query container. Measured: 116.4px
+     of card content at the default size and on a phone, 167.6 at `text=24`,
+     110 in the app's 15px sheet (122.4, 173.6 and 116 at `+ 20px`; 118 and 154
+     as first shipped).
    - Above the threshold nothing changes, so every Pool that fits today is
      pixel-identical.
    - **The override sits below the base rule in `sheet.css`.** `@container` adds
@@ -168,9 +183,10 @@ design falls back to wherever `field-sizing` is unsupported.
      repository's rule for every container step).
    - **The threshold is `em` plus `px` because of `docs/UI.md` §5.** A width that
      has to agree with fixed-px chrome is px. Here the sum has two parts. The
-     value's `4ch` is in `em`, because the number scales with the sheet. The gap,
-     the ceiling and the 2px row inset are in px, because they are UI-token
-     chrome and box geometry the sheet's `em` does not reach.
+     value's `4ch` and, since `pool-ceiling-text-size.md`, the ceiling's digits
+     are in `em`, because both scale with the sheet. The gap, the ceiling's
+     padding and the 2px row inset are in px, because they are UI-token chrome
+     and box geometry the sheet's `em` does not reach.
 2. **The ceiling gives way second.** `.sheetsmith-pool-reading` takes
    `flex-wrap: wrap` with no row gap. The row is already `justify-content: center`,
    so a wrapped ceiling sits centred under the number. It keeps its `/`, so it
@@ -189,7 +205,10 @@ design in all of them.
 
 The **temp pill** does not move wherever the reading stays on one line. Its offset
 from the card top was measured identical before and after: 78.2 at the default
-size, 82.2 at `text=24`, 93.0 under phone staging. Where the reading wraps, the
+size, 82.2 at `text=24`, 93.0 under phone staging. *Since moved:* the
+qualifiers-follow-text-size change hung the pill at `0.4em` rather than a fixed
+4px, so these are now 82.6, 89.8 and 97.4, and every Pool with the pill is
+about 4px taller at the default size and 8px at `text=24`. Where the reading wraps, the
 card grows by one line (14 to 19px) and everything below the reading moves down
 with it, the pill included. That is the wrap itself, not a side effect. The grid
 row grows with the card, as any taller cell's does.
@@ -200,6 +219,13 @@ type. It also makes a Pool's number stop matching a Card's on the same row, whic
 is the reason the two share one token. SPEC §4.2 says "the number is the thing
 being read", and the ceiling is the part "not worth the card's centre line"
 (the max-input rule's comment). So the ceiling is what moves.
+*Since reversed (2026-11-18):* the number does shrink now, below the card width
+three digits fit at, after the slot and the ceiling have given way here, and is
+marked where it still does not fit. Both objections are answered there rather
+than overruled: the size is a function of the card's width alone, through one
+token Card and Pool share, so two cards of one width still draw one size, and it
+drops only where the full-size number could not be read at all
+(`docs/features/headline-narrow-cell.md`).
 
 **What SPEC §4.2's reasoning keeps.** The comment above `.sheetsmith-pool-reading`
 centres `12 / 54` as one reading. On one line, which is every case but the

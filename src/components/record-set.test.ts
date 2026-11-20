@@ -2275,6 +2275,44 @@ describe('the disclosure', () => {
 	});
 });
 
+describe('the record noun mid-sentence', () => {
+	afterEach(() => document.body.replaceChildren());
+
+	/*
+	 * One case per family of site that names the noun after a sentence's first
+	 * word (`nounInSentence`): an all-capitals noun keeps its case and any other
+	 * is lowercased. The refusal family is under "a text field as the group key".
+	 */
+	const named = (recordName: string, overrides: Partial<RecordSetConfig> = {}) =>
+		render({ recordName, ...overrides }, BODY, { openRecords: [0, 1, 2] });
+
+	it('names the Add press', () => {
+		expect(addButton(named('NPC')).textContent).toBe('Add NPC');
+		expect(addButton(named('Feature')).textContent).toBe('Add feature');
+	});
+
+	it('counts a group in the noun, with its plural', () => {
+		const grouped = {
+			groupBy: 'Side',
+			fields: [{ key: 'Side' }, { key: 'Uses', type: 'number' as const, max: 3 }],
+		};
+		const counts = (recordName: string) =>
+			Array.from(named(recordName, grouped).querySelectorAll('[id^="sheetsmith-record-group-count-"]')).map(
+				(one) => one.textContent,
+			);
+		expect(counts('NPC')).toEqual(['3 NPCs']);
+		expect(counts('Feature')).toEqual(['3 features']);
+	});
+
+	it('names the body placeholder', () => {
+		const empty = BODY.replace('Three rerolls a day.\n', '');
+		const placeholder = (recordName: string) =>
+			bodyFields(render({ recordName }, empty, { openRecords: [2] }))[2]?.placeholder;
+		expect(placeholder('NPC')).toBe('Write anything about this NPC.');
+		expect(placeholder('Feature')).toBe('Write anything about this feature.');
+	});
+});
+
 describe("a record's body", () => {
 	it('draws the prose over a field holding the same text', () => {
 		const el = render({}, BODY, { openRecords: [0] });
@@ -7543,6 +7581,26 @@ describe('a text field as the group key', () => {
 				"Not saved. A group name is at most 40 characters, and this is 41. Shorten it, or put the detail in the feature's body.",
 			);
 			expect(attempt('x'.repeat(40)).state.changes).toHaveLength(1);
+		});
+
+		it('keeps an all-capitals record noun in the refusal, and lowercases any other', () => {
+			const refusedAs = (recordName: string) => {
+				document.body.replaceChildren();
+				const { host } = live({ recordName }, FEATURES_TEXT, {}, false);
+				const input = classOf(host, 'Second Wind');
+				input.focus();
+				input.value = 'x'.repeat(41);
+				input.dispatchEvent(
+					new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+				);
+				return noticeOf(host);
+			};
+			expect(refusedAs('NPC')).toBe(
+				"Not saved. A group name is at most 40 characters, and this is 41. Shorten it, or put the detail in the NPC's body.",
+			);
+			expect(refusedAs('Feature')).toBe(
+				"Not saved. A group name is at most 40 characters, and this is 41. Shorten it, or put the detail in the feature's body.",
+			);
 		});
 
 		it('counts code points, so 40 emoji are 40', () => {

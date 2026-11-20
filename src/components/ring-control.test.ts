@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bindRingControl, RingControl, RingControlOptions } from './ring-control';
+import { bindRingControl, RING_SET_CLASS, RingControl, RingControlOptions } from './ring-control';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { hold } from '../test/pointer';
 
@@ -472,5 +472,81 @@ describe('a ring a modifier set (docs/features/non-number-modifiers.md)', () => 
 		const { button } = ring({ column: { levels }, count: 2, graded: true, level: 0, name: 'Stealth Training' });
 		expect(button.getAttribute('aria-label')).toBe('Stealth Training: Untrained');
 		expect(button.hasAttribute('aria-description')).toBe(false);
+	});
+});
+
+describe('the mark on a ring a modifier set (docs/features/modifier-set-ring-mark.md)', () => {
+	const levels = ['Untrained', 'Proficient:', 'Expertise:E'];
+	const words = ['Untrained', 'Proficient', 'Expertise'];
+	const atLeastProficient = (stored: number) => Math.max(stored, 1);
+	const setsProficient = () => 1;
+	/** `stateOwnDescription`'s rule: words only where drawn and stored differ. */
+	const ownUnder = (drawn: (stored: number) => number) => (stored: number) =>
+		drawn(stored) === stored ? null : `Set by a modifier; your own: ${words[stored] ?? ''}`;
+	const graded = (level: number, drawn?: (stored: number) => number) =>
+		ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level,
+			name: 'Stealth Training',
+			drawn,
+			ownLevel: drawn === undefined ? undefined : ownUnder(drawn),
+		});
+	const marked = (button: HTMLElement) => button.classList.contains(RING_SET_CLASS);
+
+	it('marks a ring whose drawn level differs from the stored one, and only then', () => {
+		expect(marked(graded(0, atLeastProficient).button)).toBe(true);
+		expect(marked(graded(2, atLeastProficient).button)).toBe(false);
+		expect(marked(graded(1, (stored) => stored).button)).toBe(false);
+		expect(marked(graded(0).button)).toBe(false);
+		// The halo follows the words, not `drawn`: a ring told what it draws and
+		// nothing of the reader's own says nothing, in either channel.
+		const silent = ring({ column: { levels }, count: 2, graded: true, level: 0, name: 'Stealth Training', drawn: atLeastProficient });
+		expect(marked(silent.button)).toBe(false);
+	});
+
+	it('drops the mark on the press that makes the two agree', () => {
+		const unshown: number[] = [];
+		const { button, sets } = ring({
+			column: { levels },
+			count: 2,
+			graded: true,
+			level: 0,
+			name: 'Stealth Training',
+			drawn: atLeastProficient,
+			ownLevel: ownUnder(atLeastProficient),
+			onUnshown: (stored) => unshown.push(stored),
+		});
+		expect(marked(button)).toBe(true);
+		button.click();
+		expect(marked(button)).toBe(false);
+		expect(sets).toEqual([1]);
+		expect(unshown).toEqual([1]);
+		button.click();
+		expect(sets).toEqual([1, 2]);
+		expect(marked(button)).toBe(false);
+		button.click();
+		expect(sets).toEqual([1, 2, 0]);
+		expect(marked(button)).toBe(true);
+	});
+
+	it('marks a ring exactly when it carries its own description', () => {
+		let checked = 0;
+		for (const drawn of [atLeastProficient, setsProficient]) {
+			for (const stored of [0, 1, 2]) {
+				const { button } = graded(stored, drawn);
+				expect(marked(button), `stored ${stored}`).toBe(button.hasAttribute('aria-description'));
+				checked += 1;
+			}
+		}
+		expect(checked).toBe(6);
+	});
+
+	it('marks a ring a Sets lowered, and a flag set off over a stored on', () => {
+		expect(marked(graded(2, setsProficient).button)).toBe(true);
+		const flag = ring({ level: 1, drawn: () => 0, ownLevel: (stored) => (stored === 0 ? null : 'Set by a modifier; your own: on') });
+		expect(flag.button.getAttribute('aria-pressed')).toBe('false');
+		expect(marked(flag.button)).toBe(true);
 	});
 });

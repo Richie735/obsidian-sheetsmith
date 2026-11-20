@@ -216,6 +216,15 @@ export interface ComponentConfig {
 	type: string;
 	/** Display name, and the section heading in the note body. */
 	label: string;
+	/**
+	 * What a tight surface calls the component, beside `label`
+	 * (`docs/features/published-name-labels.md`): the vitals strip's *AC* where
+	 * the label is *Armor class*. Display text and nothing else — no section,
+	 * formula or target keys on it — and never derived from the label, so absent
+	 * means every surface draws the label. Shared and owned by the editor, as
+	 * `label` is, because the walk reads it off every publishing component.
+	 */
+	short?: string;
 	position: GridPosition;
 	/**
 	 * The components this one contains, each placed on this component's own
@@ -429,7 +438,8 @@ export interface ConfigFieldSpec<
 		| 'track-rows'
 		| 'rows'
 		| 'columns'
-		| 'zones';
+		| 'zones'
+		| 'groups';
 	/**
 	 * Help text shown under the field. Required: a field the layout editor
 	 * renders with no explanation is a field the author has to guess at, and
@@ -547,6 +557,34 @@ export interface ConfigFieldSpec<
 	 */
 	entryFlag?: { key: string; label: string };
 	/**
+	 * For a `'rows'` or `'entries'` field only: that each row or entry names the
+	 * modifier groups it is in, under `groups`, drawn as the `'groups'` kind's
+	 * chips on its detail line (`docs/features/table-row-modifier-target.md` D12).
+	 *
+	 * `inherit` is what the toggle beside them is called where the component
+	 * sets a default for all its rows (**Same groups as the table**), which writes
+	 * `inheritGroups: false` when turned off; absent is a list with no default,
+	 * a Card set's. On `rowFlag`'s precedent: the field says what to call it, so
+	 * the editor learns nothing about which component it is.
+	 */
+	memberGroups?: MemberGroupsSpec;
+	/**
+	 * For an `'entries'`, `'rows'` or `'track-rows'` field only: that each item
+	 * is a published name, so its detail line takes a **Short** input stored
+	 * under `short` (`docs/features/published-name-labels.md`). On
+	 * `memberGroups`' precedent — the field says the items take one, so the
+	 * editor learns nothing about which component it is drawing — but carrying
+	 * no words: the footnote under the list says the same thing on every list,
+	 * so it is the editor's one copy rather than six declared copies of one
+	 * sentence (`docs/PATTERNS.md` §1). Absent on a list whose items are not
+	 * published names, a Card's `options`.
+	 *
+	 * **One sentence of the component's own may follow it**, `also`, for what is
+	 * true of its items alone: a Card set's card draws the key, which a Passport's
+	 * or a Roster's list does not, so the editor cannot say it for every list.
+	 */
+	shortLabel?: true | { also: string };
+	/**
 	 * That this field's own commit addresses one entry's line inside a
 	 * character's `sheet` fence, and where that fence is — Card's `key`,
 	 * Passport's `nameKey`, or, for an `'entries'` or `'track-rows'` field,
@@ -582,6 +620,30 @@ export interface ConfigFieldSpec<
 	 * *field* where its keys are read, so the editor learns nothing about briefs.
 	 */
 	keyReferences?: readonly TSiblingKey[];
+}
+
+/**
+ * What a `rows` or `entries` field says about each row's or entry's own modifier
+ * groups (`docs/features/table-row-modifier-target.md` D12): the words, which
+ * are the component's own, so the editor learns nothing about which component
+ * draws them.
+ */
+export interface MemberGroupsSpec {
+	/** What a row's or entry's own groups do, drawn as the list's help text. */
+	description: string;
+	/**
+	 * The toggle beside them where the component sets a default for all its
+	 * rows, which writes `inheritGroups: false` when turned off. Absent is a list
+	 * with no default, a Card set's.
+	 */
+	inherit?: {
+		/** The toggle's own words: **Same groups as the table**. */
+		label: string;
+		/** What turning it off does, drawn beside `description`. */
+		description: string;
+		/** Where the inherited groups come from, ending their names: `the table`. */
+		from: string;
+	};
 }
 
 /**
@@ -794,6 +856,7 @@ export const EDITOR_OWNED_KEYS = [
 	'id',
 	'type',
 	'label',
+	'short',
 	'position',
 	'reset',
 	'children',
@@ -1063,7 +1126,93 @@ export type ScopeEntry = {
 	 * card with an amount keeps its meaning.
 	 */
 	choice?: ChoiceShape;
+	/**
+	 * The modifier groups this name is in, by group name
+	 * (`docs/features/table-row-modifier-target.md` D4). A change aimed at any of
+	 * them changes this name exactly as one aimed at it by name would. Absent is
+	 * none, which is every entry on a layout declaring no group.
+	 *
+	 * **Declared by the component, from its configuration alone**, through
+	 * `components/member-groups.ts`, so the editor and the sheet read one
+	 * membership. Read only by `formula/modifier-targets.ts`'s one walk.
+	 */
+	groups?: readonly string[];
+	/**
+	 * The text a reader knows this entry by, from the component's own
+	 * configuration — a Card set entry's `name`, a Table row's `label` — or a
+	 * fixed word from `src/en.ts` for a name the component builds itself
+	 * (`docs/features/published-name-labels.md`). Absent where there is none, and
+	 * the key is shown. **Display text, never identity**: nothing resolves
+	 * through it, and a surface composes it only through `formula/name-label.ts`.
+	 * Meaningful only on a `named` entry; the bare name is the component's own
+	 * label.
+	 */
+	label?: string;
+	/**
+	 * The author's tight form of `label`, as typed (`STR` for *Strength*). Absent
+	 * where none was typed, and a tight surface then draws `label` whole: it is
+	 * never computed from the label or the key.
+	 */
+	short?: string;
+	/**
+	 * That `label` is a fixed word for a name the component builds itself
+	 * (`Maximum`, `Temporary`), which names nothing without its component, so a
+	 * surface drawing the entry alone leads it with the component wherever it
+	 * draws it. Set by the component that chose the word, never inferred.
+	 */
+	ownWord?: true;
 } & ScopeEntrySource;
+
+/**
+ * A value in some modifier group that publishes no name: a declared row with no
+ * key, or a row the character added (`docs/features/table-row-modifier-target.md`
+ * D5).
+ *
+ * **Its slot key is its position, never its label**: two rows a character added
+ * may share a name, and a slot is never stored, so recomputing it from the rows
+ * as they are now can never go stale. The key is `<id>[<n>]`, which no formula
+ * can spell because `[` is not a character of the grammar; the row's own
+ * published cell reads it through `mod.self` and nothing else can.
+ */
+export interface UnnamedMember {
+	/** The slot key, `attacks[3]`, by the row's place in the order the card draws. */
+	key: string;
+	/** The row as a reader sees it, for every sentence that has to name it. */
+	label: string;
+	/** The author's tight form of `label`, as `ScopeEntry.short` is. */
+	short?: string;
+	/** The groups it is in, by group name. Never empty. */
+	groups: readonly string[];
+}
+
+/**
+ * One part of a published name's display text
+ * (`docs/features/published-name-labels.md`). `full` has already fallen back to
+ * the key; `short` is the author's text as typed, or absent.
+ */
+export interface LabelPart {
+	full: string;
+	short?: string;
+	/** An entry's text is its component's own word (`ScopeEntry.ownWord`). */
+	ownWord?: true;
+}
+
+/**
+ * What a published name is called, as parts: never a joined string something
+ * later splits. Built only by `formula/modifier-targets.ts`'s walk, and turned
+ * into text only by `formula/name-label.ts`.
+ */
+export interface NameLabel {
+	/**
+	 * The publishing component: its id, which groups lines and is never shown,
+	 * its label (the id where it has none) and its `short`.
+	 */
+	component: LabelPart & { id: string };
+	/** The entry under `named`, absent for the component's own bare name. */
+	entry?: LabelPart;
+	/** The column a state change names on the entry's row, as its key. */
+	column?: string;
+}
 
 /**
  * What a buffer a grant may raise carries to the walk
@@ -1095,6 +1244,18 @@ export interface BufferShape {
 export interface ScopeValues {
 	self?: ScopeEntry;
 	named?: Readonly<Record<string, ScopeEntry>>;
+	/**
+	 * The values in a modifier group that publish no name (D5), in the order the
+	 * card draws them. Absent is none. A formula cannot read one: only the row's
+	 * own cell sees its slot.
+	 */
+	unnamed?: readonly UnnamedMember[];
+	/**
+	 * The groups a row the character adds will join, read statically from the
+	 * configuration (D7): what lets the editor tell a group with no member from
+	 * one whose only members are a character's rows. Absent is none.
+	 */
+	openGroups?: readonly string[];
 }
 
 /**
@@ -1413,6 +1574,12 @@ export interface ModifierDefinition {
 	 */
 	when?: string;
 	/**
+	 * A condition on each value a group target reaches, reserved and refused in
+	 * v1 (`docs/features/table-row-modifier-target.md` D8). Present, the change
+	 * keeps its bytes and changes nothing, and the definitions list says so.
+	 */
+	where?: string;
+	/**
 	 * Words shown at the target, behind a note mark, while this applies
 	 * (`docs/features/modifier-notes.md`). The flat spelling's, like the four
 	 * above it; `changes[].note` where the definition lists its changes.
@@ -1458,6 +1625,7 @@ export const MODIFIER_CHANGE_KEYS = [
 	'option',
 	'bonusType',
 	'applies',
+	'where',
 	'note',
 ] as const;
 
@@ -1496,6 +1664,8 @@ export interface ModifierChange {
 	 * change that says nothing is.
 	 */
 	applies?: ModifierPhase;
+	/** As `ModifierDefinition.where`: reserved, and refused in v1. */
+	where?: string;
 	/**
 	 * Words shown at the target while this applies. Absent where blank, and a
 	 * change with one needs no amount: it moves no number, so it is a note-only
@@ -1567,6 +1737,13 @@ export interface TypedEffect {
 	/** An expression; absent means always. */
 	when?: string;
 	/**
+	 * A condition on each value a group target reaches, spelled in a cell as
+	 * ` where: <condition>` before the note (`docs/features/table-row-modifier-target.md`
+	 * D8). **Reserved and refused in v1**: present, blank included, the part keeps
+	 * its bytes and changes nothing, and the row says why.
+	 */
+	where?: string;
+	/**
 	 * Words shown at the target while this applies, spelled last in the cell as
 	 * ` note: <text>`. Holds no `;`, which would split the part.
 	 */
@@ -1618,6 +1795,20 @@ export interface ModifierDefinitionView {
 export interface ModifierChangeView extends ModifierChange {
 	/** The publishing component's own label, or the bare name where none. */
 	targetLabel: string;
+}
+
+/**
+ * One group a modifier may aim at instead of one value
+ * (`docs/features/table-row-modifier-target.md` D6).
+ *
+ * **Two strings and nothing else**, which is what refuses derived membership at
+ * the read: a group is a word, and which values are in it is declared on each
+ * value. `name` is what a cell spells after `@`; `label` is what every surface
+ * shows, the name where it is blank.
+ */
+export interface ModifierGroup {
+	name: string;
+	label: string;
 }
 
 /**
@@ -1867,6 +2058,14 @@ export interface ModifierLine {
 	inPlay?: boolean;
 	/** The push's own `tint`, carried only beside `inPlay`. Absent is the accent. */
 	tint?: TintColour;
+	/**
+	 * The modifier groups this line reached its value through, where it was
+	 * aimed at a group rather than at the value by name
+	 * (`docs/features/table-row-modifier-target.md` D9). Absent is aimed by name.
+	 * **Never dropped from the line**: nothing else on it says the change was not
+	 * aimed here, which is the first thing a reader asks of a number that moved.
+	 */
+	via?: readonly ModifierGroup[];
 }
 
 /**
@@ -1965,8 +2164,14 @@ export interface ModifierBreakdown {
 export interface ModifierTarget {
 	/** The published name, as a formula and a definition's target spell it. */
 	name: string;
-	/** What to show for it, which is the component's own label. */
+	/** What to show for it: the full breadcrumb, `Abilities · Strength`. */
 	label: string;
+	/**
+	 * The parts `label` was composed from, for a surface that draws another
+	 * width (`docs/features/published-name-labels.md`). Set by the walk on every
+	 * target it builds; absent only on one built by hand, which reads `label`.
+	 */
+	parts?: NameLabel;
 }
 
 /**
@@ -2009,6 +2214,14 @@ export interface ModifierOutcome {
 	 */
 	target: string;
 	targetLabel: string;
+	/**
+	 * What the target is called, as parts, wherever `target` is a name this
+	 * layout publishes (`docs/features/published-name-labels.md`): a surface
+	 * drawing a width other than `targetLabel`'s full one composes from these
+	 * through `formula/name-label.ts`. Absent on a stray, on a part aimed at
+	 * groups, and on a target the layout does not publish.
+	 */
+	targetName?: NameLabel;
 	/**
 	 * Whether this row is changing its target's value. The glyph reads this and
 	 * nothing else.
@@ -2069,6 +2282,36 @@ export interface ModifierOutcome {
 	 * outcome is the object it was.
 	 */
 	choice?: { shape: ChoiceShape; option: string };
+	/**
+	 * How far a part aimed at modifier groups reached
+	 * (`docs/features/table-row-modifier-target.md` D10), where it is aimed at
+	 * groups, or carries the reserved member condition: a refused one reaches
+	 * no value, and its sentence is the one thing `said` holds. `targetLabel` then names the groups by their labels; this carries
+	 * the counts, which `targetLabel` cannot, since it holds one name
+	 * (`docs/features/published-name-labels.md`). Absent on every part aimed at
+	 * one value, so such an outcome is the object it was.
+	 */
+	reach?: GroupReach;
+}
+
+/** What a group part's reach line says (D10), as facts the words are built from. */
+export interface GroupReach {
+	/** How many values the part reaches. */
+	values: number;
+	/** How many of those it is changing now. */
+	changed: number;
+	/**
+	 * The first value it reaches and does not change, and why, where its
+	 * condition holds and some refused or suppressed it. Null where none did.
+	 */
+	missed: { parts: NameLabel; reason: string } | null;
+	/** How many more it misses past `missed`. */
+	more: number;
+	/**
+	 * Sentences about the groups themselves, said under the reach line: a group
+	 * the layout does not declare, or one holding no value (D7).
+	 */
+	said: readonly string[];
 }
 
 /**
@@ -2174,6 +2417,12 @@ export interface ModifierContext {
 	 */
 	choices?: readonly ChoiceTarget[];
 	/**
+	 * The layout's declared modifier groups, for the form's **Value** select's
+	 * **Modifier groups** group, first (`docs/features/table-row-modifier-target.md`
+	 * D11). Optional on `states`' terms, and absent offers none.
+	 */
+	groups?: readonly ModifierGroup[];
+	/**
 	 * What the changes choosing one dropdown's option come to, folded onto what
 	 * the note stores, or null where no change addresses it — so a dropdown
 	 * nothing chooses for draws no door, no rule and no description.
@@ -2257,8 +2506,10 @@ export interface StateTarget {
 	name: string;
 	/** The change's `column`, or absent where the name's own value is the state. */
 	column?: string;
-	/** What a picker shows: `Abilities · stealth · Training`, or `Inspiration`. */
+	/** What a picker shows: `Skills · Stealth · Training`, or `Inspiration`. */
 	label: string;
+	/** The parts `label` was composed from, `column` included. */
+	parts: NameLabel;
 	shape: StateShape;
 }
 
@@ -2293,6 +2544,8 @@ export interface ChoiceTarget {
 	name: string;
 	/** What a picker shows: the component's label, `Size`. */
 	label: string;
+	/** The parts `label` was composed from. */
+	parts: NameLabel;
 	shape: ChoiceShape;
 }
 
@@ -2344,8 +2597,10 @@ export interface ChoiceAccount {
 export interface BufferTarget {
 	/** The published name a grant's `target` spells: `hp.temp`. */
 	name: string;
-	/** What a picker shows: `HP · temp`. */
+	/** What a picker shows: `HP · Temporary`. */
 	label: string;
+	/** The parts `label` was composed from. */
+	parts: NameLabel;
 	/** What a sentence calls the buffer (`BufferShape.label`): `HP`. */
 	called: string;
 }

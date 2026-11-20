@@ -12,6 +12,7 @@ import {
 import { sampleOf } from '../test/sample';
 import { hoverClip, setClip } from '../test/clipped';
 import { closePopover } from '../ui/popover';
+import { refitHeadline } from '../ui/headline-fit';
 import { cancel, pressDown, pressToFocus, release } from '../test/pointer';
 import { table, TableConfig } from './table';
 import { buildSheet, ReadComponent } from '../formula/sheet';
@@ -731,6 +732,7 @@ describe('card contract', () => {
 			'derived',
 			'effective',
 			'notePlaceholder',
+			'groups',
 			'hideLabel',
 			'hideValue',
 			'hideNote',
@@ -2190,5 +2192,250 @@ describe('card.render: a dropdown a modifier chose', () => {
 		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('30');
 		const refused = drawn(['size += option: 3'], '2', numbered);
 		expect(refused.querySelector('.sheetsmith-card-derived')?.textContent).toBe('?');
+	});
+});
+
+/*
+ * A headline that does not fit its card (`docs/features/headline-narrow-cell.md`).
+ *
+ * happy-dom lays nothing out, so a cut number is staged the way
+ * `ui/truncation.test.ts` stages a clipped one: its `scrollWidth` set past its
+ * `clientWidth`, then measured by the module the view's observer calls.
+ */
+describe('a card headline that does not fit', () => {
+	afterEach(() => {
+		closePopover();
+		document.body.replaceChildren();
+	});
+
+	/** Rendered into the document, so focus and presses behave. */
+	const attached = (...args: Parameters<typeof render>): HTMLElement => {
+		const el = render(...args);
+		document.body.appendChild(el);
+		return el;
+	};
+	const derivedOf = (el: HTMLElement) =>
+		el.querySelector<HTMLElement>('.sheetsmith-card-derived') as HTMLElement;
+	/** Stage `el` as clipping, or as fitting, and measure it. */
+	const cut = (el: HTMLElement, clipped = true) => {
+		setClip(el, clipped ? 200 : 50, 50);
+		refitHeadline(el);
+	};
+	const bubble = () => document.querySelector('.sheetsmith-popover')?.textContent ?? null;
+	const press = (el: HTMLElement) => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	const key = (el: HTMLElement, name: string) =>
+		el.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+
+	const BREAKDOWN = {
+		modifiers: {
+			definitions: [],
+			...NO_AUTHORING,
+			outcomes: () => [NO_OUTCOME],
+			breakdown: () => ({
+				override: null,
+				total: 2,
+				lines: [
+					{
+						applies: 'value',
+						label: 'Ring of Protection',
+						source: 'Magic items',
+						definition: 'Ring of Protection',
+						operator: 'add' as const,
+						type: 'item',
+						amount: 2,
+						suppressed: null,
+					},
+				],
+			}),
+		},
+	} as Partial<RenderContext>;
+
+	it('opens the whole value on a press, and focuses no field', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		cut(derived);
+		press(derived);
+		expect(bubble()).toBe('+25');
+		expect(document.activeElement).not.toBe(inputs(el).value);
+	});
+
+	it('opens the value, a blank line, then the breakdown where the number has one', () => {
+		const el = attached({ derived: 'value + mod.self' }, { value: '15' }, BREAKDOWN);
+		const derived = derivedOf(el);
+		const breakdown = el.querySelector('.sheetsmith-sr-only[id^="sheetsmith-breakdown-"]')?.textContent;
+		expect(breakdown).toContain('Ring of Protection — item +2');
+		cut(derived);
+		press(derived);
+		expect(bubble()).toBe(`${derived.firstChild?.textContent ?? ''}\n\n${breakdown ?? ''}`);
+	});
+
+	it('still routes a press on an uncut derived with no breakdown to the nearest control', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		cut(derived, false);
+		press(derived);
+		expect(bubble()).toBeNull();
+		expect(document.activeElement).toBe(inputs(el).value);
+	});
+
+	it('leaves the pill under a cut derived its own press', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		cut(derivedOf(el));
+		const pill = inputs(el).value as HTMLInputElement;
+		pill.focus();
+		press(pill);
+		expect(bubble()).toBeNull();
+		expect(document.activeElement).toBe(pill);
+		// And the pill is a qualifier, never a headline.
+		expect(pill.classList.contains('sheetsmith-headline')).toBe(false);
+	});
+
+	it('is a tab stop only while cut, and Enter and Space open the value', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		expect(derived.hasAttribute('tabindex')).toBe(false);
+		cut(derived);
+		expect(derived.getAttribute('tabindex')).toBe('0');
+		derived.focus();
+		// Focus alone opens nothing.
+		expect(bubble()).toBeNull();
+		key(derived, 'Enter');
+		expect(bubble()).toBe('+25');
+		closePopover();
+		key(derived, ' ');
+		expect(bubble()).toBe('+25');
+		derived.blur();
+		cut(derived, false);
+		expect(derived.hasAttribute('tabindex')).toBe(false);
+	});
+
+	it('keeps its stop and focus through a refit that makes it fit, and drops the stop on blur', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		cut(derived);
+		derived.focus();
+		cut(derived, false);
+		expect(derived.classList.contains('sheetsmith-headline-cut')).toBe(false);
+		expect(derived.getAttribute('tabindex')).toBe('0');
+		expect(document.activeElement).toBe(derived);
+		derived.blur();
+		expect(derived.hasAttribute('tabindex')).toBe(false);
+	});
+
+	it('keeps the whole value where assistive tech reads it, with the mark hidden from it', () => {
+		// A computed card with no field: the derived carries the card's name.
+		const el = attached({ derived: 'value + 10', hideValue: true }, { value: '15' });
+		const derived = derivedOf(el);
+		const label = derived.getAttribute('aria-label');
+		const described = derived.getAttribute('aria-describedby');
+		cut(derived);
+		const mark = derived.querySelector('.sheetsmith-headline-mark');
+		expect(mark?.getAttribute('aria-hidden')).toBe('true');
+		expect(mark?.textContent).toBe('⋯');
+		// Every node but the hidden mark is the value, whole.
+		const spoken = Array.from(derived.childNodes)
+			.filter((node) => node !== mark)
+			.map((node) => node.textContent)
+			.join('');
+		expect(spoken).toBe('+25');
+		// Fitting again, the mark goes, and the name and description are what
+		// they were before it was ever cut.
+		cut(derived, false);
+		expect(derived.textContent).toBe('+25');
+		expect(derived.getAttribute('aria-label')).toBe(label);
+		expect(derived.getAttribute('aria-describedby')).toBe(described);
+		expect(derived.hasAttribute('role')).toBe(false);
+	});
+
+	it('is a button named by its title and its whole value while it holds its stop', () => {
+		const el = attached({ derived: 'value + 10', hideValue: true }, { value: '15' });
+		const derived = derivedOf(el);
+		cut(derived);
+		expect(derived.getAttribute('role')).toBe('button');
+		expect(derived.getAttribute('aria-label')).toBe('Armour class, +25');
+		// No breakdown, so nothing to describe it by.
+		expect(derived.hasAttribute('aria-describedby')).toBe(false);
+	});
+
+	it('is described by the breakdown twin while it holds its stop, and by nothing once it gives it up', () => {
+		const el = attached({ derived: 'value + mod.self' }, { value: '15' }, BREAKDOWN);
+		const derived = derivedOf(el);
+		const twin = el.querySelector('.sheetsmith-sr-only[id^="sheetsmith-breakdown-"]') as HTMLElement;
+		// Uncut, the field carries the breakdown and the derived carries nothing.
+		expect(inputs(el).value?.getAttribute('aria-describedby')).toBe(twin.id);
+		expect(derived.hasAttribute('aria-describedby')).toBe(false);
+		expect(derived.hasAttribute('aria-label')).toBe(false);
+		cut(derived);
+		expect(derived.getAttribute('aria-describedby')).toBe(twin.id);
+		expect(derived.getAttribute('aria-label')).toBe(`Armour class, ${derived.firstChild?.textContent ?? ''}`);
+		cut(derived, false);
+		expect(derived.hasAttribute('aria-describedby')).toBe(false);
+		expect(derived.hasAttribute('aria-label')).toBe(false);
+		// The field's own description never moved.
+		expect(inputs(el).value?.getAttribute('aria-describedby')).toBe(twin.id);
+	});
+
+	it('names the held stop by the value a repaint drew, not the one it was cut at', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		cut(derived);
+		expect(derived.getAttribute('aria-label')).toBe('Armour class, +25');
+		// A draft in the pill repaints the derived, which stays cut.
+		const pill = inputs(el).value as HTMLInputElement;
+		pill.value = '16';
+		pill.dispatchEvent(new Event('input'));
+		expect(derived.classList.contains('sheetsmith-headline-cut')).toBe(true);
+		expect(derived.getAttribute('aria-label')).toBe('Armour class, +26');
+	});
+
+	it('opens nothing on a key once a focused number has come to fit and has no breakdown', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		cut(derived);
+		derived.focus();
+		cut(derived, false);
+		key(derived, 'Enter');
+		expect(bubble()).toBeNull();
+	});
+
+	it('opens the breakdown on a key once a focused number with one has come to fit', () => {
+		const el = attached({ derived: 'value + mod.self' }, { value: '15' }, BREAKDOWN);
+		const derived = derivedOf(el);
+		cut(derived);
+		derived.focus();
+		cut(derived, false);
+		key(derived, 'Enter');
+		expect(bubble()).toContain('Ring of Protection — item +2');
+		expect(bubble()).not.toMatch(/^\+/);
+	});
+
+	it('marks a card\'s own field as its headline, and leaves its name and description as they were', () => {
+		const el = attached({}, { value: '355000' });
+		const input = inputs(el).value as HTMLInputElement;
+		const slot = el.querySelector('.sheetsmith-card-value') as HTMLElement;
+		const name = input.getAttribute('aria-label');
+		const described = input.getAttribute('aria-describedby');
+		expect(input.classList.contains('sheetsmith-headline')).toBe(true);
+		cut(input);
+		expect(input.classList.contains('sheetsmith-headline-cut')).toBe(true);
+		expect(slot.classList.contains('sheetsmith-headline-cut')).toBe(true);
+		expect(input.value).toBe('355000');
+		expect(slot.querySelector('.sheetsmith-headline-mark')?.getAttribute('aria-hidden')).toBe('true');
+		expect(input.getAttribute('aria-label')).toBe(name);
+		expect(input.getAttribute('aria-describedby')).toBe(described);
+		// A field is a tab stop already, and never gains a `tabindex`.
+		expect(input.hasAttribute('tabindex')).toBe(false);
+	});
+
+	it('brings the mark back after a repaint replaces the derived\'s text', () => {
+		const el = attached({ derived: 'value + 10' }, { value: '15' });
+		const derived = derivedOf(el);
+		setClip(derived, 200, 50);
+		refitHeadline(derived);
+		const pill = inputs(el).value as HTMLInputElement;
+		pill.value = '16';
+		pill.dispatchEvent(new Event('input'));
+		expect(derived.firstChild?.textContent).toBe('+26');
+		expect(derived.querySelector('.sheetsmith-headline-mark')).not.toBeNull();
 	});
 });

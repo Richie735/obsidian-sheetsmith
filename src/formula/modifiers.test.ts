@@ -3,6 +3,7 @@ import { makeFieldResolver, NO_ENV } from './resolve';
 import { evaluate } from './expression';
 import { parseFunctions } from './functions';
 import { definitionView } from '../test/modifier-views';
+import { GroupIndex } from './group-reach';
 import {
 	buildModifierTables,
 	Contributor,
@@ -2231,5 +2232,124 @@ describe('an at least where it lands', () => {
 		const [outcome] = context.outcomes('stealth >= 4', { label: 'Wolf', values: {} }, '');
 		expect(outcome?.applies).toBe(false);
 		expect(outcome?.suppressed).toBe('already higher');
+	});
+});
+
+describe('a change aimed at modifier groups (docs/features/table-row-modifier-target.md)', () => {
+	const SAVES = ['str', 'dex', 'con', 'int', 'wis', 'cha'].map((key) => `saves.${key}`);
+	const save = { name: 'save', label: 'Saving throws' };
+	const check = { name: 'check', label: 'Checks' };
+	/** Six saves in `save`, Dexterity save in `check` too, and Perception in `check`. */
+	const groups: GroupIndex = {
+		declared: new Map([
+			['save', save],
+			['check', check],
+			['empty', { name: 'empty', label: 'Empty' }],
+		]),
+		members: new Map([
+			['save', SAVES.map((name) => ({ name, parts: { component: { id: name, full: name } } }))],
+			[
+				'check',
+				[
+					{ name: 'saves.dex', parts: { component: { id: 'saves', full: 'saves' }, entry: { full: 'dex' } } },
+					{ name: 'perception', parts: { component: { id: 'perception', full: 'Perception' } } },
+				],
+			],
+		]),
+	};
+	/** The walk over one Gear component pushing these parts. */
+	const walk = (...pushes: ModifierPush[]) =>
+		slotsOf(
+			[{ id: 'gear', pushes: () => pushes }],
+			[],
+			{},
+			new Map(),
+			new Set(),
+			new Map(),
+			groups,
+		);
+
+	it('reaches every member, each line naming the group it came through', () => {
+		const slots = walk(enrol('@save += 1 as item', 'Cloak of Protection'));
+		for (const name of SAVES) {
+			const result = slots(name);
+			if ('error' in result) throw new Error(result.error);
+			expect(result.total).toBe(1);
+			expect(result.lines).toHaveLength(1);
+			expect(result.lines[0]?.via).toEqual([save]);
+		}
+		expect(slots('perception')).toMatchObject({ total: 0, lines: [] });
+	});
+
+	it('meets the ordinary bonus-type rule at a member also aimed at by name', () => {
+		const slots = walk(
+			enrol('@save += 1 as item', 'Cloak of Protection'),
+			enrol('saves.str += 2 as item', 'Ring of Strength Saves'),
+		);
+		const str = slots('saves.str');
+		if ('error' in str) throw new Error(str.error);
+		expect(str.total).toBe(2);
+		expect(str.lines.find((line) => line.label === 'Cloak of Protection')?.suppressed).not.toBeNull();
+		expect(slots('saves.dex')).toMatchObject({ total: 1 });
+	});
+
+	it('reaches a member in two of the listed groups once, naming both', () => {
+		const slots = walk(enrol('@save, @check += -1 as status', 'Frightened'));
+		const dex = slots('saves.dex');
+		if ('error' in dex) throw new Error(dex.error);
+		expect(dex.total).toBe(-1);
+		expect(dex.lines).toHaveLength(1);
+		expect(dex.lines[0]?.via).toEqual([save, check]);
+		expect(slots('perception')).toMatchObject({ total: -1 });
+	});
+
+	it('applies two different untyped rows aimed at one group both', () => {
+		const slots = walk(enrol('@save += 1', 'Bless'), enrol('@save += 1', 'Aura'));
+		expect(slots('saves.wis')).toMatchObject({ total: 2 });
+	});
+
+	it('refuses every member\'s slot on an amount that will not resolve, naming the row', () => {
+		const slots = walk(enrol('@save += nonsense', 'Cursed cloak'));
+		for (const name of SAVES) {
+			const result = slots(name);
+			expect('error' in result && result.error).toContain('Cursed cloak');
+		}
+	});
+
+	it('contributes nothing for an undeclared group, an empty one, a mixed list or a member condition', () => {
+		for (const part of [
+			'@saves += 1',
+			'@empty += 1',
+			'@save, perception += 1',
+			'@save += 1 where: Training == 0',
+			'@ += 1',
+		]) {
+			const slots = walk(enrol(part, 'Charm'));
+			for (const name of [...SAVES, 'perception']) {
+				expect(slots(name)).toMatchObject({ total: 0, lines: [] });
+			}
+		}
+	});
+
+	it('keeps a declared group beside an undeclared one in the same list', () => {
+		expect(walk(enrol('@saves, @check += 1', 'Charm'))('perception')).toMatchObject({ total: 1 });
+	});
+
+	it('leaves every total the same whichever order the pushes come in', () => {
+		const pushes = [
+			enrol('@save += 1 as item', 'Cloak'),
+			enrol('saves.str += 2 as item', 'Ring'),
+			enrol('@save, @check += -1 as status', 'Frightened'),
+			enrol('@check += 1', 'Guidance'),
+		];
+		const totals = (list: ModifierPush[]) =>
+			[...SAVES, 'perception'].map((name) => {
+				const result = walk(...list)(name);
+				return 'error' in result ? result.error : result.total;
+			});
+		expect(totals([...pushes].reverse())).toEqual(totals(pushes));
+		expect(totals([pushes[2], pushes[0], pushes[3], pushes[1]] as ModifierPush[])).toEqual(
+			totals(pushes),
+		);
 	});
 });

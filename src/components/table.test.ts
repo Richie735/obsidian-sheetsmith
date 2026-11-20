@@ -1527,6 +1527,20 @@ describe('table publishes a declared row', () => {
 		}
 	});
 
+	it('labels a published row by its own text and short, and a column total by nothing (published-name-labels)', () => {
+		const labelled: TableConfig = {
+			...published,
+			columns: [{ key: 'Uses', type: 'number', total: true }, ...(published.columns ?? [])],
+			rows: [{ label: '[[Perception]]', short: 'Perc', key: 'perception', values: { ability: 'abilities.WIS' } }],
+		};
+		const named = table.scopeValues?.(null, labelled)?.named ?? {};
+		// A link in the row's label is its text, as the card draws it.
+		expect(named.perception?.label).toBe('Perception');
+		expect(named.perception?.short).toBe('Perc');
+		// A total supplies no label, so the walk reads its key.
+		expect(named.Uses?.label).toBeUndefined();
+	});
+
 	it('publishes only the rows carrying a key', () => {
 		const scope = sheetWith(published, stored(BODY, published));
 		expect(scope('skills.Acrobatics')).toBeUndefined();

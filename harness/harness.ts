@@ -39,6 +39,7 @@ import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { capturePosture, restorePosture } from '../src/view/sheet-posture';
 import { renderGrid, walkLayout } from '../src/view/grid-cells';
 import { applyDecorations, bufferLinesIn, choiceLinesIn, inPlayDecorations, stateLinesIn } from '../src/view/placement-decorations';
+import { createHeadlineFit, resizeObserverOf } from '../src/view/headline-fit';
 import { revealWhenTruncated } from '../src/ui/truncation';
 import { closePopover } from '../src/ui/popover';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
@@ -77,6 +78,8 @@ import {
 	STATE_DEFINITIONS,
 	RING_END_DEFINITIONS,
 	ringEndSamples,
+	RING_MARK_DEFINITIONS,
+	ringMarkSamples,
 	ROSTER_CARD_FORM_ROWS,
 	rosterCardDefinitions,
 	poolGrantSamples,
@@ -84,6 +87,9 @@ import {
 	POOL_GRANT_VARIANTS,
 	modifierOptionsSamples,
 	OPTION_DEFINITIONS,
+	GROUP_TARGET_GROUPS,
+	groupTargetSamples,
+	GroupTargetVariant,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { installStandInRenderer } from './stand-in-markdown';
@@ -128,6 +134,7 @@ type StateName =
 	| 'companion-picture'
 	| 'companion-mook'
 	| 'companion-npc'
+	| 'companion-npc-list'
 	| 'companion-empty'
 	| 'markdown'
 	| 'modifier-states'
@@ -138,12 +145,19 @@ type StateName =
 	| 'modifier-states-roster-card-two'
 	| 'modifier-states-ring-end'
 	| 'modifier-states-ring-end-off'
+	| 'modifier-set-ring-mark'
 	| 'modifier-options'
+	| `group-target-${GroupTargetVariant}`
 	| `pool-grant-${PoolGrantVariant}`;
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 /** The grant sheets (`poolGrantSamples`), one state per variant, from its one list. */
 const POOL_GRANT_STATES: readonly string[] = POOL_GRANT_VARIANTS.map((variant) => `pool-grant-${variant}`);
+
+/** The group-target sheets (`groupTargetSamples`), one state per variant. */
+const GROUP_TARGET_STATES: readonly string[] = ['saves', 'stacking', 'frightened', 'errors', 'long', 'inherit-off'].map(
+	(variant) => `group-target-${variant}`,
+);
 
 interface Live {
 	config: ComponentConfig;
@@ -211,6 +225,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'companion-picture') return companionSamples('picture');
 	if (name === 'companion-mook') return companionSamples('mook');
 	if (name === 'companion-npc') return companionSamples('npc');
+	if (name === 'companion-npc-list') return companionSamples('npc-list');
 	if (name === 'companion-empty') return companionSamples('empty');
 	if (name === 'markdown') return markdownSamples();
 	if (name === 'modifier-states') return modifierStatesSamples('all');
@@ -222,7 +237,11 @@ function samplesFor(name: StateName): Sample[] {
 	}
 	if (name === 'modifier-states-ring-end') return ringEndSamples(true);
 	if (name === 'modifier-states-ring-end-off') return ringEndSamples(false);
+	if (name === 'modifier-set-ring-mark') return ringMarkSamples();
 	if (name === 'modifier-options') return modifierOptionsSamples();
+	if (name.startsWith('group-target-')) {
+		return groupTargetSamples(name.slice('group-target-'.length) as GroupTargetVariant);
+	}
 	if (name.startsWith('pool-grant-')) {
 		return poolGrantSamples(name.slice('pool-grant-'.length) as PoolGrantVariant);
 	}
@@ -246,41 +265,39 @@ let formsTint: string | null = null;
  */
 function layoutFor(name: StateName): Layout {
 	const built = withTint(harnessLayout(samplesFor(name)), formsTint);
+	/** The layout with `definitions` ahead of its own, so the editor opens on them. */
+	const enrol = (definitions: readonly unknown[]): Layout => ({
+		...built,
+		modifiers: [...definitions, ...(built.modifiers ?? [])] as Layout['modifiers'],
+	});
 	// The states sheets enrol in Cat Form, which goes ahead of the layout's own
 	// so the editor opens on a change aimed at a level.
 	if (name === 'modifier-states' || name === 'modifier-states-cycle') {
-		return {
-			...built,
-			modifiers: [...STATE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(STATE_DEFINITIONS);
 	}
 	// The dropdowns sheet's form enrols in Beast shape, which goes ahead of the
 	// layout's own so the editor opens on a change choosing an option.
 	if (name === 'modifier-options') {
-		return {
-			...built,
-			modifiers: [...OPTION_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(OPTION_DEFINITIONS);
+	}
+	// The group-target sheets declare the groups their rows aim at.
+	if (name.startsWith('group-target-')) {
+		return { ...built, modifierGroups: [...GROUP_TARGET_GROUPS] };
 	}
 	// The ring-end sheets enrol in Cat Form, whether or not it is in play.
 	if (name === 'modifier-states-ring-end' || name === 'modifier-states-ring-end-off') {
-		return {
-			...built,
-			modifiers: [...RING_END_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(RING_END_DEFINITIONS);
+	}
+	// The ring-mark sheet's form in play raises Nature in both components.
+	if (name === 'modifier-set-ring-mark') {
+		return enrol(RING_MARK_DEFINITIONS);
 	}
 	if (name in ROSTER_CARD_FORM_ROWS) {
 		const rows = ROSTER_CARD_FORM_ROWS[name as keyof typeof ROSTER_CARD_FORM_ROWS];
-		return {
-			...built,
-			modifiers: [...rosterCardDefinitions(rows), ...(built.modifiers ?? [])] as Layout['modifiers'],
-		};
+		return enrol(rosterCardDefinitions(rows));
 	}
 	if (name !== 'notes') return built;
-	return {
-		...built,
-		modifiers: [...NOTE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
-	};
+	return enrol(NOTE_DEFINITIONS);
 }
 
 /** The layout with Wild Shape's `tint` set, where the query asks for one. */
@@ -654,6 +671,21 @@ const openRecords = new Map<string, Set<number>>([
  */
 let sheetRoot: HTMLElement | null = null;
 
+/**
+ * The sheet's headline fit pass, one for the page as the view owns one
+ * (`view/headline-fit.ts`), disconnected before every rebuild.
+ */
+const headlineFit = createHeadlineFit(resizeObserverOf(document.body));
+/*
+ * The one door a measuring script has into it. A value injected straight into
+ * a capped field or derived resizes nothing an observer sees, as a component's
+ * own repaint does not, and the component refits on that paint; a script
+ * setting `value` from outside has no paint, so it asks here
+ * (`harness/measure-pool-headline.mjs`).
+ */
+(window as unknown as { sheetsmithRefitHeadlines: () => void }).sheetsmithRefitHeadlines = () =>
+	headlineFit.refitAll();
+
 function renderSheet(into: HTMLElement): void {
 	/*
 	 * The view's own first step on a rebuild (`SheetView.renderSheet`): every
@@ -662,6 +694,7 @@ function renderSheet(into: HTMLElement): void {
 	 * here and nowhere in the app, which is the instrument and not the plugin.
 	 */
 	closePopover();
+	headlineFit.disconnect();
 	const view = into.createDiv('sheetsmith-view');
 	sheetRoot = view;
 
@@ -749,6 +782,10 @@ function renderSheet(into: HTMLElement): void {
 		),
 		revealWhenTruncated,
 	);
+
+	// The view's own pass after the decorations: every stamped headline fitted
+	// and watched for a resize.
+	headlineFit.watch(grid);
 
 	/*
 	 * The view's own last step: a modifier form the render before this one left
@@ -954,6 +991,27 @@ function setText(size: string): void {
 }
 
 /**
+ * The theme's `--corner-shape`, or the app's own when `null`.
+ *
+ * The calibrated stylesheet sets it to `round`, the app's default, so until this
+ * existed every shot drew a corner the way a circle draws one and a rule that
+ * restated a shape could not be told from one that followed it. A community
+ * theme in real use sets `superellipse(1.1)` on `.theme-dark`, and the app's own
+ * `button` rule passes it to every `<button>` on a sheet through
+ * `--button-corner-shape` (`docs/features/modifier-set-ring-mark.md`).
+ *
+ * On `body` because that is where the app declares the variables built from it:
+ * `--button-corner-shape: var(--corner-shape)` is resolved where it is
+ * declared, so a value set lower down would reach nothing that reads the
+ * button's. Inline so it wins over the palette blocks on the same element, as a
+ * theme's later stylesheet does.
+ */
+function setCornerShape(shape: string | null): void {
+	if (shape === null) document.body.style.removeProperty('--corner-shape');
+	else document.body.style.setProperty('--corner-shape', shape);
+}
+
+/**
  * Light or dark, without disturbing the other classes body carries.
  *
  * It used to be an assignment to `className`, which was fine while the theme was
@@ -1049,6 +1107,10 @@ document
  * through **State**, which breaks a component's config and leaves the file
  * perfectly parseable where it is.
  *
+ * And one for the theme's corner: `&corner=<corner-shape>` sets the theme's
+ * `--corner-shape`, `&corner=squircle` or `&corner=superellipse(1.1)`, so a
+ * shape the calibrated `round` hides can be photographed (`setCornerShape`).
+ *
  * And one for the fold: `&bounded` holds the surface to the window's height, so
  * it scrolls inside itself the way a leaf scrolls inside a workspace. The
  * default is the opposite — the pane grows and a shot captures the whole surface
@@ -1101,6 +1163,8 @@ function applyQuery(): void {
 	setText(text);
 	press('text', text);
 
+	setCornerShape(params.get('corner'));
+
 	// Before the state loads, since the layout a state draws carries it.
 	formsTint = params.get('tint');
 	const wanted = params.get('state');
@@ -1142,6 +1206,7 @@ function applyQuery(): void {
 			wanted === 'companion-picture' ||
 			wanted === 'companion-mook' ||
 			wanted === 'companion-npc' ||
+			wanted === 'companion-npc-list' ||
 			wanted === 'companion-empty' ||
 			wanted === 'markdown' ||
 			wanted === 'modifier-states' ||
@@ -1152,7 +1217,9 @@ function applyQuery(): void {
 			wanted === 'modifier-states-roster-card-two' ||
 			wanted === 'modifier-states-ring-end' ||
 			wanted === 'modifier-states-ring-end-off' ||
+			wanted === 'modifier-set-ring-mark' ||
 			wanted === 'modifier-options' ||
+			GROUP_TARGET_STATES.includes(wanted ?? '') ||
 			POOL_GRANT_STATES.includes(wanted ?? '')
 			? (wanted as StateName)
 			: 'populated',

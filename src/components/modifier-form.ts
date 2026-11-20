@@ -90,8 +90,10 @@ import {
 	StateTarget,
 	BufferTarget,
 	ChoiceTarget,
+	ModifierGroup,
 	TypedEffect,
 } from '../types';
+import { renderGroupChips } from './group-chips';
 import { bindEditable } from '../interaction/editable';
 // The two sentences an armed control says, shared with the two delete glyphs
 // (`interaction/arm-to-confirm.ts`). The *gesture* is not shared: this control's
@@ -101,7 +103,9 @@ import { bindEditable } from '../interaction/editable';
 // the whole of what says a press is about to be irreversible.
 import { armedName, armedPrompt } from '../interaction/arm-to-confirm';
 import {
+	groupTargetOf,
 	isNoteOnly,
+	spellGroups,
 	spellTypedEffect,
 	unspellableColumn,
 	unspellableName,
@@ -235,6 +239,12 @@ export interface ModifierFormOptions {
 	 * offers none.
 	 */
 	choices?: readonly ChoiceTarget[];
+	/**
+	 * The layout's modifier groups, for **Value**'s **Modifier groups** group,
+	 * first (`docs/features/table-row-modifier-target.md` D11). Absent offers
+	 * none.
+	 */
+	groups?: readonly ModifierGroup[];
 	bonusTypes: readonly string[];
 	/**
 	 * Paint a Lucide icon into an element.
@@ -308,6 +318,15 @@ export function fillTargetOptions(
 	 * (D1), and the group heading is what tells them apart.
 	 */
 	choices: readonly ChoiceTarget[] = [],
+	/**
+	 * The layout's modifier groups, offered as their own group, **first**, each
+	 * by its label and valued as a cell spells it, `@save`
+	 * (`docs/features/table-row-modifier-target.md` D11). Headed **Modifier
+	 * groups** and never **Groups**: a Group is a container, and a Record set
+	 * already groups its records under headers. Absent or empty, the list is the
+	 * one it always was.
+	 */
+	groups: readonly ModifierGroup[] = [],
 ): void {
 	const own = new Set([
 		...states.filter((state) => state.column === undefined).map((state) => state.name),
@@ -316,11 +335,18 @@ export function fillTargetOptions(
 	const arithmetic = accepting.filter((target) => !own.has(target.name));
 	const taken = new Set([...arithmetic.map((target) => target.name), ...own]);
 	const notesOnly = notable.filter((target) => !taken.has(target.name));
-	if (notesOnly.length === 0 && states.length === 0 && buffers.length === 0 && choices.length === 0) {
+	if (
+		notesOnly.length === 0 &&
+		states.length === 0 &&
+		buffers.length === 0 &&
+		choices.length === 0 &&
+		groups.length === 0
+	) {
 		for (const target of arithmetic) option(select, target.name, target.label);
 		return;
 	}
-	const groups: [string, readonly { value: string; label: string }[]][] = [
+	const sections: [string, readonly { value: string; label: string }[]][] = [
+		[TEXT.modifierGroups, groups.map((group) => ({ value: spellGroups([group.name]), label: group.label }))],
 		['Takes modifiers', arithmetic.map((target) => ({ value: target.name, label: target.label }))],
 		[
 			'Levels and flags',
@@ -333,7 +359,7 @@ export function fillTargetOptions(
 		['Dropdowns', choices.map((choice) => ({ value: choiceOptionValue(choice.name), label: choice.label }))],
 		['Notes only', notesOnly.map((target) => ({ value: target.name, label: target.label }))],
 	];
-	for (const [label, members] of groups) {
+	for (const [label, members] of sections) {
 		if (members.length === 0) continue;
 		const group = select.createEl('optgroup');
 		group.label = label;
@@ -341,6 +367,75 @@ export function fillTargetOptions(
 			group.createEl('option', { value: member.value, text: member.label });
 		}
 	}
+}
+
+/** A **Value** select's group half: the option it shows, and the list behind it. */
+export interface GroupPick {
+	/** The select's value: the first group's spelling, or blank for `@` alone. */
+	value: string;
+	/** Every group the target lists, in order. */
+	groups: readonly string[];
+}
+
+/**
+ * The group half of a **Value** select, once `fillTargetOptions` has filled it
+ * (`docs/features/table-row-modifier-target.md` D11), or null where the target
+ * is a published name and the caller's own branches stand.
+ *
+ * **One spelling for the sheet's form and the layout editor's Changes select**,
+ * on `fillTargetOptions`' argument: the select shows the first group, a group
+ * nothing declares is carried as one extra option saying so — the stray-option
+ * rule — and `@` alone shows the blank.
+ */
+export function pickGroups(
+	select: HTMLSelectElement,
+	target: string,
+	declared: readonly ModifierGroup[],
+): GroupPick | null {
+	const grouped = groupTargetOf(target);
+	if (grouped === null) return null;
+	const first = grouped.groups[0];
+	const value = first === undefined ? '' : spellGroups([first]);
+	if (first !== undefined && !declared.some((group) => group.name === first)) {
+		option(select, value, `${first} (not declared)`);
+	}
+	return { value, groups: grouped.groups };
+}
+
+/**
+ * Whether a **Value** option names a group, which is the onto-a-group branch
+ * both surfaces take: the list becomes that one group, and the column and the
+ * option go, since a level, a buffer and a dropdown are a named member's
+ * address only.
+ */
+export function namesGroups(value: string): boolean {
+	return groupTargetOf(readTargetOption(value).target) !== null;
+}
+
+/**
+ * The chips under a **Value** select once a group is chosen (D11), into the
+ * field the caller labelled `TEXT.modifierGroups`: a chip per group and **Add a
+ * group** for the rest, which is how one part names several. Nothing where the
+ * list names no group. Every change arrives as the whole target, spelled
+ * `@a, @b`; removing the last leaves `@`, which spells and changes nothing.
+ */
+export function renderGroupPick(
+	into: HTMLElement,
+	pick: GroupPick,
+	declared: readonly ModifierGroup[],
+	options: {
+		disabled?: boolean;
+		icon: (into: HTMLElement, name: string) => void;
+		onTarget: (target: string) => void;
+	},
+): void {
+	renderGroupChips(into, {
+		chosen: pick.groups,
+		declared,
+		...(options.disabled === undefined ? {} : { disabled: options.disabled }),
+		icon: options.icon,
+		onChange: (next) => options.onTarget(spellGroups(next)),
+	});
 }
 
 /** Said of the one **Option** line the dropdown did not put there. */
@@ -1188,21 +1283,42 @@ function renderFields(
 	const address = addressOf(shapesOf(states), shown.target, shown.column ?? null);
 	const aimed = address.kind === 'state' ? stateOf(states, shown.target, shown.column) : undefined;
 	const strayColumn = address.kind === 'stray' ? (shown.column ?? null) : null;
-	/** The option this part's own value is, a state's, a stray column's or a plain one. */
+	const changes = select('Value', 'target');
+	const declaredGroups = options.groups ?? [];
+	// The editor's own groups, through the one helper, so the sheet and the
+	// pane offer one list.
+	fillTargetOptions(
+		changes,
+		options.targets,
+		options.noteTargets ?? [],
+		states,
+		buffers,
+		choices,
+		declaredGroups,
+	);
+	/**
+	 * The groups this part names, where its target is a list of them (D11),
+	 * through the helper the editor's Changes select shares.
+	 */
+	const grouped = pickGroups(changes, shown.target, declaredGroups);
+	/** The option this part's own value is: a group's, a state's, a stray column's or a plain one. */
 	const ownOption =
-		choosing
+		grouped !== null
+			? grouped.value
+			: choosing
 			? choiceOptionValue(shown.target)
 			: aimed !== undefined
 			? stateOptionValue(aimed.name, aimed.column ?? null)
 			: strayColumn !== null
 				? stateOptionValue(shown.target, strayColumn)
 				: shown.target;
-	const changes = select('Value', 'target');
-	if (shown.target === '') option(changes, '', 'Choose a value');
-	// The editor's own groups, through the one helper, so the sheet and the
-	// pane offer one list.
-	fillTargetOptions(changes, options.targets, options.noteTargets ?? [], states, buffers, choices);
-	if (choosing && chosenDropdown === undefined && shown.target !== '') {
+	if (shown.target === '' || ownOption === '') {
+		// The blank goes first, ahead of every group.
+		changes.prepend(changes.createEl('option', { value: '', text: 'Choose a value' }));
+	}
+	if (grouped !== null) {
+		// A group's stray option, where nothing declares it, is `pickGroups`'s.
+	} else if (choosing && chosenDropdown === undefined && shown.target !== '') {
 		// An option change at a name that shows none: carried as written, and
 		// said under the panel's line (D7).
 		const label =
@@ -1241,6 +1357,15 @@ function renderFields(
 			return;
 		}
 		const chosen = readTargetOption(changes.value);
+		/*
+		 * **Onto a group, the list becomes that one group**, and the chips under
+		 * the select add more (D11). A level, a buffer and a dropdown are a named
+		 * member's address only, so the column and the option go.
+		 */
+		if (namesGroups(changes.value)) {
+			put({ target: chosen.target, column: '', option: undefined });
+			return;
+		}
 		const next = stateOf(states, chosen.target, chosen.column);
 		/*
 		 * **A column a cell could not spell is refused here, at the pick**, with
@@ -1271,6 +1396,29 @@ function renderFields(
 			option: undefined,
 		});
 	});
+
+	/*
+	 * **The whole list, under the select, once a group is chosen** (D11): a chip
+	 * per group and **Add a group** for the rest, which is how one part names
+	 * several. Removing the last chip leaves `@`, a list naming no group yet,
+	 * which spells, changes nothing and returns the select to its blank.
+	 */
+	if (grouped !== null && grouped.groups.length > 0) {
+		/*
+		 * A `div` with the label's span rather than `field`'s `<label>`: a label
+		 * wrapping several controls hands a press on its text to the first of
+		 * them, which here is a chip's remove. The row is a named group instead.
+		 */
+		const row = element('div', 'sheetsmith-panel-field sheetsmith-panel-field-chips', fields);
+		row.setAttribute('role', 'group');
+		row.setAttribute('aria-label', TEXT.modifierGroups);
+		element('span', 'sheetsmith-panel-field-label', row, TEXT.modifierGroups);
+		renderGroupPick(row, grouped, declaredGroups, {
+			disabled: !editable,
+			icon: options.icon,
+			onTarget: (target) => put({ target }),
+		});
+	}
 
 	const operator = select('Operator', 'operator');
 	// A level or a flag takes Sets and At least only: Adds to is left out rather

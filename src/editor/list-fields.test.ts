@@ -3076,3 +3076,192 @@ describe('a condition on a columns field, over the registry', () => {
 		},
 	);
 });
+
+describe('a row\'s and an entry\'s own modifier groups (docs/features/table-row-modifier-target.md D12)', () => {
+	const DECLARED = [
+		{ name: 'skill', label: 'Skills' },
+		{ name: 'dex_based', label: 'DX-based' },
+		{ name: 'check', label: 'Checks' },
+	];
+	const SPEC = {
+		description: "More groups this row is in, beside the table's row groups.",
+		inherit: {
+			label: 'Same groups as the table',
+			description: "Off takes this row out of the table's row groups.",
+			from: 'the table',
+		},
+	};
+	const MEMBERS = { spec: SPEC, declared: DECLARED };
+
+	function grouped(record: Record<string, unknown>): HTMLElement {
+		const el = host();
+		renderRowsEditor(el, record, 'rows', 'skills', context, undefined, undefined, { members: MEMBERS });
+		return el;
+	}
+
+	it('draws the inherited groups faint, with no remove, beside the row\'s own', () => {
+		const record = { id: 'skills', groups: ['skill'], rows: [{ label: 'Acrobatics', groups: ['dex_based'] }] };
+		const el = grouped(record);
+		const inherited = el.querySelector('.sheetsmith-group-chip-inherited');
+		expect(inherited?.textContent).toBe('Skills from the table');
+		expect(inherited?.querySelector('button')).toBeNull();
+		const own = el.querySelectorAll('.sheetsmith-group-chip:not(.sheetsmith-group-chip-inherited)');
+		expect(Array.from(own).map((chip) => chip.firstElementChild?.textContent)).toEqual(['DX-based']);
+		// A group the row already inherits is not offered again.
+		const add = el.querySelector<HTMLSelectElement>('.sheetsmith-group-chips-add');
+		expect(Array.from(add?.options ?? []).map((one) => one.value)).toEqual(['', 'check']);
+	});
+
+	it('writes inheritGroups false when the toggle goes off, hiding the inherited chips, and removes it when on', () => {
+		const record = { id: 'skills', groups: ['skill'], rows: [{ label: 'Initiative' }] };
+		let el = grouped(record);
+		const toggle = Array.from(el.querySelectorAll<HTMLLabelElement>('.sheetsmith-entry-check')).find((label) =>
+			label.textContent?.includes('Same groups as the table'),
+		);
+		const box = toggle?.querySelector('input');
+		expect(box?.checked).toBe(true);
+		if (box === null || box === undefined) throw new Error('no toggle');
+		box.checked = false;
+		box.dispatchEvent(new Event('change'));
+		expect(record.rows[0]).toEqual({ label: 'Initiative', inheritGroups: false });
+		el = grouped(record);
+		expect(el.querySelector('.sheetsmith-group-chip-inherited')).toBeNull();
+		const again = el.querySelector<HTMLInputElement>('.sheetsmith-member-groups .sheetsmith-entry-check input');
+		if (again === null) throw new Error('no toggle');
+		again.checked = true;
+		again.dispatchEvent(new Event('change'));
+		expect(record.rows[0]).toEqual({ label: 'Initiative' });
+	});
+
+	it('adds a group as the row\'s own, and removes the key with the last', () => {
+		const record = { id: 'skills', rows: [{ label: 'Stealth' }] } as Record<string, unknown> & {
+			rows: Record<string, unknown>[];
+		};
+		let el = grouped(record);
+		const add = el.querySelector<HTMLSelectElement>('.sheetsmith-group-chips-add');
+		if (add === null) throw new Error('no add select');
+		add.value = 'dex_based';
+		add.dispatchEvent(new Event('change'));
+		expect(record.rows[0]?.groups).toEqual(['dex_based']);
+		el = grouped(record);
+		el.querySelector<HTMLButtonElement>('.sheetsmith-group-chip-remove')?.click();
+		expect('groups' in (record.rows[0] ?? {})).toBe(false);
+	});
+
+	it('draws nothing on a layout declaring no group, so the list is the one it was', () => {
+		const el = host();
+		renderRowsEditor(el, { id: 'skills', rows: [{ label: 'Stealth' }] }, 'rows', 'skills', context, undefined, undefined, {
+			members: { spec: MEMBERS.spec, declared: [] },
+		});
+		expect(el.querySelector('.sheetsmith-member-groups')).toBeNull();
+	});
+
+	it('draws an entry\'s own groups with no toggle, a Card set having no default', () => {
+		const el = host();
+		const record = { id: 'abilities', entries: [{ key: 'DEX', groups: ['check'] }] };
+		renderEntriesEditor(el, record, 'entries', 'abilities', false, KEY_AND_NAME, context, undefined, undefined, {
+			members: { spec: { description: "The groups this entry's number is in." }, declared: DECLARED },
+		});
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-group-chip')).map((chip) => chip.firstElementChild?.textContent),
+		).toEqual(['Checks']);
+		expect(el.querySelector('.sheetsmith-member-groups .sheetsmith-entry-check')).toBeNull();
+	});
+
+	it('draws the words once under the list, and names the add select for its row', () => {
+		const el = grouped({ id: 'skills', rows: [{ label: 'Stealth' }, { label: 'Athletics' }] });
+		const notes = Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).map((one) => one.textContent);
+		expect(notes.filter((one) => one?.startsWith('More groups'))).toEqual([
+			"More groups this row is in, beside the table's row groups. Off takes this row out of the table's row groups.",
+		]);
+		// Below the buttons, beside the row-value note, never under the last row.
+		const note = Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).find((one) =>
+			one.textContent?.startsWith('More groups'),
+		);
+		const footer = el.querySelector('.sheetsmith-entry-footer');
+		expect(footer !== null && note !== undefined && (footer.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-group-chips-add')).map((one) => one.getAttribute('aria-label')),
+		).toEqual(['Add a group to Stealth', 'Add a group to Athletics']);
+	});
+
+	it('says a row leaving a default there is none of has nothing to leave', () => {
+		const el = grouped({ id: 'skills', rows: [{ label: 'Initiative', inheritGroups: false }] });
+		expect(el.querySelector('.sheetsmith-member-groups .sheetsmith-field-problem')?.textContent).toBe(
+			'The table sets no row groups, so this row has nothing to leave.',
+		);
+		const fine = grouped({ id: 'skills', groups: ['skill'], rows: [{ label: 'Initiative', inheritGroups: false }] });
+		expect(fine.querySelector('.sheetsmith-member-groups .sheetsmith-field-problem')).toBeNull();
+	});
+});
+
+describe('an item\'s short label (docs/features/published-name-labels.md)', () => {
+	const footnotes = (el: HTMLElement): string[] =>
+		Array.from(el.querySelectorAll('.sheetsmith-entry-footnote'))
+			.map((note) => note.textContent ?? '')
+			.filter((text) => text.startsWith('Short is'));
+	const shortInput = (el: HTMLElement): HTMLInputElement => {
+		const input = el.querySelector<HTMLInputElement>('.sheetsmith-detail-field-short input');
+		if (input === null) throw new Error('no Short input');
+		return input;
+	};
+	const type = (input: HTMLInputElement, value: string): void => {
+		input.value = value;
+		input.dispatchEvent(new Event('change'));
+	};
+
+	it('stores a row\'s short trimmed, removes the key when cleared, and writes nothing unchanged', () => {
+		const record = { id: 'saves', rows: [{ label: 'Strength', key: 'STR' }] } as Record<string, unknown> & {
+			rows: Record<string, unknown>[];
+		};
+		const el = host();
+		renderRowsEditor(el, record, 'rows', 'saves', context, undefined, undefined, { short: true });
+		type(shortInput(el), '  STR ');
+		expect(record.rows[0]?.short).toBe('STR');
+		expect(recorded.persists).toBe(1);
+		type(shortInput(el), 'STR');
+		expect(recorded.persists).toBe(1);
+		type(shortInput(el), '   ');
+		expect('short' in (record.rows[0] ?? {})).toBe(false);
+		expect(recorded.persists).toBe(2);
+	});
+
+	it('says row on a rows list and on a track\'s rows, entry on an entries list, once each', () => {
+		let el = host();
+		renderRowsEditor(el, { id: 'saves', rows: [{ label: 'A' }, { label: 'B' }] }, 'rows', 'saves', context, undefined, undefined, {
+			short: true,
+		});
+		expect(footnotes(el)).toHaveLength(1);
+		expect(footnotes(el)[0]).toContain('each row,');
+		el = host();
+		renderEntriesEditor(el, { id: 'a', entries: [{ key: 'STR' }] }, 'entries', 'a', false, KEY_AND_NAME, context, undefined, undefined, {
+			short: true,
+		});
+		expect(footnotes(el)[0]).toContain('each entry,');
+		el = host();
+		renderEntriesEditor(el, { id: 'r', rows: [{ key: 'L1' }] }, 'rows', 'r', true, KEY_AND_NAME, context, undefined, undefined, {
+			short: true,
+		});
+		expect(footnotes(el)[0]).toContain('each row,');
+	});
+
+	it('draws Short before the groups on one detail line', () => {
+		const el = host();
+		renderEntriesEditor(el, { id: 'a', entries: [{ key: 'DEX', groups: ['check'] }] }, 'entries', 'a', false, KEY_AND_NAME, context, undefined, undefined, {
+			short: true,
+			members: { spec: { description: 'Groups.' }, declared: [{ name: 'check', label: 'Checks' }] },
+		});
+		const details = el.querySelectorAll('.sheetsmith-entry-detail');
+		expect(details).toHaveLength(1);
+		const fields = Array.from(details[0]?.querySelectorAll('.sheetsmith-detail-field') ?? []);
+		expect(fields[0]?.classList.contains('sheetsmith-detail-field-short')).toBe(true);
+		expect(details[0]?.querySelector('.sheetsmith-group-chip')).not.toBeNull();
+	});
+
+	it('draws no detail line and no footnote on a list declaring neither', () => {
+		const el = host();
+		renderEntriesEditor(el, { id: 'a', entries: [{ key: 'DEX' }] }, 'entries', 'a', false, KEY_AND_NAME, context);
+		expect(el.querySelector('.sheetsmith-entry-detail')).toBeNull();
+		expect(footnotes(el)).toEqual([]);
+	});
+});

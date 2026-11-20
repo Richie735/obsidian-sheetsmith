@@ -30,6 +30,7 @@ import { planTrigger } from '../view/reset-plan';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import {
 	modifierTargetSource,
+	namedGroups,
 	noteTargets,
 	publishedTargets,
 } from '../formula/modifier-targets';
@@ -77,6 +78,7 @@ const KINDS = [
 	'rows',
 	'columns',
 	'zones',
+	'groups',
 ];
 
 /**
@@ -480,6 +482,7 @@ describe('component registry', () => {
 			'bonusType',
 			'applies',
 			'when',
+			'where',
 			'note',
 		]);
 		// A change is the effect minus the condition, which is the one thing a
@@ -1632,6 +1635,43 @@ describe.each(types)('component "%s"', (type) => {
 		expect(component?.write(result.data, body, config)).toBe(body);
 	});
 
+	it('publishes the modifier groups it lets a value join, and none it does not', () => {
+		/*
+		 * `docs/features/table-row-modifier-target.md` D4: a component declaring a
+		 * `groups` field, or a list whose rows or entries name their own, puts
+		 * those groups on what it publishes — `ScopeEntry.groups`, or an unnamed
+		 * member — so a group change can reach it. Driven generically over the
+		 * component's own example: every groups key the declarations name set to
+		 * one group, and a `columns` field's first publishable column published,
+		 * since a row's published value is what a group reaches.
+		 */
+		const fields = component?.configFields ?? [];
+		const joins =
+			fields.some((field) => field.kind === 'groups') ||
+			fields.some((field) => field.memberGroups !== undefined);
+		const base: Record<string, unknown> = { ...bareConfig(type), ...(component?.example ?? {}) };
+		for (const field of fields) {
+			if (field.kind === 'groups') base[field.key] = ['contract'];
+			if (field.memberGroups !== undefined) {
+				const list = Array.isArray(base[field.key]) ? (base[field.key] as object[]) : [];
+				base[field.key] = list.map((entry) => ({ ...entry, groups: ['contract'] }));
+			}
+			if (field.kind === 'columns' && Array.isArray(base[field.key])) {
+				const columns = base[field.key] as { type?: string; publish?: boolean }[];
+				const at = columns.findIndex(
+					(column) => column.type !== 'text' && column.type !== 'modifier' && column.type !== undefined,
+				);
+				base[field.key] = columns.map((column, index) =>
+					index === at ? { ...column, publish: true } : column,
+				);
+			}
+		}
+		const config = base as unknown as ComponentConfig;
+		const named = namedGroups(modifierTargetSource(config, component));
+		if (joins) expect(named).toContain('contract');
+		else expect(named).toEqual([]);
+	});
+
 	it('declares formulaFields and configFields', () => {
 		expect(Array.isArray(component?.formulaFields)).toBe(true);
 		expect(Array.isArray(component?.configFields)).toBe(true);
@@ -1646,6 +1686,23 @@ describe.each(types)('component "%s"', (type) => {
 			expect(field.label).toBeTruthy();
 			expect(KINDS).toContain(field.kind);
 			expect(field.description).toBeTruthy();
+		}
+	});
+
+	it('declares a short label only on a list whose items the editor can give one, and never as a field', () => {
+		/*
+		 * `docs/features/published-name-labels.md`. The component's own `short`
+		 * is shared and the editor's (**Short label**, under **Label**), so a
+		 * field redeclaring it would draw a second input writing one key; the
+		 * item's is drawn by the two list editors, on the detail line of an
+		 * `'entries'`, `'rows'` or `'track-rows'` list, and declared anywhere else
+		 * it draws nothing and says nothing.
+		 */
+		expect(EDITOR_OWNED_KEYS).toContain('short');
+		for (const field of component?.configFields ?? []) {
+			expect(field.key, `${type} redeclares the shared short label`).not.toBe('short');
+			if (field.shortLabel === undefined) continue;
+			expect(['entries', 'rows', 'track-rows'], `${field.key} cannot draw a short label`).toContain(field.kind);
 		}
 	});
 

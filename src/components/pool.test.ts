@@ -12,6 +12,8 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { closePopover } from '../ui/popover';
+import { refitHeadline } from '../ui/headline-fit';
+import { setClip } from '../test/clipped';
 import { modifierBreakdown } from './modifier-breakdown';
 import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
@@ -142,7 +144,10 @@ describe('pool.scopeValues', () => {
 
 	it('publishes the max as a lazily evaluated display', () => {
 		const published = pool.scopeValues?.({ current: '22' }, config);
+		// Under its fixed word, `src/en.ts`'s, since the name is the Pool's own.
 		expect(published?.named?.max).toEqual({
+			label: 'Maximum',
+			ownWord: true,
 			display: { field: 'max', scope: {} },
 		});
 	});
@@ -156,7 +161,7 @@ describe('pool.scopeValues', () => {
 	it('publishes temp only when the layout asks for it', () => {
 		expect(
 			pool.scopeValues?.({ temp: '4' }, { ...config, hasTemp: true })?.named?.temp,
-		).toEqual({ value: '4', buffer: { label: 'HP', spent: {} } });
+		).toEqual({ label: 'Temporary', ownWord: true, value: '4', buffer: { label: 'HP', spent: {} } });
 		expect(pool.scopeValues?.({ temp: '4' }, config)?.named?.temp).toBeUndefined();
 	});
 
@@ -2445,7 +2450,7 @@ describe('a pool whose max the character owns', () => {
 			pool.scopeValues?.({ current: '22', max: '31' }, { ...config, ...owned }),
 		).toEqual({
 			self: { value: '22' },
-			named: { max: { value: '31' } },
+			named: { max: { label: 'Maximum', ownWord: true, value: '31' } },
 		});
 	});
 
@@ -3477,5 +3482,49 @@ describe('temporary points a modifier grants', () => {
 				fence('current: 22', 'temp: 0', 'spent · Gear · Bear: 4'),
 			);
 		});
+	});
+});
+
+/*
+ * A Pool's number that does not fit its card
+ * (`docs/features/headline-narrow-cell.md`). happy-dom lays nothing out, so a
+ * cut field is staged the way `ui/truncation.test.ts` stages a clipped one, and
+ * measured by the module the view's observer calls.
+ */
+describe('a pool headline that does not fit', () => {
+	const fieldOf = (el: HTMLElement) =>
+		el.querySelector<HTMLInputElement>('.sheetsmith-pool-current') as HTMLInputElement;
+
+	it('is marked over its reading, with the whole value where assistive tech reads it', () => {
+		const el = render({}, { current: '355000' });
+		const field = fieldOf(el);
+		const reading = el.querySelector('.sheetsmith-pool-reading') as HTMLElement;
+		const name = field.getAttribute('aria-label');
+		const described = field.getAttribute('aria-describedby');
+		expect(field.classList.contains('sheetsmith-headline')).toBe(true);
+		setClip(field, 200, 50);
+		refitHeadline(field);
+		expect(field.classList.contains('sheetsmith-headline-cut')).toBe(true);
+		expect(reading.classList.contains('sheetsmith-headline-cut')).toBe(true);
+		expect(field.value).toBe('355000');
+		const mark = reading.querySelector('.sheetsmith-headline-mark');
+		expect(mark?.getAttribute('aria-hidden')).toBe('true');
+		expect(field.getAttribute('aria-label')).toBe(name);
+		expect(field.getAttribute('aria-describedby')).toBe(described);
+		expect(field.hasAttribute('tabindex')).toBe(false);
+	});
+
+	it('is measured again when a step sets its value in code', () => {
+		const el = render({}, { current: '22' });
+		const field = fieldOf(el);
+		setClip(field, 50, 50);
+		refitHeadline(field);
+		expect(field.classList.contains('sheetsmith-headline-cut')).toBe(false);
+		// The step paints optimistically; the clip the new digits would cause is
+		// staged before the press, since happy-dom measures nothing.
+		setClip(field, 200, 50);
+		press(el.querySelectorAll<HTMLButtonElement>('.sheetsmith-pool-step')[1]);
+		expect(field.value).not.toBe('22');
+		expect(field.classList.contains('sheetsmith-headline-cut')).toBe(true);
 	});
 });

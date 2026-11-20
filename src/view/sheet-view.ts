@@ -64,6 +64,7 @@ import { attachTextSuggest, TextSuggest } from './text-suggest';
 import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
 import { layoutVocabulary } from '../formula/vocabulary';
 import { applyDecorations, bufferLinesIn, choiceLinesIn, inPlayDecorations, stateLinesIn, pickTagText } from './placement-decorations';
+import { createHeadlineFit, HeadlineFit, resizeObserverOf } from './headline-fit';
 import { revealWhenTruncated } from '../ui/truncation';
 import { grantEndEdits, RecordedGrants, recordedActiveGrants } from './grant-ends';
 import { readComponents } from './read-components';
@@ -255,6 +256,13 @@ export class SheetView extends TextFileView {
 	 */
 	private markdown: MarkdownPasses;
 	/**
+	 * The one `ResizeObserver` this view owns, keeping every headline's cut
+	 * state true as the sheet is resized (`view/headline-fit.ts`). Made on the
+	 * first render, from the window the sheet is drawn in, and disconnected
+	 * before every rebuild and when the view closes.
+	 */
+	private headlineFit: HeadlineFit | null = null;
+	/**
 	 * Every vault file suggester attached during the render in progress.
 	 *
 	 * `editor/layout-editor.ts`'s own precedent for `FormulaSuggest`, one render
@@ -438,6 +446,7 @@ export class SheetView extends TextFileView {
 		// The outgoing note's embeds go with it: a transclusion loaded for the
 		// file just closed has nothing left to be attached to.
 		this.markdown.end();
+		this.headlineFit?.disconnect();
 		this.contentEl.empty();
 		// A popover and a modifier form both live on document.body, so emptying
 		// this element does not reach either — they would be left pointing at a
@@ -448,6 +457,7 @@ export class SheetView extends TextFileView {
 	}
 
 	async onClose(): Promise<void> {
+		this.headlineFit?.disconnect();
 		closePopover();
 		closeAnchoredPanel();
 	}
@@ -542,6 +552,9 @@ export class SheetView extends TextFileView {
 		const run = ++this.renderId;
 		const root = this.contentEl;
 		root.addClass('sheetsmith-view');
+		// Before anything is rebuilt, so no observer outlives the headlines it
+		// watched, whichever exit below this render takes.
+		this.headlineFit?.disconnect();
 		// Closed before anything else, so every exit below — an error message,
 		// a missing layout, or the grid itself — starts from none standing,
 		// whichever one the render before this took.
@@ -769,6 +782,11 @@ export class SheetView extends TextFileView {
 		),
 			revealWhenTruncated,
 		);
+
+		// Every headline a component stamped, measured and watched for a resize
+		// (`view/headline-fit.ts`), after every component has drawn.
+		this.headlineFit ??= createHeadlineFit(resizeObserverOf(root));
+		this.headlineFit.watch(grid);
 
 		// SPEC §10: sections the layout does not map are left alone — they stay
 		// in the note untouched and simply do not render.

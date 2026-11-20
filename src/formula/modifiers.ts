@@ -50,6 +50,7 @@ import {
 	ModifierOperator,
 	ModifierOutcome,
 	ModifierPhase,
+	ModifierGroup,
 	ModifierPush,
 	TintColour,
 	contestsByValue,
@@ -57,6 +58,7 @@ import {
 } from '../types';
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
 import { isNoteOnly } from '../parse/modifier-cell';
+import { aimedAt, groupAim, GroupIndex, NO_GROUPS, reachOf } from './group-reach';
 import {
 	called,
 	Contribution,
@@ -263,6 +265,8 @@ export interface Contributor extends Contribution {
 	 * on one row apart.
 	 */
 	definition?: string;
+	/** The groups the change reached this value through, where it named groups. */
+	via?: readonly ModifierGroup[];
 }
 
 /** A refusal, held against the target it refuses. */
@@ -359,6 +363,12 @@ export function buildModifierTables(
 	 * did before choices existed.
 	 */
 	choiceShapes: ChoiceShapes = new Map(),
+	/**
+	 * The layout's groups and the values in each (`groupIndex`), read from the
+	 * sheet as it is now, character rows included. Empty is a sheet with none,
+	 * which walks exactly as it did before groups existed.
+	 */
+	groups: GroupIndex = NO_GROUPS,
 ): { slots: ModifierLookup; states: StateLookup; buffers: BufferLookup; choices: ChoiceLookup } {
 	const table = definitionTable(definitions);
 	/**
@@ -412,6 +422,236 @@ export function buildModifierTables(
 		const grantRefused = new Map<string, Refused>();
 		const chosen = new Map<string, ChoiceLine[]>();
 		const choiceRefused = new Map<string, Refused>();
+		/*
+		 * **A change aimed at groups is the same change aimed at each member**
+		 * (D3), expanded here before any reduction runs, so every rule after it —
+		 * stacking, both contests, the two phases, notes, levels and flags, every
+		 * refusal — is per member and unchanged. The amount was evaluated once,
+		 * in the source row's scope, before this; a member contributes nothing to
+		 * it, so an amount that will not resolve refuses every member's slot, on
+		 * §5's rule that one unreadable amount makes a slot publish nothing.
+		 *
+		 * **Four shapes reach nothing and refuse nothing**, each said at the row
+		 * (`formula/sheet.ts`) and told apart by `groupAim`: the reserved member
+		 * condition (D8), on any target; a published name in a list of groups and
+		 * `@` alone (D1); and a group nothing declares or with no member (D7). A
+		 * member that does not accept the change is
+		 * skipped by the rules below exactly as the change aimed at it by name
+		 * would be.
+		 */
+		const aimed = (
+			found: Enrolment,
+		): readonly { found: Enrolment; via?: readonly ModifierGroup[] }[] => {
+			if (found.kind === 'unknown') return [{ found }];
+			const aim = groupAim(found.fields);
+			if (aim.kind === 'name') return [{ found }];
+			if (aim.kind !== 'groups') return [];
+			return reachOf(aim.groups, groups).map(({ member, via }) => ({
+				found: aimedAt(found, member.name),
+				via,
+			}));
+		};
+		/**
+		 * One enrolment, aimed at one value: what every rule below the expansion
+		 * sees. A change aimed at groups arrives here once per member, with the
+		 * groups it came through, and is from then on exactly the change aimed at
+		 * that value by name (`docs/features/table-row-modifier-target.md` D3).
+		 */
+		const take = (
+			found: Enrolment,
+			push: ModifierPush,
+			via: readonly ModifierGroup[] | undefined,
+		): void => {
+			const reached = via === undefined ? {} : { via };
+			/*
+			 * A stray reference, an inactive row and an unfinished typed effect
+			 * all contribute nothing and none of them is an error: the first is
+			 * §4.2's "rendered, not corrected", the second is the condition doing
+			 * its job, and the third is a cell the reader has not finished
+			 * typing. All three are said at the row, which is where the reader is
+			 * looking, and none of them may refuse a slot — an unfinished effect
+			 * that refused would blank a card mid-keystroke.
+			 */
+			if (
+				found.kind === 'unknown' ||
+				found.kind === 'inactive' ||
+				found.kind === 'unfinished'
+			) {
+				return;
+			}
+			const target = found.fields.target;
+			if (target === '') return;
+			/*
+			 * **The note first, and listed whatever the arithmetic does.** A
+			 * condition that will not resolve lists it as not applying, with
+			 * the reason; an amount that will not resolve under a condition
+			 * that holds leaves the note applying, because the note's own
+			 * condition is all that governs it. In walk order and never
+			 * combined: two rows noting the same words are two lines.
+			 */
+			const { note } = found.fields;
+			if (note !== null) {
+				const said: ModifierNote = {
+					label: push.row.label,
+					source: push.source,
+					...(found.definition === null
+						? {}
+						: { definition: found.definition.name }),
+					text: note,
+					suppressed:
+						found.kind === 'unreadable' && found.condition
+							? found.reason
+							: null,
+				};
+				const already = noted.get(target);
+				if (already === undefined) noted.set(target, [said]);
+				else already.push(said);
+			}
+			// A note-only change contributes nothing to the arithmetic.
+			if (found.kind === 'noted') return;
+			/*
+			 * **A dropdown's option, the fifth reduction**, taken first: a
+			 * change carrying `option` is never arithmetic, whatever it is
+			 * aimed at. One aimed at no dropdown, or naming a column, changes
+			 * nothing and refuses nothing (D7); an operator other than Sets, a
+			 * condition that will not resolve and a literal naming no option
+			 * refuse the choice (D3, D4).
+			 */
+			const choice = choiceVerdict(choiceShapes, found);
+			if (choice.kind !== 'none') {
+				if (choice.kind === 'refused') {
+					if (!choiceRefused.has(target)) {
+						choiceRefused.set(target, { label: push.row.label, reason: choice.reason });
+					}
+				} else if (choice.kind === 'set') {
+					const line: ChoiceLine = {
+						label: push.row.label,
+						source: push.source,
+						...(found.definition === null ? {} : { definition: found.definition.name }),
+						option: choice.option,
+						suppressed: null,
+						...(push.inPlay === true ? { inPlay: true } : {}),
+						...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+					};
+					const already = chosen.get(target);
+					if (already === undefined) chosen.set(target, [line]);
+					else already.push(line);
+				}
+				return;
+			}
+			/*
+			 * **A buffer, the fourth reduction.** A change aimed at a name
+			 * whose value is a buffer, with no column, is a grant: reduced by
+			 * target, never reaching the slot. A grant that cannot be one is
+			 * listed with its sentence and grants nothing (D2, D4, D5), text
+			 * among them; only an amount that will not resolve refuses the
+			 * buffer (D11).
+			 */
+			if (aimsAtBuffer(bufferNames, target, found.fields.column)) {
+				const asked = grantAsked(found);
+				if (asked === null) {
+					// Only an unreadable change asks nothing (`grantAsked`): an
+					// applying one always carries its amount, so the kind check
+					// narrows the type rather than skipping a grant.
+					if (found.kind === 'unreadable' && !isNoteOnly(found.fields) && !grantRefused.has(target)) {
+						grantRefused.set(target, { label: push.row.label, reason: found.reason });
+					}
+					return;
+				}
+				const grant: FoundGrant = {
+					...grantVerdict(
+						found.fields.operator,
+						asked,
+						called(found),
+						push.source,
+						push.row.label,
+					),
+					label: push.row.label,
+					source: push.source,
+					...(found.definition === null ? {} : { definition: found.definition.name }),
+					...(push.inPlay === true ? { inPlay: true } : {}),
+					...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+				};
+				const already = granted.get(target);
+				if (already === undefined) granted.set(target, [grant]);
+				else already.push(grant);
+				return;
+			}
+			/*
+			 * **A level or a flag, the third reduction.** Where the change
+			 * names a column, or its target's own value is a state, it is
+			 * reduced by address and never reaches the slot. A column the
+			 * target does not hold contributes nothing and refuses nothing:
+			 * §5's rule for a push at a name the sheet does not publish, said
+			 * at the row (D5).
+			 */
+			const verdict = stateVerdict(shapes, found);
+			if (verdict.kind === 'stray' || verdict.kind === 'quiet') return;
+			if (verdict.kind === 'refused' && verdict.key !== null) {
+				if (!stateRefused.has(verdict.key)) {
+					stateRefused.set(verdict.key, { label: push.row.label, reason: verdict.reason });
+				}
+				return;
+			}
+			if (verdict.kind === 'set' && found.kind === 'applies') {
+				const line: Contributor = {
+					...found.contribution,
+					amount: verdict.position,
+					label: push.row.label,
+					source: push.source,
+					...reached,
+					...(push.inPlay === true ? { inPlay: true } : {}),
+					...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+					...(found.definition === null ? {} : { definition: found.definition.name }),
+				};
+				const already = stated.get(verdict.key);
+				if (already === undefined) stated.set(verdict.key, [line]);
+				else already.push(line);
+				return;
+			}
+			/*
+			 * A boolean amount at a number: refused with the shipped sentence,
+			 * now that the target is known to be no level or flag (D6).
+			 */
+			if (verdict.kind === 'refused') {
+				if (!refused.has(target)) {
+					refused.set(target, { label: push.row.label, reason: verdict.reason });
+				}
+				return;
+			}
+			if (found.kind === 'unreadable') {
+				// A note-only change never refuses a slot, even where its
+				// condition will not resolve: it moves no number, so it cannot
+				// be what stops one.
+				if (isNoteOnly(found.fields)) return;
+				// The first refusal wins, so the message names one row rather
+				// than however many the reader has to read past.
+				if (!refused.has(target)) {
+					refused.set(target, {
+						label: push.row.label,
+						reason: found.reason,
+					});
+				}
+				return;
+			}
+			const line: Contributor = {
+				...found.contribution,
+				label: push.row.label,
+				source: push.source,
+				...reached,
+				...(push.inPlay === true ? { inPlay: true } : {}),
+				...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
+				// The layout's name where the part named one, and nothing where
+				// the row typed its own: a push carries no tier and neither does
+				// the arithmetic, so this is the only place the two differ.
+				...(found.definition === null
+					? {}
+					: { definition: found.definition.name }),
+			};
+			const already = applied.get(target);
+			if (already === undefined) applied.set(target, [line]);
+			else already.push(line);
+		};
 		for (const component of components) {
 			for (const push of component.pushes?.() ?? []) {
 				// A blank part enrols in nothing and is not an error: on an
@@ -428,198 +668,8 @@ export function buildModifierTables(
 				 * is broken would blank an unrelated card, which is the same failure
 				 * the condition-before-amount ordering already exists to prevent.
 				 */
-				for (const found of resolveEnrolments(
-					table,
-					push.part,
-					push.row,
-					calls,
-				)) {
-					/*
-					 * A stray reference, an inactive row and an unfinished typed effect
-					 * all contribute nothing and none of them is an error: the first is
-					 * §4.2's "rendered, not corrected", the second is the condition doing
-					 * its job, and the third is a cell the reader has not finished
-					 * typing. All three are said at the row, which is where the reader is
-					 * looking, and none of them may refuse a slot — an unfinished effect
-					 * that refused would blank a card mid-keystroke.
-					 */
-					if (
-						found.kind === 'unknown' ||
-						found.kind === 'inactive' ||
-						found.kind === 'unfinished'
-					) {
-						continue;
-					}
-					const target = found.fields.target;
-					if (target === '') continue;
-					/*
-					 * **The note first, and listed whatever the arithmetic does.** A
-					 * condition that will not resolve lists it as not applying, with
-					 * the reason; an amount that will not resolve under a condition
-					 * that holds leaves the note applying, because the note's own
-					 * condition is all that governs it. In walk order and never
-					 * combined: two rows noting the same words are two lines.
-					 */
-					const { note } = found.fields;
-					if (note !== null) {
-						const said: ModifierNote = {
-							label: push.row.label,
-							source: push.source,
-							...(found.definition === null
-								? {}
-								: { definition: found.definition.name }),
-							text: note,
-							suppressed:
-								found.kind === 'unreadable' && found.condition
-									? found.reason
-									: null,
-						};
-						const already = noted.get(target);
-						if (already === undefined) noted.set(target, [said]);
-						else already.push(said);
-					}
-					// A note-only change contributes nothing to the arithmetic.
-					if (found.kind === 'noted') continue;
-					/*
-					 * **A dropdown's option, the fifth reduction**, taken first: a
-					 * change carrying `option` is never arithmetic, whatever it is
-					 * aimed at. One aimed at no dropdown, or naming a column, changes
-					 * nothing and refuses nothing (D7); an operator other than Sets, a
-					 * condition that will not resolve and a literal naming no option
-					 * refuse the choice (D3, D4).
-					 */
-					const choice = choiceVerdict(choiceShapes, found);
-					if (choice.kind !== 'none') {
-						if (choice.kind === 'refused') {
-							if (!choiceRefused.has(target)) {
-								choiceRefused.set(target, { label: push.row.label, reason: choice.reason });
-							}
-						} else if (choice.kind === 'set') {
-							const line: ChoiceLine = {
-								label: push.row.label,
-								source: push.source,
-								...(found.definition === null ? {} : { definition: found.definition.name }),
-								option: choice.option,
-								suppressed: null,
-								...(push.inPlay === true ? { inPlay: true } : {}),
-								...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
-							};
-							const already = chosen.get(target);
-							if (already === undefined) chosen.set(target, [line]);
-							else already.push(line);
-						}
-						continue;
-					}
-					/*
-					 * **A buffer, the fourth reduction.** A change aimed at a name
-					 * whose value is a buffer, with no column, is a grant: reduced by
-					 * target, never reaching the slot. A grant that cannot be one is
-					 * listed with its sentence and grants nothing (D2, D4, D5), text
-					 * among them; only an amount that will not resolve refuses the
-					 * buffer (D11).
-					 */
-					if (aimsAtBuffer(bufferNames, target, found.fields.column)) {
-						const asked = grantAsked(found);
-						if (asked === null) {
-							// Only an unreadable change asks nothing (`grantAsked`): an
-							// applying one always carries its amount, so the kind check
-							// narrows the type rather than skipping a grant.
-							if (found.kind === 'unreadable' && !isNoteOnly(found.fields) && !grantRefused.has(target)) {
-								grantRefused.set(target, { label: push.row.label, reason: found.reason });
-							}
-							continue;
-						}
-						const grant: FoundGrant = {
-							...grantVerdict(
-								found.fields.operator,
-								asked,
-								called(found),
-								push.source,
-								push.row.label,
-							),
-							label: push.row.label,
-							source: push.source,
-							...(found.definition === null ? {} : { definition: found.definition.name }),
-							...(push.inPlay === true ? { inPlay: true } : {}),
-							...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
-						};
-						const already = granted.get(target);
-						if (already === undefined) granted.set(target, [grant]);
-						else already.push(grant);
-						continue;
-					}
-					/*
-					 * **A level or a flag, the third reduction.** Where the change
-					 * names a column, or its target's own value is a state, it is
-					 * reduced by address and never reaches the slot. A column the
-					 * target does not hold contributes nothing and refuses nothing:
-					 * §5's rule for a push at a name the sheet does not publish, said
-					 * at the row (D5).
-					 */
-					const verdict = stateVerdict(shapes, found);
-					if (verdict.kind === 'stray' || verdict.kind === 'quiet') continue;
-					if (verdict.kind === 'refused' && verdict.key !== null) {
-						if (!stateRefused.has(verdict.key)) {
-							stateRefused.set(verdict.key, { label: push.row.label, reason: verdict.reason });
-						}
-						continue;
-					}
-					if (verdict.kind === 'set' && found.kind === 'applies') {
-						const line: Contributor = {
-							...found.contribution,
-							amount: verdict.position,
-							label: push.row.label,
-							source: push.source,
-							...(push.inPlay === true ? { inPlay: true } : {}),
-							...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
-							...(found.definition === null ? {} : { definition: found.definition.name }),
-						};
-						const already = stated.get(verdict.key);
-						if (already === undefined) stated.set(verdict.key, [line]);
-						else already.push(line);
-						continue;
-					}
-					/*
-					 * A boolean amount at a number: refused with the shipped sentence,
-					 * now that the target is known to be no level or flag (D6).
-					 */
-					if (verdict.kind === 'refused') {
-						if (!refused.has(target)) {
-							refused.set(target, { label: push.row.label, reason: verdict.reason });
-						}
-						continue;
-					}
-					if (found.kind === 'unreadable') {
-						// A note-only change never refuses a slot, even where its
-						// condition will not resolve: it moves no number, so it cannot
-						// be what stops one.
-						if (isNoteOnly(found.fields)) continue;
-						// The first refusal wins, so the message names one row rather
-						// than however many the reader has to read past.
-						if (!refused.has(target)) {
-							refused.set(target, {
-								label: push.row.label,
-								reason: found.reason,
-							});
-						}
-						continue;
-					}
-					const line: Contributor = {
-						...found.contribution,
-						label: push.row.label,
-						source: push.source,
-						...(push.inPlay === true ? { inPlay: true } : {}),
-						...(push.inPlay === true && push.tint !== undefined ? { tint: push.tint } : {}),
-						// The layout's name where the part named one, and nothing where
-						// the row typed its own: a push carries no tier and neither does
-						// the arithmetic, so this is the only place the two differ.
-						...(found.definition === null
-							? {}
-							: { definition: found.definition.name }),
-					};
-					const already = applied.get(target);
-					if (already === undefined) applied.set(target, [line]);
-					else already.push(line);
+				for (const found of resolveEnrolments(table, push.part, push.row, calls)) {
+					for (const one of aimed(found)) take(one.found, push, one.via);
 				}
 			}
 		}
@@ -897,7 +947,7 @@ export function stackModifiers(
 	let total = 0;
 	let resultTotal = 0;
 	for (const entry of contributions) {
-		const { label, source, definition, operator, type, amount, inPlay, tint } = entry;
+		const { label, source, definition, operator, type, amount, inPlay, tint, via } = entry;
 		const applies = phaseOf(entry);
 		/** Add to the phase this entry landed in, and to no other. */
 		const add = (by: number) => {
@@ -922,6 +972,7 @@ export function stackModifiers(
 				// Carried as `inPlay` is: the rule that a tint means nothing without it
 				// is applied once, where the contributor is built from its push.
 				...(tint === undefined ? {} : { tint }),
+				...(via === undefined ? {} : { via }),
 			});
 
 		if (operator === 'override') {

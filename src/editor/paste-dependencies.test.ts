@@ -151,3 +151,41 @@ describe('pasteDependencies', () => {
 		expect(pasteDependencies(table, { functions: {}, definitions: [] }, target())).toEqual([]);
 	});
 });
+
+describe('a copy joining modifier groups (docs/features/table-row-modifier-target.md D13)', () => {
+	const saves = {
+		id: 'saves',
+		type: 'table',
+		label: 'Saves',
+		position: at(1, 1, 4, 2),
+		groups: ['save'],
+		rows: [{ label: 'Dexterity', key: 'dex', groups: ['dex_based', 'save'] }],
+		columns: [{ key: 'Bonus', type: 'computed', formula: 'mod.self', publish: true }],
+	} as unknown as ComponentConfig;
+	const from: Layout = {
+		name: 'Source',
+		components: [saves],
+		modifierGroups: [
+			{ name: 'save', label: 'Saving throws' },
+			{ name: 'dex_based', label: 'DX-based' },
+		],
+	};
+
+	it('names each group the target lacks, once, and none it declares', () => {
+		const into: Layout = {
+			name: 'Target',
+			components: [],
+			modifierGroups: [{ name: 'save', label: 'Saves' }],
+		};
+		const found = pasteDependencies(saves, copyContext(from, saves), into).filter(
+			(one) => one.group === 'group',
+		);
+		expect(found.map((one) => one.spelled)).toEqual(['the "dex_based" modifier group']);
+	});
+
+	it('names nothing for a copy joining no group', () => {
+		const plain = { ...saves, groups: undefined, rows: [{ label: 'Dexterity' }] } as unknown as ComponentConfig;
+		const found = pasteDependencies(plain, copyContext(from, plain), { name: 'T', components: [] });
+		expect(found.some((one) => one.group === 'group')).toBe(false);
+	});
+});

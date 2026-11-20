@@ -20,6 +20,7 @@
  */
 
 import { getComponent } from '../components';
+import { memberGroupsOf } from '../components/member-groups';
 import { nameSpans, RESERVED_NAMES } from '../formula/expression';
 import { parseFunctions } from '../formula/functions';
 import { componentReferences } from '../formula/rename-names';
@@ -31,10 +32,11 @@ import { changesOf } from '../parse/modifier-definitions';
 import { walkLayout } from '../view/grid-cells';
 import { ComponentConfig, ResetBinding } from '../types';
 
-/** The six kinds of thing, in the order the `Notice` names them. */
+/** The seven kinds of thing, in the order the `Notice` names them. */
 export type DependencyGroup =
 	| 'reset'
 	| 'definition'
+	| 'group'
 	| 'function-differs'
 	| 'function-missing'
 	| 'name-here'
@@ -58,6 +60,7 @@ export interface CarriedBinding {
 export type DependencyDetail =
 	| { kind: 'reset'; trigger: string; declaredHere: boolean; bindings: CarriedBinding[] }
 	| { kind: 'definition'; name: string; targets: string[]; here: boolean }
+	| { kind: 'group'; name: string }
 	| { kind: 'function'; name: string; here: string | null; source: string | null }
 	| { kind: 'name'; name: string; here: string | null };
 
@@ -72,6 +75,7 @@ export interface Dependency {
 const ORDER: readonly DependencyGroup[] = [
 	'reset',
 	'definition',
+	'group',
 	'function-differs',
 	'function-missing',
 	'name-here',
@@ -141,6 +145,20 @@ function definitionTargets(raw: Record<string, unknown>): string[] {
 	return changesOf(raw)
 		.map((change) => (typeof change.target === 'string' ? change.target.trim() : ''))
 		.filter((target) => target !== '');
+}
+
+/**
+ * Every modifier group the copied components name, in first-seen order, read
+ * through each component's own declarations (`memberGroupsOf`).
+ */
+function joinedGroups(copied: readonly ComponentConfig[]): string[] {
+	const found: string[] = [];
+	for (const config of copied) {
+		for (const name of memberGroupsOf(config, getComponent(config.type))) {
+			if (!found.includes(name)) found.push(name);
+		}
+	}
+	return found;
 }
 
 /** The component id a published name belongs to: its first segment. */
@@ -260,6 +278,24 @@ export function pasteDependencies(
 				here: definitionsHere.has(definition.name),
 			},
 		});
+	}
+
+	/*
+	 * **A modifier group the copy joins and the target does not declare**
+	 * (`docs/features/table-row-modifier-target.md` D13). Named, never carried:
+	 * a group is the layout's own vocabulary, so a pasted row naming one reaches
+	 * nothing until the author adds it under **Modifier groups**. Read from the
+	 * one key every member names its groups under, on the component and on each
+	 * entry of its lists, so nothing here learns which component holds a list.
+	 */
+	const groupsHere = new Set(
+		((target.modifierGroups ?? []) as unknown as Record<string, unknown>[]).map((group) =>
+			typeof group.name === 'string' ? group.name.trim() : '',
+		),
+	);
+	for (const name of joinedGroups(copied)) {
+		if (groupsHere.has(name)) continue;
+		add({ group: 'group', spelled: `the "${name}" modifier group`, detail: { kind: 'group', name } });
 	}
 
 	/*

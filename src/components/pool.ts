@@ -25,6 +25,8 @@ import { commitWindow } from '../interaction/commit-window';
 import { stepButton } from '../interaction/hold-repeat';
 import { bindScrub } from '../interaction/scrub';
 import { readFenced, writeFenced } from '../parse/fenced';
+import { TEXT } from '../en';
+import { ownWord } from '../formula/name-label';
 import { publishedFieldNames } from '../formula/resolve';
 import {
 	drainBuffer,
@@ -33,6 +35,7 @@ import {
 	SPENT_PREFIX,
 	wholePoints,
 } from '../formula/modifier-buffers';
+import { refitHeadline, stampHeadline } from '../ui/headline-fit';
 import { showPopover } from '../ui/popover';
 import { formatDerived } from './card-face';
 import {
@@ -803,15 +806,16 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// from either mode, which is the point of the name: a formula
 			// elsewhere on the sheet asks a pool for its ceiling without
 			// knowing where that pool keeps it.
-			named[MAX_KEY] = { value: data?.max };
+			named[MAX_KEY] = { ...ownWord(TEXT.poolMaximum), value: data?.max };
 		} else if (config.max !== undefined) {
-			named[MAX_KEY] = { display: { field: 'max', scope: {} } };
+			named[MAX_KEY] = { ...ownWord(TEXT.poolMaximum), display: { field: 'max', scope: {} } };
 		}
 		if (config.hasTemp === true) {
 			// A buffer a grant may raise, carrying the note's spent records so the
 			// walk folds them without learning this fence (D3). Absent records are
 			// the static read the targets come from.
 			named[TEMP_KEY] = {
+				...ownWord(TEXT.poolTemporary),
 				value: data?.temp,
 				buffer: { label: config.label, spent: recordsOf(data) },
 			};
@@ -1089,6 +1093,17 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		const hint = createDiv({ cls: 'sheetsmith-sr-only', text: POOL_HINT });
 		hint.id = `sheetsmith-pool-hint-${config.id}`;
 		input.setAttribute('aria-describedby', hint.id);
+		/*
+		 * The card's headline, marked where it does not fit and revealed by
+		 * editing it (`docs/features/headline-narrow-cell.md`). The mark is laid
+		 * over the reading, where a cut field fills the first line and the
+		 * ceiling has wrapped under it; it takes no pointer, so every press the
+		 * field, the steppers, the door and the card's router see is unchanged.
+		 */
+		stampHeadline(input, reading);
+		// Measured again on blur too, after an Escape has put the stored value
+		// back, which is a value set in code no paint follows.
+		input.addEventListener('blur', () => refitHeadline(input));
 
 		/**
 		 * Whether the ceiling is the character's own number rather than the
@@ -1257,6 +1272,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				'sheetsmith-pool-temp-empty',
 				tempValue() === 0,
 			);
+			// Every paint may have set the value in code — a step, a scrub, the
+			// optimistic paint after an adjustment — which resizes nothing the
+			// view's observer would see.
+			refitHeadline(input);
 		};
 
 		/**

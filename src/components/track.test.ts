@@ -468,7 +468,8 @@ describe('track.scopeValues', () => {
 			{ values: { value: '1' } },
 			{ ...config, count: undefined, levels: ['Rested', 'One', 'Two'] },
 		);
-		expect(published?.named?.count).toEqual({ value: 2 });
+		// Under its fixed word, `src/en.ts`'s, since the name is the Track's own.
+		expect(published?.named?.count).toEqual({ label: 'Length', ownWord: true, value: 2 });
 	});
 
 	it('publishes a formula count as a lazily evaluated display', () => {
@@ -477,6 +478,8 @@ describe('track.scopeValues', () => {
 			{ ...config, count: 'level' },
 		);
 		expect(published?.named?.count).toEqual({
+			label: 'Length',
+			ownWord: true,
 			display: { field: 'count', scope: {} },
 		});
 	});

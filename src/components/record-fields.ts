@@ -10,6 +10,12 @@
  * about a record's arithmetic, and two copies of "what `full` writes into a
  * record whose ceiling is a formula" could only be tested for still agreeing.
  *
+ * **It also holds the words a list names its records in** — `recordNoun`,
+ * `countOf`, `recordCount`, `recordLabel` — because the record noun is a record
+ * list's config and every reader of it is one of the same two components, so
+ * one spelling of *2 NPCs* lives with the data it counts. How a noun is cased
+ * mid-sentence is not a record's rule and is `ui/noun-in-sentence.ts`'s.
+ *
  * In no registry, declaring no `ComponentDefinition`, importing nothing from
  * `obsidian` and touching no file — the sibling allowlist's terms
  * (`eslint.config.mts`). What it does not hold is anything either component
@@ -29,6 +35,7 @@ import {
 } from '../parse/records';
 import { expressionProblem } from '../formula/expression';
 import { displayText } from '../parse/wikilink';
+import { nounInSentence } from '../ui/noun-in-sentence';
 import { ColumnType, HOLDER_MAX_SOURCE, MaxSource, Placement } from './column-types';
 import { boundedText, TypedField, typedValue, typeOf } from './typed-value';
 import { flagText } from './stored-flag';
@@ -432,7 +439,7 @@ export function skippedSentence(count: number, noun: string): string {
  */
 export function recordLabel(name: string, noun: string): string {
 	const shown = displayText(name).trim();
-	return shown === '' ? `Unnamed ${noun.toLowerCase()}` : shown;
+	return shown === '' ? `Unnamed ${nounInSentence(noun)}` : shown;
 }
 
 /** Every record the list draws, in file order. */
@@ -601,7 +608,7 @@ export function recordWrites(
  * sentence and a group header's count.
  */
 export function countOf(count: number, noun: string): string {
-	return `${count} ${noun.toLowerCase()}${count === 1 ? '' : 's'}`;
+	return `${count} ${nounInSentence(noun)}${count === 1 ? '' : 's'}`;
 }
 
 /** Whether a field stores a value a reset trigger can restore. */
@@ -694,7 +701,7 @@ export function recordEntries(
 			// list knows is that the damage stops at this one record.
 			error: parsed.ok
 				? null
-				: `${parsed.error} Every other ${noun.toLowerCase()} on this list still works.`,
+				: `${parsed.error} Every other ${nounInSentence(noun)} on this list still works.`,
 		};
 	});
 	return records;
@@ -764,7 +771,7 @@ export function recordNoun(config: RecordListConfig): string {
  * one-step tier: two copies of a count's wording can only drift).
  */
 export function recordCount(count: number, readable: number, noun: string): string {
-	if (count >= readable) return `every ${noun.toLowerCase()}`;
+	if (count >= readable) return `every ${nounInSentence(noun)}`;
 	return countOf(count, noun);
 }
 
@@ -798,7 +805,7 @@ export function admittedRecords(
 ): { error: string } | { admitted: ReadonlySet<number>; reach: ResetReach } | null {
 	const condition = heldCondition(reset.where);
 	if (typeof condition !== 'string') return null;
-	const noun = recordNoun(config).toLowerCase();
+	const noun = nounInSentence(recordNoun(config));
 	const admitted = new Set<number>();
 	let readable = 0;
 	let failed = 0;
@@ -956,7 +963,7 @@ export function fieldReset(
 
 	const amounts = new Map<number, number>();
 	if (reset.action === 'formula') {
-		const noun = recordNoun(config).toLowerCase();
+		const noun = nounInSentence(recordNoun(config));
 		const readable = records.filter((record) => record.error === null).length;
 		let failed = 0;
 		let first: { name: string; why: string } | null = null;

@@ -7,6 +7,7 @@
  */
 
 import { referencesName } from '../formula/expression';
+import { entryLabel } from '../formula/name-label';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
 	ComponentConfig,
@@ -18,6 +19,11 @@ import {
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
+import {
+	memberGroupsFault,
+	ownGroups,
+	withGroups,
+} from './member-groups';
 import { modifierBreakdown, movesNumber } from './modifier-breakdown';
 import { sampleNumber, sampleSeed } from './sample-values';
 
@@ -26,6 +32,17 @@ export interface CardSetEntry {
 	key: string;
 	/** Full display name, e.g. "Strength" over "STR". */
 	name?: string;
+	/**
+	 * The author's tight form of the name, as typed (`docs/features/published-name-labels.md`).
+	 * Display text only, and never derived: absent, a tight surface draws the name whole.
+	 */
+	short?: string;
+	/**
+	 * The modifier groups this entry's number is in
+	 * (`docs/features/table-row-modifier-target.md` D4). A set has no default:
+	 * ruling 2 names only Table and Roster.
+	 */
+	groups?: string[];
 }
 
 export interface CardSetConfig extends ComponentConfig {
@@ -79,6 +96,9 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		{
 			key: 'entries',
 			kind: 'entries',
+			// The card draws the entry's key as its abbreviation, which is not
+			// the Short: said here, since only this list's items have a card.
+			shortLabel: { also: 'The card shows the key.' },
 			label: 'Entries',
 			// The set's own words for its two columns. Held here rather than in
 			// the editor's list field, which serves three vocabularies now and
@@ -88,6 +108,10 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 				{ key: 'name', heading: 'Full name' },
 			],
 			addressesEntry: { fence: 'section' },
+			memberGroups: {
+				description:
+					"An entry's own groups are the ones its number is in. A modifier aimed at any of them changes that entry, and its breakdown names the group.",
+			},
 			description:
 				'Each key is the entry name in the note and the abbreviation on the card. Order is display order. Renaming a key moves that entry in every note on this layout.',
 		},
@@ -243,7 +267,10 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		return updates.size === 0 ? '' : writeFenced(null, updates);
 	},
 
-	read(body): ReadResult<CardSetData> {
+	read(body, config): ReadResult<CardSetData> {
+		// An entry's `groups` that is not a list of names refuses the set (D6).
+		const grouped = memberGroupsFault(config.entries);
+		if (grouped !== null) return { ok: false, error: grouped };
 		const parsed = readFenced(body);
 		if (!parsed.ok) return parsed;
 		// No fence yet: editable empty cards, not an error.
@@ -262,13 +289,19 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		const named: Record<string, ScopeEntry> = {};
 		for (const entry of config.entries ?? []) {
 			const raw = data?.values[entry.key];
-			named[entry.key] = {
-				value: raw,
-				display:
-					config.derived === undefined
-						? undefined
-						: { field: 'derived', scope: { value: raw ?? '' } },
-			};
+			named[entry.key] = withGroups(
+				{
+					// The entry's name for a reader, never its key: the key is
+					// the card's abbreviation and stays so (published-name-labels).
+					...entryLabel(entry.name, entry.short),
+					value: raw,
+					display:
+						config.derived === undefined
+							? undefined
+							: { field: 'derived', scope: { value: raw ?? '' } },
+				},
+				ownGroups(entry.groups),
+			);
 		}
 		return { named };
 	},

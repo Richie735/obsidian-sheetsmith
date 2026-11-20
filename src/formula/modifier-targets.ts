@@ -37,10 +37,14 @@ import {
 	StateTarget,
 	BufferTarget,
 	ChoiceTarget,
+	ModifierGroup,
+	NameLabel,
 } from '../types';
+import { GroupIndex, GroupMember } from './group-reach';
 import { referencesName } from './expression';
 import { modifierSlot, SELF_SLOT } from './modifiers';
 import { formulaTexts } from './resolve';
+import { authoredShort, labelPart, nameText } from './name-label';
 
 /**
  * A component as the accepting-set check sees it: what it publishes, and every
@@ -56,6 +60,12 @@ export interface ModifierTargetSource {
 	 * Absent falls back to the id, which is the only name there is then.
 	 */
 	label?: string;
+	/**
+	 * The component's own tight label, trimmed, absent where none was typed
+	 * (`docs/features/published-name-labels.md`). Copied by
+	 * `modifierTargetSource` from `config.short`, as `label` is.
+	 */
+	short?: string;
 	values: ScopeValues;
 	/** Every expression this component's configuration holds. */
 	formulas?: readonly string[];
@@ -198,7 +208,8 @@ export function markedTargets(
  * *not* accepting falling back to the bare identifier — so a popover on an
  * inventory row read `passive_perception — item +2` at a player. A published name
  * always has a label, whether or not anything reads a modifier for it, and the
- * derivation is `label ?? id`, plus ` · key`, exactly as above. One derivation,
+ * derivation is `publishedEntries`' parts, composed at full width by
+ * `formula/name-label.ts`. One derivation,
  * used twice, rather than a second spelling of it in the parser.
  *
  * It answered `ModifierContext.publishes` while a *cell* held the target and the
@@ -210,7 +221,7 @@ export function publishedTargets(
 ): readonly ModifierTarget[] {
 	return components
 		.flatMap((component) => publishedEntries(component))
-		.map(({ name, label }) => ({ name, label }));
+		.map(({ name, label, parts }) => ({ name, label, parts }));
 }
 
 /**
@@ -241,17 +252,25 @@ export function noteTargets(
  * `.states`, on the accepting set's own terms: no note is read, so the editor's
  * picker, the sheet's form and the walk's shapes all reach one answer from the
  * layout alone. A name's own state comes before the columns on its row, and a
- * column is labelled after the name it sits on: `Abilities · stealth · Training`.
+ * column is labelled after the name it sits on: `Skills · Stealth · Training`,
+ * its parts carrying the column so a surface never appends it to a string.
  */
 export function stateTargets(
 	components: readonly ModifierTargetSource[],
 ): readonly StateTarget[] {
 	const found: StateTarget[] = [];
 	for (const component of components) {
-		for (const { name, label, entry } of publishedEntries(component)) {
-			if (entry.state !== undefined) found.push({ name, label, shape: entry.state });
+		for (const { name, label, parts, entry } of publishedEntries(component)) {
+			if (entry.state !== undefined) found.push({ name, label, parts, shape: entry.state });
 			for (const [column, shape] of Object.entries(entry.states ?? {})) {
-				found.push({ name, column, label: `${label} · ${column}`, shape });
+				const withColumn: NameLabel = { ...parts, column };
+				found.push({
+					name,
+					column,
+					label: nameText(withColumn, 'full', { component: true }),
+					parts: withColumn,
+					shape,
+				});
 			}
 		}
 	}
@@ -266,15 +285,15 @@ export function stateTargets(
  * on `stateTargets`' terms: no note is read, so the editor's picker, the
  * sheet's form and the walk all reach one answer from the layout alone. A
  * Pool declares one on `<id>.temp` where its layout asks for temporary points,
- * labelled as the name is: `HP · temp`.
+ * labelled as the name is: `HP · Temporary`.
  */
 export function bufferTargets(
 	components: readonly ModifierTargetSource[],
 ): readonly BufferTarget[] {
 	const found: BufferTarget[] = [];
 	for (const component of components) {
-		for (const { name, label, entry } of publishedEntries(component)) {
-			if (entry.buffer !== undefined) found.push({ name, label, called: entry.buffer.label });
+		for (const { name, label, parts, entry } of publishedEntries(component)) {
+			if (entry.buffer !== undefined) found.push({ name, label, parts, called: entry.buffer.label });
 		}
 	}
 	return found;
@@ -293,8 +312,8 @@ export function choiceTargets(
 ): readonly ChoiceTarget[] {
 	const found: ChoiceTarget[] = [];
 	for (const component of components) {
-		for (const { name, label, entry } of publishedEntries(component)) {
-			if (entry.choice !== undefined) found.push({ name, label, shape: entry.choice });
+		for (const { name, label, parts, entry } of publishedEntries(component)) {
+			if (entry.choice !== undefined) found.push({ name, label, parts, shape: entry.choice });
 		}
 	}
 	return found;
@@ -314,12 +333,22 @@ export function componentLabel(component: ModifierTargetSource): string {
 	return component.label ?? component.id;
 }
 
+/** A component's own part of every name it publishes: its id, its label, its short. */
+function componentPart(component: ModifierTargetSource): NameLabel['component'] {
+	return { id: component.id, ...labelPart(componentLabel(component), component) };
+}
+
 /** One published name, with the entry behind it. */
 export interface PublishedEntry {
 	/** The name a formula writes: `armour_class`, or `abilities.STR`. */
 	name: string;
-	/** The label a picker shows: `Abilities`, or `Abilities · STR`. */
+	/**
+	 * The label a picker shows: `Abilities`, or `Abilities · Strength`. Composed
+	 * from `parts` at full width, never built inline, and never split.
+	 */
 	label: string;
+	/** What the name is called, as parts, for a surface drawing another width. */
+	parts: NameLabel;
 	/** The key under `named`, or absent for the component's own bare name. */
 	key?: string;
 	/** What the name is worth, which is what says whether it publishes `.left`. */
@@ -341,20 +370,46 @@ export interface PublishedEntry {
 export function publishedEntries(
 	component: ModifierTargetSource,
 ): readonly PublishedEntry[] {
-	const label = componentLabel(component);
+	const own = componentPart(component);
 	const found: PublishedEntry[] = [];
 	if (component.values.self) {
-		found.push({ name: component.id, label, entry: component.values.self });
+		const parts: NameLabel = { component: own };
+		found.push({ name: component.id, label: nameText(parts, 'full'), parts, entry: component.values.self });
 	}
 	for (const [key, entry] of Object.entries(component.values.named ?? {})) {
+		/*
+		 * **The entry's own text, or its key where it has none**, and the author's
+		 * short as typed. Read off what the component published, never off its
+		 * configuration's shape: where a Card set keeps its text and where a Table
+		 * keeps its own is each component's business (`ScopeEntry.label`).
+		 */
+		const parts: NameLabel = { component: own, entry: labelPart(entry.label ?? key, entry) };
 		found.push({
 			name: `${component.id}.${key}`,
-			label: `${label} · ${key}`,
+			label: nameText(parts, 'full', { component: true }),
+			parts,
 			key,
 			entry,
 		});
 	}
 	return found;
+}
+
+/**
+ * Whether a component publishes anything a reader could be shown a name for:
+ * its own value, an entry, or a row in some group with no name of its own
+ * (`docs/features/published-name-labels.md`). What decides whether the editor
+ * offers a **Short label**.
+ *
+ * **Not `editor/published-names.ts`' `publishesAnything`, and the difference is
+ * the point.** That one asks whether a *formula* can read the component, so it
+ * counts rows an aggregate walks and leaves out an unnamed member, which no
+ * formula can spell. This asks whether a *surface* names one of its values: a
+ * row in a group is named on a reach line, and an aggregate's rows are named
+ * nowhere a label reaches.
+ */
+export function namesAnything(component: ModifierTargetSource): boolean {
+	return publishedEntries(component).length > 0 || (component.values.unnamed ?? []).length > 0;
 }
 
 /**
@@ -422,9 +477,11 @@ export function modifierTargetSource(
 		| Pick<ComponentDefinition, 'formulaFields' | 'scopeValues' | 'drawsNotes'>
 		| undefined,
 ): ModifierTargetSource {
+	const short = authoredShort(config.short);
 	return {
 		id: config.id,
 		label: config.label,
+		...(short === undefined ? {} : { short }),
 		values: definition?.scopeValues?.(null, config) ?? {},
 		formulas: definition ? formulaTexts(definition, config) : [],
 		// Absent rather than `false` for a type the registry has, so a source
@@ -432,4 +489,89 @@ export function modifierTargetSource(
 		...(definition === undefined ? { unknownType: true } : {}),
 		...(definition?.drawsNotes === true ? { drawsNotes: true } : {}),
 	};
+}
+
+/**
+ * Every modifier group's members, read off what the components publish
+ * (`docs/features/table-row-modifier-target.md` D4, D5).
+ *
+ * **The one reading of membership, and it is this module's walk**:
+ * `publishedEntries` for a published name carrying `groups`, and
+ * `ScopeValues.unnamed` for a value in a group with no name. So the sheet, the
+ * row's reach line and the editor's counts all read one answer. The sheet calls
+ * it over the values as they are now, a character's rows included; the editor
+ * over the static read, where `openGroups` says what those rows would join.
+ *
+ * Only declared groups are indexed: a value naming a group nothing declares is
+ * not in it, which is D7's "the membership is ignored".
+ */
+export function groupIndex(
+	declared: readonly ModifierGroup[],
+	components: readonly ModifierTargetSource[],
+): GroupIndex {
+	const groups = new Map(declared.map((group) => [group.name, group]));
+	const members = new Map<string, GroupMember[]>();
+	const add = (group: string, member: GroupMember): void => {
+		if (!groups.has(group)) return;
+		const already = members.get(group);
+		if (already === undefined) members.set(group, [member]);
+		else if (!already.some((one) => one.name === member.name)) already.push(member);
+	};
+	for (const component of components) {
+		for (const { name, parts, entry } of publishedEntries(component)) {
+			for (const group of entry.groups ?? []) add(group, { name, parts });
+		}
+		for (const member of component.values.unnamed ?? []) {
+			const parts: NameLabel = { component: componentPart(component), entry: labelPart(member.label, member) };
+			for (const group of member.groups) add(group, { name: member.key, parts });
+		}
+	}
+	return { declared: groups, members };
+}
+
+/**
+ * Every group a component's values name, declared or not, and the groups a row
+ * a character adds would join: what the editor's dangling report reads (D7).
+ */
+export function namedGroups(component: ModifierTargetSource): readonly string[] {
+	const found: string[] = [];
+	const add = (group: string): void => {
+		if (!found.includes(group)) found.push(group);
+	};
+	for (const { entry } of publishedEntries(component)) for (const group of entry.groups ?? []) add(group);
+	for (const member of component.values.unnamed ?? []) for (const group of member.groups) add(group);
+	for (const group of component.values.openGroups ?? []) add(group);
+	return found;
+}
+
+/**
+ * The components whose rows a character adds would join each group, by group:
+ * what tells a group whose only members are such rows from one with none (D7).
+ */
+export function openGroupHolders(
+	components: readonly ModifierTargetSource[],
+): ReadonlyMap<string, readonly string[]> {
+	const found = new Map<string, string[]>();
+	for (const component of components) {
+		for (const group of component.values.openGroups ?? []) {
+			const already = found.get(group);
+			if (already === undefined) found.set(group, [componentLabel(component)]);
+			else already.push(componentLabel(component));
+		}
+	}
+	return found;
+}
+
+/**
+ * The slot keys of every unnamed member whose own component reads `mod.self`:
+ * the unnamed half of `markedTargets`, on its relative rule (D5). A row with no
+ * name has no absolute spelling, so the relative rule is the whole of it.
+ */
+export function markedMembers(components: readonly ModifierTargetSource[]): readonly string[] {
+	return components.flatMap((component) => {
+		const relative = (component.formulas ?? []).some((formula) =>
+			referencesName(formula, SELF_SLOT),
+		);
+		return relative ? (component.values.unnamed ?? []).map((member) => member.key) : [];
+	});
 }

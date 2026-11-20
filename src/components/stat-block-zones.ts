@@ -30,6 +30,7 @@ import { displayText } from '../parse/wikilink';
 import { ZoneColumnType, ZoneType, zoneHeadingKey, zoneHeadingLines } from '../parse/zones';
 import { RenderContext } from '../types';
 import { element } from '../ui/element';
+import { nounInSentence } from '../ui/noun-in-sentence';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import {
 	bindDisclosure,
@@ -632,7 +633,7 @@ function drawTableZone(into: HTMLElement, zone: BodyZone, read: Extract<ZoneRead
 		});
 	});
 	// The Table's own add row, the box's foot.
-	const add = element('button', 'sheetsmith-table-add-button sheetsmith-stat-block-add-action', wrap, `Add ${rowWord.toLowerCase()}`);
+	const add = element('button', 'sheetsmith-table-add-button sheetsmith-stat-block-add-action', wrap, `Add ${nounInSentence(rowWord)}`);
 	add.type = 'button';
 	add.addEventListener('click', () => {
 		status.textContent = `${rowWord} added`;

@@ -422,9 +422,29 @@ describe('cardSet.scopeValues', () => {
 		expect(Object.keys(published?.named ?? {})).toEqual(['STR', 'DEX', 'WIS']);
 		// The stored score, plus the derived the reference actually gets.
 		expect(published?.named?.DEX).toEqual({
+			label: 'Dexterity',
 			value: '16',
 			display: { field: 'derived', scope: { value: '16' } },
 		});
+	});
+
+	it('carries each entry\'s name and the short the author typed, and neither where there is none', () => {
+		// The entry's display text, never its key (`docs/features/published-name-labels.md`):
+		// a blank short is absent, and an entry with no name carries no label, so
+		// the walk reads its key.
+		const published = cardSet.scopeValues?.(null, {
+			...config,
+			entries: [
+				{ key: 'STR', name: 'Strength', short: ' STR ' },
+				{ key: 'DEX', name: 'Dexterity', short: '   ' },
+				{ key: 'WIS' },
+			],
+		});
+		expect(published?.named?.STR?.label).toBe('Strength');
+		expect(published?.named?.STR?.short).toBe('STR');
+		expect(published?.named?.DEX?.short).toBeUndefined();
+		expect(published?.named?.WIS?.label).toBeUndefined();
+		expect(published?.named?.WIS?.short).toBeUndefined();
 	});
 
 	it('publishes the score alone when the group derives nothing', () => {
@@ -432,7 +452,7 @@ describe('cardSet.scopeValues', () => {
 			...config,
 			derived: undefined,
 		});
-		expect(published?.named?.STR).toEqual({ value: '8', display: undefined });
+		expect(published?.named?.STR).toEqual({ label: 'Strength', value: '8', display: undefined });
 	});
 
 	it('publishes only what the layout declares', () => {

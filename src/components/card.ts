@@ -31,6 +31,7 @@ import {
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
+import { groupsFault, ownGroups, withGroups } from './member-groups';
 import {
 	choiceAccountText,
 	choiceOwnDescription,
@@ -85,6 +86,7 @@ export interface CardConfig extends ComponentConfig {
 	effective?: string;
 	/** Hint shown while the note line is empty. */
 	notePlaceholder?: string;
+	groups?: string[];
 	hideLabel?: boolean;
 	hideValue?: boolean;
 	hideNote?: boolean;
@@ -175,6 +177,10 @@ function drawableCard(
 ): { options: CardOption[] } | { error: string } {
 	const entry = valueKey(config);
 	if ('error' in entry) return entry;
+	// A `groups` that is not a list of names refuses the card, on D6 of
+	// `docs/features/table-row-modifier-target.md`: derived membership is refused.
+	const grouped = groupsFault(config.groups);
+	if (grouped !== null) return { error: grouped };
 	return optionList(config);
 }
 
@@ -259,6 +265,13 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			label: 'Note hint',
 			description:
 				'Shown while the note line is empty, e.g. "ft." on a speed card.',
+		},
+		{
+			key: 'groups',
+			kind: 'groups',
+			label: 'Modifier groups',
+			description:
+				"The groups this card's number is in. A modifier aimed at any of them changes this number, and its breakdown names the group.",
 		},
 		{
 			key: 'hideLabel',
@@ -435,6 +448,8 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 	read(body, config): ReadResult<CardData> {
 		const entry = valueKey(config);
 		if ('error' in entry) return { ok: false, error: entry.error };
+		const grouped = groupsFault(config.groups);
+		if (grouped !== null) return { ok: false, error: grouped };
 		const parsed = readFenced(body);
 		if (!parsed.ok) return parsed;
 		// No fence yet: an editable empty card, not an error.
@@ -460,15 +475,20 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		const drawable = drawableCard(config);
 		if ('error' in drawable) return {};
 		const choice = choiceShape(config, drawable.options);
+		// The groups this card's number is in, on its one name (D4).
+		const groups = ownGroups(config.groups);
 		if (choice === undefined) {
 			return {
-				self: {
-					value: data?.value,
-					display:
-						config.derived === undefined
-							? undefined
-							: { field: 'derived', scope: { value: data?.value ?? '' } },
-				},
+				self: withGroups(
+					{
+						value: data?.value,
+						display:
+							config.derived === undefined
+								? undefined
+								: { field: 'derived', scope: { value: data?.value ?? '' } },
+					},
+					groups,
+				),
 			};
 		}
 		/*
@@ -481,16 +501,21 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		 * `marked` are what they were, and every change aimed at the card with an
 		 * amount keeps its meaning (D1).
 		 */
-		if (config.derived === undefined) return { self: { value: data?.value, choice } };
+		if (config.derived === undefined) {
+			return { self: withGroups({ value: data?.value, choice }, groups) };
+		}
 		return {
-			self: {
-				value: data?.value,
-				choice,
-				compute: (resolve, _state, read) => {
-					const chosen = read === undefined ? data?.value : read(config.id, data?.value);
-					return resolve('derived', { value: chosen === undefined ? '' : String(chosen) }, config.id, false);
+			self: withGroups(
+				{
+					value: data?.value,
+					choice,
+					compute: (resolve, _state, read) => {
+						const chosen = read === undefined ? data?.value : read(config.id, data?.value);
+						return resolve('derived', { value: chosen === undefined ? '' : String(chosen) }, config.id, false);
+					},
 				},
-			},
+				groups,
+			),
 		};
 	},
 

@@ -71,11 +71,15 @@ import {
 	BufferAccount,
 	ChoiceAccount,
 	ChoiceShape,
+	GroupReach,
+	ModifierGroup,
 } from '../types';
 import { isNoteOnly } from '../parse/modifier-cell';
+import { series } from '../parse/spelled';
 import { roundSum } from '../formula/expression';
 import { positionWord } from '../formula/modifier-states';
 import { optionWord } from '../formula/modifier-choices';
+import { nameText } from '../formula/name-label';
 
 /**
  * The mark on a number something has been pushed at.
@@ -396,7 +400,7 @@ function qualified(
  * row the same way.
  */
 function identity(
-	line: { source: string; label: string; definition?: string },
+	line: { source: string; label: string; definition?: string; via?: readonly ModifierGroup[] },
 	qualify: boolean,
 ): string {
 	const from = qualify && line.source !== '' ? [line.source] : [];
@@ -432,7 +436,18 @@ function identity(
 		line.definition !== line.label
 			? [line.definition]
 			: [];
-	return [...from, line.label, ...which].join(' · ');
+	/*
+	 * **The group the change reached this value through, last and never
+	 * dropped** (`docs/features/table-row-modifier-target.md` D9): nothing else on
+	 * the line says the modifier was not aimed at this value by name, which is the
+	 * first thing a reader asks of a number that moved. A value in two of the
+	 * groups a part names gets both, as a series.
+	 */
+	const through =
+		line.via === undefined || line.via.length === 0
+			? []
+			: [`via ${series(line.via.map((group) => group.label))}`];
+	return [...from, line.label, ...which, ...through].join(' · ');
 }
 
 /** The arithmetic group's lines, the blank line and the total, as a list. */
@@ -950,7 +965,9 @@ export function modifierOutcomeText(
 	const when = (definition !== null ? definition.when : typed?.when) ?? '';
 	const did = outcomeWords(outcome);
 	const lines = [`${outcome.targetLabel} — ${did}`];
-	if (outcome.suppressed !== null) {
+	if (outcome.reach !== undefined) {
+		lines.push(...reachLines(outcome.reach, outcome.condition, when));
+	} else if (outcome.suppressed !== null) {
 		lines.push(`Not applied: ${outcome.suppressed}`);
 	} else if (outcome.condition !== null) {
 		/*
@@ -975,6 +992,48 @@ export function modifierOutcomeText(
 	// aimed at the same name cannot show, and one line could not say both.
 	if (outcome.noteLine !== undefined) lines.push(outcome.noteLine);
 	return lines.join('\n');
+}
+
+/**
+ * What a part aimed at groups says under its first line
+ * (`docs/features/table-row-modifier-target.md` D10): how far it reached, and
+ * then whatever the groups themselves have to say.
+ *
+ * ```
+ * Saving throws — item +1
+ * Reaches 6 values, only while Worn, which holds now
+ * ```
+ * ```
+ * Saving throws — item +1
+ * Changes 5 of 6 values. Not Saving throws · Strength: a larger item bonus applies.
+ * ```
+ *
+ * **The many-values half is said once, here, at the source row**: each member's
+ * own breakdown is about that member and carries one line for the change, as it
+ * would for a name (D9).
+ */
+function reachLines(
+	reach: GroupReach,
+	condition: boolean | null,
+	when: string,
+): string[] {
+	if (reach.values === 0) return [...reach.said];
+	const lines: string[] = [];
+	if (reach.missed !== null) {
+		const more = reach.more === 0 ? '' : ` and ${reach.more} more`;
+		const reason = reach.missed.reason.replace(/\.?$/, '.');
+		lines.push(
+			`Changes ${reach.changed} of ${reach.values} values. Not ${nameText(reach.missed.parts, 'full', { component: true })}${more}: ${reason}`,
+		);
+	} else {
+		const count = `Reaches ${reach.values} ${reach.values === 1 ? 'value' : 'values'}`;
+		lines.push(
+			condition === null
+				? count
+				: `${count}, only while ${when}, which ${condition ? 'holds' : 'does not hold'} now`,
+		);
+	}
+	return [...lines, ...reach.said];
 }
 
 /**

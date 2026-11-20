@@ -77,6 +77,80 @@ body {
 	   follows the sheet's `em` and the card scales with whatever sets the
 	   sheet's size (docs/UI.md §5: not the vault's text-size setting). */
 	--sheetsmith-card-value-size: 1.75em;
+	/* **The smallest a headline number draws in a narrow card**
+	   (`docs/features/headline-narrow-cell.md`). One step of a minor-third
+	   scale, 1.2, above the largest qualifier any card carries, which is a Pool's
+	   ceiling, `--sheetsmith-qualifier-medium`: the own-value pill and a Pool's
+	   temporary points are `--sheetsmith-qualifier-small`, which that token is
+	   never under (`docs/features/pool-ceiling-text-size.md`). It was spelt
+	   `max(--font-ui-medium, --sheetsmith-qualifier-small)` here, which is the
+	   ceiling's token written out, so naming it changed no size. 1.2 is the
+	   smallest ratio that reads as a rank rather than as two near sizes.
+
+	   **Never under 18.67px**, which is 14pt: the size at which bold text is
+	   large text and needs 3:1 rather than 4.5:1 (`legibility.md` §3). A Pool's
+	   number in its over state is `--interactive-accent`, about 3.2 to 3.9:1 on
+	   the card, and at the 18px the step alone gives at the default size it fell
+	   into the 4.5:1 band. Above 16px too, so a field at the floor never zooms
+	   iOS on tap (19.2 on a phone, where the step already clears both).
+
+	   **Not the app's own step, 15/13**, the ratio from `--font-ui-small` to
+	   `--font-ui-medium` and the obvious derivation: the qualifier token is
+	   `13em / 15` of the sheet, so 15/13 of it is exactly `1em`, and above
+	   17.3px the floor became the sheet's own `1em`, the floor the ruling
+	   refuses (SPEC §13). Read off the element that uses it, as the qualifier
+	   token is. */
+	--sheetsmith-headline-floor: max(18.67px, calc(1.2 * var(--sheetsmith-qualifier-medium)));
+	/* **The headline's size: full wherever three digits fit, then down with the
+	   card to the floor.** Three digits at the bold tabular headline measure
+	   1.921em, and a Card's field pads 2px a side, so three digits fit a content
+	   box `C` while `1.921 s + 4 <= C`: the largest such size is
+	   `(C - 4) / 1.921`, `52.05cqi - 2.08px`, rounded so the line fits rather
+	   than clips. `cqi` resolves on the nearest query container, which is the
+	   card, and the `em` of both bounds on the card's own size.
+
+	   **The middle term has no `em`, by construction**: it is the size at which
+	   three digits fit, which does not depend on the text size, so any `em`
+	   added to it is a size at which they no longer do (measured for
+	   `calc(0.5em + 39cqi)`: a two-unit card at `text=24` clipped `100` by 9px).
+	   A larger sheet moves both bounds and so the width at which shrinking
+	   starts. Nothing here reads the value, so a value change never changes the
+	   size. */
+	--sheetsmith-headline-size: clamp(var(--sheetsmith-headline-floor), calc(52cqi - 2px), var(--sheetsmith-card-value-size));
+	/* **The value under that number, in the same unit**: the pill under a
+	   derived number (a Card's, a Card set tile's, a Roster card's score) and
+	   a Pool's temporary points. They were `--font-ui-small`, which no `em`
+	   reaches, so at `text=24` the number grew to 42px and its pill held 13px.
+	   The `em` term is the token over the app's 15px desktop body
+	   (`--font-ui-medium`, the sheet's `em` in the app, UI.md §5), so whatever
+	   raises the sheet's size raises it with the number. The token itself is
+	   the floor: it is what the app draws at its own size, and on a phone,
+	   where Obsidian sets `--font-ui-small` to 0.937 of a 16px body rather
+	   than 13/15 of it, the `em` term alone came out at 13.9px against the
+	   15px the pill drew. Read off the host's `em`, so it must not be nested.
+
+	   **A value, not a label.** The words ranked at or under the card's heading
+	   — a Pool's *Temp*, a card's abbreviation, its note line — stay at
+	   `--font-ui-smaller` with the heading, since growing them past a heading
+	   that holds still reorders the card: the heading and its rank stay the
+	   app's fixed size, and a larger sheet grows values, not labels (UI.md §5,
+	   Ruling C). */
+	--sheetsmith-qualifier-small: max(var(--font-ui-small), calc(13em / 15));
+	/* **A Pool's ceiling, the qualifier beside its number**
+	   (`docs/features/pool-ceiling-text-size.md`): the app's `--font-ui-medium`
+	   as a floor under the qualifier above. At the app's own size that is
+	   `--font-ui-medium`, so the app draws the ceiling as it always did and a
+	   phone keeps its 16px; above 17.3px of sheet, where 13/15 of it passes the
+	   token, it follows the sheet. So it is never under the temporary points
+	   hanging below it, which take the qualifier, and those never outrank it.
+
+	   **Not `max(--font-ui-medium, 1em)`**, the qualifier's own derivation at
+	   the app's 15/15. It drew the ceiling 24px at `text=24`, and the headline
+	   floor, 1.2 of it, at 28.8px, where a two-unit cell on a 520px sheet fits
+	   `100` at 27.3: every such cell would mark the number
+	   `headline-narrow-cell.md` fitted. Read off the element that uses it, as
+	   the qualifier is. */
+	--sheetsmith-qualifier-medium: max(var(--font-ui-medium), var(--sheetsmith-qualifier-small));
 	/* How tall one row of the sheet's grid is, for a component whose content has
 	   no height the grid could take one from: a block of prose, a picture. Both
 	   put their content out of flow so it cannot decide the box, which leaves the

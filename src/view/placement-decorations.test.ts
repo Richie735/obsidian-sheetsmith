@@ -1140,8 +1140,10 @@ Modifiers: hp.temp >= 10
 		]);
 		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_BOX}`)).not.toBeNull();
 		expect(cellOf(root, 'hp').querySelector(`.${IN_PLAY_MARK}`)?.textContent).toBe('Brown Bear');
-		// The form's change line names the pool it grants at, not only its key.
-		expect(cellOf(root, 'wild_shape').textContent).toContain('HP · temp grants 10');
+		// The form's change line names the pool it grants at, and the buffer by
+		// its word rather than its key: `Temporary` is the Pool's own word, so its
+		// line is led even alone (`docs/features/published-name-labels.md`).
+		expect(cellOf(root, 'wild_shape').textContent).toContain('HP: Temporary grants 10');
 	});
 
 	it('leaves the pool untinted where its own points beat the grant', () => {

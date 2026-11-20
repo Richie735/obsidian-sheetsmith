@@ -4921,6 +4921,173 @@ export function ringEndSamples(inPlay = true): Sample[] {
 	];
 }
 
+/**
+ * Cat Form for the `modifier-set-ring-mark` state: it raises Nature's ring in
+ * the Skills Table and in the Checks Roster, so the one row a form in play set
+ * is tinted and tagged beside its halo (`docs/features/modifier-set-ring-mark.md`).
+ */
+export const RING_MARK_DEFINITIONS = [
+	{
+		name: 'Cat Form',
+		changes: [
+			{ target: 'skills.nature', column: 'Training', operator: 'upgrade', amount: '1' },
+			{ target: 'checks.nature', column: 'Training', operator: 'upgrade', amount: '1' },
+		],
+	},
+];
+
+/**
+ * Rings a modifier set, against the note they draw over
+ * (`docs/features/modifier-set-ring-mark.md`). A Skills Table and a Checks
+ * Roster in its table layout hold the same six rows, so each case is drawn on
+ * both components:
+ *
+ * - Persuasion, stored Untrained under an At least Proficient: drawn ≠ stored.
+ * - Arcana, stored Expertise under the same At least: the floor is met, equal.
+ * - History, stored Proficient under a Sets Proficient: equal.
+ * - Medicine, stored Expertise under a Sets Proficient: lowered, drawn ≠ stored.
+ * - Nature, stored Untrained, raised by Cat Form in play from a Stat block: the
+ *   row tinted and tagged as well.
+ * - Survival, stored Untrained, nothing reaching it: today's ring.
+ * - Religion, stored Proficient under a Sets Untrained: emptied, so the halo
+ *   is drawn round an empty ring.
+ *
+ * And the Inspiration flag, stored off and turned on by a push, so a Track's
+ * flag is in frame. The shots of this state are the halo's before and after.
+ */
+export function ringMarkSamples(): Sample[] {
+	const training = ['Untrained', 'Proficient:', 'Expertise:E'];
+	const stored: [string, string, number][] = [
+		['Persuasion', 'CHA', 0],
+		['Arcana', 'INT', 2],
+		['History', 'INT', 1],
+		['Medicine', 'WIS', 2],
+		['Nature', 'INT', 0],
+		['Survival', 'WIS', 0],
+		['Religion', 'INT', 1],
+	];
+	const keyOf = (label: string) => label.toLowerCase();
+	const both = (row: string, change: string) =>
+		`skills.${row} ${change} in Training; checks.${row} ${change} in Training`;
+	const parts = [
+		['Silver tongue', both('persuasion', '>= 1')],
+		['Scholar', both('arcana', '>= 1')],
+		['Tutor', both('history', '= 1')],
+		['Clumsy hands', both('medicine', '= 1')],
+		['Forgetful', both('religion', '= 0')],
+		['Heroism', 'inspiration = true'],
+	];
+	return [
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				namePosition: 1,
+				columns: [
+					{ key: 'Training', hideHeading: true, type: 'level', levels: training },
+					{
+						key: 'Bonus',
+						type: 'computed',
+						formula: 'Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: stored.map(([label]) => ({ label, key: keyOf(label) })),
+			} as ComponentConfig,
+			body: [
+				'| Skill | Training | Bonus |',
+				'| --- | --- | --- |',
+				...stored.map(([label, , level]) => `| ${label} | ${level} | |`),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 7, row: 1, width: 6, height: 3 },
+				rowHeader: 'Check',
+				hideColumnHeadings: true,
+				stats: [
+					{ key: 'INT', name: 'Intelligence' },
+					{ key: 'WIS', name: 'Wisdom' },
+					{ key: 'CHA', name: 'Charisma' },
+				],
+				derived: 'mod(value + mod.self)',
+				signed: true,
+				columns: [
+					{ key: 'Training', type: 'level', levels: training, hideHeading: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'stat + Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+				rows: stored.map(([label, stat]) => ({ label, stat, key: keyOf(label) })),
+			} as ComponentConfig,
+			body: [
+				'```sheet',
+				'INT: 12',
+				'WIS: 16',
+				'CHA: 10',
+				'```',
+				'',
+				'| Check | Training |',
+				'| --- | --- |',
+				...stored.map(([label, , level]) => `| ${label} | ${level} |`),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'inspiration',
+				type: 'track',
+				label: 'Inspiration',
+				position: { col: 1, row: 3, width: 2, height: 1 },
+				count: 1,
+			} as ComponentConfig,
+			body: '```sheet\nvalue: no\n```',
+		},
+		{
+			config: {
+				id: 'wild_shape',
+				type: 'stat-block',
+				label: 'Wild Shape',
+				position: { col: 3, row: 3, width: 4, height: 2 },
+				recordName: 'Form',
+				fields: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+				exclusive: 'Active',
+				zones: [{ key: 'vitals' }, { key: 'changes' }],
+			} as ComponentConfig,
+			body: ['### Cat Form', '```sheet', 'Active: yes', 'Modifiers: Cat Form', '```'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 1, row: 5, width: 12, height: 2 },
+				rowHeader: 'Item',
+				columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
+				rows: parts.map(([label]) => ({ label })),
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				...parts.map(([label, part]) => `| ${label} | ${part} |`),
+			].join('\n'),
+		},
+	];
+}
+
 export const NOTE_DEFINITIONS = [
 	{
 		name: 'Boots of Elvenkind',
@@ -5202,9 +5369,13 @@ export function markdownSamples(): Sample[] {
  *   Baron Corvan closed after it with every zone filled, his changes raising a
  *   Refresh card beside the block;
  * - `npc`: the same block with Baron Corvan first and open, the Thug closed;
+ * - `npc-list`: the `npc` block with a Record set beside it whose `recordName`
+ *   is also NPC, so the block's **Edit NPCs** and the list's **Add NPC** are on
+ *   one sheet and can be seen agreeing on an all-capitals noun's case
+ *   (`nounInSentence` in `ui/noun-in-sentence.ts`);
  * - `empty`: the Familiar block holding no record.
  */
-export type CompanionVariant = 'familiar' | 'picture' | 'mook' | 'npc' | 'empty';
+export type CompanionVariant = 'familiar' | 'picture' | 'mook' | 'npc' | 'npc-list' | 'empty';
 
 export function companionSamples(variant: CompanionVariant): Sample[] {
 	if (variant === 'familiar' || variant === 'picture' || variant === 'empty') {
@@ -5338,7 +5509,56 @@ export function companionSamples(variant: CompanionVariant): Sample[] {
 			} as ComponentConfig,
 			body: ['', ...(variant === 'mook' ? [...thug, ...baron] : [...baron, ...thug])].join('\n'),
 		},
+		...(variant === 'npc-list' ? [npcRoster()] : []),
 	];
+}
+
+/**
+ * A Record set of NPCs, the `npc-list` state's second subject: the same
+ * all-capitals noun on a plain list, so its **Add NPC**, its group count read
+ * as *2 NPCs* and an open record's *Write anything about this NPC.* sit beside
+ * the Stat block's **Edit NPCs**. Rows 1 to 6 between the block and Refresh, so
+ * neither shot of the block moves. The Thug's body is empty, so opening it
+ * draws the placeholder.
+ */
+function npcRoster(): Sample {
+	return {
+		config: {
+			id: 'npc_roster',
+			type: 'record-set',
+			label: 'Contacts',
+			position: { col: 7, row: 1, width: 4, height: 6 },
+			recordName: 'NPC',
+			groupBy: 'Faction',
+			fields: [
+				{ key: 'Faction', type: 'text' },
+				{ key: 'Stress', type: 'number', max: 3 },
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'### Thug',
+			'```sheet',
+			'Faction: River march',
+			'Stress: 0',
+			'```',
+			'',
+			'### Baron Corvan',
+			'```sheet',
+			'Faction: River march',
+			'Stress: 1',
+			'```',
+			'Owes the party a favor he would rather forget.',
+			'',
+			'### Sister Hale',
+			'```sheet',
+			'Faction: The abbey',
+			'Stress: 0',
+			'```',
+			'Keeps the abbey\'s ledgers.',
+			'',
+		].join('\n'),
+	};
 }
 
 /**
@@ -5514,13 +5734,15 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				type: 'card-set',
 				label: 'Abilities',
 				position: { col: 1, row: 1, width: 12, height: 1 },
+				// The starter's shorts, so the bear's change lines read `STR`
+				// (`docs/features/published-name-labels.md`).
 				entries: [
-					{ key: 'STR', name: 'Strength' },
-					{ key: 'DEX', name: 'Dexterity' },
-					{ key: 'CON', name: 'Constitution' },
-					{ key: 'INT', name: 'Intelligence' },
-					{ key: 'WIS', name: 'Wisdom' },
-					{ key: 'CHA', name: 'Charisma' },
+					{ key: 'STR', name: 'Strength', short: 'STR' },
+					{ key: 'DEX', name: 'Dexterity', short: 'DEX' },
+					{ key: 'CON', name: 'Constitution', short: 'CON' },
+					{ key: 'INT', name: 'Intelligence', short: 'INT' },
+					{ key: 'WIS', name: 'Wisdom', short: 'WIS' },
+					{ key: 'CHA', name: 'Charisma', short: 'CHA' },
 				],
 				derived: 'mod(value + mod.self)',
 			} as ComponentConfig,
@@ -5531,6 +5753,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				id: 'armour_class',
 				type: 'card',
 				label: 'Armour class',
+				short: 'AC',
 				position: { col: 1, row: 2, width: 2, height: 1 },
 				key: 'AC',
 				derived: '10 + abilities.DEX + mod.self',
@@ -5627,6 +5850,7 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 				id: 'saves',
 				type: 'table',
 				label: 'Saving throws',
+				short: 'Saves',
 				position: { col: 1, row: 5, width: 6, height: 2 },
 				rowHeader: 'Save',
 				namePosition: 1,
@@ -5649,9 +5873,9 @@ export function formsSamples(variant: FormsVariant = 'active'): Sample[] {
 					...(corners ? [{ key: 'Uses', type: 'number', total: true }] : []),
 				],
 				rows: [
-					{ label: 'Strength', key: 'STR', values: { ability: 'abilities.STR' } },
-					{ label: 'Dexterity', key: 'DEX', values: { ability: 'abilities.DEX' } },
-					{ label: 'Constitution', key: 'CON', values: { ability: 'abilities.CON' } },
+					{ label: 'Strength', short: 'STR', key: 'STR', values: { ability: 'abilities.STR' } },
+					{ label: 'Dexterity', short: 'DEX', key: 'DEX', values: { ability: 'abilities.DEX' } },
+					{ label: 'Constitution', short: 'CON', key: 'CON', values: { ability: 'abilities.CON' } },
 				],
 			} as ComponentConfig,
 			body: (corners
@@ -6096,6 +6320,182 @@ export function modifierOptionsSamples(): Sample[] {
 				'Active: yes',
 				'Modifiers: size = option: Large; Beast shape; speed.walk = 40; speed.climb >= 30',
 				'```',
+			].join('\n'),
+		},
+	];
+}
+
+/** The modifier groups the group-target sheets declare (`docs/features/table-row-modifier-target.md`). */
+export const GROUP_TARGET_GROUPS = [
+	{ name: 'save', label: 'Saving throws' },
+	{ name: 'skill', label: 'Skills' },
+	{ name: 'attack', label: 'Attacks' },
+	{ name: 'check', label: 'Checks' },
+	{ name: 'dc', label: 'Defences' },
+	{ name: 'dex_based', label: 'DX-based' },
+	{ name: 'empty', label: 'Empty' },
+];
+
+/**
+ * Which group-target sheet: the cloak alone, the cloak against a ring,
+ * Frightened on, the errors, `long`, the cloak alone over a Skills table of
+ * all eighteen 5e skills, for the editor's long rows list, or `inherit-off`,
+ * Frightened on with Stealth out of the Skills table's row groups
+ * (`inheritGroups: false`, its own list `dex_based` alone, which Frightened does
+ * not aim at). A state of its own, so the Frightened shots keep their numbers.
+ */
+export type GroupTargetVariant = 'saves' | 'stacking' | 'frightened' | 'errors' | 'long' | 'inherit-off';
+
+/** The eighteen 5e skills, the DX-based three in their own group too. */
+const FIVE_E_SKILLS = [
+	'Acrobatics', 'Animal handling', 'Arcana', 'Athletics', 'Deception', 'History',
+	'Insight', 'Intimidation', 'Investigation', 'Medicine', 'Nature', 'Perception',
+	'Performance', 'Persuasion', 'Religion', 'Sleight of hand', 'Stealth', 'Survival',
+].map((label) => ({
+	label,
+	key: label.toLowerCase().replace(/ /g, '_'),
+	...(['Acrobatics', 'Sleight of hand', 'Stealth'].includes(label) ? { groups: ['dex_based'] } : {}),
+}));
+
+/**
+ * Modifiers aimed at groups (`docs/features/table-row-modifier-target.md`): a
+ * Saves table whose six keyed rows are in `save` through the table's default; a
+ * Skills table, Acrobatics also DX-based; Perception and Armour class cards in
+ * `check` and `dc`; an Attacks list with open rows, two character rows both
+ * Longsword, in `attack`; and Gear and Conditions tables whose rows push at the
+ * groups. Each variant turns on what its views look at.
+ */
+export function groupTargetSamples(variant: GroupTargetVariant): Sample[] {
+	const yes = (on: boolean) => (on ? 'yes' : 'no');
+	const ringWorn = variant === 'stacking';
+	const frightened = variant === 'frightened' || variant === 'inherit-off';
+	const bless = variant === 'saves' || variant === 'frightened' || variant === 'long';
+	const computed = (key: string) => [{ key, type: 'computed', formula: '2 + mod.self', publish: true, signed: true }];
+	return [
+		{
+			config: {
+				id: 'saves',
+				type: 'table',
+				label: 'Saves',
+				position: { col: 1, row: 1, width: 3, height: 3 },
+				rowHeader: 'Save',
+				groups: ['save'],
+				rows: [
+					{ label: 'Strength', key: 'str' },
+					{ label: 'Dexterity', key: 'dex' },
+					{ label: 'Constitution', key: 'con' },
+					{ label: 'Intelligence', key: 'int' },
+					{ label: 'Wisdom', key: 'wis' },
+					{ label: 'Charisma', key: 'cha' },
+				],
+				columns: computed('Bonus'),
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 4, row: 1, width: 3, height: 2 },
+				rowHeader: 'Skill',
+				groups: ['skill'],
+				rows:
+					variant === 'long'
+						? FIVE_E_SKILLS
+						: [
+								{ label: 'Acrobatics', key: 'acrobatics', groups: ['dex_based'] },
+								{ label: 'Athletics', key: 'athletics' },
+								{
+									label: 'Stealth',
+									key: 'stealth',
+									groups: ['dex_based'],
+									...(variant === 'inherit-off' ? { inheritGroups: false } : {}),
+								},
+							],
+				columns: computed('Bonus'),
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'perception',
+				type: 'card',
+				label: 'Perception',
+				position: { col: 7, row: 1, width: 2, height: 1 },
+				derived: '12 + mod.self',
+				groups: ['check'],
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'armour_class',
+				type: 'card',
+				label: 'Armour class',
+				position: { col: 9, row: 1, width: 2, height: 1 },
+				derived: '15 + mod.self',
+				groups: ['dc'],
+			} as unknown as ComponentConfig,
+			body: null,
+		},
+		{
+			config: {
+				id: 'attacks',
+				type: 'table',
+				label: 'Attacks',
+				position: { col: 7, row: 2, width: 6, height: 2 },
+				rowHeader: 'Attack',
+				openRows: true,
+				groups: ['attack'],
+				columns: [{ key: 'To hit', type: 'computed', formula: '5 + mod.self', publish: true, signed: true }],
+			} as unknown as ComponentConfig,
+			body: ['| Attack |', '| --- |', '| Longsword |', '| Longsword |'].join('\n'),
+		},
+		{
+			config: {
+				id: 'gear',
+				type: 'table',
+				label: 'Gear',
+				position: { col: 1, row: 4, width: 6, height: 2 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [
+					{ key: 'Worn', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+			} as unknown as ComponentConfig,
+			body: [
+				'| Item | Worn | Modifiers |',
+				'| --- | --- | --- |',
+				'| Cloak of Protection | yes | @save += 1 as item when Worn |',
+				`| Ring of Strength Saves | ${yes(ringWorn)} | saves.str += 2 as item when Worn |`,
+				...(variant === 'errors'
+					? ['| Old charm | yes | @saves += 1 |', '| Hollow token | yes | @empty += 1 |']
+					: []),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'conditions',
+				type: 'table',
+				label: 'Conditions',
+				position: { col: 7, row: 4, width: 6, height: 2 },
+				rowHeader: 'Condition',
+				openRows: true,
+				columns: [
+					{ key: 'Active', type: 'toggle' },
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+			} as unknown as ComponentConfig,
+			body: [
+				'| Condition | Active | Modifiers |',
+				'| --- | --- | --- |',
+				`| Frightened | ${yes(frightened)} | @save, @skill, @attack, @check, @dc += -1 as status when Active |`,
+				`| Bless | ${yes(bless)} | @attack, @save += 1 when Active |`,
+				...(variant === 'errors'
+					? ['| Jack of All Trades | yes | @skill += 1 where: Training == 0 |']
+					: []),
 			].join('\n'),
 		},
 	];

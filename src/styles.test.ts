@@ -29,6 +29,7 @@ import {
 	STEP_PX,
 } from './components/record-line-fit';
 import { EDGE_GUTTER } from './ui/popover';
+import { RING_SET_CLASS } from './components/ring-control';
 import { TINT_COLOURS } from './types';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -2633,6 +2634,17 @@ function declarations(body: string): string[] {
  * comma inside it, and the `selectors()` split at the top of this file would
  * read it as two halves of nothing.
  */
+/**
+ * Every rule in the built stylesheet whose selector list names `selector`, with
+ * `at`, its index in file order, for a test that holds one rule after another
+ * (`docs/UI.md` §4: `@container` and a lifted selector win on order).
+ */
+function rulesNaming(selector: string): (Rule & { at: number })[] {
+	return rules(CSS_WITHOUT_COMMENTS)
+		.map((rule, at) => ({ ...rule, at }))
+		.filter((rule) => selectorList(rule.selector).includes(selector));
+}
+
 function selectorList(selector: string): string[] {
 	const found: string[] = [];
 	let depth = 0;
@@ -2650,9 +2662,41 @@ function selectorList(selector: string): string[] {
 	return found;
 }
 
-/** (ids, classes and attributes and pseudo-classes, types) of one selector. */
+/**
+ * (ids, classes and attributes and pseudo-classes, types) of one selector, as
+ * CSS weighs it: `:not()`, `:is()` and `:has()` weigh their heaviest argument
+ * and not themselves, and `:where()` weighs nothing. Counted naively they read
+ * as a pseudo-class each plus their argument, which put
+ * `.a .b:not(:focus):not(:placeholder-shown)` at (0,6,0) against (0,4,0).
+ */
 function specificity(selector: string): [number, number, number] {
-	const bare = selector.replace(/::[\w-]+/g, ' ');
+	let rest = selector;
+	const total: [number, number, number] = [0, 0, 0];
+	// Take each functional pseudo-class out, innermost-agnostic: its argument
+	// list is read by balanced parentheses and weighed recursively.
+	for (;;) {
+		const match = /:(not|is|has|where)\(/.exec(rest);
+		if (match === null) break;
+		const open = match.index + match[0].length;
+		let depth = 1;
+		let close = open;
+		while (depth > 0 && close < rest.length) {
+			if (rest[close] === '(') depth += 1;
+			else if (rest[close] === ')') depth -= 1;
+			close += 1;
+		}
+		const argument = rest.slice(open, close - 1);
+		if (match[1] !== 'where') {
+			const heaviest = selectorList(argument)
+				.map((one) => specificity(one.replace(/^[>+~]\s*/, '')))
+				.reduce<[number, number, number]>((a, b) => (heavier(b, a) ? b : a), [0, 0, 0]);
+			total[0] += heaviest[0];
+			total[1] += heaviest[1];
+			total[2] += heaviest[2];
+		}
+		rest = rest.slice(0, match.index) + ' ' + rest.slice(close);
+	}
+	const bare = rest.replace(/::[\w-]+/g, ' ');
 	const ids = (bare.match(/#[\w-]+/g) ?? []).length;
 	const classes =
 		(bare.match(/\.[\w-]+/g) ?? []).length +
@@ -2662,14 +2706,32 @@ function specificity(selector: string): [number, number, number] {
 		.replace(/\[[^\]]*\]/g, ' ')
 		.split(/[\s>+~]+/)
 		.filter((one) => /^[a-z]/i.test(one)).length;
-	return [ids, classes, types];
+	return [ids + total[0], classes + total[1], types + total[2]];
 }
+
+/**
+ * Every declaration of `property` in a stylesheet's text, at any depth of
+ * at-rule, as `property: value`. `property` is a regular-expression fragment, so
+ * one scan can name a family of longhands.
+ */
+const propertyDeclarations = (text: string, property: string): string[] =>
+	text.match(new RegExp(`(?:^|[;{\\s])(?:${property})\\s*:[^;}]*`, 'gm')) ?? [];
 
 /** Whether `a` beats `b` on weight alone. */
 const heavier = (a: [number, number, number], b: [number, number, number]) =>
 	a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
 const same = (a: [number, number, number], b: [number, number, number]) =>
 	a.join() === b.join();
+
+describe('specificity weighs a functional pseudo-class by its argument', () => {
+	it('reads the weights CSS gives', () => {
+		expect(specificity('.a .b:not(:focus):not(:placeholder-shown)')).toEqual([0, 4, 0]);
+		expect(specificity('.a > .b:has(> .c[aria-expanded=\'true\'])')).toEqual([0, 4, 0]);
+		expect(specificity('.a:is(.b, #c)')).toEqual([1, 1, 0]);
+		expect(specificity(':where(.a .b) td')).toEqual([0, 0, 1]);
+		expect(specificity('input[type=\'text\']')).toEqual([0, 1, 1]);
+	});
+});
 
 describe('a rule reads the class that says why, never the elements drawn', () => {
 	/*
@@ -2837,19 +2899,16 @@ describe('no rule clips with `clip-path`', () => {
 	 * field reached for it once, to inset its dotted rule, and was refused at the
 	 * land stop (`docs/features/granted-temporary-points.md`).
 	 */
-	const declares = (text: string, property: string): string[] =>
-		text.match(new RegExp(`(?:^|[;{\\s])${property}\\s*:[^;}]*`, 'gm')) ?? [];
-
 	it('declares no `clip-path` anywhere in the stylesheet', () => {
-		expect(declares(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
 	});
 
 	it('would notice one', () => {
 		// The same scan finds the `clip` the visually-hidden rule does declare,
 		// so the empty list above is a finding, and one planted in an at-rule.
-		expect(declares(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
 		expect(
-			declares('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
+			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
 		).toHaveLength(1);
 	});
 });
@@ -3201,8 +3260,16 @@ describe('every declaration names a real CSS property', () => {
 	 * checked like any other. An at-rule's own prelude, such as the
 	 * `grid-template-columns: subgrid` a `@supports` tests, is not a declaration
 	 * and is not read.
+	 *
+	 * **`NEWER` is the one exception to "a newer pin", for a property no pin
+	 * has yet.** `corner-shape` (CSS Borders 4) shipped in Chromium 139 and is
+	 * what the app's own `button` rule sets, while 0.37.0 is the newest release
+	 * of the list and predates it. Each entry names the property, and the test
+	 * below fails the day the list gains one, so the entry goes with the pin
+	 * that makes it redundant rather than outliving it.
 	 */
-	const KNOWN = new Set(KNOWN_CSS_PROPERTIES);
+	const NEWER = ['corner-shape'];
+	const KNOWN = new Set([...KNOWN_CSS_PROPERTIES, ...NEWER]);
 
 	/** What was read: standard declarations checked, and custom ones passed over. */
 	function scan(text: string): {
@@ -3248,6 +3315,11 @@ describe('every declaration names a real CSS property', () => {
 
 	it('names only properties a browser knows', () => {
 		expect(scan(CSS_WITHOUT_COMMENTS).unknown).toEqual([]);
+	});
+
+	it('adds to the list only what the list does not hold yet', () => {
+		const listed = new Set<string>(KNOWN_CSS_PROPERTIES);
+		expect(NEWER.filter((property) => listed.has(property))).toEqual([]);
 	});
 
 	it('would catch the property that shipped', () => {
@@ -4081,6 +4153,7 @@ describe("a sheet button's padding outranks Obsidian's tablet rule", () => {
 		'sheetsmith-stat-block-action',
 		'sheetsmith-stat-block-brief',
 		'sheetsmith-stat-block-disclosure',
+		'sheetsmith-group-chip-remove',
 	];
 	/**
 	 * Classes on a sheet `<button>` that set no padding of their own: the four
@@ -4410,6 +4483,63 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 				/\.sheetsmith-table-level[^,{]*::after/.test(rule.selector),
 		);
 		expect(afterRing).toEqual([]);
+	});
+});
+
+describe('the mark on a ring a modifier set (docs/features/modifier-set-ring-mark.md)', () => {
+	const naming = () =>
+		rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
+			selectorList(rule.selector).some((one) => one.includes(`.${RING_SET_CLASS}`)),
+		);
+	/** The halo's own rule, among those naming the class. */
+	const halo = () =>
+		naming().find((rule) =>
+			selectorList(rule.selector).includes(`.sheetsmith-view .${RING_SET_CLASS}::before`),
+		);
+
+	it('is a dotted muted border on a ::before outside the ring, taking no press', () => {
+		const rule = halo();
+		const said = declarations(rule?.body ?? '');
+		expect(rule?.context).toEqual([]);
+		expect(said).toEqual(
+			expect.arrayContaining([
+				"content: ''",
+				'position: absolute',
+				'inset: -3px',
+				'border: 2px dotted var(--text-muted)',
+				'border-radius: 50%',
+				'pointer-events: none',
+			]),
+		);
+		// The `::after` is the ring's hit target, and stays that.
+		expect(naming().some((rule) => rule.selector.includes('::after'))).toBe(false);
+	});
+
+	it('takes the ring’s corner shape by inheriting it, never by declaring one', () => {
+		// The ring is a `<button>`, so the app's `button` rule gives it the
+		// theme's `--corner-shape`; a squircle theme draws a squircle ring. The
+		// property does not inherit unless asked, and the calibrated stylesheet
+		// sets `round`, so a halo restating a shape, or naming none, looks right
+		// in every shot without `&corner=` and draws a circle round a squircle
+		// in the app.
+		const all = naming();
+		expect(all.length).toBeGreaterThan(0);
+		expect(declarations(halo()?.body ?? '')).toContain('corner-shape: inherit');
+		for (const rule of all) {
+			for (const one of declarations(rule.body)) {
+				if (one.startsWith('corner-shape')) expect(one, rule.selector).toBe('corner-shape: inherit');
+			}
+		}
+	});
+
+	it('is carried by no background and no box-shadow, which forced colors would drop', () => {
+		const all = naming();
+		expect(all.length).toBeGreaterThan(0);
+		for (const rule of all) {
+			for (const one of declarations(rule.body)) {
+				expect(one, rule.selector).not.toMatch(/^(background|box-shadow|outline)/);
+			}
+		}
 	});
 });
 
@@ -4861,6 +4991,222 @@ describe('the pool\'s buffer field holds three digits', () => {
 	});
 });
 
+describe('a headline number shrinks with a narrow card, to a floor above its qualifiers', () => {
+	/*
+	 * `docs/features/headline-narrow-cell.md`. The size is a clamp between a
+	 * floor one minor-third step above the largest qualifier and the full
+	 * headline size, through the width at which three digits fit. None of it is
+	 * visible to happy-dom, which lays nothing out; `harness/measure-pool-headline.mjs`
+	 * measures it in a browser. This holds the arithmetic as written, and which
+	 * rules read it.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const bodyOf = (selector: string): string =>
+		all.find(
+			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
+		)?.body ?? '';
+	const sizedBy = (token: string) =>
+		all.filter((one) => declarations(one.body).includes(`font-size: var(${token})`));
+
+	it('declares the floor and the size as the spec writes them', () => {
+		const tokens = declarations(bodyOf('body'));
+		expect(tokens).toContain(
+			'--sheetsmith-headline-floor: max(18.67px, calc(1.2 * var(--sheetsmith-qualifier-medium)))',
+		);
+		expect(tokens).toContain(
+			'--sheetsmith-headline-size: clamp(var(--sheetsmith-headline-floor), calc(52cqi - 2px), var(--sheetsmith-card-value-size))',
+		);
+	});
+
+	it('sizes exactly the four headlines on it, and the mark that stands in for them', () => {
+		const taking = sizedBy('--sheetsmith-headline-size').map((one) => one.selector.replace(/\s+/g, ' '));
+		// The count first, so a renamed selector cannot leave this passing on
+		// nothing (`docs/PATTERNS.md` §10).
+		expect(taking).toHaveLength(5);
+		expect(taking.sort()).toEqual(
+			[
+				'.sheetsmith-card > .sheetsmith-card-derived',
+				'.sheetsmith-headline-mark',
+				'.sheetsmith-view .sheetsmith-card-select',
+				'.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input',
+				'.sheetsmith-view .sheetsmith-pool-current',
+			].sort(),
+		);
+	});
+
+	it.each([
+		// A Roster band's score borrows the card's field class outside a card's
+		// value slot, which is why the headline rule names the slot.
+		'.sheetsmith-view .sheetsmith-card-input',
+		// A Roster band head's reading borrows the derived's class outside a card.
+		'.sheetsmith-card-derived',
+		'.sheetsmith-view .sheetsmith-passport-name-input',
+		'.sheetsmith-stat-block-vital-value',
+	])('leaves %s at the full headline size', (selector) => {
+		expect(declarations(bodyOf(selector))).toContain('font-size: var(--sheetsmith-card-value-size)');
+	});
+
+	it('caps a card\'s derived at its card, so a long value clips where the fit check can see it', () => {
+		const body = declarations(bodyOf('.sheetsmith-card > .sheetsmith-card-derived'));
+		expect(body).toContain('max-width: 100%');
+		expect(body).toContain('overflow: hidden');
+		expect(body).toContain('white-space: nowrap');
+	});
+
+	it('hides a cut number\'s digits only while it is not focused, and the mark takes no press', () => {
+		// The glyphs' fill, not `color`, which two headlines transition on.
+		const transparent = all.filter((one) => declarations(one.body).includes('-webkit-text-fill-color: transparent'));
+		const cut = transparent.filter((one) => one.selector.includes('.sheetsmith-headline-cut'));
+		expect(cut).toHaveLength(1);
+		expect(cut[0]?.selector).toBe('.sheetsmith-view .sheetsmith-headline.sheetsmith-headline-cut:not(input:focus)');
+		expect(declarations(bodyOf('.sheetsmith-headline-mark'))).toContain('pointer-events: none');
+		// Shown only while the number is cut and not focused, so a focused field
+		// shows its digits and no mark.
+		const shown = all.filter(
+			(one) =>
+				declarations(one.body).includes('display: block') &&
+				selectorList(one.selector).some((sel) => sel.endsWith('.sheetsmith-headline-mark')),
+		);
+		expect(shown).toHaveLength(1);
+		for (const sel of selectorList(shown[0]?.selector ?? '')) {
+			expect(sel).toContain('.sheetsmith-headline-cut:not(input:focus)');
+		}
+	});
+});
+
+describe('the qualifiers beside a headline follow the sheet\'s size', () => {
+	/*
+	 * A Pool's temporary points and the pill under a derived number sat at
+	 * `--font-ui-small`, which no `em` reaches, so at `text=24` the number grew
+	 * and they did not. Both values now take one token, `--sheetsmith-qualifier-small`:
+	 * the app's `--font-ui-small` as a floor under 13/15 of the sheet's `em`.
+	 * A Pool's ceiling takes `--sheetsmith-qualifier-medium`, the app's
+	 * `--font-ui-medium` as a floor under that same qualifier, so it is never
+	 * under the points and they need no cap
+	 * (`docs/features/pool-ceiling-text-size.md`). The words ranked with the
+	 * card's heading, *Temp* and a note, stay at the heading's `--font-ui-smaller`.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const bodyOf = (selector: string): string =>
+		all.find(
+			(one) => one.context.length === 0 && selectorList(one.selector).includes(selector),
+		)?.body ?? '';
+	const OWNED = '.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input';
+
+	it('declares the token as the app token floored under its step in em', () => {
+		const tokens = declarations(bodyOf('body'));
+		expect(tokens).toContain('--sheetsmith-qualifier-small: max(var(--font-ui-small), calc(13em / 15))');
+	});
+
+	it.each([
+		'.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input',
+		'.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select',
+	])('sizes %s on the qualifier', (selector) => {
+		expect(declarations(bodyOf(selector))).toContain('font-size: var(--sheetsmith-qualifier-small)');
+	});
+
+	it("declares the ceiling's token as the app's medium size floored under the qualifier", () => {
+		expect(declarations(bodyOf('body'))).toContain(
+			'--sheetsmith-qualifier-medium: max(var(--font-ui-medium), var(--sheetsmith-qualifier-small))',
+		);
+	});
+
+	it("sizes a Pool's ceiling on that token, a typed one included", () => {
+		// The typed one by a rule of its own: `.sheetsmith-pool-max` alone is
+		// (0,1,0) and lost to Obsidian's `input[type='text']`, which drew it at 13px.
+		const sized = all.filter(
+			(one) =>
+				one.context.length === 0 &&
+				declarations(one.body).includes('font-size: var(--sheetsmith-qualifier-medium)'),
+		);
+		// The count first, so a renamed selector cannot pass on nothing (PATTERNS §10).
+		expect(sized).toHaveLength(2);
+		expect(sized.map((one) => one.selector.replace(/\s+/g, ' ')).sort()).toEqual(
+			[OWNED, '.sheetsmith-pool-separator, .sheetsmith-pool-max'].sort(),
+		);
+	});
+
+	it('holds a typed ceiling at 16px or more on a phone or a tablet, after the rule it lifts', () => {
+		// iOS zooms the page on a tap into a field under 16px, an iPad as well
+		// as a phone, so the guard reads `.is-mobile` rather than `.is-phone`.
+		const at = (selector: string) => rulesNaming(selector).filter((one) => one.context.length === 0);
+		const guard = at(`.is-mobile ${OWNED}`);
+		const base = at(OWNED);
+		expect(guard).toHaveLength(1);
+		expect(base).toHaveLength(1);
+		expect(declarations(guard[0]?.body ?? '')).toContain(
+			'font-size: max(16px, var(--sheetsmith-qualifier-medium))',
+		);
+		// The typed ceiling is muted like the span it stands in for, past the
+		// app's `input[type='text']` colour.
+		expect(declarations(base[0]?.body ?? '')).toContain('color: var(--text-muted)');
+		expect(guard[0]?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
+	});
+
+	it("trims a typed ceiling's inline padding to 1px, and only under the Pool's ceiling", () => {
+		// `docs/features/qualifier-fit-and-size.md`: the digits 3px after the
+		// slash rather than 6. A Track row's length field wears the same class
+		// and keeps the base rule's padding.
+		expect(declarations(bodyOf(OWNED))).toContain('--sheetsmith-pool-max-pad: 1px');
+		expect(declarations(bodyOf(OWNED))).toContain('padding-inline: var(--sheetsmith-pool-max-pad)');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-max-input'))).toContain(
+			'padding: 0 var(--size-2-2)',
+		);
+		// Every rule reading the trim is under the Pool's ceiling.
+		const trims = all.filter((one) => one.body.includes('--sheetsmith-pool-max-pad'));
+		expect(trims.length).toBe(2);
+		for (const one of trims) {
+			for (const sel of selectorList(one.selector)) expect(sel).toContain('.sheetsmith-pool-ceiling ');
+		}
+		// The fallback width counts the same padding, not a copy of it.
+		const fallback = trims.find((one) => one.context.includes('@supports not (field-sizing: content)'));
+		expect(declarations(fallback?.body ?? '')).toEqual([
+			'width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad))',
+			'min-width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad))',
+		]);
+	});
+
+	it("sizes a Pool's temporary points on the qualifier, uncapped", () => {
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-temp-input'))).toContain(
+			'font-size: var(--sheetsmith-qualifier-small)',
+		);
+		// No rule naming the field caps its size: the ceiling is never under the
+		// qualifier now, so a `min(` would only stop the points short of a Card pill.
+		const temp = all.filter((one) =>
+			selectorList(one.selector).some((sel) => sel.includes('.sheetsmith-pool-temp-input')),
+		);
+		expect(temp.length).toBeGreaterThan(3);
+		for (const one of temp) {
+			for (const line of declarations(one.body).filter((d) => d.startsWith('font-size:'))) {
+				expect(line).not.toContain('min(');
+			}
+		}
+	});
+
+	it('keeps the words under a heading at the heading\'s fixed size', () => {
+		expect(declarations(bodyOf('.sheetsmith-pool-temp-label'))).toContain('font-size: var(--font-ui-smaller)');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-card-note-input'))).toContain(
+			'font-size: var(--font-ui-smaller)',
+		);
+	});
+
+	it('hangs both pills under their number in em', () => {
+		expect(declarations(bodyOf('.sheetsmith-pool-temp'))).toContain('margin-top: 0.4em');
+		expect(declarations(bodyOf('.sheetsmith-card-has-derived .sheetsmith-card-value'))).toContain(
+			'margin-top: 0.4em',
+		);
+	});
+
+	it('keeps both pills inside a narrow card', () => {
+		const temp = declarations(bodyOf('.sheetsmith-pool-temp'));
+		expect(temp).toContain('flex-wrap: wrap');
+		expect(temp).toContain('max-width: 100%');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input'))).toContain(
+			'max-width: 100%',
+		);
+	});
+});
+
 describe("a pool's reading fits a narrow card", () => {
 	/*
 	 * `docs/features/pool-headline-narrow-fit.md`. Three rules give way in order,
@@ -4872,22 +5218,16 @@ describe("a pool's reading fits a narrow card", () => {
 	 */
 	const READING = '.sheetsmith-pool-reading';
 	const FIELD = '.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current';
-	const all = rules(CSS_WITHOUT_COMMENTS);
 
-	/** Every rule whose selector list names `selector`, in file order. */
-	const naming = (selector: string) =>
-		all
-			.map((rule, at) => ({ ...rule, at }))
-			.filter((rule) => selectorList(rule.selector).includes(selector));
 	const valueIn = (body: string, property: string): string | undefined =>
 		declarations(body)
 			.find((one) => one.startsWith(`${property}:`))
 			?.slice(property.length + 1)
 			.trim();
 
-	const reading = naming(READING).filter((rule) => rule.context.length === 0);
-	const base = naming(FIELD).filter((rule) => rule.context.length === 0);
-	const narrow = naming(FIELD).filter((rule) =>
+	const reading = rulesNaming(READING).filter((rule) => rule.context.length === 0);
+	const base = rulesNaming(FIELD).filter((rule) => rule.context.length === 0);
+	const narrow = rulesNaming(FIELD).filter((rule) =>
 		rule.context.some((at) => at.startsWith('@container')),
 	);
 
@@ -4902,6 +5242,32 @@ describe("a pool's reading fits a narrow card", () => {
 		expect(valueIn(reading[0]?.body ?? '', 'gap')).toBe('0 var(--size-2-1)');
 	});
 
+	it('centres the reading safely, so an overflowing ceiling keeps its slash', () => {
+		// `docs/features/qualifier-fit-and-size.md`: plain `center` overflowed a
+		// wrapped `/120` at both ends and the card's clip cut the slash first.
+		// The plain value comes first, for an engine without `safe` in flexbox;
+		// a later edit back to `center` alone, or the two swapped, reads the bug
+		// back in with nothing on screen saying so outside a one-unit cell.
+		const values = declarations(reading[0]?.body ?? '')
+			.filter((one) => one.startsWith('justify-content:'))
+			.map((one) => one.slice('justify-content:'.length).trim());
+		expect(values).toEqual(['center', 'safe center']);
+	});
+
+	it('clips the card without making it a scroll container', () => {
+		// `clip` cuts where `hidden` did, but a focused ceiling cannot scroll
+		// the card sideways and leave it there; `hidden` first for an engine
+		// without `clip` (iOS before 16).
+		const card = rulesNaming('.sheetsmith-pool').filter(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-pool',
+		);
+		expect(card).toHaveLength(1);
+		const values = declarations(card[0]?.body ?? '')
+			.filter((one) => one.startsWith('overflow:'))
+			.map((one) => one.slice('overflow:'.length).trim());
+		expect(values).toEqual(['hidden', 'clip']);
+	});
+
 	it('never lets the number shrink, and caps it at the row', () => {
 		const body = base[0]?.body ?? '';
 		expect(valueIn(body, 'flex-shrink')).toBe('0');
@@ -4911,41 +5277,115 @@ describe("a pool's reading fits a narrow card", () => {
 
 	it('lowers the slot to two characters below the threshold, after the base rule', () => {
 		const rule = narrow[0];
-		expect(valueIn(rule?.body ?? '', 'min-width')).toBe('2ch');
+		// Capped at the row (`docs/features/headline-narrow-cell.md`): in a
+		// 15.2px cell a bare `2ch` beat the `max-width` and passed the card.
+		expect(valueIn(rule?.body ?? '', 'min-width')).toBe('min(2ch, 100%)');
 		// `@container` adds no specificity, so equal selectors are settled by
 		// order (docs/UI.md §4): the narrow rule has to come later.
 		expect(rule?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
 	});
 
-	it('puts the threshold at four characters, the gap and the widest ceiling', () => {
+	it('puts the threshold at four characters and the widest ceiling in em, and the chrome in px', () => {
 		/*
-		 * Measured in the harness at a 16px sheet, where the card's value size
-		 * draws `4ch` at 73.4px (`docs/features/pool-headline-narrow-fit.md`):
-		 * 4.59em. The rest is fixed-px chrome the sheet's `em` does not reach, so
-		 * it is px (`docs/UI.md` §5): the reading's `--size-2-1` gap, the widest
-		 * three-digit ceiling at 38.7px (a max the character owns, with its
-		 * padding), and the 2px the reading's row sits inside the card's
-		 * content box. Each part is rounded up, never down, and by less than the
-		 * next step, so the threshold neither clips a reading that fits nor
-		 * narrows a slot that has room.
+		 * `docs/features/pool-ceiling-text-size.md`, measured in the harness. The
+		 * card's value size draws `4ch` at 73.4px on a 16px sheet: 4.59em. The
+		 * widest three-digit ceiling, a `/120` the character owns, follows the
+		 * sheet at the qualifier's 13/15em, and its digits less the padding and
+		 * gap measure 43.4px at `text=24`'s 20.8px qualifier: 43.4 / 24 em. What
+		 * the sheet's `em` does not reach is px (`docs/UI.md` §5): the reading's
+		 * gap, the 2px the row sits inside the card's content box and the
+		 * ceiling's 4px of padding and gap.
+		 *
+		 * Where the app's `--font-ui-medium` holds the ceiling above 13/15 of the
+		 * sheet, the `em` part undercounts it: on a phone the sheet is 16px and
+		 * the token 16px, so the ceiling's digits are 16/(13/15 × 16) of what
+		 * the `em` part gives them, and the px part has to cover the difference.
 		 */
 		const FOUR_CH_EM = 73.4 / 16;
+		const CEILING_EM = 43.4 / 24;
 		// Obsidian's value for `--size-2-1`, which the app's own CSS defines and
 		// no test here can read: that the reading declares that token is held by
 		// the wrap test above, and that the token is 2px only by this constant.
 		const GAP_PX = 2;
-		const CEILING_PX = 38.7;
 		const ROW_INSET_PX = 2;
+		// A typed ceiling's 1px of padding a side and the slash's 2px gap
+		// (`docs/features/qualifier-fit-and-size.md`).
+		const CEILING_CHROME_PX = 4;
 		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		expect(prelude).toBe('@container (max-width: calc(6.4em + 14px))');
 		const match = /^@container \(max-width: calc\(([\d.]+)em \+ ([\d.]+)px\)\)$/.exec(prelude);
 		expect(match, `unreadable threshold: ${prelude}`).not.toBeNull();
 		const em = Number(match?.[1]);
 		const px = Number(match?.[2]);
-		expect(em).toBeGreaterThanOrEqual(FOUR_CH_EM);
-		expect(em - FOUR_CH_EM).toBeLessThan(0.1);
-		const chrome = GAP_PX + CEILING_PX + ROW_INSET_PX;
+		// The `em` part is the slot and the ceiling's share, rounded up by less
+		// than a step.
+		expect(em).toBeGreaterThanOrEqual(FOUR_CH_EM + CEILING_EM);
+		expect(em - (FOUR_CH_EM + CEILING_EM)).toBeLessThan(0.1);
+		const chrome = GAP_PX + ROW_INSET_PX + CEILING_CHROME_PX;
 		expect(px).toBeGreaterThanOrEqual(chrome);
-		expect(px - chrome).toBeLessThan(2);
+		// A 16px token on a 16px sheet: the ceiling's digits at 16px against
+		// the `em` part's 13/15 of 16, the remainder carried by the px part.
+		const SHEET = 16;
+		const TOKEN = 16;
+		const digitsAtToken = CEILING_EM * SHEET * (TOKEN / ((13 / 15) * SHEET));
+		const need = FOUR_CH_EM * SHEET + digitsAtToken + chrome;
+		expect(em * SHEET + px).toBeGreaterThanOrEqual(need);
+		expect(em * SHEET + px - need).toBeLessThan(2);
+	});
+});
+
+describe("a narrow card's own-value pill gives up its padding", () => {
+	/*
+	 * `docs/features/qualifier-fit-and-size.md`, row 2. Below the card width
+	 * the pill's chrome and three digits need, the pill and its field drop
+	 * their inline padding. happy-dom lays nothing out, so
+	 * `harness/measure-pool-headline.mjs` check 12 measures the result; this
+	 * holds the threshold's px to the base rules it counts, so a token moved
+	 * there cannot leave the threshold counting the old chrome.
+	 */
+	const PILL = '.sheetsmith-card-has-derived .sheetsmith-card-value';
+	const FIELD = '.sheetsmith-view .sheetsmith-card-input';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const bodyOf = (selector: string): string =>
+		all.find((one) => one.context.length === 0 && selectorList(one.selector).includes(selector))?.body ?? '';
+	const narrow = all.filter((one) => one.context.some((at) => at.startsWith('@container (max-width: calc(1.7em')));
+	// Obsidian's values for the tokens the base rules name, which no test here
+	// can read: that each rule names its token is asserted below.
+	const TOKEN_PX: Record<string, number> = { '--size-2-1': 2, '--size-4-2': 8 };
+	const inlinePx = (padding: string): number => {
+		const parts = padding.split(/\s+(?![^(]*\))/);
+		const inline = parts[1] ?? parts[0] ?? '';
+		if (inline === '0') return 0;
+		const token = /^var\((--[\w-]+)\)$/.exec(inline)?.[1] ?? '';
+		expect(TOKEN_PX[token], `unread padding: ${padding}`).toBeDefined();
+		return TOKEN_PX[token] ?? NaN;
+	};
+
+	it('counts the pill padding, its border and the field padding in px, and three digits in em', () => {
+		const pill = declarations(bodyOf(PILL));
+		const field = declarations(bodyOf(FIELD));
+		const pad = (list: string[]) => list.find((d) => d.startsWith('padding:'))?.slice('padding:'.length).trim() ?? '';
+		const border = pill.find((d) => d.startsWith('border:')) ?? '';
+		expect(border).toMatch(/^border: 1px solid /);
+		const chrome = 2 * inlinePx(pad(pill)) + 2 * 1 + 2 * inlinePx(pad(field));
+		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		expect(prelude).toBe('@container (max-width: calc(1.7em + 22px))');
+		const match = /calc\(([\d.]+)em \+ ([\d.]+)px\)/.exec(prelude);
+		expect(Number(match?.[2])).toBe(chrome);
+		// Three digits at the qualifier's size, semibold and tabular, measured
+		// at 26.6px on a 16px sheet and 40.3 at 24: 1.68em, rounded up.
+		expect(Number(match?.[1])).toBeGreaterThanOrEqual(40.3 / 24);
+		expect(Number(match?.[1]) - 40.3 / 24).toBeLessThan(0.05);
+	});
+
+	it("drops only a card's own pill's inline padding, and its field's", () => {
+		expect(narrow.map((one) => one.selector.replace(/\s+/g, ' ')).sort()).toEqual(
+			[
+				'.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value',
+				'.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value > .sheetsmith-card-input',
+			].sort(),
+		);
+		for (const one of narrow) expect(declarations(one.body)).toEqual(['padding-inline: 0']);
 	});
 });
 
@@ -5091,7 +5531,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		expect(value?.body).toMatch(/font-size:\s*var\(--sheetsmith-card-value-size\)/);
 	});
 
-	it('raises the tiles, the boxes and the head rule under more contrast, after their base rules', () => {
+	it('raises the tiles and the boxes under more contrast, after their base rules', () => {
 		// Equal weight, so only order decides: a block above the base rules lost.
 		const css = CSS_WITHOUT_COMMENTS;
 		const more = [...css.matchAll(/@media \(prefers-contrast: more\) \{/g)]
@@ -5105,8 +5545,6 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		for (const selector of [
 			'.sheetsmith-stat-block-vital',
 			'.sheetsmith-stat-block-panel',
-			'.sheetsmith-stat-block-play-head',
-			'.sheetsmith-stat-block-record > .sheetsmith-record-summary',
 			'.sheetsmith-table-box.sheetsmith-stat-block-actions',
 		]) {
 			expect(block, selector).toContain(selector);
@@ -5115,13 +5553,59 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 		for (const at of [
 			base(/\n\.sheetsmith-stat-block-vital \{/),
 			base(/\n\.sheetsmith-stat-block-panel \{/),
-			base(/\n\.sheetsmith-stat-block-play-head,\s*\n\.sheetsmith-stat-block-record > /),
 			base(/\n\.sheetsmith-view \.sheetsmith-table-box\.sheetsmith-stat-block-actions \{/),
 			base(/\n\.sheetsmith-table-box \{/),
 		]) {
 			expect(at).toBeGreaterThan(0);
 			expect(more ?? 0).toBeGreaterThan(at);
 		}
+	});
+
+	/*
+	 * `docs/features/sheet-contrast-pass.md` §3. The open line's rule is reached
+	 * through a `:has()` at (0,4,0), and the more-contrast block named it as
+	 * `.sheetsmith-stat-block-record > .sheetsmith-record-summary` at (0,2,0), so
+	 * the hairline stayed at 1.22:1 while the order test above went green. The
+	 * rule now reads a token and more contrast sets the token on the block, so
+	 * neither weight nor order decides; this holds both halves, and that no
+	 * more-contrast rule goes back to naming the line by a selector.
+	 */
+	it('rules the head and an open form through a token more contrast raises', () => {
+		const ruled = all.filter(
+			(rule) =>
+				rule.context.length === 0 &&
+				selectorList(rule.selector).includes('.sheetsmith-stat-block-play-head') &&
+				selectorList(rule.selector).some((one) => one.includes('[aria-expanded=\'true\']')),
+		);
+		expect(ruled).toHaveLength(1);
+		expect(declarations(ruled[0]?.body ?? '')).toContain(
+			'border-bottom: 1px solid var(--sheetsmith-stat-block-rule)',
+		);
+
+		const token = (context: string[]) =>
+			all
+				.filter(
+					(rule) =>
+						rule.context.join() === context.join() &&
+						selectorList(rule.selector).includes('.sheetsmith-stat-block'),
+				)
+				.flatMap((rule) => declarations(rule.body))
+				.filter((one) => one.startsWith('--sheetsmith-stat-block-rule:'));
+		expect(token([])).toEqual(['--sheetsmith-stat-block-rule: var(--background-modifier-border)']);
+		expect(token(['@media (prefers-contrast: more)'])).toEqual([
+			'--sheetsmith-stat-block-rule: var(--text-muted)',
+		]);
+
+		const named = all.filter(
+			(rule) =>
+				rule.context.includes('@media (prefers-contrast: more)') &&
+				selectorList(rule.selector).some(
+					(one) =>
+						one === '.sheetsmith-stat-block-play-head' ||
+						one.startsWith('.sheetsmith-stat-block-record > .sheetsmith-record-summary'),
+				),
+		);
+		expect(named.map((rule) => rule.selector)).toEqual([]);
 	});
 
 	it('sets the attack table on the tiles\' surface and its header a gentle step off it, theme variables only', () => {
@@ -5951,5 +6435,102 @@ describe('a Roster card strip\'s state floor (docs/features/non-number-modifiers
 		const selectors = rules.map(([, selector]) => (selector ?? '').trim());
 		expect(selectors).toContain('.sheetsmith-roster-cards.sheetsmith-roster-cards-stateful');
 		for (const selector of selectors) expect(selector, selector).not.toContain('sheetsmith-state-door');
+	});
+});
+
+describe('the sheet in forced colors (docs/features/sheet-contrast-pass.md)', () => {
+	const FORCED = '@media (forced-colors: active)';
+	const all = rules(CSS_WITHOUT_COMMENTS).map((rule, at) => ({ ...rule, at }));
+	const forced = all.filter((rule) => rule.context.join() === FORCED);
+
+	/** Rules outside the mode hiding `field` by a zero opacity. */
+	const hiddenElsewhere = (from: Rule[], field: string): string[] =>
+		from
+			.filter(
+				(rule) =>
+					rule.context.join() !== FORCED &&
+					rule.selector.includes(field) &&
+					declarations(rule.body).some((one) => /^opacity: 0$/.test(one)),
+			)
+			.map((rule) => rule.selector);
+	/** Rules taking `field` out of the mode's repainting. */
+	const adjusted = (from: Rule[], field: string): string[] =>
+		from
+			.filter((rule) => rule.selector.includes(field) && /forced-color-adjust\s*:/.test(rule.body))
+			.map((rule) => rule.selector);
+	const LONGHANDS = 'text-decoration-(?:style|color|thickness)';
+
+	it('would notice an opacity outside the mode, a field taken out of it, or a longhand', () => {
+		const planted = rules(
+			'.sheetsmith-view .sheetsmith-x-input:not(:focus) { opacity: 0; }\n' +
+				'.sheetsmith-view .sheetsmith-x-input:hover { opacity: 0.5; }\n' +
+				'@media (forced-colors: active) { .sheetsmith-view .sheetsmith-x-input { opacity: 0; forced-color-adjust: none; } }',
+		);
+		// The ordinary rule's zero is found, a half opacity and the mode's own are not.
+		expect(hiddenElsewhere(planted, 'sheetsmith-x-input')).toEqual([
+			'.sheetsmith-view .sheetsmith-x-input:not(:focus)',
+		]);
+		expect(adjusted(planted, 'sheetsmith-x-input')).toEqual(['.sheetsmith-view .sheetsmith-x-input']);
+		expect(
+			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { text-decoration-style: dotted; } }', LONGHANDS),
+		).toHaveLength(1);
+	});
+
+	/*
+	 * §1. The mode repaints a prose field's `color: transparent` as `CanvasText`,
+	 * so its source drew under the rendered prose. Opacity hides it instead, only
+	 * while the field holds text, so an empty field's placeholder still shows,
+	 * and a refused draft is drawn again after it, so the reader's words stay
+	 * on screen. `forced-color-adjust` is the cut headline's answer and not this
+	 * one (`docs/UI.md` §6), so neither field takes it.
+	 */
+	for (const [field, refused] of [
+		['sheetsmith-rich-text-input', 'sheetsmith-rich-text-refused'],
+		['sheetsmith-record-body-input', 'sheetsmith-record-body-refused'],
+	] as const) {
+		it(`hides ${field}'s unfocused text by opacity, keeping its placeholder and a refused draft`, () => {
+			const hidden = forced.filter((rule) =>
+				selectorList(rule.selector).includes(
+					`.sheetsmith-view .${field}:not(:focus):not(:placeholder-shown)`,
+				),
+			);
+			expect(hidden).toHaveLength(1);
+			expect(declarations(hidden[0]?.body ?? '')).toEqual(['opacity: 0']);
+
+			const shown = forced.filter((rule) =>
+				selectorList(rule.selector).includes(`.sheetsmith-view .${refused} .${field}:not(:focus)`),
+			);
+			expect(shown).toHaveLength(1);
+			expect(declarations(shown[0]?.body ?? '')).toEqual(['opacity: 1']);
+			// Equal weight, (0,4,0), so the refused draft has to come after to win.
+			expect(specificity(hidden[0]?.selector ?? '')).toEqual([0, 4, 0]);
+			expect(specificity(shown[0]?.selector ?? '')).toEqual([0, 4, 0]);
+			expect(shown[0]?.at ?? 0).toBeGreaterThan(hidden[0]?.at ?? Infinity);
+
+			// No opacity rule outside the mode: the ordinary sheet keeps `color: transparent`.
+			expect(hiddenElsewhere(all, field)).toEqual([]);
+			expect(adjusted(all, field)).toEqual([]);
+		});
+	}
+
+	/*
+	 * §2. The app's opacity still applies over `LinkText`, so an unresolved link
+	 * drew at 4.40:1 and differed from a resolved one by brightness alone. Full
+	 * strength, and a dotted rule as the shape the mode cannot repaint away. A
+	 * border, because the decoration longhands are the spelling the
+	 * browser-support lint refuses — which this also holds across the sheet.
+	 */
+	it('draws an unresolved link at full strength with a dotted rule', () => {
+		const link = forced.filter((rule) =>
+			selectorList(rule.selector).includes('.sheetsmith-view .internal-link.is-unresolved'),
+		);
+		expect(link).toHaveLength(1);
+		expect(declarations(link[0]?.body ?? '')).toEqual([
+			'opacity: 1',
+			'text-decoration: none',
+			'border-bottom: 1px dotted',
+			'padding-bottom: 1px',
+		]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, LONGHANDS)).toEqual([]);
 	});
 });
