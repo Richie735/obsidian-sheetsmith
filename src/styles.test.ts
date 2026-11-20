@@ -3260,8 +3260,16 @@ describe('every declaration names a real CSS property', () => {
 	 * checked like any other. An at-rule's own prelude, such as the
 	 * `grid-template-columns: subgrid` a `@supports` tests, is not a declaration
 	 * and is not read.
+	 *
+	 * **`NEWER` is the one exception to "a newer pin", for a property no pin
+	 * has yet.** `corner-shape` (CSS Borders 4) shipped in Chromium 139 and is
+	 * what the app's own `button` rule sets, while 0.37.0 is the newest release
+	 * of the list and predates it. Each entry names the property, and the test
+	 * below fails the day the list gains one, so the entry goes with the pin
+	 * that makes it redundant rather than outliving it.
 	 */
-	const KNOWN = new Set(KNOWN_CSS_PROPERTIES);
+	const NEWER = ['corner-shape'];
+	const KNOWN = new Set([...KNOWN_CSS_PROPERTIES, ...NEWER]);
 
 	/** What was read: standard declarations checked, and custom ones passed over. */
 	function scan(text: string): {
@@ -3307,6 +3315,11 @@ describe('every declaration names a real CSS property', () => {
 
 	it('names only properties a browser knows', () => {
 		expect(scan(CSS_WITHOUT_COMMENTS).unknown).toEqual([]);
+	});
+
+	it('adds to the list only what the list does not hold yet', () => {
+		const listed = new Set<string>(KNOWN_CSS_PROPERTIES);
+		expect(NEWER.filter((property) => listed.has(property))).toEqual([]);
 	});
 
 	it('would catch the property that shipped', () => {
@@ -4478,13 +4491,16 @@ describe('the mark on a ring a modifier set (docs/features/modifier-set-ring-mar
 		rules(CSS_WITHOUT_COMMENTS).filter((rule) =>
 			selectorList(rule.selector).some((one) => one.includes(`.${RING_SET_CLASS}`)),
 		);
-
-	it('is a dotted muted border on a ::before outside the ring, taking no press', () => {
-		const halo = naming().find((rule) =>
+	/** The halo's own rule, among those naming the class. */
+	const halo = () =>
+		naming().find((rule) =>
 			selectorList(rule.selector).includes(`.sheetsmith-view .${RING_SET_CLASS}::before`),
 		);
-		const said = declarations(halo?.body ?? '');
-		expect(halo?.context).toEqual([]);
+
+	it('is a dotted muted border on a ::before outside the ring, taking no press', () => {
+		const rule = halo();
+		const said = declarations(rule?.body ?? '');
+		expect(rule?.context).toEqual([]);
 		expect(said).toEqual(
 			expect.arrayContaining([
 				"content: ''",
@@ -4497,6 +4513,23 @@ describe('the mark on a ring a modifier set (docs/features/modifier-set-ring-mar
 		);
 		// The `::after` is the ring's hit target, and stays that.
 		expect(naming().some((rule) => rule.selector.includes('::after'))).toBe(false);
+	});
+
+	it('takes the ring’s corner shape by inheriting it, never by declaring one', () => {
+		// The ring is a `<button>`, so the app's `button` rule gives it the
+		// theme's `--corner-shape`; a squircle theme draws a squircle ring. The
+		// property does not inherit unless asked, and the calibrated stylesheet
+		// sets `round`, so a halo restating a shape, or naming none, looks right
+		// in every shot without `&corner=` and draws a circle round a squircle
+		// in the app.
+		const all = naming();
+		expect(all.length).toBeGreaterThan(0);
+		expect(declarations(halo()?.body ?? '')).toContain('corner-shape: inherit');
+		for (const rule of all) {
+			for (const one of declarations(rule.body)) {
+				if (one.startsWith('corner-shape')) expect(one, rule.selector).toBe('corner-shape: inherit');
+			}
+		}
 	});
 
 	it('is carried by no background and no box-shadow, which forced colors would drop', () => {
