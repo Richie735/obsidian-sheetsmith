@@ -5954,6 +5954,32 @@ a.sheetsmith-notice-action {
 	color: var(--text-normal);
 }
 
+/* **In forced colors the unfocused field is hidden by opacity, since the mode
+   repaints `color: transparent` as `CanvasText`** and the source drew under the
+   prose: `[[Torch of Revealing]]` under *Torch of Revealing*. Opacity is the one
+   property the mode leaves alone, so nothing has to be restated in system
+   keywords, and it changes neither the box nor the tab order the view's focus
+   restoration counts — `visibility: hidden` would take the field out of the
+   second. Not the cut headline's `forced-color-adjust: none` (`docs/UI.md` §6):
+   that answer was forced by a mark inside the number, and this field holds none.
+
+   `:not(:placeholder-shown)` keeps an empty field drawn, so its placeholder still
+   says the box is one click from being typed in; a refused draft is drawn again
+   after it, at equal weight, because there the layer is already hidden and the
+   field's text is the only copy of the reader's words
+   (`docs/features/sheet-contrast-pass.md`). */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-rich-text-input:not(:focus):not(:placeholder-shown) {
+		opacity: 0;
+	}
+
+	.sheetsmith-view
+		.sheetsmith-rich-text-refused
+		.sheetsmith-rich-text-input:not(:focus) {
+		opacity: 1;
+	}
+}
+
 /* The message sits under the box rather than in it: the box is full, both layers
    fill it, and the block's height is its placement — so the error takes its room
    from the box and nothing on the sheet moves. */
@@ -7896,6 +7922,22 @@ a.sheetsmith-notice-action {
 	.sheetsmith-record-body-refused
 	.sheetsmith-record-body-input:not(:focus) {
 	color: var(--text-normal);
+}
+
+/* In forced colors the unfocused body is hidden by opacity, Rich text's answer
+   and for its reasons (at `.sheetsmith-rich-text-input`, above): the mode
+   repaints `color: transparent` as `CanvasText`, so the source drew under the
+   prose. An empty body keeps its placeholder and a refused draft stays drawn. */
+@media (forced-colors: active) {
+	.sheetsmith-view .sheetsmith-record-body-input:not(:focus):not(:placeholder-shown) {
+		opacity: 0;
+	}
+
+	.sheetsmith-view
+		.sheetsmith-record-body-refused
+		.sheetsmith-record-body-input:not(:focus) {
+		opacity: 1;
+	}
 }
 
 /* The fallback, where there is no app to render markdown: paragraphs with their

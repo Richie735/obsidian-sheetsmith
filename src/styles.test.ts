@@ -6360,3 +6360,75 @@ describe('a Roster card strip\'s state floor (docs/features/non-number-modifiers
 		for (const selector of selectors) expect(selector, selector).not.toContain('sheetsmith-state-door');
 	});
 });
+
+describe('the sheet in forced colors (docs/features/sheet-contrast-pass.md)', () => {
+	const FORCED = '@media (forced-colors: active)';
+	const all = rules(CSS_WITHOUT_COMMENTS).map((rule, at) => ({ ...rule, at }));
+	const forced = all.filter((rule) => rule.context.join() === FORCED);
+
+	/** Rules outside the mode hiding `field` by a zero opacity. */
+	const hiddenElsewhere = (from: Rule[], field: string): string[] =>
+		from
+			.filter(
+				(rule) =>
+					rule.context.join() !== FORCED &&
+					rule.selector.includes(field) &&
+					declarations(rule.body).some((one) => /^opacity: 0$/.test(one)),
+			)
+			.map((rule) => rule.selector);
+	/** Rules taking `field` out of the mode's repainting. */
+	const adjusted = (from: Rule[], field: string): string[] =>
+		from
+			.filter((rule) => rule.selector.includes(field) && /forced-color-adjust\s*:/.test(rule.body))
+			.map((rule) => rule.selector);
+
+	it('would notice an opacity outside the mode, or a field taken out of it', () => {
+		const planted = rules(
+			'.sheetsmith-view .sheetsmith-x-input:not(:focus) { opacity: 0; }\n' +
+				'.sheetsmith-view .sheetsmith-x-input:hover { opacity: 0.5; }\n' +
+				'@media (forced-colors: active) { .sheetsmith-view .sheetsmith-x-input { opacity: 0; forced-color-adjust: none; } }',
+		);
+		// The ordinary rule's zero is found, a half opacity and the mode's own are not.
+		expect(hiddenElsewhere(planted, 'sheetsmith-x-input')).toEqual([
+			'.sheetsmith-view .sheetsmith-x-input:not(:focus)',
+		]);
+		expect(adjusted(planted, 'sheetsmith-x-input')).toEqual(['.sheetsmith-view .sheetsmith-x-input']);
+	});
+
+	/*
+	 * §1. The mode repaints a prose field's `color: transparent` as `CanvasText`,
+	 * so its source drew under the rendered prose. Opacity hides it instead, only
+	 * while the field holds text, so an empty field's placeholder still shows,
+	 * and a refused draft is drawn again after it, so the reader's words stay
+	 * on screen. `forced-color-adjust` is the cut headline's answer and not this
+	 * one (`docs/UI.md` §6), so neither field takes it.
+	 */
+	for (const [field, refused] of [
+		['sheetsmith-rich-text-input', 'sheetsmith-rich-text-refused'],
+		['sheetsmith-record-body-input', 'sheetsmith-record-body-refused'],
+	] as const) {
+		it(`hides ${field}'s unfocused text by opacity, keeping its placeholder and a refused draft`, () => {
+			const hidden = forced.filter((rule) =>
+				selectorList(rule.selector).includes(
+					`.sheetsmith-view .${field}:not(:focus):not(:placeholder-shown)`,
+				),
+			);
+			expect(hidden).toHaveLength(1);
+			expect(declarations(hidden[0]?.body ?? '')).toEqual(['opacity: 0']);
+
+			const shown = forced.filter((rule) =>
+				selectorList(rule.selector).includes(`.sheetsmith-view .${refused} .${field}:not(:focus)`),
+			);
+			expect(shown).toHaveLength(1);
+			expect(declarations(shown[0]?.body ?? '')).toEqual(['opacity: 1']);
+			// Equal weight, (0,4,0), so the refused draft has to come after to win.
+			expect(specificity(hidden[0]?.selector ?? '')).toEqual([0, 4, 0]);
+			expect(specificity(shown[0]?.selector ?? '')).toEqual([0, 4, 0]);
+			expect(shown[0]?.at ?? 0).toBeGreaterThan(hidden[0]?.at ?? Infinity);
+
+			// No opacity rule outside the mode: the ordinary sheet keeps `color: transparent`.
+			expect(hiddenElsewhere(all, field)).toEqual([]);
+			expect(adjusted(all, field)).toEqual([]);
+		});
+	}
+});

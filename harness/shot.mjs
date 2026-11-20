@@ -4780,6 +4780,22 @@ function markdownViews() {
 			query: 'surface=sheet&state=markdown&theme=light&renderer=none',
 			size: '1400,1200',
 		},
+		// The prose box in forced colors in each state its field can be in
+		// (`docs/features/sheet-contrast-pass.md`): focused, the source alone;
+		// emptied, the placeholder; refused, the draft and the error under the
+		// box. The `#` is escaped or the query ends at it. Forced colors draws one
+		// palette, so a theme twin would be the same PNG.
+		...[
+			{ suffix: '-focused', query: '&focus=.sheetsmith-rich-text-input' },
+			{ suffix: '-empty', query: '&type=.sheetsmith-rich-text-input|' },
+			{ suffix: '-refused', query: '&type=.sheetsmith-rich-text-input|%23%23 Heading%0AA draft' },
+		].map(({ suffix, query }) => ({
+			name: `sheet-markdown-forced${suffix}`,
+			query: `surface=sheet&state=markdown&theme=light${query}`,
+			size: '1400,1200',
+			flags: ['--force-high-contrast'],
+			frame: '.sheetsmith-rich-text',
+		})),
 	];
 }
 
