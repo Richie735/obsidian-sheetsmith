@@ -7,6 +7,7 @@
  *
  *   node harness/shot.mjs                          # every default view
  *   node harness/shot.mjs surface=settings theme=dark width=620
+ *   node harness/shot.mjs only=pool-ceiling- only=headline-narrow-   # named defaults
  *
  * Views are addressed by the harness's own query parameters, so anything
  * reachable by clicking is reachable by a shot. Output lands in harness/shots/,
@@ -4916,7 +4917,7 @@ function placedScrollCueViews() {
 const args = process.argv.slice(2);
 
 /** The arguments `shot.mjs` reads itself, which never reach the page's query. */
-const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad'];
+const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad', 'only'];
 const own = (name) =>
 	args.filter((arg) => arg.startsWith(`${name}=`)).map((arg) => decodeURIComponent(arg.slice(name.length + 1)));
 
@@ -4943,8 +4944,23 @@ function holdOf(spec) {
 	return { at: spec.slice(0, at), by };
 }
 
+/**
+ * `only=<prefix>`, repeatable: the default views whose names start with one of
+ * the prefixes, each under its own name, so a re-shot of a family stays scoped
+ * without writing `custom.png`. Fails on matching nothing, since an empty run
+ * looks like a passing one.
+ */
+const only = own('only');
+const scoped = DEFAULTS.filter((view) => only.some((prefix) => view.name.startsWith(prefix)));
+if (only.length > 0 && scoped.length === 0) throw new Error(`No default view starts with ${only.join(' or ')}.`);
+if (only.length > 0 && args.some((arg) => !arg.startsWith('only='))) {
+	throw new Error('`only=` picks default views by name and takes no other argument.');
+}
+
 const views =
-	args.length === 0
+	only.length > 0
+		? scoped
+		: args.length === 0
 		? DEFAULTS
 		: [
 				{
