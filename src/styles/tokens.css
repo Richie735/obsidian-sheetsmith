@@ -132,7 +132,9 @@ body {
 	   **A value, not a label.** The words ranked at or under the card's heading
 	   — a Pool's *Temp*, a card's abbreviation, its note line — stay at
 	   `--font-ui-smaller` with the heading, since growing them past a heading
-	   that holds still reorders the card (`docs/BACKLOG.md` § UI). */
+	   that holds still reorders the card: the heading and its rank stay the
+	   app's fixed size, and a larger sheet grows values, not labels (UI.md §5,
+	   Ruling C). */
 	--sheetsmith-qualifier-small: max(var(--font-ui-small), calc(13em / 15));
 	/* **A Pool's ceiling, the qualifier beside its number**
 	   (`docs/features/pool-ceiling-text-size.md`): the app's `--font-ui-medium`

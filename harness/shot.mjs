@@ -7,6 +7,7 @@
  *
  *   node harness/shot.mjs                          # every default view
  *   node harness/shot.mjs surface=settings theme=dark width=620
+ *   node harness/shot.mjs only=pool-ceiling- only=headline-narrow-   # named defaults
  *
  * Views are addressed by the harness's own query parameters, so anything
  * reachable by clicking is reachable by a shot. Output lands in harness/shots/,
@@ -4490,16 +4491,68 @@ function poolCeilingViews() {
 		{ id: 'large-1400', query: 'surface=sheet&theme=light&text=24' },
 		{ id: 'large-520', query: 'surface=sheet&theme=light&width=520&text=24' },
 	];
-	return conditions.flatMap(({ id, query }) => [
-		{ name: `pool-ceiling-${id}-temp`, query, size: '1400,1900', frame: poolCell('Hit points'), pad: 6 },
-		{
-			name: `pool-ceiling-${id}-owned`,
-			query: `${query}&${OWNED}`,
+	const FIELD = ".sheetsmith-pool-ceiling .sheetsmith-pool-max-input[aria-label='Rolled HP maximum']";
+	// The sample's own `22`, not a typed `120`: the harness focuses a field
+	// already on screen before it types, and the commit's rebuild then drops
+	// that focus, so a typed and focused ceiling photographs unfocused.
+	const focused = `focus=${encodeURIComponent(FIELD)}`;
+	return [
+		...conditions.flatMap(({ id, query }) => [
+			{ name: `pool-ceiling-${id}-temp`, query, size: '1400,1900', frame: poolCell('Hit points'), pad: 6 },
+			{
+				name: `pool-ceiling-${id}-owned`,
+				query: `${query}&${OWNED}`,
+				size: '1400,1900',
+				frame: poolCell('Rolled HP'),
+				pad: 6,
+			},
+		]),
+		/*
+		 * The typed ceiling focused at `text=24`, where its ring is largest
+		 * against the slash beside it (`docs/features/qualifier-fit-and-size.md`):
+		 * with 1px of padding the ring is drawn half inside the field, and these
+		 * are where it is seen whole and clear of the slash. Forced colors
+		 * discards the box-shadow and draws the shared transparent outline
+		 * instead, wholly outside, so that path is shot too.
+		 */
+		...conditions
+			.filter(({ id }) => id.startsWith('large-'))
+			.map(({ id, query }) => ({
+				name: `pool-ceiling-${id}-owned-focused`,
+				query: `${query}&${focused}`,
+				size: '1400,1900',
+				frame: poolCell('Rolled HP'),
+				pad: 6,
+			})),
+		/*
+		 * Rolled HP moved to one unit with `120` typed, the design review's case:
+		 * the wrapped ceiling is wider than the cell, and the reading's
+		 * `safe center` starts it at the content's start, so the card's clip cuts
+		 * its end and the slash stays (`docs/features/qualifier-fit-and-size.md`).
+		 * Plain centring clipped both ends, and at `text=24` it read `120`.
+		 * `&type=` focuses the field; the card is `overflow: clip`, no scroll
+		 * container, so the focus no longer scrolls it sideways and leaves it
+		 * there, which these views once undid with `&scrollx=`.
+		 */
+		...[
+			['default', 'surface=sheet&theme=light&width=520'],
+			['large', 'surface=sheet&theme=light&width=520&text=24'],
+		].map(([id, query]) => ({
+			name: `pool-ceiling-one-${id}-520-owned`,
+			query: `${query}&place=rolled_health:10,1&${OWNED}`,
 			size: '1400,1900',
 			frame: poolCell('Rolled HP'),
 			pad: 6,
+		})),
+		{
+			name: 'pool-ceiling-large-1400-owned-focused-forced-colors',
+			query: `surface=sheet&theme=light&text=24&${focused}`,
+			size: '1400,1900',
+			frame: poolCell('Rolled HP'),
+			pad: 6,
+			flags: ['--force-high-contrast'],
 		},
-	]);
+	];
 }
 
 /**
@@ -4864,7 +4917,7 @@ function placedScrollCueViews() {
 const args = process.argv.slice(2);
 
 /** The arguments `shot.mjs` reads itself, which never reach the page's query. */
-const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad'];
+const OWN = ['size', 'media', 'hover', 'hold', 'flag', 'platform', 'frame', 'pad', 'only'];
 const own = (name) =>
 	args.filter((arg) => arg.startsWith(`${name}=`)).map((arg) => decodeURIComponent(arg.slice(name.length + 1)));
 
@@ -4891,8 +4944,23 @@ function holdOf(spec) {
 	return { at: spec.slice(0, at), by };
 }
 
+/**
+ * `only=<prefix>`, repeatable: the default views whose names start with one of
+ * the prefixes, each under its own name, so a re-shot of a family stays scoped
+ * without writing `custom.png`. Fails on matching nothing, since an empty run
+ * looks like a passing one.
+ */
+const only = own('only');
+const scoped = DEFAULTS.filter((view) => only.some((prefix) => view.name.startsWith(prefix)));
+if (only.length > 0 && scoped.length === 0) throw new Error(`No default view starts with ${only.join(' or ')}.`);
+if (only.length > 0 && args.some((arg) => !arg.startsWith('only='))) {
+	throw new Error('`only=` picks default views by name and takes no other argument.');
+}
+
 const views =
-	args.length === 0
+	only.length > 0
+		? scoped
+		: args.length === 0
 		? DEFAULTS
 		: [
 				{

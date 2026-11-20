@@ -5063,6 +5063,29 @@ describe('the qualifiers beside a headline follow the sheet\'s size', () => {
 		expect(guard[0]?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
 	});
 
+	it("trims a typed ceiling's inline padding to 1px, and only under the Pool's ceiling", () => {
+		// `docs/features/qualifier-fit-and-size.md`: the digits 3px after the
+		// slash rather than 6. A Track row's length field wears the same class
+		// and keeps the base rule's padding.
+		expect(declarations(bodyOf(OWNED))).toContain('--sheetsmith-pool-max-pad: 1px');
+		expect(declarations(bodyOf(OWNED))).toContain('padding-inline: var(--sheetsmith-pool-max-pad)');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-max-input'))).toContain(
+			'padding: 0 var(--size-2-2)',
+		);
+		// Every rule reading the trim is under the Pool's ceiling.
+		const trims = all.filter((one) => one.body.includes('--sheetsmith-pool-max-pad'));
+		expect(trims.length).toBe(2);
+		for (const one of trims) {
+			for (const sel of selectorList(one.selector)) expect(sel).toContain('.sheetsmith-pool-ceiling ');
+		}
+		// The fallback width counts the same padding, not a copy of it.
+		const fallback = trims.find((one) => one.context.includes('@supports not (field-sizing: content)'));
+		expect(declarations(fallback?.body ?? '')).toEqual([
+			'width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad))',
+			'min-width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad))',
+		]);
+	});
+
 	it("sizes a Pool's temporary points on the qualifier, uncapped", () => {
 		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-temp-input'))).toContain(
 			'font-size: var(--sheetsmith-qualifier-small)',
@@ -5139,6 +5162,32 @@ describe("a pool's reading fits a narrow card", () => {
 		expect(valueIn(reading[0]?.body ?? '', 'gap')).toBe('0 var(--size-2-1)');
 	});
 
+	it('centres the reading safely, so an overflowing ceiling keeps its slash', () => {
+		// `docs/features/qualifier-fit-and-size.md`: plain `center` overflowed a
+		// wrapped `/120` at both ends and the card's clip cut the slash first.
+		// The plain value comes first, for an engine without `safe` in flexbox;
+		// a later edit back to `center` alone, or the two swapped, reads the bug
+		// back in with nothing on screen saying so outside a one-unit cell.
+		const values = declarations(reading[0]?.body ?? '')
+			.filter((one) => one.startsWith('justify-content:'))
+			.map((one) => one.slice('justify-content:'.length).trim());
+		expect(values).toEqual(['center', 'safe center']);
+	});
+
+	it('clips the card without making it a scroll container', () => {
+		// `clip` cuts where `hidden` did, but a focused ceiling cannot scroll
+		// the card sideways and leave it there; `hidden` first for an engine
+		// without `clip` (iOS before 16).
+		const card = rulesNaming('.sheetsmith-pool').filter(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-pool',
+		);
+		expect(card).toHaveLength(1);
+		const values = declarations(card[0]?.body ?? '')
+			.filter((one) => one.startsWith('overflow:'))
+			.map((one) => one.slice('overflow:'.length).trim());
+		expect(values).toEqual(['hidden', 'clip']);
+	});
+
 	it('never lets the number shrink, and caps it at the row', () => {
 		const body = base[0]?.body ?? '';
 		expect(valueIn(body, 'flex-shrink')).toBe('0');
@@ -5165,7 +5214,7 @@ describe("a pool's reading fits a narrow card", () => {
 		 * gap measure 43.4px at `text=24`'s 20.8px qualifier: 43.4 / 24 em. What
 		 * the sheet's `em` does not reach is px (`docs/UI.md` §5): the reading's
 		 * gap, the 2px the row sits inside the card's content box and the
-		 * ceiling's 10px of padding and gap.
+		 * ceiling's 4px of padding and gap.
 		 *
 		 * Where the app's `--font-ui-medium` holds the ceiling above 13/15 of the
 		 * sheet, the `em` part undercounts it: on a phone the sheet is 16px and
@@ -5179,9 +5228,11 @@ describe("a pool's reading fits a narrow card", () => {
 		// the wrap test above, and that the token is 2px only by this constant.
 		const GAP_PX = 2;
 		const ROW_INSET_PX = 2;
-		const CEILING_CHROME_PX = 10;
+		// A typed ceiling's 1px of padding a side and the slash's 2px gap
+		// (`docs/features/qualifier-fit-and-size.md`).
+		const CEILING_CHROME_PX = 4;
 		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
-		expect(prelude).toBe('@container (max-width: calc(6.4em + 20px))');
+		expect(prelude).toBe('@container (max-width: calc(6.4em + 14px))');
 		const match = /^@container \(max-width: calc\(([\d.]+)em \+ ([\d.]+)px\)\)$/.exec(prelude);
 		expect(match, `unreadable threshold: ${prelude}`).not.toBeNull();
 		const em = Number(match?.[1]);
@@ -5200,6 +5251,61 @@ describe("a pool's reading fits a narrow card", () => {
 		const need = FOUR_CH_EM * SHEET + digitsAtToken + chrome;
 		expect(em * SHEET + px).toBeGreaterThanOrEqual(need);
 		expect(em * SHEET + px - need).toBeLessThan(2);
+	});
+});
+
+describe("a narrow card's own-value pill gives up its padding", () => {
+	/*
+	 * `docs/features/qualifier-fit-and-size.md`, row 2. Below the card width
+	 * the pill's chrome and three digits need, the pill and its field drop
+	 * their inline padding. happy-dom lays nothing out, so
+	 * `harness/measure-pool-headline.mjs` check 12 measures the result; this
+	 * holds the threshold's px to the base rules it counts, so a token moved
+	 * there cannot leave the threshold counting the old chrome.
+	 */
+	const PILL = '.sheetsmith-card-has-derived .sheetsmith-card-value';
+	const FIELD = '.sheetsmith-view .sheetsmith-card-input';
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const bodyOf = (selector: string): string =>
+		all.find((one) => one.context.length === 0 && selectorList(one.selector).includes(selector))?.body ?? '';
+	const narrow = all.filter((one) => one.context.some((at) => at.startsWith('@container (max-width: calc(1.7em')));
+	// Obsidian's values for the tokens the base rules name, which no test here
+	// can read: that each rule names its token is asserted below.
+	const TOKEN_PX: Record<string, number> = { '--size-2-1': 2, '--size-4-2': 8 };
+	const inlinePx = (padding: string): number => {
+		const parts = padding.split(/\s+(?![^(]*\))/);
+		const inline = parts[1] ?? parts[0] ?? '';
+		if (inline === '0') return 0;
+		const token = /^var\((--[\w-]+)\)$/.exec(inline)?.[1] ?? '';
+		expect(TOKEN_PX[token], `unread padding: ${padding}`).toBeDefined();
+		return TOKEN_PX[token] ?? NaN;
+	};
+
+	it('counts the pill padding, its border and the field padding in px, and three digits in em', () => {
+		const pill = declarations(bodyOf(PILL));
+		const field = declarations(bodyOf(FIELD));
+		const pad = (list: string[]) => list.find((d) => d.startsWith('padding:'))?.slice('padding:'.length).trim() ?? '';
+		const border = pill.find((d) => d.startsWith('border:')) ?? '';
+		expect(border).toMatch(/^border: 1px solid /);
+		const chrome = 2 * inlinePx(pad(pill)) + 2 * 1 + 2 * inlinePx(pad(field));
+		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
+		expect(prelude).toBe('@container (max-width: calc(1.7em + 22px))');
+		const match = /calc\(([\d.]+)em \+ ([\d.]+)px\)/.exec(prelude);
+		expect(Number(match?.[2])).toBe(chrome);
+		// Three digits at the qualifier's size, semibold and tabular, measured
+		// at 26.6px on a 16px sheet and 40.3 at 24: 1.68em, rounded up.
+		expect(Number(match?.[1])).toBeGreaterThanOrEqual(40.3 / 24);
+		expect(Number(match?.[1]) - 40.3 / 24).toBeLessThan(0.05);
+	});
+
+	it("drops only a card's own pill's inline padding, and its field's", () => {
+		expect(narrow.map((one) => one.selector.replace(/\s+/g, ' ')).sort()).toEqual(
+			[
+				'.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value',
+				'.sheetsmith-view .sheetsmith-card-has-derived > .sheetsmith-card-value > .sheetsmith-card-input',
+			].sort(),
+		);
+		for (const one of narrow) expect(declarations(one.body)).toEqual(['padding-inline: 0']);
 	});
 });
 

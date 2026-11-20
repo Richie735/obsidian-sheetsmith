@@ -162,13 +162,18 @@ design falls back to wherever `field-sizing` is unsupported.
      more). As first shipped it was `4.6em + 44px`, with the ceiling counted as
      38.7px of fixed chrome; that 38.7 was a 13px field, since Obsidian's
      `input[type='text']` set the owned ceiling's size over `.sheetsmith-pool-max`.
+     *Since amended again (2026-11-19):* `docs/features/qualifier-fit-and-size.md`
+     trimmed a typed ceiling's padding to 1px a side, so its 10px of padding and
+     gap became 4 and the threshold `calc(6.4em + 14px)`.
    - It is written as `em` plus `px`:
-     `@container (max-width: calc(6.4em + 20px))`. The value and the ceiling
+     `@container (max-width: calc(6.4em + 14px))` since the second amendment
+     above, `calc(6.4em + 20px)` before it. The value and the ceiling
      follow the sheet and are in `em`; the gaps, padding and inset are chrome the
      sheet's `em` does not reach (`docs/UI.md` §5). A container query's `em`
-     resolves on the Pool card, which is the query container. Measured: 122.4px
-     of card content at the default size and on a phone, 173.6 at `text=24`,
-     116 in the app's 15px sheet (118 and 154 as first shipped).
+     resolves on the Pool card, which is the query container. Measured: 116.4px
+     of card content at the default size and on a phone, 167.6 at `text=24`,
+     110 in the app's 15px sheet (122.4, 173.6 and 116 at `+ 20px`; 118 and 154
+     as first shipped).
    - Above the threshold nothing changes, so every Pool that fits today is
      pixel-identical.
    - **The override sits below the base rule in `sheet.css`.** `@container` adds
