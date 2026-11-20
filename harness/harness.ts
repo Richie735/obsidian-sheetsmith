@@ -991,6 +991,27 @@ function setText(size: string): void {
 }
 
 /**
+ * The theme's `--corner-shape`, or the app's own when `null`.
+ *
+ * The calibrated stylesheet sets it to `round`, the app's default, so until this
+ * existed every shot drew a corner the way a circle draws one and a rule that
+ * restated a shape could not be told from one that followed it. A community
+ * theme in real use sets `superellipse(1.1)` on `.theme-dark`, and the app's own
+ * `button` rule passes it to every `<button>` on a sheet through
+ * `--button-corner-shape` (`docs/features/modifier-set-ring-mark.md`).
+ *
+ * On `body` because that is where the app declares the variables built from it:
+ * `--button-corner-shape: var(--corner-shape)` is resolved where it is
+ * declared, so a value set lower down would reach nothing that reads the
+ * button's. Inline so it wins over the palette blocks on the same element, as a
+ * theme's later stylesheet does.
+ */
+function setCornerShape(shape: string | null): void {
+	if (shape === null) document.body.style.removeProperty('--corner-shape');
+	else document.body.style.setProperty('--corner-shape', shape);
+}
+
+/**
  * Light or dark, without disturbing the other classes body carries.
  *
  * It used to be an assignment to `className`, which was fine while the theme was
@@ -1086,6 +1107,10 @@ document
  * through **State**, which breaks a component's config and leaves the file
  * perfectly parseable where it is.
  *
+ * And one for the theme's corner: `&corner=<corner-shape>` sets the theme's
+ * `--corner-shape`, `&corner=squircle` or `&corner=superellipse(1.1)`, so a
+ * shape the calibrated `round` hides can be photographed (`setCornerShape`).
+ *
  * And one for the fold: `&bounded` holds the surface to the window's height, so
  * it scrolls inside itself the way a leaf scrolls inside a workspace. The
  * default is the opposite — the pane grows and a shot captures the whole surface
@@ -1137,6 +1162,8 @@ function applyQuery(): void {
 	const text = params.get('text') ?? '0';
 	setText(text);
 	press('text', text);
+
+	setCornerShape(params.get('corner'));
 
 	// Before the state loads, since the layout a state draws carries it.
 	formsTint = params.get('tint');
