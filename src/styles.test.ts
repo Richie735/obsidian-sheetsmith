@@ -2662,9 +2662,41 @@ function selectorList(selector: string): string[] {
 	return found;
 }
 
-/** (ids, classes and attributes and pseudo-classes, types) of one selector. */
+/**
+ * (ids, classes and attributes and pseudo-classes, types) of one selector, as
+ * CSS weighs it: `:not()`, `:is()` and `:has()` weigh their heaviest argument
+ * and not themselves, and `:where()` weighs nothing. Counted naively they read
+ * as a pseudo-class each plus their argument, which put
+ * `.a .b:not(:focus):not(:placeholder-shown)` at (0,6,0) against (0,4,0).
+ */
 function specificity(selector: string): [number, number, number] {
-	const bare = selector.replace(/::[\w-]+/g, ' ');
+	let rest = selector;
+	const total: [number, number, number] = [0, 0, 0];
+	// Take each functional pseudo-class out, innermost-agnostic: its argument
+	// list is read by balanced parentheses and weighed recursively.
+	for (;;) {
+		const match = /:(not|is|has|where)\(/.exec(rest);
+		if (match === null) break;
+		const open = match.index + match[0].length;
+		let depth = 1;
+		let close = open;
+		while (depth > 0 && close < rest.length) {
+			if (rest[close] === '(') depth += 1;
+			else if (rest[close] === ')') depth -= 1;
+			close += 1;
+		}
+		const argument = rest.slice(open, close - 1);
+		if (match[1] !== 'where') {
+			const heaviest = selectorList(argument)
+				.map((one) => specificity(one.replace(/^[>+~]\s*/, '')))
+				.reduce<[number, number, number]>((a, b) => (heavier(b, a) ? b : a), [0, 0, 0]);
+			total[0] += heaviest[0];
+			total[1] += heaviest[1];
+			total[2] += heaviest[2];
+		}
+		rest = rest.slice(0, match.index) + ' ' + rest.slice(close);
+	}
+	const bare = rest.replace(/::[\w-]+/g, ' ');
 	const ids = (bare.match(/#[\w-]+/g) ?? []).length;
 	const classes =
 		(bare.match(/\.[\w-]+/g) ?? []).length +
@@ -2674,14 +2706,32 @@ function specificity(selector: string): [number, number, number] {
 		.replace(/\[[^\]]*\]/g, ' ')
 		.split(/[\s>+~]+/)
 		.filter((one) => /^[a-z]/i.test(one)).length;
-	return [ids, classes, types];
+	return [ids + total[0], classes + total[1], types + total[2]];
 }
+
+/**
+ * Every declaration of `property` in a stylesheet's text, at any depth of
+ * at-rule, as `property: value`. `property` is a regular-expression fragment, so
+ * one scan can name a family of longhands.
+ */
+const propertyDeclarations = (text: string, property: string): string[] =>
+	text.match(new RegExp(`(?:^|[;{\\s])(?:${property})\\s*:[^;}]*`, 'gm')) ?? [];
 
 /** Whether `a` beats `b` on weight alone. */
 const heavier = (a: [number, number, number], b: [number, number, number]) =>
 	a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
 const same = (a: [number, number, number], b: [number, number, number]) =>
 	a.join() === b.join();
+
+describe('specificity weighs a functional pseudo-class by its argument', () => {
+	it('reads the weights CSS gives', () => {
+		expect(specificity('.a .b:not(:focus):not(:placeholder-shown)')).toEqual([0, 4, 0]);
+		expect(specificity('.a > .b:has(> .c[aria-expanded=\'true\'])')).toEqual([0, 4, 0]);
+		expect(specificity('.a:is(.b, #c)')).toEqual([1, 1, 0]);
+		expect(specificity(':where(.a .b) td')).toEqual([0, 0, 1]);
+		expect(specificity('input[type=\'text\']')).toEqual([0, 1, 1]);
+	});
+});
 
 describe('a rule reads the class that says why, never the elements drawn', () => {
 	/*
@@ -2849,19 +2899,16 @@ describe('no rule clips with `clip-path`', () => {
 	 * field reached for it once, to inset its dotted rule, and was refused at the
 	 * land stop (`docs/features/granted-temporary-points.md`).
 	 */
-	const declares = (text: string, property: string): string[] =>
-		text.match(new RegExp(`(?:^|[;{\\s])${property}\\s*:[^;}]*`, 'gm')) ?? [];
-
 	it('declares no `clip-path` anywhere in the stylesheet', () => {
-		expect(declares(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'clip-path')).toEqual([]);
 	});
 
 	it('would notice one', () => {
 		// The same scan finds the `clip` the visually-hidden rule does declare,
 		// so the empty list above is a finding, and one planted in an at-rule.
-		expect(declares(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'clip').length).toBeGreaterThan(0);
 		expect(
-			declares('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
+			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
 		).toHaveLength(1);
 	});
 });
