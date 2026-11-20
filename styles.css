@@ -4266,11 +4266,23 @@ body {
 	transition:
 		background-color 220ms ease-out,
 		border-color 220ms ease-out;
-	gap: var(--size-2-1);
+	/* No row gap, as the reading above has none: wrapped, the word and its
+	   value are one qualifier, and the field's own 2px of block padding is
+	   the room between them. With it, *Temp* to its value measured 8px of ink
+	   at the default size and 10 at `text=24` against 5.5 above the word;
+	   without, 6 and 8 (`docs/features/qualifier-fit-and-size.md`). */
+	gap: 0 var(--size-2-1);
 	/* The Card pill's hang (`.sheetsmith-card-has-derived .sheetsmith-card-value`),
 	   in `em` for its reason: a fixed 4px under a number that grows left the
 	   pill nearly touching it at `text=24`. */
 	margin-top: 0.4em;
+	/* One line's height whatever the field's: the app's input height and the
+	   border, which is what the field's 30px box drew before it took the
+	   height of its digits (the width rule below), so a pill on one line is
+	   exactly as tall as it was, its lines centred in it, and only a wrapped
+	   pill, already taller, closes up. */
+	min-height: calc(var(--input-height) + 2px);
+	align-content: center;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -4310,11 +4322,19 @@ body {
    buy nothing but a second place the count is set, and the pill would move
    under every commit. Not `field-sizing: content` for the reason the refused
    rule above gives. Named as `--sheetsmith-pool-temp-width` so the refused rule
-   floors on this width rather than on a copy of it. The width alone at (0,3,0),
-   past Obsidian's phone rule: see `.sheetsmith-table-input`'s. */
+   floors on this width rather than on a copy of it. The width at (0,3,0),
+   past Obsidian's phone rule: see `.sheetsmith-table-input`'s.
+
+   **And the height its digits need, not the app's fixed input height**
+   (`docs/features/qualifier-fit-and-size.md`), past the same rule. The 30px
+   box centred the digits well below *Temp* where the pill wraps, 13px of ink
+   apart against 5.5 above the word, so the pair read as a two-line box. The
+   pill keeps one line's height by its own floor (below the pill's rule), so
+   only a wrapped pill closes up. */
 .sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
 	--sheetsmith-pool-temp-width: calc(3ch + 2 * var(--size-2-2));
 	width: var(--sheetsmith-pool-temp-width);
+	height: auto;
 }
 
 /* **A granted field gives up the reach into the pill's padding**, so its border
