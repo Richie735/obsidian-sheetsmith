@@ -5063,6 +5063,29 @@ describe('the qualifiers beside a headline follow the sheet\'s size', () => {
 		expect(guard[0]?.at ?? -1).toBeGreaterThan(base[0]?.at ?? Infinity);
 	});
 
+	it("trims a typed ceiling's inline padding to 1px, and only under the Pool's ceiling", () => {
+		// `docs/features/qualifier-fit-and-size.md`: the digits 3px after the
+		// slash rather than 6. A Track row's length field wears the same class
+		// and keeps the base rule's padding.
+		expect(declarations(bodyOf(OWNED))).toContain('--sheetsmith-pool-max-pad: 1px');
+		expect(declarations(bodyOf(OWNED))).toContain('padding-inline: var(--sheetsmith-pool-max-pad)');
+		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-max-input'))).toContain(
+			'padding: 0 var(--size-2-2)',
+		);
+		// Every rule reading the trim is under the Pool's ceiling.
+		const trims = all.filter((one) => one.body.includes('--sheetsmith-pool-max-pad'));
+		expect(trims.length).toBe(2);
+		for (const one of trims) {
+			for (const sel of selectorList(one.selector)) expect(sel).toContain('.sheetsmith-pool-ceiling ');
+		}
+		// The fallback width counts the same padding, not a copy of it.
+		const fallback = trims.find((one) => one.context.includes('@supports not (field-sizing: content)'));
+		expect(declarations(fallback?.body ?? '')).toEqual([
+			'width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad))',
+			'min-width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad))',
+		]);
+	});
+
 	it("sizes a Pool's temporary points on the qualifier, uncapped", () => {
 		expect(declarations(bodyOf('.sheetsmith-view .sheetsmith-pool-temp-input'))).toContain(
 			'font-size: var(--sheetsmith-qualifier-small)',
@@ -5165,7 +5188,7 @@ describe("a pool's reading fits a narrow card", () => {
 		 * gap measure 43.4px at `text=24`'s 20.8px qualifier: 43.4 / 24 em. What
 		 * the sheet's `em` does not reach is px (`docs/UI.md` §5): the reading's
 		 * gap, the 2px the row sits inside the card's content box and the
-		 * ceiling's 10px of padding and gap.
+		 * ceiling's 4px of padding and gap.
 		 *
 		 * Where the app's `--font-ui-medium` holds the ceiling above 13/15 of the
 		 * sheet, the `em` part undercounts it: on a phone the sheet is 16px and
@@ -5179,9 +5202,11 @@ describe("a pool's reading fits a narrow card", () => {
 		// the wrap test above, and that the token is 2px only by this constant.
 		const GAP_PX = 2;
 		const ROW_INSET_PX = 2;
-		const CEILING_CHROME_PX = 10;
+		// A typed ceiling's 1px of padding a side and the slash's 2px gap
+		// (`docs/features/qualifier-fit-and-size.md`).
+		const CEILING_CHROME_PX = 4;
 		const prelude = narrow[0]?.context.find((at) => at.startsWith('@container')) ?? '';
-		expect(prelude).toBe('@container (max-width: calc(6.4em + 20px))');
+		expect(prelude).toBe('@container (max-width: calc(6.4em + 14px))');
 		const match = /^@container \(max-width: calc\(([\d.]+)em \+ ([\d.]+)px\)\)$/.exec(prelude);
 		expect(match, `unreadable threshold: ${prelude}`).not.toBeNull();
 		const em = Number(match?.[1]);

@@ -3800,13 +3800,15 @@ body {
    digits at the qualifier's size, a `/120` the character owns, 43.4px at
    `text=24`'s 20.8, so 1.81em: 6.4em. The px is what the sheet's `em` does
    not reach (`docs/UI.md` §5): the reading's 2px gap, the 2px the row sits
-   inside the card's content box and the ceiling's 10px of padding and gap,
-   14px, which is exact where the ceiling follows the sheet, rounded up to 20
-   for the regime where the app's `--font-ui-medium` holds it above 13/15 of
-   the sheet (a phone's 16px needs 4.9px more). It measures 122.4px at the
-   harness's default and on a phone, 173.6 at `text=24`, 116 in the app; it
-   never undercounts, and overshoots by up to 6px at large sizes, where a
-   Pool in that band takes the `2ch` slot a little early.
+   inside the card's content box and the ceiling's 4px of padding and gap
+   (a typed ceiling's 1px a side and the slash's 2px gap,
+   `docs/features/qualifier-fit-and-size.md`; 10 before its padding was
+   trimmed), 8px, which is exact where the ceiling follows the sheet, rounded
+   up by 6, to 14, for the regime where the app's `--font-ui-medium` holds it
+   above 13/15 of the sheet (a phone's 16px needs 4.9px more). It measures
+   116.4px at the harness's default and on a phone, 167.6 at `text=24`, 110 in
+   the app; it never undercounts, and overshoots by up to 6px at large sizes,
+   where a Pool in that band takes the `2ch` slot a little early.
 
    Below the threshold the box is elastic: `99 → 100` widens the number by a
    digit and can wrap the ceiling. Accepted, and recorded at `docs/UI.md` §9's
@@ -3815,7 +3817,7 @@ body {
 
    Below the base rule, at its own (0,3,0), since `@container` adds no
    specificity and the later rule wins on order (`docs/UI.md` §4). */
-@container (max-width: calc(6.4em + 20px)) {
+@container (max-width: calc(6.4em + 14px)) {
 .sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 		/* Capped at the row too: in a one-unit cell on a 520px sheet the
 		   content box is 15.2px, and a bare `2ch` floor beat the `max-width`
@@ -3911,6 +3913,20 @@ body {
 	width: calc(3ch + 2 * var(--size-2-2));
 }
 
+/* A Pool's own ceiling's width where field-sizing is unsupported: the same
+   three characters inside the padding a side its size rule below names as
+   `--sheetsmith-pool-max-pad`, read here so the two cannot drift. Where
+   field-sizing is supported the field is its digits from the `1ch` floor
+   that follows. Scoped under the ceiling for that rule's reason, and at
+   (0,4,0), past the doubled width rule it narrows. */
+@supports not (field-sizing: content) {
+.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
+		width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad));
+		min-width: calc(3ch + 2 * var(--sheetsmith-pool-max-pad));
+	}
+
+}
+
 @supports (field-sizing: content) {
 .sheetsmith-view .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
 		width: auto;
@@ -3931,8 +3947,18 @@ body {
    its own `--font-ui-small`. The colour too, for the same reason: the app's
    rule drew the typed digits `--text-normal` beside a muted `/`, where the
    comment above says the field keeps the span's colour. Hover and focus
-   change only the background and the ring, so neither loses it. */
+   change only the background and the ring, so neither loses it.
+
+   **And 1px of inline padding a side, not `--size-2-2`**
+   (`docs/features/qualifier-fit-and-size.md`), so the typed digits start 3px
+   after the slash, nearly a calculated ceiling's 2, where the padding left 6.
+   The 1px is the room the hover fill and the focus ring keep around the
+   digits. A one-digit field is then 11.2x18 at the default size, which is
+   not the press target: the card is, through the Pool's nearest-field router
+   (`docs/UI.md` §7). The narrow-fit threshold above counts this padding. */
 .sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input {
+	--sheetsmith-pool-max-pad: 1px;
+	padding-inline: var(--sheetsmith-pool-max-pad);
 	color: var(--text-muted);
 	font-size: var(--sheetsmith-qualifier-medium);
 }
@@ -3968,6 +3994,23 @@ body {
 	box-shadow: 0 0 0 2px var(--interactive-accent);
 	outline: 2px solid transparent;
 	outline-offset: 0;
+}
+
+/* **The same 2px ring on a Pool's own ceiling, drawn half inside its box**
+   (`docs/features/qualifier-fit-and-size.md`). With 1px of padding the field
+   starts 2px after its slash, so a ring wholly outside it met the slash's box
+   and covered the tip of its ink, which leans 0.2px past its advance at the
+   default size and 0.4 at `text=24`. Half inside, it stands 1px clear of the
+   slash's box and lies over the padding, inside the digits' side bearings.
+   One width and colour, so the card still answers a press with one ring.
+   The forced-colors escape hatch, the shared transparent outline, moves in
+   by the same 1px, since the mode draws it where the shadow was and wholly
+   outside it met the slash the same way. */
+.sheetsmith-view .sheetsmith-pool-ceiling .sheetsmith-pool-max-input:focus {
+	box-shadow:
+		inset 0 0 0 1px var(--interactive-accent),
+		0 0 0 1px var(--interactive-accent);
+	outline-offset: -1px;
 }
 
 /* An unresolved formula's "?", on a card, in a computed cell or a total, and in
