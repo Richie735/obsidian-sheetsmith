@@ -2710,8 +2710,17 @@ body {
 	   cost is real and worth naming: the step buttons' invisible 44px targets
 	   reach about 2px past the card, and that 2px is clipped with them. Losing
 	   it off a 44px target is a fair trade for the bar sitting on the border,
-	   where it reads as the card's own edge rather than as a rule. */
+	   where it reads as the card's own edge rather than as a rule.
+
+	   **`clip`, not `hidden`** (`docs/features/qualifier-fit-and-size.md`):
+	   the same cut at the border's inner edge, but no scroll container. As
+	   `hidden` it was one, so focusing a typed ceiling wider than a one-unit
+	   cell scrolled the card sideways to the caret and left it there after
+	   the blur, cutting the slash the reading's safe centring keeps. `clip`
+	   is Chromium 90, Firefox 81 and Safari and iOS 16; `hidden` first for an
+	   iOS before 16, which drops the second and keeps the old scroll. */
 	overflow: hidden;
+	overflow: clip;
 	/* The whole card is the hit target for its value; see pool.ts. */
 	cursor: text;
 	/* The settle after a press. Going in is instant; see :active below. */
@@ -2793,12 +2802,23 @@ body {
    size. The ceiling is `nowrap`, so its `/` goes with it and it still reads as
    "of 120". No row gap: the two lines are one reading, and the ceiling's line
    is already smaller than the number's. Baseline alignment then holds within
-   each line only, which is the amendment SPEC §4.2 records. */
+   each line only, which is the amendment SPEC §4.2 records.
+
+   **`safe center`, so a ceiling wider than its line keeps its slash**
+   (`docs/UI.md` §5, Ruling A; `docs/features/qualifier-fit-and-size.md`).
+   Plain `center` overflowed a wrapped `/120` at both ends of a one-unit
+   cell, and the card's clip then cut the slash first, so at `text=24` it
+   read as a bare `120` under the marked number. `safe` falls back to the
+   line's start where an item overflows it, so the ceiling clips only at its
+   end; wherever it fits, `safe center` is `center`. The plain declaration
+   first, for an engine without `safe` in flexbox (Safari and iOS before
+   17.6, which drop the second; Chromium before 115 parses it and centres). */
 .sheetsmith-pool-reading {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
 	justify-content: center;
+	justify-content: safe center;
 	gap: 0 var(--size-2-1);
 	flex: 1;
 	min-width: 0;

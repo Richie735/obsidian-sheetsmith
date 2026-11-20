@@ -5162,6 +5162,32 @@ describe("a pool's reading fits a narrow card", () => {
 		expect(valueIn(reading[0]?.body ?? '', 'gap')).toBe('0 var(--size-2-1)');
 	});
 
+	it('centres the reading safely, so an overflowing ceiling keeps its slash', () => {
+		// `docs/features/qualifier-fit-and-size.md`: plain `center` overflowed a
+		// wrapped `/120` at both ends and the card's clip cut the slash first.
+		// The plain value comes first, for an engine without `safe` in flexbox;
+		// a later edit back to `center` alone, or the two swapped, reads the bug
+		// back in with nothing on screen saying so outside a one-unit cell.
+		const values = declarations(reading[0]?.body ?? '')
+			.filter((one) => one.startsWith('justify-content:'))
+			.map((one) => one.slice('justify-content:'.length).trim());
+		expect(values).toEqual(['center', 'safe center']);
+	});
+
+	it('clips the card without making it a scroll container', () => {
+		// `clip` cuts where `hidden` did, but a focused ceiling cannot scroll
+		// the card sideways and leave it there; `hidden` first for an engine
+		// without `clip` (iOS before 16).
+		const card = rulesNaming('.sheetsmith-pool').filter(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-pool',
+		);
+		expect(card).toHaveLength(1);
+		const values = declarations(card[0]?.body ?? '')
+			.filter((one) => one.startsWith('overflow:'))
+			.map((one) => one.slice('overflow:'.length).trim());
+		expect(values).toEqual(['hidden', 'clip']);
+	});
+
 	it('never lets the number shrink, and caps it at the row', () => {
 		const body = base[0]?.body ?? '';
 		expect(valueIn(body, 'flex-shrink')).toBe('0');
