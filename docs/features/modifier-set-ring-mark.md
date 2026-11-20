@@ -218,8 +218,19 @@ against the mark:
 - **`src/styles/sheet.css`**, beside the level ring's own rules:
   `.sheetsmith-view .sheetsmith-level-ring-set::before { content: ''; position:
   absolute; inset: -3px; border: 2px dotted var(--text-muted); border-radius:
-  50%; pointer-events: none; }`. Its comment names the dropdown and Pool siblings
-  and why not dashed. The ring is already `position: relative`.
+  50%; corner-shape: inherit; pointer-events: none; }`. Its comment names the
+  dropdown and Pool siblings and why not dashed. The ring is already `position:
+  relative`.
+- **The halo takes the ring's corner shape, by inheriting it.** The ring is a
+  `<button>`, and the app's `button` rule sets `corner-shape:
+  var(--button-corner-shape)`, the theme's `--corner-shape`, so a theme setting
+  `superellipse(1.1)` or `squircle` draws a squircle ring. `corner-shape` does
+  not inherit by default, so the halo first shipped as a circle around a
+  squircle ring; the calibrated stylesheet's `round` hid it. Inherited, never
+  restated, so the shape stays the app's and the theme's. `harness/harness.ts`'s
+  `&corner=` sets the shape, and the `modifier-set-ring-mark-{superellipse,
+  squircle}-*` shots hold it; `styles.test.ts` holds that the halo inherits and
+  declares no shape.
 - **Empty and error states**: an empty ring is marked when a modifier emptied
   it. A refused state is unmarked (above). A ring nothing reaches is today's.
 
@@ -255,6 +266,12 @@ It also holds a flag Track turned on by a push, so the Track's flag is in frame.
 Shot views go in `harness/shot.mjs`: `modifier-set-ring-mark-{light,dark}` at
 `1400,1100` and `520,…` (height measured through the view's own query), and
 `-forced-colors` at both widths with `flags: ['--force-high-contrast']`.
+The same six again under a theme's corner shape, through `&corner=`:
+`modifier-set-ring-mark-{superellipse,squircle}-{light,dark}`, `-narrow-{light,dark}`,
+`-forced-colors` and `-narrow-forced-colors`, for `superellipse(1.1)` and
+`squircle`; and `modifier-set-ring-mark-squircle-focus` and
+`modifier-set-ring-mark-squircle-text-24`, the focus and Text 24 views under
+`squircle`.
 
 ## Acceptance criteria
 
@@ -301,6 +318,15 @@ Shot views go in `harness/shot.mjs`: `modifier-set-ring-mark-{light,dark}` at
       - the Nature ring under the Wild Shape form's tint with its halo, its tag
         and its door in frame;
       - a focused marked ring, showing where the focus outline meets the halo.
+- [x] **Under a theme's corner shape**, `&corner=superellipse(1.1)` and
+      `&corner=squircle`, in light, dark and forced colors at 1400 and 520, each
+      halo follows its ring's shape, and the round views render identically to
+      before the fix (compared against before-fix renders kept outside the
+      repository). Under `squircle`, the focused marked ring's outline follows the
+      squircle with the dots inside it at the corners, and at Text 24 the halo
+      keeps the round view's box and so its clearance from the rules and the
+      frame. `styles.test.ts`, "takes the ring's corner shape by inheriting it,
+      never by declaring one", passes.
 - [x] `npm test`, `npm run lint`, `npm run build` pass. `git diff styles.css`
       matches `src/styles/`.
 
