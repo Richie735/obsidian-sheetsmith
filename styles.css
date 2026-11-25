@@ -906,6 +906,100 @@ body {
 	min-height: var(--input-height);
 }
 
+/* ---------------------------------------------------------------------------
+   A select's face (`ui/select-face.ts`, `docs/features/select-long-value.md`).
+
+   **A select shows its chosen value in a span the plugin ellipsises**, because
+   how a `<select>` clips its own text is the engine's: Chromium honours
+   `text-overflow: ellipsis` on one and WebKit does not, so on iOS a long value
+   was cut mid-letter and read as damaged rather than truncated. The select is
+   wrapped in a stack, the face sits over it, and the select's own text goes
+   transparent beneath it: §9's stacking of a field under a link layer, applied
+   to a select. Every engine ellipsises a span, so nothing here branches on one.
+
+   **The select sizes the stack and the face sizes nothing.** Each family moves
+   the declarations that place its select (`flex`, `width`, `min-width`,
+   `max-width`) onto its stack by selector list, and the select fills it; the
+   face is out of flow, so a long chosen option cannot widen anything.
+
+   **These are the app dropdown's own metrics**, which is what the panel's and
+   the editor's selects draw with (`select, .dropdown` in `app.css`): the same
+   padding variables, so a phone's 16px and 32px follow for free, and the same
+   type. A family whose select takes other clothes names its face beside its
+   select in the rules that set them, so the two are one rule and cannot drift.
+   --------------------------------------------------------------------------- */
+.sheetsmith-select-stack {
+	position: relative;
+	display: inline-flex;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.sheetsmith-select-stack > .sheetsmith-select-faced {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.sheetsmith-select-face {
+	position: absolute;
+	/* Stretched over the select's box, its one line centred in it as the select
+	   centres its own: `align-content` on a block, since an ellipsis is drawn
+	   only by a block container, which rules out a flex item. A transform
+	   centring the face by its own height rounded the line a pixel off the
+	   select's on phone and tablet. */
+	inset: 0;
+	display: block;
+	align-content: center;
+	box-sizing: border-box;
+	/* The end padding is the one the select reserves for its chevron, so the
+	   ellipsis stops short of it. */
+	padding-inline: var(--dropdown-padding-start) var(--dropdown-padding-end);
+	overflow: hidden;
+	white-space: pre;
+	text-overflow: ellipsis;
+	font-size: var(--font-ui-small);
+	font-weight: var(--input-font-weight);
+	/* The font's own line, measured rather than derived: centred this way the
+	   text sits exactly where the select drew it on phone and tablet staging,
+	   and on desktop a pixel lower, level with a field's digits beside it
+	   (`editor-inventory`'s *Evocation* against `5 / 9`). The select's own
+	   16.9px matches it exactly everywhere, which on desktop is the pixel
+	   above. */
+	line-height: normal;
+	color: var(--text-normal);
+	text-align: var(--dropdown-text-align, start);
+	/* A press, a tap and a long press land on the select under it, so its menu
+	   opens exactly as it did. */
+	pointer-events: none;
+}
+
+/* **The select's own text, hidden under its face.** Both properties, because
+   iOS WebKit can paint a form control's text from its fill colour and ignore
+   `color`. At (0,3,1), over every family's own colour rule, the disabled panel
+   select's (0,3,0) included: opaque text under a face would draw the value
+   twice. The one heavier rule, the Modifiers list's disabled select, colours
+   its face instead of its select (`editor.css`). */
+.sheetsmith-select-stack > select.sheetsmith-select-faced.sheetsmith-select-faced {
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+}
+
+/* **In forced colors the face goes and the select's own text returns**, the
+   link layer's departure for its reason: the mode repaints `transparent` text,
+   so the two would draw the value twice. Both properties are put back to the
+   browser's own, since the mode forces `color` and not the fill. Each family
+   keeps its `text-overflow: ellipsis` for this case. */
+@media (forced-colors: active) {
+	.sheetsmith-select-stack > .sheetsmith-select-face {
+		display: none;
+	}
+
+	.sheetsmith-select-stack > select.sheetsmith-select-faced.sheetsmith-select-faced {
+		color: revert;
+		-webkit-text-fill-color: revert;
+	}
+}
+
 /*
  * The sheet: the grid, the cards on it, and the controls inside them.
  *
