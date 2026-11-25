@@ -494,6 +494,9 @@ const SAMPLE_GROUPS = ['Fighter', 'Wizard', 'Cleric'] as const;
 /** The longest group name a player may type, in code points. */
 const GROUP_NAME_LIMIT = 40;
 
+/** The class a group wears while its body is collapsed, which its header's corners read. */
+export const GROUP_COLLAPSED_CLASS = 'sheetsmith-record-group-collapsed';
+
 /** What one field holds in a sample, or null where it stores nothing. */
 function sampleField(
 	field: RecordField,
@@ -1496,6 +1499,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				toggle.setAttribute('aria-expanded', String(!collapsed));
 				if (collapsed) body.setAttribute('hidden', 'until-found');
 				else body.removeAttribute('hidden');
+				// **The closed header's corners, read from a class beside the
+				// attribute.** This was `:has(> .sheetsmith-record-group-body[hidden])`,
+				// and Obsidian's plugin review flags every `:has()` (`docs/PATTERNS.md`
+				// §5). The cost: the attribute and the class are two copies of one
+				// fact, so they are written here together and nowhere apart. The
+				// browser's own find-in-page removal of `hidden` comes back through
+				// `beforematch`, below, which repaints.
+				section.classList.toggle(GROUP_COLLAPSED_CLASS, collapsed);
 			};
 			const setCollapsed = (next: boolean): void => {
 				if (next === collapsed) return;

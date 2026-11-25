@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	GROUP_COLLAPSED_CLASS,
 	groupReading,
 	MAX_TABULATED_FIELDS,
 	recordSet,
@@ -6607,6 +6608,24 @@ describe('groups', () => {
 			press(toggles(host)[1] as HTMLElement);
 			expect(body.hasAttribute('hidden')).toBe(false);
 			expect(state.toggled.at(-1)).toEqual(['1', false]);
+		});
+
+		it('stamps the group collapsed exactly while its body is hidden, a beforematch included', () => {
+			// The class stands in for `:has(> .sheetsmith-record-group-body[hidden])`
+			// (`docs/PATTERNS.md` §5), so every route that moves the attribute moves it.
+			const { host } = live();
+			const agree = () =>
+				groupBodies(host).every(
+					(body) =>
+						body.parentElement?.classList.contains(GROUP_COLLAPSED_CLASS) === body.hasAttribute('hidden'),
+				);
+			expect(agree()).toBe(true);
+			press(toggles(host)[1] as HTMLElement);
+			expect(groupBodies(host)[1]?.parentElement?.classList.contains(GROUP_COLLAPSED_CLASS)).toBe(true);
+			expect(agree()).toBe(true);
+			groupBodies(host)[1]?.dispatchEvent(new Event('beforematch'));
+			expect(groupBodies(host)[1]?.parentElement?.classList.contains(GROUP_COLLAPSED_CLASS)).toBe(false);
+			expect(agree()).toBe(true);
 		});
 
 		it('keeps the focus on the header it pressed', () => {

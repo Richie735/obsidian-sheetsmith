@@ -10,6 +10,7 @@ import { isContainer } from '../types';
 import { renderGrid, walkLayout } from './grid-cells';
 import {
 	applyDecorations,
+	IN_PLAY_ABOVE,
 	IN_PLAY_BOX,
 	IN_PLAY_LANE,
 	IN_PLAY_MARK_INLINE,
@@ -238,6 +239,19 @@ describe('the in-play tint', () => {
 		// The table sets the lane aside on every row while the tag is drawn.
 		const table = cellOf(root, 'skills').querySelector('table');
 		expect(table?.classList.contains(IN_PLAY_LANE)).toBe(true);
+	});
+
+	it('stamps the row above a tinted row, and only it, and a pass with none takes it off', () => {
+		// The class stands in for `tr:has(+ tr.sheetsmith-in-play)` in forced colors
+		// (`docs/PATTERNS.md` §5), so it is held to exactly the rows that matched.
+		const { root } = draw(NOTE('yes'));
+		const rows = Array.from(cellOf(root, 'skills').querySelectorAll<HTMLElement>('tbody tr'));
+		const matched = (all: HTMLElement[]) =>
+			all.map((row) => row.nextElementSibling?.classList.contains(IN_PLAY_BOX) === true);
+		expect(rows.map((row) => row.classList.contains(IN_PLAY_ABOVE))).toEqual([true, false]);
+		expect(rows.map((row) => row.classList.contains(IN_PLAY_ABOVE))).toEqual(matched(rows));
+		applyDecorations(root, []);
+		expect(root.querySelector(`.${IN_PLAY_ABOVE}`)).toBeNull();
 	});
 
 	it('takes the lane away on a pass with no decoration', () => {

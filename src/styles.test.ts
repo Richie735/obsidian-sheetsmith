@@ -4370,8 +4370,10 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 		const body = ruleFor('.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark')?.body ?? '';
 		expect(declarations(body)).toContain('position: absolute');
 		// The face's own last-flex-item rule skips it, so the value keeps the
-		// auto margin that centres the run.
-		expect(CSS_WITHOUT_COMMENTS).toContain('.sheetsmith-note-mark)');
+		// auto margin that centres the run. (This read `.sheetsmith-note-mark)`
+		// anywhere, which the table's old `:has(.sheetsmith-note-mark)` satisfied
+		// on its own once that rule's list had grown past one line.)
+		expect(CSS_WITHOUT_COMMENTS).toMatch(/:nth-last-child\(\s*1 of\s*:not\([^)]*\.sheetsmith-note-mark\b/);
 	});
 
 	it('centres the mark after a number on the digits’ cap height, not the number’s box', () => {
@@ -5564,7 +5566,8 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 
 	/*
 	 * `docs/features/sheet-contrast-pass.md` §3. The open line's rule is reached
-	 * through a `:has()` at (0,4,0), and the more-contrast block named it as
+	 * through its stamped class at (0,3,0) (a `:has()` at (0,4,0) when this was
+	 * found), and the more-contrast block named it as
 	 * `.sheetsmith-stat-block-record > .sheetsmith-record-summary` at (0,2,0), so
 	 * the hairline stayed at 1.22:1 while the order test above went green. The
 	 * rule now reads a token and more contrast sets the token on the block, so
@@ -5576,7 +5579,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 			(rule) =>
 				rule.context.length === 0 &&
 				selectorList(rule.selector).includes('.sheetsmith-stat-block-play-head') &&
-				selectorList(rule.selector).some((one) => one.includes('[aria-expanded=\'true\']')),
+				selectorList(rule.selector).some((one) => one.includes('.sheetsmith-disclosure-open')),
 		);
 		expect(ruled).toHaveLength(1);
 		expect(declarations(ruled[0]?.body ?? '')).toContain(
@@ -5641,7 +5644,9 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 
 	it('floors a text vital at about 8em of the field\'s size, so Speed keeps its row', () => {
 		const vital = all.find(
-			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text)',
+			(rule) =>
+				rule.context.length === 0 &&
+				rule.selector === '.sheetsmith-stat-block-vital.sheetsmith-stat-block-vital-field',
 		);
 		expect(vital?.body).toMatch(/min-width:\s*calc\(8 \* var\(--font-ui-small\)\)/);
 	});
@@ -5748,7 +5753,7 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(box?.selector).toBe('.sheetsmith-view .sheetsmith-in-play:not(tr)');
 		// And forced colors, which drops the shadow, rules the row top and bottom.
 		const forced = tint.find((rule) => rule.context.includes('@media (forced-colors: active)'));
-		expect(forced?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > th');
+		expect(forced?.selector).toContain('tr.sheetsmith-in-play-above > th');
 		expect(forced?.body).toMatch(/border-bottom-color:\s*Highlight/);
 		// And at each end, which the shadows drew, so the row is closed all round.
 		const forcedRules = tint.filter((rule) => rule.context.includes('@media (forced-colors: active)'));
@@ -5794,7 +5799,7 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 				rule.selector.includes('tr.sheetsmith-in-play > td') &&
 				/border-bottom-color:\s*Highlight/.test(rule.body),
 		);
-		expect(repaint?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > td');
+		expect(repaint?.selector).toContain('tr.sheetsmith-in-play-above > td');
 		// The band's tag at its inline start, centred on the reading's line,
 		// which is its carrier's foot: half that line up from the bottom, or the
 		// carrier's middle where that is lower, which is the name's line once
@@ -6092,7 +6097,8 @@ describe('the stat block In play polish (docs/features/stat-block-in-play-polish
 
 	it('gives the first of two forms 4px more above its rule where it follows the report\'s box', () => {
 		const first = base.find(
-			(rule) => rule.selector === '.sheetsmith-stat-block-report + .sheetsmith-stat-block-form:has(> .sheetsmith-stat-block-form-name)',
+			(rule) =>
+				rule.selector === '.sheetsmith-stat-block-report + .sheetsmith-stat-block-form.sheetsmith-stat-block-form-named',
 		);
 		expect(declarations(first?.body ?? '')).toEqual(['margin-top: var(--size-4-1)']);
 	});

@@ -4711,8 +4711,11 @@ a.sheetsmith-notice-action {
    holding the table's slack, and its inline-end padding is the one 8px a reader
    never sees as alignment — the left edge stays where every name starts — so a
    table holding a mark gives half of it back. Only such a table, so every
-   other table on a sheet keeps its padding (`docs/features/modifier-notes.md`). */
-.sheetsmith-view .sheetsmith-table:has(.sheetsmith-note-mark) .sheetsmith-table-name {
+   other table on a sheet keeps its padding (`docs/features/modifier-notes.md`).
+   Read from `sheetsmith-note-table`, which `note-mark.ts`'s `reserveNoteSlots`
+   stamps once the marks are drawn, where this was `:has(.sheetsmith-note-mark)`
+   (`docs/PATTERNS.md` §5). */
+.sheetsmith-view .sheetsmith-table.sheetsmith-note-table .sheetsmith-table-name {
 	padding-inline-end: var(--size-2-2);
 }
 
@@ -7063,9 +7066,11 @@ a.sheetsmith-notice-action {
 
 /* A closed group is the header alone in its box, so the rule under the header
    would double the box's own edge and the header's square lower corners would
-   poke out of the radius. */
+   poke out of the radius. `sheetsmith-record-group-collapsed` is stamped by the
+   statement that hides the body (`record-set.ts`'s `paintGroup`), where this was
+   `:has(> .sheetsmith-record-group-body[hidden])` (`docs/PATTERNS.md` §5). */
 .sheetsmith-view
-	.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])
+	.sheetsmith-record-group.sheetsmith-record-group-collapsed
 	.sheetsmith-record-group-heading {
 	border-bottom-color: transparent;
 	border-radius: var(--radius-s);
@@ -9364,7 +9369,8 @@ a.sheetsmith-notice-action {
 	container-name: sheetsmith-stat-block;
 	/* The head's rule and an open form's, as a token rather than a colour, so
 	   more contrast raises it by setting the token here and no selector has to
-	   outweigh the open line's `:has()` at (0,4,0) — which the plain summary
+	   outweigh the open line's selector, now its stamped class at (0,3,0) and a
+	   `:has()` at (0,4,0) when this was written — which the plain summary
 	   selector in the more-contrast block never did
 	   (`docs/features/sheet-contrast-pass.md`). The `--sheetsmith-in-play-edge`
 	   token is the precedent. */
@@ -9868,12 +9874,15 @@ a.sheetsmith-notice-action {
    wraps, so the floor and the growth are its; the field fills it. Counted in
    the field's own size, `--font-ui-small`, since the vital itself is not set
    in it. The record field's 14ch cap is a group name's, and a beast's speed is
-   a phrase, so the field's own rule is at (0,5,0), past that cap. */
-.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text) {
+   a phrase, so the field's own rule is at (0,5,0), past that cap. The vital
+   wears `sheetsmith-stat-block-vital-field` where `stat-block.ts` draws the
+   field into it, where this was `:has(.sheetsmith-stat-block-text)`
+   (`docs/PATTERNS.md` §5). */
+.sheetsmith-stat-block-vital.sheetsmith-stat-block-vital-field {
 	min-width: calc(8 * var(--font-ui-small));
 }
 
-.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text) > .sheetsmith-stat-block-vital-value {
+.sheetsmith-stat-block-vital.sheetsmith-stat-block-vital-field > .sheetsmith-stat-block-vital-value {
 	align-self: stretch;
 }
 
@@ -10044,9 +10053,12 @@ a.sheetsmith-notice-action {
    rhythm on both sides of it: `--size-4-3` above the rule, and below it the
    content's own gap opened to the same `--size-4-3`, so the rule sits in the
    rhythm rather than crowding the first tile. Under Every form an open form's
-   line is its head, ruled the same. */
+   line is its head, ruled the same: `sheetsmith-disclosure-open`, which
+   `bindDisclosure` stamps beside `aria-expanded`, where this was
+   `:has(> .sheetsmith-record-disclosure[aria-expanded='true'])`
+   (`docs/PATTERNS.md` §5). */
 .sheetsmith-stat-block-play-head,
-.sheetsmith-stat-block-record > .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true']) {
+.sheetsmith-stat-block-record > .sheetsmith-record-summary.sheetsmith-disclosure-open {
 	padding-bottom: var(--size-4-3);
 	border-bottom: 1px solid var(--sheetsmith-stat-block-rule);
 }
@@ -10055,7 +10067,7 @@ a.sheetsmith-notice-action {
 	margin-bottom: calc(var(--size-4-3) - var(--size-4-2));
 }
 
-.sheetsmith-stat-block-record > .sheetsmith-record-summary:has(> .sheetsmith-record-disclosure[aria-expanded='true']) {
+.sheetsmith-stat-block-record > .sheetsmith-record-summary.sheetsmith-disclosure-open {
 	margin-bottom: var(--size-4-3);
 }
 
@@ -10083,8 +10095,11 @@ a.sheetsmith-notice-action {
 /* **With two on, the first form's rule sits under the report's box**, whose
    own edge 8px above it read as a double rule, where the second's sits under
    text whose line keeps air below its letters. So the first takes
-   `--size-4-1` more above it and the two read as the same gap. */
-.sheetsmith-stat-block-report + .sheetsmith-stat-block-form:has(> .sheetsmith-stat-block-form-name) {
+   `--size-4-1` more above it and the two read as the same gap. A form wears
+   `sheetsmith-stat-block-form-named` where `stat-block.ts` draws its name row,
+   where this was `:has(> .sheetsmith-stat-block-form-name)`
+   (`docs/PATTERNS.md` §5). */
+.sheetsmith-stat-block-report + .sheetsmith-stat-block-form.sheetsmith-stat-block-form-named {
 	margin-top: var(--size-4-1);
 }
 
@@ -10777,8 +10792,8 @@ a.sheetsmith-notice-action {
    at their weight, so source order is what wins — the block above the base
    rules lost to them, which is the regression `styles.test.ts` now holds.
    **The head's rule and an open form's are raised through their token**, set
-   on the block, since the open line's `:has()` outweighs any selector this list
-   could name for it at (0,2,0) and drew its hairline at 1.22:1. */
+   on the block, since the open line's selector outweighs any this list could
+   name for it at (0,2,0) and drew its hairline at 1.22:1. */
 @media (prefers-contrast: more) {
 	.sheetsmith-stat-block {
 		--sheetsmith-stat-block-rule: var(--text-muted);
@@ -11013,12 +11028,15 @@ a.sheetsmith-notice-action {
    at each end. **The form's colour goes with the mode**, as it intends: two
    forms in two colours look the same here, and the tag's words tell them apart.
    The swatch, a square the mode would repaint in one system colour, says
-   nothing there, so it is not drawn. */
+   nothing there, so it is not drawn. The row above wears
+   `sheetsmith-in-play-above`, stamped and cleared beside `sheetsmith-in-play`
+   by `placement-decorations.ts`, where this was `tr:has(+ tr.sheetsmith-in-play)`
+   (`docs/PATTERNS.md` §5). */
 @media (forced-colors: active) {
 	.sheetsmith-view tr.sheetsmith-in-play > th,
 	.sheetsmith-view tr.sheetsmith-in-play > td,
-	.sheetsmith-view tr:has(+ tr.sheetsmith-in-play) > th,
-	.sheetsmith-view tr:has(+ tr.sheetsmith-in-play) > td {
+	.sheetsmith-view tr.sheetsmith-in-play-above > th,
+	.sheetsmith-view tr.sheetsmith-in-play-above > td {
 		border-bottom-color: Highlight;
 	}
 

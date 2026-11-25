@@ -103,9 +103,15 @@ export function bindDisclosure(options: {
 	named?: string;
 	/** Where the chevron is drawn; the button itself where absent. */
 	glyph?: HTMLElement;
+	/**
+	 * An element that wears `DISCLOSURE_OPEN` while the region is open, for a
+	 * style the open state sets on something other than the button. A Stat
+	 * block's record line is ruled off while its record is open.
+	 */
+	host?: HTMLElement;
 	onToggle: (open: boolean) => void;
 }): void {
-	const { button, region, named, onToggle } = options;
+	const { button, region, named, host, onToggle } = options;
 	const glyph = options.glyph ?? button;
 	let open = options.open;
 	button.type = 'button';
@@ -123,6 +129,12 @@ export function bindDisclosure(options: {
 		// find-in-page able to reach a closed region and reveal it.
 		if (open) region.removeAttribute('hidden');
 		else region.setAttribute('hidden', 'until-found');
+		// **The open state for the stylesheet, beside `aria-expanded`.** A Stat
+		// block's open line read `:has(> .sheetsmith-record-disclosure[aria-expanded='true'])`,
+		// and Obsidian's plugin review flags every `:has()` (`docs/PATTERNS.md`
+		// §5). The cost: the attribute and the class are two copies of one fact,
+		// so this one statement writes both.
+		host?.classList.toggle(DISCLOSURE_OPEN, open);
 	};
 	const set = (next: boolean): void => {
 		if (next === open) return;
@@ -148,6 +160,9 @@ export function bindDisclosure(options: {
 
 /** The class a disclosure wears while a pointer, not a key, gave it focus. */
 export const POINTER_FOCUS = 'sheetsmith-pointer-focus';
+
+/** The class a disclosure's `host` wears while its region is open. */
+export const DISCLOSURE_OPEN = 'sheetsmith-disclosure-open';
 
 /**
  * Report the open records after the one at `removedAt` goes, moved up by one.
