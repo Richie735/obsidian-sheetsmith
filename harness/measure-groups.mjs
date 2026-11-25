@@ -294,7 +294,7 @@ const SWEEP = `(()=>{
  const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],overlap:[],stripBad:[],stripName:null,plainName:null,stackedTo:null,stripFrom:null,fit:null}));
  const sweep=(b,each)=>{b.style.flex='none';b.style.justifySelf='start';b.style.maxWidth='none';for(let w=150;w<=1300;w+=0.5){b.style.width=w+'px';void b.offsetWidth;if(each(w))break;}};
  blocks.forEach((b,i)=>{const o=out[i];sweep(b,(w)=>{
-  const strip=getComputedStyle(b.querySelector('.sheetsmith-record-set-box')).getPropertyValue('--sheetsmith-record-strip').trim()==='on';
+  const head=b.querySelector('.sheetsmith-record-strip');const strip=head!==null&&getComputedStyle(head).display!=='none';
   if(strip&&o.stripFrom===null)o.stripFrom=w;
   let stacked=false,bad=false;
   for(const s of b.querySelectorAll('.sheetsmith-record-summary')){const f=s.querySelector('.sheetsmith-record-fields');
@@ -302,8 +302,8 @@ const SWEEP = `(()=>{
    if(strip){if(s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))o.stripBad.push(w);if(w===1300)o.stripName=Math.max(o.stripName??0,s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width);continue;}
    if(lines([...f.children].filter(x=>!x.hidden))>1||s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))bad=true;}
   if(stacked)o.stackedTo=w; if(bad)o.wrap.push(w); if(stacked&&strip)o.both.push(w); return false;});});
- const force=document.createElement('style');force.textContent='.sheetsmith-record-set-box{--sheetsmith-record-stack: off !important}';document.head.appendChild(force);
- blocks.forEach((b,i)=>{const o=out[i];b.classList.remove('sheetsmith-record-set-headed');b.classList.add('sheetsmith-record-set-fits-narrow');
+ const force=document.createElement('style');force.textContent='.sheetsmith-record-set-box{--sheetsmith-record-stack: initial !important}';document.head.appendChild(force);
+ blocks.forEach((b,i)=>{const o=out[i];b.classList.remove('sheetsmith-record-set-headed');
   for(const f of b.querySelectorAll('.sheetsmith-record-summary .sheetsmith-record-field'))f.removeAttribute('hidden');
   sweep(b,(w)=>{const summaries=[...b.querySelectorAll('.sheetsmith-record-summary')];
    if(summaries.some(overlaps))o.overlap.push(w);

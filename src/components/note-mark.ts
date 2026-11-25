@@ -51,6 +51,13 @@ export const NOTE_BANDS_CLASS = 'sheetsmith-note-bands';
 export const NOTE_HEADING_CLASS = 'sheetsmith-note-heading';
 
 /**
+ * The class a table takes while it holds a note mark anywhere, a band head's
+ * included, which the stylesheet reads to give the name column back half its
+ * inline-end padding (`docs/features/modifier-notes.md`).
+ */
+export const NOTE_TABLE_CLASS = 'sheetsmith-note-table';
+
+/**
  * Draw the note mark into `parent`: a door onto the whole account, named by
  * its count — `1 note`, `3 notes` — because its visible mark is not words
  * (`docs/UI.md` §6).
@@ -234,4 +241,14 @@ export function reserveNoteSlots(
 	}
 	const bandNoted = Array.from(table.querySelectorAll('.sheetsmith-roster-band-inner')).some(holds);
 	if (bandNoted) table.classList.add(NOTE_BANDS_CLASS);
+	/*
+	 * **A mark anywhere in the table, read here rather than by `:has()`.** This
+	 * was `.sheetsmith-table:has(.sheetsmith-note-mark)`, which Obsidian's plugin
+	 * review flags, and which armed a descendant check across the whole table
+	 * (`docs/PATTERNS.md` §5). The cost of the class: a mark drawn after this
+	 * call would not be counted, which is why both callers make it last, once
+	 * every cell that will hold a mark holds it. The door counted alike is not a
+	 * mark here, as it was not to the selector.
+	 */
+	if (table.querySelector(`.${NOTE_MARK_CLASS}`) !== null) table.classList.add(NOTE_TABLE_CLASS);
 }

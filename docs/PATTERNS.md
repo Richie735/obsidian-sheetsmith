@@ -734,50 +734,49 @@ still wants it.
   word in the list to its rule and every rule to a word in the list
   (`docs/features/form-tint-colour.md`). Runtime geometry and an open-ended value
   still take the two routes above.
-- **A stamped class, not `:has()`** [checked: `styles.test.ts`, "a rule reads
-  the class that says why, never the elements drawn", for a `:has()` whose
-  argument reads elements or structure alone; judgement for the rest]. Where a rule depends on a fact the
-  render already knows (a setting, a derivation from the config, which kind of
-  field it drew), the code that knows it stamps a class saying so, on the
-  statement that draws the element, and the selector reads the class. Two
-  reasons:
+- **A stamped class, not `:has()`, and no exception** [checked:
+  `styles.test.ts`, "nothing Obsidian's plugin review reports in the CSS",
+  which refuses every `:has()`. It replaced "a rule reads the class that says
+  why, never the elements drawn", which refused only a `:has()` reading
+  structure alone and could no longer fail on its own]. Where a rule
+  depends on a fact the render already knows (a setting, a derivation from the
+  config, which kind of field it drew, a state it toggles), the code that knows
+  it stamps a class saying so, on the statement that draws the element or
+  toggles the state, and the selector reads the class. Two reasons:
 
   1. **The class names why the element is styled, and `:has()` names what is
      drawn around it.** `sheetsmith-table-has-totals` says the table totals a
      column; `:has(tfoot)` says a foot was drawn, and the reader has to work back
      from the foot to the setting. `sheetsmith-table-headless`, which Roster
      stamps from `hideColumnHeadings`, is the same rule for `:has(> thead)`.
-  2. **Obsidian's plugin review flags `:has()` as a performance risk.** Each
-     subject is matched again whenever anything changes in the subtree its
+  2. **Obsidian's plugin review flags every `:has()` as a performance risk.**
+     Each subject is matched again whenever anything changes in the subtree its
      argument reaches, so a broad subject arms the check on every element that
      carries it. `interaction/field-focus-flag.ts` gives the argument in full.
+     The review reports it on the release itself, as a warning against the
+     plugin, whatever the selector reads.
 
   The cost is real, and the comment where each class is stamped records it. A
   `:has()` cannot disagree with the DOM, and a class can go stale. That is why
   the class is stamped by the statement that draws what it describes, from the
-  derivation that decides whether to draw it.
+  derivation that decides whether to draw it, and a test drives every route
+  that moves the fact and holds the class to it.
 
-  **A `:has()` may stay when all three of these hold:** its argument reads
-  *state* the plugin writes as an attribute that is the one record of that state
-  (`[hidden]`, `[aria-expanded]`), not whether something is drawn. It is reached
-  through `>` from a plugin class, so the check stays inside one box. And the
-  state is not one the browser owns and changes at pointer rate: `:focus`,
-  `:hover` and `:active` were converted (`field-focus-flag.ts`, `pool.ts`'s
-  `flagControlPointer`). In that case a class would be a second copy of a fact
-  the attribute already holds, and the copy is the one that can drift.
-  `.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])` is the
-  standing example. Any other `:has()` is a conformance gap, recorded in
-  `docs/BACKLOG.md` § Patterns.
-
-  The guard refuses a `:has()` whose argument reads elements or structure and
-  nothing else: element names and combinators (`:has(tfoot)`, `:has(> thead)`,
-  `:has(+ tr)`), the structural pseudo-classes (`:first-child`, `:last-child`,
-  `:only-child`, `:nth-*`, `:empty`), and `:not()`, `:is()` or `:where()` over
-  such arguments (`:has(> tbody > tr:only-child)`, `:has(> :not(thead))`). Any
-  of those can only be reading what is drawn. A `:has()` reading a class, an
-  attribute or a state pseudo-class can fall on either side of the rule, and no
-  pattern over the text can tell which, so beyond the guard the rule is held in
-  review.
+  **The three-condition exception is withdrawn.** A `:has()` used to stay where
+  its argument read state the plugin writes as an attribute that is the one
+  record of that state (`[hidden]`, `[aria-expanded]`), reached through `>` from
+  a plugin class, and not owned by the browser at pointer rate, on the argument
+  that a class there is a second copy of a fact the attribute holds and the copy
+  is what drifts. The review flags those as it flags the rest, and a warning on
+  every release outweighs that drift, which a test can hold and the review
+  cannot be argued with. So **the one statement that writes the attribute writes
+  the class beside it**, and the test toggles the state through each route that
+  moves it, the browser's own `beforematch` included, and holds the class and
+  the attribute to one answer. `record-set.ts`'s `paintGroup`
+  (`sheetsmith-record-group-collapsed`, where the standing example was
+  `.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])`) and
+  `record-controls.ts`'s `bindDisclosure` (`sheetsmith-disclosure-open`) are the
+  precedent.
 - **Config guard first.** Render the error, return, build nothing.
 
 ### A `ResizeObserver` belongs to the view

@@ -531,6 +531,23 @@ describe('a link typed into the fence', () => {
 		expect(el.textContent).toContain('Obsidian indexes no link inside one');
 	});
 
+	it('stamps a vital as holding a field exactly where the text field is drawn', () => {
+		// The class stands in for `:has(.sheetsmith-stat-block-text)` (`docs/PATTERNS.md`
+		// §5), so it is held to the field on both faces: none in play, one under
+		// Every form.
+		const agree = (el: HTMLElement) =>
+			Array.from(el.querySelectorAll('.sheetsmith-stat-block-vital')).every(
+				(vital) =>
+					vital.classList.contains('sheetsmith-stat-block-vital-field') ===
+					(vital.querySelector('.sheetsmith-stat-block-text') !== null),
+			);
+		const { el } = render();
+		expect(agree(el)).toBe(true);
+		toLibrary(el);
+		expect(el.querySelector('.sheetsmith-stat-block-vital-field')).not.toBeNull();
+		expect(agree(el)).toBe(true);
+	});
+
 	it('is written in an action cell, which is plain markdown', () => {
 		const { el, edits } = render();
 		toLibrary(el);
@@ -759,6 +776,40 @@ describe('the HP steppers', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe('an open record line', () => {
+	it('stamps every summary open exactly while its chevron says so, through each route', () => {
+		// `sheetsmith-disclosure-open` stands in for a `:has()` on the chevron's
+		// `aria-expanded` (`docs/PATTERNS.md` §5), so every route that moves the
+		// one is held to move the other: the first paint, with a companion's first
+		// record open by default, a press, and the browser's `beforematch`.
+		const { el } = render(BODY, { exclusive: '', uses: '' });
+		const records = () => Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-stat-block-record'));
+		const agree = () =>
+			records().every((row) => {
+				const summary = row.querySelector(':scope > .sheetsmith-record-summary');
+				const chevron = summary?.querySelector('.sheetsmith-record-disclosure');
+				return (
+					summary?.classList.contains('sheetsmith-disclosure-open') ===
+					(chevron?.getAttribute('aria-expanded') === 'true')
+				);
+			});
+		expect(records().length).toBeGreaterThan(1);
+		const first = () => records()[0] as HTMLElement;
+		expect(first().querySelector('.sheetsmith-record-summary')?.classList.contains('sheetsmith-disclosure-open')).toBe(true);
+		expect(agree()).toBe(true);
+		const chevron = (row: HTMLElement) =>
+			row.querySelector<HTMLButtonElement>(':scope > .sheetsmith-record-summary .sheetsmith-record-disclosure') as HTMLButtonElement;
+		chevron(records()[1] as HTMLElement).click();
+		expect(agree()).toBe(true);
+		chevron(first()).click();
+		expect(first().querySelector('.sheetsmith-record-summary')?.classList.contains('sheetsmith-disclosure-open')).toBe(false);
+		expect(agree()).toBe(true);
+		first().querySelector(':scope > .sheetsmith-stat-block-detail')?.dispatchEvent(new Event('beforematch'));
+		expect(first().querySelector('.sheetsmith-record-summary')?.classList.contains('sheetsmith-disclosure-open')).toBe(true);
+		expect(agree()).toBe(true);
 	});
 });
 
@@ -2562,6 +2613,24 @@ describe('the colour a form tints in', () => {
 				'orange',
 				'green',
 			]);
+		});
+
+		it('stamps a form named exactly where its name row is drawn', () => {
+			// The class stands in for `:has(> .sheetsmith-stat-block-form-name)`
+			// (`docs/PATTERNS.md` §5), so it is held to the row on one form and two.
+			const agree = (el: HTMLElement) =>
+				Array.from(el.querySelectorAll('.sheetsmith-stat-block-form')).every(
+					(form) =>
+						form.classList.contains('sheetsmith-stat-block-form-named') ===
+						(form.querySelector(':scope > .sheetsmith-stat-block-form-name') !== null),
+				);
+			const one = render(ORANGE_BEAR, TINTED).el;
+			expect(one.querySelector('.sheetsmith-stat-block-form-named')).toBeNull();
+			expect(agree(one)).toBe(true);
+			document.body.replaceChildren();
+			const two = render(ORANGE_BEAR.replace('Active: no', 'Active: yes'), TINTED).el;
+			expect(two.querySelectorAll('.sheetsmith-stat-block-form-named')).toHaveLength(2);
+			expect(agree(two)).toBe(true);
 		});
 
 		it('leaves the head plain with no form on', () => {

@@ -22,7 +22,6 @@ import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
 import { MAX_TABULATED_FIELDS } from './components/record-set';
 import {
-	FALLBACK_FIT_TIER,
 	GAP_PX,
 	MAX_FIT_TIER,
 	MIN_FIT_TIER,
@@ -2733,163 +2732,6 @@ describe('specificity weighs a functional pseudo-class by its argument', () => {
 	});
 });
 
-describe('a rule reads the class that says why, never the elements drawn', () => {
-	/*
-	 * `docs/PATTERNS.md` §5, "A stamped class, not `:has()`". The case this
-	 * holds is the one that shipped: `:has(tfoot)` and `:has(> thead)` asked
-	 * whether a foot or a heading row had been drawn, where `table.ts` and
-	 * `roster.ts` already knew why and now say so in a class. A `:has()` whose
-	 * argument reads structure alone can only be reading what is drawn, so it is
-	 * refused wherever it sits, not only in the form tint's rules where it was
-	 * first caught. Structure is element names, `*`, combinators, the structural
-	 * pseudo-classes (`STRUCTURAL` below), and `:not()`, `:is()` or `:where()`
-	 * over arguments that are themselves structure alone: `:has(> tbody >
-	 * tr:only-child)` and `:has(> :not(thead))` are refused as `:has(tfoot)` is.
-	 *
-	 * Narrow on purpose. A class, an attribute, an id or a state pseudo-class
-	 * (`:focus`, `:checked`) anywhere in the argument lets it through, because
-	 * such a `:has()` can be either kind, and which is a judgement the PATTERNS
-	 * entry makes and `docs/BACKLOG.md` § Patterns records, not one a pattern
-	 * over the text can.
-	 */
-
-	/** The argument of every `:has(` in one selector, its parentheses counted. */
-	const hasArguments = (selector: string): string[] => {
-		const found: string[] = [];
-		for (let at = selector.indexOf(':has('); at !== -1; at = selector.indexOf(':has(', at + 1)) {
-			const from = at + ':has('.length;
-			let depth = 1;
-			let to = from;
-			while (to < selector.length && depth > 0) {
-				if (selector[to] === '(') depth += 1;
-				else if (selector[to] === ')') depth -= 1;
-				to += 1;
-			}
-			found.push(selector.slice(from, to - 1).trim());
-		}
-		return found;
-	};
-	/** The pseudo-classes that read only where an element sits among its siblings. */
-	const STRUCTURAL = new Set([
-		'first-child',
-		'last-child',
-		'only-child',
-		'first-of-type',
-		'last-of-type',
-		'only-of-type',
-		'nth-child',
-		'nth-last-child',
-		'nth-of-type',
-		'nth-last-of-type',
-		'empty',
-		'root',
-	]);
-	/** Pseudo-classes whose argument is a selector list, read the same way. */
-	const LOGICAL = new Set(['not', 'is', 'where']);
-	/** Where the parenthesis opened just before `from` closes. */
-	const closing = (text: string, from: number): number => {
-		let depth = 1;
-		let at = from;
-		while (at < text.length && depth > 0) {
-			if (text[at] === '(') depth += 1;
-			else if (text[at] === ')') depth -= 1;
-			at += 1;
-		}
-		return at - 1;
-	};
-	/**
-	 * Whether `text` reads structure and nothing else: no class, attribute or
-	 * id, and no pseudo-class but the structural ones and `:not()`/`:is()`/
-	 * `:where()` over structure. An `An+B of S` argument is read for its `S`.
-	 */
-	const structureOnly = (text: string): boolean => {
-		for (let at = 0; at < text.length; at++) {
-			const char = text[at];
-			if (char === '.' || char === '[' || char === '#') return false;
-			if (char !== ':') continue;
-			if (text[at + 1] === ':') return false;
-			const name = /^[\w-]+/.exec(text.slice(at + 1))?.[0] ?? '';
-			let next = at + 1 + name.length;
-			if (!STRUCTURAL.has(name) && !LOGICAL.has(name)) return false;
-			if (text[next] === '(') {
-				const end = closing(text, next + 1);
-				const inner = text.slice(next + 1, end);
-				if (LOGICAL.has(name)) {
-					if (!selectorList(inner).every(structureOnly)) return false;
-				} else {
-					const of = /\bof\b/.exec(inner);
-					if (of !== null && !structureOnly(inner.slice(of.index + 2))) return false;
-				}
-				next = end + 1;
-			}
-			at = next - 1;
-		}
-		return true;
-	};
-	/** The `:has()` arguments in `selector` that read structure and nothing else. */
-	const drawnOnly = (selector: string): string[] =>
-		hasArguments(selector).filter((argument) => selectorList(argument).every(structureOnly));
-
-	/** Every selector in `text` holding such a `:has()`, at-rule blocks included. */
-	const offenders = (text: string): string[] =>
-		rules(text).flatMap((rule) =>
-			selectorList(rule.selector).filter((selector) => drawnOnly(selector).length > 0),
-		);
-	const all = rules(CSS_WITHOUT_COMMENTS);
-
-	it('has no `:has()` reading which elements are drawn', () => {
-		expect(offenders(CSS_WITHOUT_COMMENTS)).toEqual([]);
-	});
-
-	it('would notice one', () => {
-		// §10: the walk read the stylesheet and went inside its at-rule blocks,
-		// so an empty list above is a finding. Neither fact rests on a `:has()`
-		// the stylesheet holds today, since retiring those is the backlog's aim.
-		expect(all.length).toBeGreaterThan(1000);
-		expect(all.some((rule) => rule.context.length > 0)).toBe(true);
-		// And the same walk reports one planted inside an at-rule, one listed
-		// beside a clean selector, and none in a clean rule.
-		expect(
-			offenders(
-				'@media (forced-colors: active) { .sheetsmith-view .sheetsmith-table:has(> tfoot) td { color: Highlight; } }\n' +
-					'.sheetsmith-a, .sheetsmith-table:has(thead) th { color: red; }\n' +
-					'.sheetsmith-table:has(> tbody > tr:only-child) td { color: red; }\n' +
-					'.sheetsmith-table:has(> :not(thead)) td { color: red; }\n' +
-					'.sheetsmith-b:has(> .sheetsmith-c[hidden]) { color: red; }',
-			),
-		).toEqual([
-			'.sheetsmith-view .sheetsmith-table:has(> tfoot) td',
-			'.sheetsmith-table:has(thead) th',
-			'.sheetsmith-table:has(> tbody > tr:only-child) td',
-			'.sheetsmith-table:has(> :not(thead)) td',
-		]);
-		for (const selector of [
-			'.sheetsmith-table:has(> tfoot) td',
-			'.sheetsmith-table:has(thead)',
-			'.sheetsmith-table:not(:has( > thead )) td',
-			'tr:has(+ tr) > td',
-			'.sheetsmith-table:has(> tbody > tr:nth-child(2n + 1):last-child) td',
-			'.sheetsmith-table:has(> :is(thead, tfoot)) td',
-			'.sheetsmith-table:has(> tbody > tr:nth-child(1 of :not(:empty))) td',
-		]) {
-			expect(drawnOnly(selector), selector).not.toEqual([]);
-		}
-		// And the reading it leaves to judgement: a class, an attribute, a state.
-		for (const selector of [
-			'.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])',
-			'.sheetsmith-table:has(.sheetsmith-note-mark) td',
-			'tr:has(+ tr.sheetsmith-in-play) > td',
-			'.sheetsmith-x:has(> button:focus)',
-			'.sheetsmith-table:has(> :not(.sheetsmith-x))',
-			'.sheetsmith-table:has(> tbody > tr:last-child.sheetsmith-in-play)',
-			'.sheetsmith-table:has(> tbody > tr:nth-child(1 of .sheetsmith-in-play))',
-			'.sheetsmith-x:has(> :is(input:checked))',
-		]) {
-			expect(drawnOnly(selector), selector).toEqual([]);
-		}
-	});
-});
-
 describe('no rule clips with `clip-path`', () => {
 	/*
 	 * `sheet.css` at the visually-hidden rule: the browser-support check the
@@ -2910,6 +2752,64 @@ describe('no rule clips with `clip-path`', () => {
 		expect(
 			propertyDeclarations('@media (hover: hover) { .sheetsmith-x { clip-path: inset(0 2px); } }', 'clip-path'),
 		).toHaveLength(1);
+	});
+});
+
+describe("nothing Obsidian's plugin review reports in the CSS", () => {
+	/*
+	 * The directory's review of 0.11.0 rated the CSS lint section a warning for
+	 * five shapes, each replaced by one it accepts (`docs/UI.md` §9,
+	 * `docs/PATTERNS.md` §5): two properties declared twice in one rule (a
+	 * fallback, which now sits in an `@supports not` rule of its own), `:has()`,
+	 * `display: contents`, a container style query and `text-indent`, the last
+	 * three judged against an older Obsidian than the manifest's floor, so a
+	 * `minAppVersion` bump would not clear them. A rule worth having is worth
+	 * checking: each is a shape the next obvious solution reaches for.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+
+	/** Every `selector: property` declared more than once in one rule. */
+	const twice = (text: string): string[] =>
+		rules(text).flatMap((rule) => {
+			const names = declarations(rule.body).map((one) => one.split(':')[0]?.trim().toLowerCase() ?? '');
+			return names
+				.filter((name, at) => names.indexOf(name) !== at)
+				.map((name) => `${rule.selector}: ${name}`);
+		});
+	const hasPseudo = (text: string) => rules(text).filter((rule) => /:has\(/.test(rule.selector));
+	const styleQuery = (text: string) =>
+		rules(text).filter((rule) => rule.context.some((at) => /^@container\b.*\bstyle\(/.test(at)));
+	const contents = (text: string) =>
+		propertyDeclarations(text, 'display').filter((one) => /:\s*contents\b/.test(one));
+
+	it('declares no property twice in one rule', () => {
+		expect(twice(CSS_WITHOUT_COMMENTS)).toEqual([]);
+	});
+
+	it('selects through no `:has()`', () => {
+		expect(hasPseudo(CSS_WITHOUT_COMMENTS).map((rule) => rule.selector)).toEqual([]);
+	});
+
+	it('asks no container style query', () => {
+		expect(styleQuery(CSS_WITHOUT_COMMENTS).map((rule) => rule.context.join(' '))).toEqual([]);
+	});
+
+	it('declares no `display: contents` and no `text-indent`', () => {
+		expect(contents(CSS_WITHOUT_COMMENTS)).toEqual([]);
+		expect(propertyDeclarations(CSS_WITHOUT_COMMENTS, 'text-indent')).toEqual([]);
+	});
+
+	it('would notice each of them', () => {
+		// The cases above assert empty lists, which read the same over a scan that
+		// finds nothing at all; driven here over the shape each one rejects.
+		expect(all.length).toBeGreaterThan(100);
+		expect(twice('.a { overflow: hidden; overflow: clip; }')).toEqual(['.a: overflow']);
+		expect(twice('@supports not (overflow: clip) { .a { overflow: hidden; } } .a { overflow: clip; }')).toEqual([]);
+		expect(hasPseudo('.a:has(> .b[hidden]) .c { color: red; }')).toHaveLength(1);
+		expect(styleQuery('@container not style(--a: on) { .b { color: red; } }')).toHaveLength(1);
+		expect(styleQuery('@container x (max-width: 10px) { .b { color: red; } }')).toHaveLength(0);
+		expect(contents('.a { display: contents; }')).toHaveLength(1);
+		expect(propertyDeclarations('.a { text-indent: -1em; }', 'text-indent')).toHaveLength(1);
 	});
 });
 
@@ -3347,11 +3247,30 @@ describe("a Record set's strip of field names", () => {
 	 *
 	 * The scan reads rules with the at-rules they sit inside, which the flat
 	 * `selectors()` above cannot: the claim is about *where* a rule lives.
+	 *
+	 * The layout was one block under a style query; it is now written into each
+	 * count's entry, its selectors naming the count through `:where()`, so the
+	 * cases below read the first entry with that prefix taken off, and one case
+	 * holds the other seven to it.
 	 */
 	const all = rules(CSS_WITHOUT_COMMENTS);
 	const GATE = '@supports (grid-template-columns: subgrid)';
-	const STYLE_QUERY = '@container style(--sheetsmith-record-strip: on)';
 	const inGate = (rule: Rule) => rule.context[0] === GATE;
+	/** A selector with its entry's count taken off. */
+	const unkeyed = (selector: string) =>
+		selector.replace(/:where\(\.sheetsmith-record-set-fields-\d+\) /g, '');
+	/** The rules of one count's entry, with the count taken off their selectors. */
+	const entry = (count: number) =>
+		all
+			.filter(
+				(rule) =>
+					inGate(rule) &&
+					/^@container sheetsmith-record-set \(min-width: [\d.]+px\)$/.test(rule.context[1] ?? '') &&
+					new RegExp(`-fields-${count}[) ]`).test(rule.selector),
+			)
+			.map((rule) => ({ ...rule, selector: unkeyed(rule.selector) }));
+	/** What the strip looks like once drawn: in the gate and under no threshold. */
+	const own = all.filter((rule) => inGate(rule) && !(rule.context[1] ?? '').startsWith('@container'));
 
 	/** The per-count entries: `[N, px]`. */
 	function thresholds(): [number, number][] {
@@ -3414,30 +3333,11 @@ describe("a Record set's strip of field names", () => {
 		expect(short).toEqual([]);
 	});
 
-	it('keeps every threshold above the 320px stacking rule, so the two never apply together', () => {
-		const stacking = 320;
-		expect(
-			all.some(
-				(rule) =>
-					rule.context[0] === '@container (max-width: 320px)' &&
-					rule.selector ===
-						'.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-summary',
-			),
-		).toBe(true);
-		const under = thresholds()
-			.filter(([, px]) => px <= stacking)
-			.map(([count, px]) => `${count} fields at ${px}px`);
-		expect(under).toEqual([]);
-	});
-
-	it('gates the strip and everything it lays out behind the one query', () => {
-		const inside = all.filter(
-			(rule) =>
-				rule.context[0] === GATE && rule.context[1] === STYLE_QUERY,
-		);
-		// It found the block, and the block is not most of nothing.
-		expect(inside.length).toBeGreaterThan(8);
-		const selectorsInside = inside.map((rule) => rule.selector);
+	it('lays the list out in every entry, and the entries are one layout on eight counts', () => {
+		const first = entry(1);
+		// It found the layout, and the layout is not most of nothing.
+		expect(first.length).toBeGreaterThan(8);
+		const selectorsInside = first.map((rule) => rule.selector);
 		for (const wanted of [
 			'.sheetsmith-record-set-list',
 			'.sheetsmith-record-strip',
@@ -3445,6 +3345,44 @@ describe("a Record set's strip of field names", () => {
 			'.sheetsmith-record-fields',
 		]) {
 			expect(selectorsInside, wanted).toContain(wanted);
+		}
+		// The other seven are the first, rule for rule, on their own count: an edit
+		// to one entry alone is a strip that draws differently at one count.
+		const shape = (count: number) =>
+			entry(count).map((rule) => [
+				rule.selector.replace(new RegExp(`-fields-${count}(?=[) ])`), '-fields-N'),
+				rule.body.replace(/\s+/g, ' '),
+			]);
+		for (let count = 2; count <= MAX_TABULATED_FIELDS; count++) {
+			expect(shape(count), `${count} fields`).toEqual(shape(1));
+		}
+	});
+
+	it('keys every rule of an entry on its own count, at no weight but the box\'s switch', () => {
+		const stray: string[] = [];
+		for (const [count, px] of thresholds()) {
+			const inQuery = all.filter(
+				(rule) => inGate(rule) && rule.context[1] === `@container sheetsmith-record-set (min-width: ${px}px)`,
+			);
+			for (const rule of inQuery) {
+				const box = `.sheetsmith-record-set-fields-${count} .sheetsmith-record-set-box`;
+				if (rule.selector === box) continue;
+				const keyed = selectorList(rule.selector).every((one) =>
+					one.includes(`:where(.sheetsmith-record-set-fields-${count})`),
+				);
+				if (!keyed) stray.push(`${count}: ${rule.selector}`);
+			}
+		}
+		expect(stray).toEqual([]);
+	});
+
+	it('writes what the strip looks like once drawn outside the thresholds, never its display', () => {
+		// The strip is `display: none` until an entry turns it on, so its own rules
+		// may sit outside the entries only while none of them gives it a display.
+		expect(own.length).toBeGreaterThan(3);
+		for (const rule of own) {
+			expect(rule.selector, rule.selector).toMatch(/sheetsmith-record-strip/);
+			expect(rule.body, rule.selector).not.toMatch(/(^|[;\s])display\s*:/);
 		}
 	});
 
@@ -3475,7 +3413,7 @@ describe("a Record set's strip of field names", () => {
 		expect(outside).toEqual([
 			['.sheetsmith-record-set-headed', 'container-name: sheetsmith-record-set;'],
 			['.sheetsmith-record-strip', 'display: none;'],
-			['.sheetsmith-record-set-records', 'display: contents;'],
+			['.sheetsmith-record-set-records', 'display: block;'],
 		]);
 	});
 
@@ -3498,10 +3436,8 @@ describe("a Record set's strip of field names", () => {
 	});
 
 	it('keeps the strip opaque and sticky, and scrolls a focused control clear of it', () => {
-		const inside = all.filter(
-			(rule) => rule.context[1] === STYLE_QUERY,
-		);
-		const strip = inside.find(
+		const inside = entry(1);
+		const strip = own.find(
 			(rule) => rule.selector === '.sheetsmith-record-strip',
 		);
 		expect(strip?.body).toMatch(/position:\s*sticky/);
@@ -3538,10 +3474,8 @@ describe("a Record set's strip of field names", () => {
 				/font-size:/.test(rule.body),
 		);
 		expect(elsewhere.map((rule) => rule.selector)).toEqual([]);
-		const strip = all.find(
-			(rule) =>
-				rule.context[1] === STYLE_QUERY &&
-				rule.selector === '.sheetsmith-record-set-list',
+		const strip = entry(1).find(
+			(rule) => rule.selector === '.sheetsmith-record-set-list',
 		);
 		expect(strip?.body).toMatch(/minmax\(0, var\(--sheetsmith-record-name, 13em\)\)/);
 	});
@@ -3555,10 +3489,17 @@ describe("a Record set's strip of field names", () => {
 			/transform:\s*translateX\(/.test(rule.body) &&
 			/sheetsmith-record-field/.test(rule.selector),
 		);
-		expect(shifts.map((rule) => rule.selector)).toEqual([
-			'.sheetsmith-record-summary .sheetsmith-record-field-number',
-		]);
-		expect(shifts[0]?.context).toEqual([GATE, STYLE_QUERY]);
+		// One to an entry, and nowhere else.
+		expect(shifts.map((rule) => unkeyed(rule.selector))).toEqual(
+			Array.from(
+				{ length: MAX_TABULATED_FIELDS },
+				() => '.sheetsmith-record-summary .sheetsmith-record-field-number',
+			),
+		);
+		for (const shift of shifts) {
+			expect(shift.context[0]).toBe(GATE);
+			expect(shift.context[1]).toMatch(/^@container sheetsmith-record-set \(min-width:/);
+		}
 		expect(shifts[0]?.body).toMatch(/translateX\(-0\.4em\)/);
 		// Nothing in the gate changes a number field's width, which would move the
 		// tracks the measured formula rests on.
@@ -3571,23 +3512,16 @@ describe("a Record set's strip of field names", () => {
 		 * same class, so a strip rule written against the bare class would reach
 		 * it: centred in a track it does not have, shifted off its own name, and —
 		 * the one that matters — its name hidden on a wide headed list, where
-		 * nothing else names it (`docs/features/record-set-body-fields.md`). The
-		 * 320px stacking rule is held the same way.
+		 * nothing else names it (`docs/features/record-set-body-fields.md`).
 		 */
 		const naming = (rule: Rule) =>
 			/\.sheetsmith-record-field(?![s\w-])|\.sheetsmith-record-field-/.test(
 				rule.selector,
 			);
-		const strip = all.filter(
-			(rule) => rule.context[1] === STYLE_QUERY && naming(rule),
-		);
-		const narrow = all.filter(
-			(rule) =>
-				rule.context[0] === '@container (max-width: 320px)' && naming(rule),
-		);
+		const strip = all.filter((rule) => inGate(rule) && naming(rule));
 		// It found the rules it is about: the centring, the offset and the hide.
 		expect(strip.length).toBeGreaterThanOrEqual(3);
-		const unscoped = [...strip, ...narrow]
+		const unscoped = strip
 			.filter((rule) =>
 				rule.selector
 					.split(',')
@@ -3628,7 +3562,7 @@ describe("a Record set's strip of field names", () => {
 	});
 
 	it('paints no colour of its own', () => {
-		const inside = all.filter((rule) => rule.context[1] === STYLE_QUERY);
+		const inside = all.filter(inGate);
 		const literal = inside.filter((rule) =>
 			/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(rule.body),
 		);
@@ -3640,17 +3574,19 @@ describe("a Record set's stacking tiers", () => {
 	/*
 	 * `docs/features/record-set-stacking-tiers.md`. A summary line stacks (name
 	 * and delete on a row, the fields under the name) below the width its declared
-	 * fields fit at, which the component stamps as a whole number of ems,
+	 * fields fit at, which the component stamps as a whole number of 16px steps,
 	 * `-fit-N`, and `sheet.css` tabulates because a container query can neither
-	 * add widths nor take a threshold from a selector. Held here: that each entry
-	 * is its rule, that the stacked layout is the 320px fallback's own, and that a
-	 * list under its strip is never also stacked.
+	 * add widths nor take a threshold from a selector. Each entry turns a switch
+	 * on, `--sheetsmith-record-stack`, whose on is the empty value and whose off
+	 * is the property unset; the stacked values are declared once behind it, and
+	 * each rule the stack moves reads one with its own unstacked value as the
+	 * fallback. Held here: that each entry is its threshold and that switch, that
+	 * each stacked value is declared once and read once, and that a list under
+	 * its strip is never also stacked.
 	 */
 	const all = rules(CSS_WITHOUT_COMMENTS);
-	const STACK_QUERY = '@container style(--sheetsmith-record-stack: on)';
 	const GATE = '@supports (grid-template-columns: subgrid)';
-	const FALLBACK = '@container (max-width: 320px)';
-	const OPT_OUT = '.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) ';
+	const SWITCH = '--sheetsmith-record-stack';
 	const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 	/** The per-tier entries, `[N, px, index in the file]`. */
@@ -3664,13 +3600,15 @@ describe("a Record set's stacking tiers", () => {
 				/^\.sheetsmith-record-set-fit-(\d+) \.sheetsmith-record-set-box$/,
 			);
 			if (!query || !tier) return;
-			expect(collapse(rule.body)).toBe('--sheetsmith-record-stack: on;');
+			// On is the empty value: anything else is a value the stacked ones
+			// would carry in front of them.
+			expect(collapse(rule.body)).toBe(`${SWITCH}: ;`);
 			out.push([Number(tier[1]), Number(query[1]), at]);
 		});
 		return out;
 	}
 
-	/** The strip's per-count entries, `[N, em, index in the file, body]`. */
+	/** The strip's per-count switch rules, `[N, px, index in the file, body]`. */
 	function strips(): [number, number, number, string][] {
 		const out: [number, number, number, string][] = [];
 		all.forEach((rule, at) => {
@@ -3684,6 +3622,20 @@ describe("a Record set's stacking tiers", () => {
 			out.push([Number(count[1]), Number(query[1]), at, collapse(rule.body)]);
 		});
 		return out;
+	}
+
+	/** The stacked values: `[name, value after the switch]`, from the box's rule. */
+	function stacked(): [string, string][] {
+		const box = all.filter(
+			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-record-set-box',
+		);
+		return box
+			.flatMap((rule) => declarations(rule.body))
+			.filter((one) => one.startsWith('--sheetsmith-record-stacked-'))
+			.map((one) => {
+				const [name = '', value = ''] = one.split(/:\s*/, 2);
+				return [name, value];
+			});
 	}
 
 	it('tabulates every tier the component can stamp, once each', () => {
@@ -3702,10 +3654,6 @@ describe("a Record set's stacking tiers", () => {
 			.filter(([tier, px]) => px !== tier * STEP_PX)
 			.map(([tier, px]) => `tier ${tier} at ${px}px`);
 		expect(off).toEqual([]);
-	});
-
-	it('puts the fallback at its tier’s own threshold, in the same unit', () => {
-		expect(FALLBACK).toBe(`@container (max-width: ${FALLBACK_FIT_TIER * STEP_PX}px)`);
 	});
 
 	it('holds the copied widths to the rules they were measured off', () => {
@@ -3727,45 +3675,21 @@ describe("a Record set's stacking tiers", () => {
 	it('gives the plain line’s fields their width before the name grows', () => {
 		/*
 		 * `docs/features/record-summary-fields-first.md`. `lineFitPx` is a plain
-		 * sum only while the plain line's fields' track is `max-content`; under the
-		 * base `auto` it would grow with the name and every fit would come out up
-		 * to 73px short. The rule is gated on a style query, so an engine without
-		 * one keeps the base `auto` line, and it must sit after the base rule (to
-		 * win over it) and before the stack block (so a stacked line's template,
-		 * which it cannot reach anyway, and the strip's subgrid follow it).
+		 * sum only while the plain line's fields' track is `max-content`; under
+		 * `auto` it would grow with the name and every fit would come out up to
+		 * 73px short. It is the base rule's own value now, the fallback behind the
+		 * stacked template, where it sat under a style query.
 		 */
-		const GATED = '@container not style(--sheetsmith-record-stack: on)';
-		const gated = all
-			.map((rule, at) => ({ rule, at }))
-			.filter(
-				({ rule }) =>
-					rule.context.length === 1 &&
-					rule.context[0] === GATED &&
-					rule.selector === '.sheetsmith-record-summary',
-			);
-		expect(gated.length).toBe(1);
-		const [{ rule, at }] = gated as [{ rule: (typeof all)[number]; at: number }];
-		expect(collapse(rule.body)).toBe(
-			'grid-template-columns: auto minmax(0, var(--sheetsmith-record-name, 13em)) max-content 1fr auto;',
-		);
-		const base = all.findIndex(
+		const base = all.filter(
 			(one) =>
 				one.context.length === 0 &&
 				one.selector === '.sheetsmith-record-summary' &&
 				/grid-template-columns/.test(one.body),
 		);
-		expect(base).toBeGreaterThanOrEqual(0);
-		expect(
-			collapse((all[base] as (typeof all)[number]).body),
-			'the base keeps `auto`, for an engine with no style queries',
-		).toContain(
-			'grid-template-columns: auto minmax(0, var(--sheetsmith-record-name, 13em)) auto 1fr auto;',
+		expect(base).toHaveLength(1);
+		expect(collapse(base[0]?.body ?? '')).toContain(
+			'grid-template-columns: var( --sheetsmith-record-stacked-columns, auto minmax(0, var(--sheetsmith-record-name, 13em)) max-content 1fr auto );',
 		);
-		const firstStacked = all.findIndex(
-			(one) => one.context.length === 1 && one.context[0] === STACK_QUERY,
-		);
-		expect(base).toBeLessThan(at);
-		expect(at).toBeLessThan(firstStacked);
 		// The strip keeps its own tracks: each field `auto`, as measured.
 		expect(
 			all.some((one) =>
@@ -3774,51 +3698,66 @@ describe("a Record set's stacking tiers", () => {
 		).toBe(true);
 	});
 
-	it('draws the fallback’s stacked line, and nothing else', () => {
-		// The fallback's selectors carry the opt-out a line that fits by 320px
-		// wears; past that prefix the two blocks are the same five rules.
-		const narrow = all
-			.filter(
-				(rule) =>
-					rule.context[0] === FALLBACK &&
-					/sheetsmith-record/.test(rule.selector) &&
-					!/sheetsmith-record-set-fit-/.test(rule.selector),
-			)
-			.map((rule) => [rule.selector.replace(OPT_OUT, ''), collapse(rule.body)]);
-		const stacked = all
-			.filter((rule) => rule.context.length === 1 && rule.context[0] === STACK_QUERY)
-			.map((rule) => [rule.selector, collapse(rule.body)]);
-		expect(narrow.length).toBe(5);
-		expect(stacked).toEqual(narrow);
-	});
-
-	it('passes by a line that fits by 320px in every fallback rule', () => {
-		const unscoped = all
-			.filter(
-				(rule) =>
-					rule.context[0] === FALLBACK &&
-					/sheetsmith-record/.test(rule.selector) &&
-					!/sheetsmith-record-set-fit-/.test(rule.selector),
-			)
-			.filter((rule) => !rule.selector.includes(OPT_OUT))
-			.map((rule) => rule.selector);
-		expect(unscoped).toEqual([]);
-	});
-
-	it('writes the stacked line twice and only twice', () => {
-		// The fallback, for an engine with no style queries, and the block under
-		// the style query. Any third copy is one the equality test above misses.
-		const placing = all.filter(
+	it('declares each stacked value once, on the box, behind the switch', () => {
+		// The eight values the stacked line is: the summary's template and row gap,
+		// the delete's track and margin, the fields' row, track and indent, and the
+		// gap between records.
+		const values = stacked();
+		expect(values.map(([name]) => name)).toEqual([
+			'--sheetsmith-record-stacked-columns',
+			'--sheetsmith-record-stacked-row-gap',
+			'--sheetsmith-record-stacked-remove-column',
+			'--sheetsmith-record-stacked-remove-margin',
+			'--sheetsmith-record-stacked-fields-row',
+			'--sheetsmith-record-stacked-fields-column',
+			'--sheetsmith-record-stacked-fields-indent',
+			'--sheetsmith-record-stacked-gap',
+		]);
+		// Each one is the switch then the value, so it is invalid while the switch
+		// is unset, which is what hands its reader the fallback.
+		const unswitched = values.filter(([, value]) => !value.startsWith(`var(${SWITCH}) `));
+		expect(unswitched).toEqual([]);
+		// And nothing else declares one, which would be a stacked value the switch
+		// does not govern.
+		const elsewhere = all.filter(
 			(rule) =>
-				/sheetsmith-record-fields$/.test(rule.selector) &&
-				/grid-row:\s*2/.test(rule.body),
+				/--sheetsmith-record-stacked-[\w-]+\s*:/.test(rule.body) &&
+				!(rule.context.length === 0 && rule.selector === '.sheetsmith-record-set-box'),
 		);
-		expect(placing.map((rule) => rule.context[0])).toEqual([FALLBACK, STACK_QUERY]);
+		expect(elsewhere.map((rule) => rule.selector)).toEqual([]);
+	});
+
+	it('reads each stacked value once, with the unstacked value as its fallback', () => {
+		const read = new Map<string, string[]>();
+		for (const rule of all) {
+			for (const one of declarations(rule.body)) {
+				if (one.startsWith('--')) continue;
+				for (const match of one.matchAll(/var\(\s*(--sheetsmith-record-stacked-[\w-]+)\s*(,?)/g)) {
+					const name = match[1] ?? '';
+					// No fallback means the property is unset whenever the switch is
+					// off, which is not the unstacked line.
+					expect(match[2], `${rule.selector}: ${one}`).toBe(',');
+					read.set(name, [...(read.get(name) ?? []), rule.selector]);
+				}
+			}
+		}
+		for (const [name] of stacked()) {
+			expect(read.get(name), name).toHaveLength(1);
+		}
+	});
+
+	it('turns the switch on only to empty and off only to unset', () => {
+		const set = all.flatMap((rule) =>
+			declarations(rule.body)
+				.filter((one) => one.startsWith(`${SWITCH}:`))
+				.map((one) => one.slice(SWITCH.length + 1).trim()),
+		);
+		expect(new Set(set)).toEqual(new Set(['', 'initial']));
 	});
 
 	it('turns the stacked line off with every strip entry', () => {
 		const missing = strips()
-			.filter(([, , , body]) => !body.includes('--sheetsmith-record-stack: off;'))
+			.filter(([, , , body]) => body !== `${SWITCH}: initial;`)
 			.map(([count]) => count);
 		expect(strips().length).toBe(MAX_TABULATED_FIELDS);
 		expect(missing).toEqual([]);
@@ -3826,7 +3765,7 @@ describe("a Record set's stacking tiers", () => {
 
 	it('puts every strip entry after every tier entry, which is what lets it win', () => {
 		// `@container` adds no specificity and the selectors weigh the same, so
-		// source order alone decides between `on` and `off`.
+		// source order alone decides between on and off.
 		const lastTier = Math.max(...tiers().map(([, , at]) => at));
 		const firstStrip = Math.min(...strips().map(([, , at]) => at));
 		expect(lastTier).toBeLessThan(firstStrip);
@@ -3929,15 +3868,17 @@ describe('a field its condition hid is hidden', () => {
 		// Hidden is `display: none`, which takes a field out of placement, so an
 		// auto-placed field after it would slide one track left out from under its
 		// heading.
+		// In each count's entry of the strip, keyed on that count.
 		const placed = rules(CSS_WITHOUT_COMMENTS).filter(
 			(rule) =>
-				rule.selector === '.sheetsmith-record-summary .sheetsmith-record-field' &&
-				rule.context[1] === '@container style(--sheetsmith-record-strip: on)',
+				rule.selector.replace(/:where\(\.sheetsmith-record-set-fields-\d+\) /, '') ===
+					'.sheetsmith-record-summary .sheetsmith-record-field' &&
+				rule.context[0] === '@supports (grid-template-columns: subgrid)',
 		);
-		expect(placed).toHaveLength(1);
-		expect(placed[0]?.body).toMatch(
-			/grid-column:\s*var\(--sheetsmith-record-track\)/,
-		);
+		expect(placed).toHaveLength(MAX_TABULATED_FIELDS);
+		for (const rule of placed) {
+			expect(rule.body).toMatch(/grid-column:\s*var\(--sheetsmith-record-track\)/);
+		}
 	});
 });
 
@@ -4370,8 +4311,10 @@ describe('the note mark (docs/features/modifier-notes.md)', () => {
 		const body = ruleFor('.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark')?.body ?? '';
 		expect(declarations(body)).toContain('position: absolute');
 		// The face's own last-flex-item rule skips it, so the value keeps the
-		// auto margin that centres the run.
-		expect(CSS_WITHOUT_COMMENTS).toContain('.sheetsmith-note-mark)');
+		// auto margin that centres the run. (This read `.sheetsmith-note-mark)`
+		// anywhere, which the table's old `:has(.sheetsmith-note-mark)` satisfied
+		// on its own once that rule's list had grown past one line.)
+		expect(CSS_WITHOUT_COMMENTS).toMatch(/:nth-last-child\(\s*1 of\s*:not\([^)]*\.sheetsmith-note-mark\b/);
 	});
 
 	it('centres the mark after a number on the digits’ cap height, not the number’s box', () => {
@@ -5246,19 +5189,26 @@ describe("a pool's reading fits a narrow card", () => {
 	it('centres the reading safely, so an overflowing ceiling keeps its slash', () => {
 		// `docs/features/qualifier-fit-and-size.md`: plain `center` overflowed a
 		// wrapped `/120` at both ends and the card's clip cut the slash first.
-		// The plain value comes first, for an engine without `safe` in flexbox;
-		// a later edit back to `center` alone, or the two swapped, reads the bug
-		// back in with nothing on screen saying so outside a one-unit cell.
+		// The plain value is the fallback, for an engine without `safe` in
+		// flexbox, in an `@supports not` rule of its own: two declarations in the
+		// one rule read to Obsidian's plugin review as a duplicate. A later edit
+		// back to `center` alone reads the bug back in with nothing on screen
+		// saying so outside a one-unit cell.
 		const values = declarations(reading[0]?.body ?? '')
 			.filter((one) => one.startsWith('justify-content:'))
 			.map((one) => one.slice('justify-content:'.length).trim());
-		expect(values).toEqual(['center', 'safe center']);
+		expect(values).toEqual(['safe center']);
+		const fallback = rulesNaming(READING).filter(
+			(rule) => rule.context.join() === '@supports not (justify-content: safe center)',
+		);
+		expect(fallback.map((rule) => declarations(rule.body))).toEqual([['justify-content: center']]);
 	});
 
 	it('clips the card without making it a scroll container', () => {
 		// `clip` cuts where `hidden` did, but a focused ceiling cannot scroll
-		// the card sideways and leave it there; `hidden` first for an engine
-		// without `clip` (iOS before 16).
+		// the card sideways and leave it there; `hidden` for an engine without
+		// `clip` (iOS before 16), in an `@supports not` rule of its own, since
+		// two in one rule read to Obsidian's plugin review as a duplicate.
 		const card = rulesNaming('.sheetsmith-pool').filter(
 			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-pool',
 		);
@@ -5266,7 +5216,11 @@ describe("a pool's reading fits a narrow card", () => {
 		const values = declarations(card[0]?.body ?? '')
 			.filter((one) => one.startsWith('overflow:'))
 			.map((one) => one.slice('overflow:'.length).trim());
-		expect(values).toEqual(['hidden', 'clip']);
+		expect(values).toEqual(['clip']);
+		const fallback = rulesNaming('.sheetsmith-pool').filter(
+			(rule) => rule.context.join() === '@supports not (overflow: clip)' && rule.selector === '.sheetsmith-pool',
+		);
+		expect(fallback.map((rule) => declarations(rule.body))).toEqual([['overflow: hidden']]);
 	});
 
 	it('never lets the number shrink, and caps it at the row', () => {
@@ -5564,7 +5518,8 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 
 	/*
 	 * `docs/features/sheet-contrast-pass.md` §3. The open line's rule is reached
-	 * through a `:has()` at (0,4,0), and the more-contrast block named it as
+	 * through its stamped class at (0,3,0) (a `:has()` at (0,4,0) when this was
+	 * found), and the more-contrast block named it as
 	 * `.sheetsmith-stat-block-record > .sheetsmith-record-summary` at (0,2,0), so
 	 * the hairline stayed at 1.22:1 while the order test above went green. The
 	 * rule now reads a token and more contrast sets the token on the block, so
@@ -5576,7 +5531,7 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 			(rule) =>
 				rule.context.length === 0 &&
 				selectorList(rule.selector).includes('.sheetsmith-stat-block-play-head') &&
-				selectorList(rule.selector).some((one) => one.includes('[aria-expanded=\'true\']')),
+				selectorList(rule.selector).some((one) => one.includes('.sheetsmith-disclosure-open')),
 		);
 		expect(ruled).toHaveLength(1);
 		expect(declarations(ruled[0]?.body ?? '')).toContain(
@@ -5641,7 +5596,9 @@ describe('the stat block under Every form (docs/features/character-forms.md)', (
 
 	it('floors a text vital at about 8em of the field\'s size, so Speed keeps its row', () => {
 		const vital = all.find(
-			(rule) => rule.context.length === 0 && rule.selector === '.sheetsmith-stat-block-vital:has(.sheetsmith-stat-block-text)',
+			(rule) =>
+				rule.context.length === 0 &&
+				rule.selector === '.sheetsmith-stat-block-vital.sheetsmith-stat-block-vital-field',
 		);
 		expect(vital?.body).toMatch(/min-width:\s*calc\(8 \* var\(--font-ui-small\)\)/);
 	});
@@ -5748,7 +5705,7 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 		expect(box?.selector).toBe('.sheetsmith-view .sheetsmith-in-play:not(tr)');
 		// And forced colors, which drops the shadow, rules the row top and bottom.
 		const forced = tint.find((rule) => rule.context.includes('@media (forced-colors: active)'));
-		expect(forced?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > th');
+		expect(forced?.selector).toContain('tr.sheetsmith-in-play-above > th');
 		expect(forced?.body).toMatch(/border-bottom-color:\s*Highlight/);
 		// And at each end, which the shadows drew, so the row is closed all round.
 		const forcedRules = tint.filter((rule) => rule.context.includes('@media (forced-colors: active)'));
@@ -5794,7 +5751,7 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 				rule.selector.includes('tr.sheetsmith-in-play > td') &&
 				/border-bottom-color:\s*Highlight/.test(rule.body),
 		);
-		expect(repaint?.selector).toContain('tr:has(+ tr.sheetsmith-in-play) > td');
+		expect(repaint?.selector).toContain('tr.sheetsmith-in-play-above > td');
 		// The band's tag at its inline start, centred on the reading's line,
 		// which is its carrier's foot: half that line up from the bottom, or the
 		// carrier's middle where that is lower, which is the name's line once
@@ -5860,8 +5817,8 @@ describe('the form tint (docs/features/character-forms.md)', () => {
 			expect(corner(property)[0]?.selector).toContain(':not(.sheetsmith-table-wrapper-boxed)');
 		}
 		// That the corners are read from those classes rather than `:has()` is
-		// held stylesheet-wide: "a rule reads the class that says why, never the
-		// elements drawn".
+		// held stylesheet-wide: "nothing Obsidian's plugin review reports in the
+		// CSS" refuses every `:has()`.
 	});
 
 	it('bends the forced-colors rules at the corner on a layer that takes the radius', () => {
@@ -6092,7 +6049,8 @@ describe('the stat block In play polish (docs/features/stat-block-in-play-polish
 
 	it('gives the first of two forms 4px more above its rule where it follows the report\'s box', () => {
 		const first = base.find(
-			(rule) => rule.selector === '.sheetsmith-stat-block-report + .sheetsmith-stat-block-form:has(> .sheetsmith-stat-block-form-name)',
+			(rule) =>
+				rule.selector === '.sheetsmith-stat-block-report + .sheetsmith-stat-block-form.sheetsmith-stat-block-form-named',
 		);
 		expect(declarations(first?.body ?? '')).toEqual(['margin-top: var(--size-4-1)']);
 	});

@@ -49,6 +49,12 @@ import {
  */
 export const IN_PLAY_BOX = 'sheetsmith-in-play';
 
+/**
+ * The class on the row above a tinted row, which forced colors reads to draw
+ * the tinted row's top rule as that row's bottom (`styles/sheet.css`).
+ */
+export const IN_PLAY_ABOVE = 'sheetsmith-in-play-above';
+
 /** The class on a placement a form changed where its component stamped no host. */
 export const IN_PLAY_PLACEMENT = 'sheetsmith-in-play-placement';
 
@@ -328,7 +334,7 @@ export function applyDecorations(
 	// still names: a Stat block's head, its name rows, its briefs and its Tint
 	// swatch carry the attribute too, and are not this pass's to clear.
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_BOX}`))) el.removeAttribute(TINT_ATTRIBUTE);
-	for (const cls of [IN_PLAY_BOX, IN_PLAY_PLACEMENT, IN_PLAY_MARKED, IN_PLAY_LANE]) {
+	for (const cls of [IN_PLAY_BOX, IN_PLAY_ABOVE, IN_PLAY_PLACEMENT, IN_PLAY_MARKED, IN_PLAY_LANE]) {
 		for (const el of Array.from(root.querySelectorAll(`.${cls}`))) el.classList.remove(cls);
 	}
 	for (const el of Array.from(root.querySelectorAll(`.${IN_PLAY_MARK}`))) el.remove();
@@ -354,6 +360,13 @@ export function applyDecorations(
 			const held = marked.get(cell) ?? { boxes: [], labels: [], tints: [] };
 			for (const box of boxes) {
 				box.classList.add(IN_PLAY_BOX);
+				// **The row above, stamped beside the row and cleared with it.** This
+				// was `tr:has(+ tr.sheetsmith-in-play)`, whose subject was every row on
+				// the sheet, and Obsidian's plugin review flags every `:has()`
+				// (`docs/PATTERNS.md` §5). The cost: a row drawn between the two
+				// after this pass would leave the class on the wrong row, and only a
+				// rebuild does that, which runs this pass again.
+				if (box.tagName === 'TR') box.previousElementSibling?.classList.add(IN_PLAY_ABOVE);
 				if (!held.boxes.includes(box)) held.boxes.push(box);
 				const tints = boxTints.get(box) ?? [];
 				tints.push(decoration.tint);
