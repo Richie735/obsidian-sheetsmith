@@ -780,17 +780,28 @@
 	   truncation looks like here rather than something the menu does. */
 	min-width: 0;
 	height: auto;
-	/* Symmetric, so the text stays centred under the label. */
-	padding: 0 var(--size-2-1);
+	padding-block: 0;
 	border: none;
 	border-radius: var(--radius-s);
 	background: transparent;
 	box-shadow: none;
-	text-align: center;
 	/* A select clips its own text with no mark, so a label longer than the card
-	   loses its last letters with nothing saying so. The card's label already
-	   ellipsises for the same reason. */
+	   loses its last letters with nothing saying so. **This is the forced-colors
+	   case only**: WebKit ignores it on a select, so everywhere else the value is
+	   drawn by the select's face below, which ellipsises on every engine. */
 	text-overflow: ellipsis;
+	cursor: pointer;
+}
+
+/* The select and its face (`ui/select-face.ts`) in one set of clothes, so the
+   face draws exactly the text the select would. The stack is content-sized as
+   the select was, and the face sizes nothing, so a long chosen option cannot
+   widen the card. */
+.sheetsmith-view .sheetsmith-card-select,
+.sheetsmith-view .sheetsmith-card-dropdown .sheetsmith-select-face {
+	/* Symmetric, so the text stays centred under the label. */
+	padding-inline: var(--size-2-1);
+	text-align: center;
 	/* The headline's size, so a row of cards of one width draws one size
 	   (`docs/features/headline-narrow-cell.md`). No mark: it ellipsises its own
 	   label, and its menu shows the rest. */
@@ -799,7 +810,6 @@
 	color: var(--text-normal);
 	line-height: 1.05;
 	letter-spacing: -0.02em;
-	cursor: pointer;
 }
 
 .sheetsmith-view .sheetsmith-card-select:hover {
@@ -1353,7 +1363,8 @@
 
 /* The menu in the pill, on the field's own three rules: the pill is what
    reacts, and a second rectangle inside it would be a second control. */
-.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select {
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select,
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-dropdown .sheetsmith-select-face {
 	font-size: var(--sheetsmith-qualifier-small);
 	font-weight: var(--font-semibold);
 	letter-spacing: normal;
@@ -2492,10 +2503,20 @@ body {
 
 .sheetsmith-view .sheetsmith-table-select {
 	max-width: 100%;
+	padding-block: var(--size-2-1);
+	/* Where the face is not drawn, forced colors, Chromium still marks a cut
+	   value; WebKit ignores it on a select, which is why the face exists. */
+	text-overflow: ellipsis;
+}
+
+/* The select and its face (`ui/select-face.ts`) in one set of clothes, so the
+   face draws the select's own text and its ellipsis stops where the select's
+   text box does. */
+.sheetsmith-view .sheetsmith-table-select,
+.sheetsmith-view .sheetsmith-table-menu .sheetsmith-select-face {
 	/* The end holds the chevron its wrapper draws inside the field: the mark's
 	   inset, its width and the gap the text keeps from it, as a record's
 	   select keeps. */
-	padding-block: var(--size-2-1);
 	padding-inline: var(--size-4-1) var(--size-4-4);
 	font-size: var(--font-ui-small);
 }
@@ -7743,16 +7764,30 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-record-select {
 	max-width: 100%;
 	height: auto;
-	/* The end holds the chevron: its inset, its width and the gap the text
-	   keeps from it. */
 	padding-block: var(--size-2-1);
-	padding-inline: var(--size-2-2) var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: transparent;
 	box-shadow: none;
+	/* The forced-colors case, as the cell select's. */
+	text-overflow: ellipsis;
+}
+
+/* The select and its face (`ui/select-face.ts`) in one set of clothes. */
+.sheetsmith-view .sheetsmith-record-select,
+.sheetsmith-view .sheetsmith-record-menu .sheetsmith-select-face {
+	/* The end holds the chevron: its inset, its width and the gap the text
+	   keeps from it. */
+	padding-inline: var(--size-2-2) var(--size-4-4);
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+}
+
+/* The select's hairline, kept as the face's own transparent edge, so the text
+   starts where the select's does. Hidden with the face in forced colors, so the
+   mode has nothing to repaint. */
+.sheetsmith-view .sheetsmith-record-menu .sheetsmith-select-face {
+	border-inline: 1px solid transparent;
 }
 
 /* The siblings' pattern again: this border is the whole of the control's shape,
@@ -9504,8 +9539,18 @@ a.sheetsmith-notice-action {
 	min-width: 0;
 }
 
+/* The stack fills the menu, so the select fills the stack: the place the
+   select's own `width: 100%` held before it had a face (`ui/select-face.ts`). */
+.sheetsmith-view .sheetsmith-stat-block-menu > .sheetsmith-select-stack {
+	flex: 1 1 auto;
+}
+
 .sheetsmith-view .sheetsmith-stat-block-select {
 	width: 100%;
+}
+
+.sheetsmith-view .sheetsmith-stat-block-select,
+.sheetsmith-view .sheetsmith-stat-block-menu .sheetsmith-select-face {
 	/* The tile's own inline padding at the start; the end keeps the record
 	   select's chevron room, so the chevron sits where every record menu's
 	   does (`docs/UI.md` §9, one chevron). */

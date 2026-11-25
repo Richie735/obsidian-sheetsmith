@@ -57,6 +57,7 @@ import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
 import { keepFocusClearOfPinned } from '../ui/pinned-column-focus';
 import { revealWhenTruncated } from '../ui/truncation';
+import { drawSelectFace } from '../ui/select-face';
 import { ColumnType, COLUMN_TYPES } from './column-types';
 import { effectiveReading, sameNumber } from './effective-value';
 import { fencedLinkRefusal } from './fenced-link';
@@ -1681,6 +1682,8 @@ function drawRow(
 					shown = next;
 					store(next);
 				});
+				// Table's face, for its reason (`ui/select-face.ts`).
+				drawSelectFace(select);
 				return;
 			}
 

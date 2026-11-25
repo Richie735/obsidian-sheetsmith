@@ -36,6 +36,7 @@ import { hold, pressToFocus } from '../test/pointer';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
 import { hoverClip, setClip } from '../test/clipped';
+import { faceOf } from '../test/select-face';
 
 /*
  * Record set, and with it `parse/records.ts`.
@@ -4359,21 +4360,30 @@ describe('a field inside the opened record', () => {
 					key: 'Recharge',
 					type: 'level',
 					input: 'select',
-					levels: ['None', 'Short rest', 'Long rest'],
+					levels: ['None', 'Short rest', 'Long rest, or a full day of downtime'],
 				},
 			],
-			body,
+			// Stored at the long level, so its face is drawn before the change.
+			body.replace('Recharge: 0', 'Recharge: 2'),
 			(record) => record.querySelector('.sheetsmith-record-select') as HTMLElement,
 			(control) => {
 				const select = control as HTMLSelectElement;
 				// The wrapper is what carries the chevron, which a select cannot
-				// (`docs/UI.md` §9): without it the menu reads as typed text.
-				expect(select.parentElement?.classList.contains('sheetsmith-record-menu')).toBe(true);
-				select.value = '2';
+				// (`docs/UI.md` §9): without it the menu reads as typed text. The
+				// select sits in its face's stack inside it (`ui/select-face.ts`).
+				expect(select.parentElement?.classList.contains('sheetsmith-select-stack')).toBe(true);
+				expect(
+					select.parentElement?.parentElement?.classList.contains('sheetsmith-record-menu'),
+				).toBe(true);
+				// The long level in a face beside it, which ellipsises on every engine.
+				expect(
+					faceOf(select)?.textContent,
+				).toBe('Long rest, or a full day of downtime');
+				select.value = '1';
 				select.dispatchEvent(new Event('change'));
 			},
 		);
-		expect(selected.note).toContain('Recharge: 2');
+		expect(selected.note).toContain('Recharge: 1');
 	});
 
 	it('commits a modifier through the same shared form the same way', () => {
