@@ -3718,8 +3718,6 @@ describe('a strip of field names over the list', () => {
 			Array.from(block(el).classList).filter((one) =>
 				one.startsWith('sheetsmith-record-set-fit-'),
 			);
-		const narrow = (el: HTMLElement) =>
-			block(el).classList.contains('sheetsmith-record-set-fits-narrow');
 
 		it('stamps an unheaded list from its fields, which before this pass carried no width', () => {
 			// Traits' own line: a typed-ceiling `Uses`, a toggle, a ring, a computed
@@ -3729,7 +3727,6 @@ describe('a strip of field names over the list', () => {
 			expect(block(el).classList.contains('sheetsmith-record-set-headed')).toBe(false);
 			expect(block(el).className).not.toContain('sheetsmith-record-set-fields-');
 			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-29']);
-			expect(narrow(el)).toBe(false);
 		});
 
 		it('stamps a headed list too, beside its strip count', () => {
@@ -3775,17 +3772,15 @@ describe('a strip of field names over the list', () => {
 			expect(tiers(hidden)).toEqual(['sheetsmith-record-set-fit-29']);
 		});
 
-		it('marks a line that fits by 320px, which the fallback rule passes by', () => {
+		it('tiers a line that fits by 320px from its own fit, and one with no fields at the lowest', () => {
 			const one = render(
 				{ ...HEADED, fieldHeadings: false, fields: [{ key: 'Seen', type: 'toggle' }] },
 				HEADED_BODY,
 			);
 			// 96 + 20.8 + 96 = 212.8px, so 14 steps, stacked up to 224px.
 			expect(tiers(one)).toEqual(['sheetsmith-record-set-fit-14']);
-			expect(narrow(one)).toBe(true);
 			const none = render({ ...HEADED, fieldHeadings: false, fields: [] }, HEADED_BODY);
 			expect(tiers(none)).toEqual(['sheetsmith-record-set-fit-12']);
-			expect(narrow(none)).toBe(true);
 		});
 
 		it('clamps to the last tier the stylesheet tabulates', () => {
@@ -3851,18 +3846,16 @@ describe('a strip of field names over the list', () => {
 			expect(tiers(ring)).toEqual(['sheetsmith-record-set-fit-24']);
 		});
 
-		it('sizes a declared ceiling by its digits, which is where the fallback cut falls', () => {
+		it('sizes a declared ceiling by its digits', () => {
 			const level = (max: number) =>
 				render(
 					{ ...HEADED, fieldHeadings: false, fields: [{ key: 'Level', type: 'number', max }] },
 					HEADED_BODY,
 				);
-			// `Level / 9`: 96 + 97.3 + 96 = 289.3px, 19 steps, under the fallback's 20.
+			// `Level / 9`: 96 + 97.3 + 96 = 289.3px, 19 steps.
 			expect(tiers(level(9))).toEqual(['sheetsmith-record-set-fit-19']);
-			expect(narrow(level(9))).toBe(true);
-			// `Level / 100`: 96 + 113.5 + 96 = 305.5px, 20 steps, the fallback's own.
+			// `Level / 100`: 96 + 113.5 + 96 = 305.5px, 20 steps.
 			expect(tiers(level(100))).toEqual(['sheetsmith-record-set-fit-20']);
-			expect(narrow(level(100))).toBe(false);
 		});
 	});
 
@@ -4430,7 +4423,7 @@ describe('a field inside the opened record', () => {
 		expect(none.querySelector('.sheetsmith-record-set-records')).toBeNull();
 		// No headed classes: only the fit tier of a line with no fields on it.
 		expect(noneBlock.className).toBe(
-			'sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-fit-12 sheetsmith-record-set-fits-narrow',
+			'sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-fit-12',
 		);
 		expect(noneBlock.style.getPropertyValue('--sheetsmith-record-fields')).toBe('');
 	});

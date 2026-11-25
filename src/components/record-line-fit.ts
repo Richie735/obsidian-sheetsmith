@@ -109,14 +109,6 @@ export const MIN_FIT_TIER = 12;
  * takes this tier, which is a residue and not a case.
  */
 export const MAX_FIT_TIER = 100;
-/**
- * The tier the fallback 320px rule, for an engine with no style queries, stacks
- * to exactly: 20 × 16px. A tier under it stacks to 304px or less, so the
- * fallback would stack that line past its own threshold; such a list wears
- * `-fits-narrow` and the fallback passes it by. From this tier up the fallback
- * stacks no further than the list's own entry, so it takes the fallback.
- */
-export const FALLBACK_FIT_TIER = 20;
 
 /**
  * A field's width on the line, estimated cautiously: at or above the width the

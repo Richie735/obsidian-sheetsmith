@@ -144,7 +144,7 @@ import {
 } from './record-controls';
 
 export type { RecordEntry, RecordField } from './record-fields';
-import { FALLBACK_FIT_TIER, fitTier, type LineField } from './record-line-fit';
+import { fitTier, type LineField } from './record-line-fit';
 import { bindRingControl } from './ring-control';
 import {
 	sampleFlag,
@@ -1119,10 +1119,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			(headed
 				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${lineCount}`
 				: 'sheetsmith-placed sheetsmith-record-set') +
-				` sheetsmith-record-set-fit-${tier}` +
-				// The fallback 320px rule's opt-out: a line that fits by 320px
-				// must not be stacked up to it (the rule's own comment).
-				(tier < FALLBACK_FIT_TIER ? ' sheetsmith-record-set-fits-narrow' : ''),
+				` sheetsmith-record-set-fit-${tier}`,
 			container,
 		);
 		// The true count, for the shared tracks; the class above is only the
