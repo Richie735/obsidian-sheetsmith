@@ -109,6 +109,16 @@ body {
 }
 ```
 
+## What it reads
+
+Sheetsmith works inside your vault and makes no network requests. It reads three things beyond the note or layout you have open:
+
+- **The list of every file in the vault**, when you type into a picture's reference field. The suggestions are vault files of any type, as Obsidian's own embed suggester offers them, and only their names and folders are shown.
+- **The list of markdown notes, and their properties**, to find the characters that use a layout. It checks each note's `sheet-layout` property in Obsidian's metadata cache, then reads the notes that match where the task needs their contents. This happens when you rename a layout file, to count the notes it leaves behind; when you rename a component or change its id in the layout editor, to move those notes' sections or to name the notes still using the old id; and when you add, paste or relabel a component, to warn if notes already hold a section under its label.
+- **The clipboard**, in the layout editor only. Copying writes to it: a component's id or a published name, a layout's JSON, or a component from the tree. Pasting a component with the keyboard takes the text from the paste event; **Paste** in the tree's menu has no paste event, so it reads the clipboard's text, and where the clipboard cannot be read it opens a box to paste the text into instead.
+
+One more item Obsidian's plugin review lists, which reads nothing: in a prose field, a closing bracket typed for you and a list continued on Enter are written with the browser's `execCommand('insertText')`, which is deprecated. It stays, because it is the only write that keeps the field's own undo history; the replacement, `setRangeText`, leaves undo unable to step back past it.
+
 ## Development
 
 ```bash
