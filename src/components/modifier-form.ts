@@ -120,6 +120,7 @@ import {
 	positionLegend,
 } from './modifier-breakdown';
 import { element } from '../ui/element';
+import { controlField, drawSelectFace } from '../ui/select-face';
 import { OPERATOR_LABELS, TEXT } from '../en';
 import {
 	addressOf,
@@ -618,7 +619,9 @@ function heldRefusal(
 		refusal = null;
 		if (message === null) return;
 		refusal = createEl('p', { cls: 'sheetsmith-panel-problem', text: message });
-		anchor.parentElement?.after(refusal);
+		// Under the control's field, past a select's face stack
+		// (`ui/select-face.ts`), so the sentence goes under the whole row.
+		controlField(anchor)?.after(refusal);
 		options.announce(message);
 		options.onResize();
 	};
@@ -880,6 +883,20 @@ export function renderModifierForm(
 			state.focused = 'target';
 			redraw();
 		});
+	}
+
+	/*
+	 * **Every select's value in a face of its own** (`ui/select-face.ts`), so a
+	 * long **Value** ends in an ellipsis on every engine rather than cut
+	 * mid-letter in WebKit. Here, once the whole body is drawn, rather than in
+	 * `select()`: a field fills its options and sets its value after `select()`
+	 * returns, and the face's first text is read at the call. Before focus
+	 * returns, since wrapping moves the select.
+	 */
+	for (const select of Array.from(
+		body.querySelectorAll<HTMLSelectElement>('select.sheetsmith-panel-select'),
+	)) {
+		drawSelectFace(select);
 	}
 
 	// After the rebuild, put focus back where the reader left it. A commit

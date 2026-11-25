@@ -427,15 +427,28 @@
 	font-size: var(--font-ui-smaller);
 }
 
-.sheetsmith-panel .sheetsmith-panel-select,
-.sheetsmith-panel .sheetsmith-panel-input {
+.sheetsmith-panel .sheetsmith-panel-input,
+.sheetsmith-panel .sheetsmith-panel-field > .sheetsmith-select-stack {
 	flex: 1 1 auto;
 	min-width: 0;
 	max-width: 100%;
+}
+
+/* The select and its face in one size, so the face draws the select's own text
+   (`ui/select-face.ts`). */
+.sheetsmith-panel .sheetsmith-panel-select,
+.sheetsmith-panel .sheetsmith-panel-input,
+.sheetsmith-panel .sheetsmith-panel-field .sheetsmith-select-face {
 	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-panel .sheetsmith-panel-select,
+.sheetsmith-panel .sheetsmith-panel-input {
 	/* A name longer than the box degrades to an ellipsis rather than to a hard cut
-	   mid-word, which is `docs/UI.md` §12's stat-note row applied before it is
-	   reported: a value that stops has to look truncated and not damaged. */
+	   mid-word (`docs/UI.md` §12's stat-note row). **For a select this is the
+	   forced-colors case only**: WebKit ignores it on a select, so everywhere else
+	   the select's value is drawn by its face, which ellipsises on every engine,
+	   and this is what the select's own text does where the face is not drawn. */
 	text-overflow: ellipsis;
 }
 
@@ -464,6 +477,12 @@
 	background: none;
 	box-shadow: none;
 	color: var(--text-normal);
+}
+
+/* The face follows the read-only select to the label's edge, so the value still
+   sits where the text would. */
+.sheetsmith-panel .sheetsmith-panel-select:disabled + .sheetsmith-select-face {
+	padding-inline-start: 0;
 }
 
 .sheetsmith-panel .sheetsmith-panel-add {
