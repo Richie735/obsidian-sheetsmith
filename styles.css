@@ -13346,7 +13346,7 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-entry-row > input,
 .sheetsmith-entry-row .sheetsmith-field > input,
-.sheetsmith-entry-row .sheetsmith-field > select {
+.sheetsmith-entry-row .sheetsmith-field > .sheetsmith-select-stack {
 	width: 100%;
 }
 
@@ -13545,8 +13545,14 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-detail-field > input,
-.sheetsmith-detail-field > select {
+.sheetsmith-detail-field > .sheetsmith-select-stack {
 	width: 100%;
+}
+
+/* A select sits in its face's stack (`ui/select-face.ts`), which takes the
+   width above; the select fills the stack and keeps the height below. */
+.sheetsmith-detail-field > input,
+.sheetsmith-detail-field > .sheetsmith-select-stack > select {
 	/* **The shared baseline these fields had nothing giving them.** Obsidian's own
 	   text input is 36.2px — `--input-padding` of `4px 8px` plus a 1px border
 	   around a 18.2px line — and its `select` is a flat `--input-height` of 30, so
@@ -13565,12 +13571,12 @@ a.sheetsmith-notice-action {
 	   worth keeping. */
 	height: var(--input-height);
 	padding-block: 0;
-	/* A select clips its face with no mark and no recovery — `ui/truncation.ts`
-	   reads `textContent`, which is empty on a form control, and a select reports
-	   `scrollWidth === clientWidth` however long the chosen option is. So the
-	   ellipsis is the only thing on the page that can say the value continues, and
-	   `titleChosen` carries what it continues into. `docs/UI.md` §12's
-	   clipped-value row, read on the control it did not name. */
+	/* A select clips its own text with no mark, and WebKit ignores this on one,
+	   so the value is drawn by the select's face (`ui/select-face.ts`), which
+	   ellipsises on every engine, and `titleChosen` carries what it continues
+	   into. **This is the forced-colors case only**, where the face is not drawn
+	   and Chromium still marks the cut. `docs/UI.md` §12's clipped-value row,
+	   read on the control it did not name. */
 	text-overflow: ellipsis;
 }
 
@@ -13701,14 +13707,27 @@ a.sheetsmith-notice-action {
 	color: var(--text-faint);
 }
 
-.sheetsmith-list-modifiers .sheetsmith-detail-field-disabled > select.dropdown:disabled {
+.sheetsmith-list-modifiers
+	.sheetsmith-detail-field-disabled
+	> .sheetsmith-select-stack
+	> select.dropdown:disabled {
 	/* Chromium's own `opacity: 0.7` on a disabled select stacked on the faint
 	   colour (1.74:1); the colour is the treatment, so the opacity comes off. */
 	opacity: 1;
-	color: var(--text-faint);
 	background-color: transparent;
 	box-shadow: none;
 	cursor: not-allowed;
+}
+
+/* The faint value is the face's, not the select's: at this weight a colour on
+   the select would outrank the rule that hides its text under the face
+   (`shared.css`, "A select's face"), and draw the value twice. */
+.sheetsmith-list-modifiers
+	.sheetsmith-detail-field-disabled
+	> .sheetsmith-select-stack
+	> select.dropdown:disabled
+	+ .sheetsmith-select-face {
+	color: var(--text-faint);
 }
 
 /* **A glyph-only control that is disabled takes the app's fade, and this adds
@@ -13742,7 +13761,7 @@ a.sheetsmith-notice-action {
 	max-width: 14em;
 }
 
-.sheetsmith-list-modifiers .sheetsmith-detail-field-tight > select {
+.sheetsmith-list-modifiers .sheetsmith-detail-field-tight > .sheetsmith-select-stack {
 	width: auto;
 	max-width: 100%;
 }
@@ -14995,7 +15014,7 @@ a.sheetsmith-notice-action {
 		repeat(3, min-content);
 }
 
-.sheetsmith-entry-row > select {
+.sheetsmith-entry-row > .sheetsmith-select-stack {
 	width: 100%;
 }
 

@@ -18,6 +18,8 @@
  * here that must not drift.
  */
 
+import { controlField } from '../ui/select-face';
+
 /**
  * Inline validation: mark the input and show a message under the field, or
  * clear both. Invalid input is never silently swallowed. The message is keyed
@@ -46,7 +48,9 @@ export function showFieldError(
 		else errors.set(token, message);
 	}
 	input.toggleClass('sheetsmith-input-invalid', message !== null);
-	const control = input.parentElement;
+	// Past a select's face stack (`ui/select-face.ts`): the message goes under
+	// the field, not into the stack.
+	const control = controlField(input);
 	if (!control) return;
 	const key = input.dataset.sheetsmithFocus ?? '';
 	let existing: HTMLElement | null = null;
