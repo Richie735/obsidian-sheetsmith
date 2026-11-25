@@ -49,6 +49,7 @@ import { frontmatterKeyProblem } from '../parse/frontmatter';
 import { LAYOUT_KEY, PromotedField } from '../types';
 import { showFieldError } from './field-error';
 import { titleChosen } from './select-title';
+import { drawSelectFace } from '../ui/select-face';
 
 /** A row as the editor handles one: every member free to be absent. */
 type FieldEntry = Partial<PromotedField> & Record<string, unknown>;
@@ -328,6 +329,9 @@ export function renderPromotedFields(
 			// publishes, so it is stale the moment one changes.
 			context.redraw();
 		});
+		// The value in a face of its own (`ui/select-face.ts`), so a long label
+		// ends in an ellipsis on every engine rather than cut mid-letter in WebKit.
+		drawSelectFace(value);
 
 		const propertyInput = listField(row, 'Property').createEl('input', {
 			type: 'text',

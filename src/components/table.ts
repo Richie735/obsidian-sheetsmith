@@ -118,6 +118,7 @@ import {
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
+import { drawSelectFace } from '../ui/select-face';
 import { showPopover } from '../ui/popover';
 import { keepFocusClearOfPinned } from '../ui/pinned-column-focus';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -2873,6 +2874,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							shown = next;
 							store(next);
 						});
+						// The value in a face of its own (`ui/select-face.ts`), so a
+						// long level name ends in an ellipsis on every engine rather
+						// than clipping unmarked.
+						drawSelectFace(select);
 						return;
 					}
 

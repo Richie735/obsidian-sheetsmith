@@ -12,6 +12,7 @@ import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { formsSamples } from '../../harness/samples';
 import { sampleOf } from '../test/sample';
 import { rendersLinks } from '../test/rendered-link';
+import { faceOf } from '../test/select-face';
 
 /*
  * Stat block (`docs/features/character-forms.md`): one form at a time over a
@@ -182,6 +183,22 @@ describe('reading and writing', () => {
 });
 
 describe('one form at a time', () => {
+	it('draws a long form name in a face beside the picker', async () => {
+		// `ui/select-face.ts`: the plugin ellipsises the value on every engine.
+		// The inactive Wolf renamed long, so choosing it is a real change.
+		const long = 'Dire Wolf of the Northern Wastes, the Great Elder';
+		const { el } = render(BODY.replace('### Wolf', `### ${long}`));
+		const at = Array.from(picker(el).options).find((option) => option.text.includes(long))?.value ?? '';
+		expect(faceOf(picker(el))?.textContent).not.toContain(long);
+		choose(picker(el), at);
+		// The face reads a microtask after the change.
+		await Promise.resolve();
+		const select = picker(el);
+		expect(select.parentElement?.parentElement?.classList.contains('sheetsmith-stat-block-menu')).toBe(true);
+		expect(select.options[select.selectedIndex]?.text).toContain(long);
+		expect(faceOf(select)?.textContent).toBe(select.options[select.selectedIndex]?.text);
+	});
+
 	it('switches in one edit: the chosen on, the previous off, a use spent', () => {
 		const { el, edits } = render();
 		choose(picker(el), '1');

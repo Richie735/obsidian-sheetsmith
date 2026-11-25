@@ -42,6 +42,7 @@ import { renderGroupChips } from '../components/group-chips';
 import { ownGroups } from '../components/member-groups';
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
+import { drawSelectFace } from '../ui/select-face';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
@@ -408,6 +409,11 @@ function renderStatCell(
 		row.stat = select.value;
 		context.persist();
 	});
+	// The value in a face of its own (`ui/select-face.ts`), as every select
+	// the pane's lists build by hand draws it. The reset rows' `addDropdown`
+	// selects are Obsidian's settings chrome and take none (`docs/BACKLOG.md`
+	// § UI).
+	drawSelectFace(select);
 }
 
 /**
@@ -1459,6 +1465,7 @@ export function renderColumnsEditor(
 			context.flashAfterRedraw?.(`${prefix}-col-${column.key}-detail`);
 			context.redraw();
 		});
+		drawSelectFace(type);
 
 		addControls(
 			element,
@@ -1657,6 +1664,7 @@ export function renderColumnsEditor(
 				context.focusAfterRedraw(`${prefix}-col-${column.key}-input`);
 				context.redraw();
 			});
+			drawSelectFace(inputStyle);
 
 			if (column.input !== 'select') {
 				// Every state the column can be in, drawn by the same painter
@@ -1850,6 +1858,7 @@ export function renderColumnsEditor(
 					context.flashAfterRedraw?.(`${prefix}-col-${column.key}-detail`);
 					context.redraw();
 				});
+				drawSelectFace(source);
 				// **Maximum** is the entry's own number, so it is offered only while
 				// the entry owns one. The declared value survives in the layout
 				// untouched, which is what makes switching back restore the reading.
@@ -2539,6 +2548,7 @@ export function renderEntriesEditor(
 				}
 				context.persist();
 			});
+			drawSelectFace(sourceInput);
 
 			// Blank is the card's own sense, which is what a set whose
 			// rows all mean the same thing leaves it as. Death saves are
@@ -2565,6 +2575,7 @@ export function renderEntriesEditor(
 				}
 				context.persist();
 			});
+			drawSelectFace(senseInput);
 		}
 
 		// `checkField` is the sole checkbox factory (PATTERNS §1, `styles.test.ts`'s

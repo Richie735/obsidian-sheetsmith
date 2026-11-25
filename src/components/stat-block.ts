@@ -165,6 +165,7 @@ import {
 	tintColourOf,
 } from '../types';
 import { element } from '../ui/element';
+import { drawSelectFace } from '../ui/select-face';
 import { nounInSentence } from '../ui/noun-in-sentence';
 
 /** The key a stored uses count sits under in the preamble's fence. */
@@ -1563,6 +1564,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (select.value === SEVERAL_VALUE) return;
 				choose(select.value === '' ? null : Number(select.value));
 			});
+			// The form in a face of its own (`ui/select-face.ts`), so a long
+			// name, or the several active, ends in an ellipsis on every engine
+			// rather than clipping unmarked.
+			drawSelectFace(select);
 			if (active.length > 0) {
 				const revert = element('button', 'sheetsmith-stat-block-revert', pick);
 				revert.type = 'button';

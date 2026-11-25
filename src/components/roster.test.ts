@@ -10,6 +10,7 @@ import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
 import { hold } from '../test/pointer';
 import { closePopover, LONG_PRESS } from '../ui/popover';
+import { faceOf } from '../test/select-face';
 
 /*
  * A D&D-shaped roster: two abilities, each with a skill. `mod(value)` is the
@@ -1162,13 +1163,27 @@ describe('render', () => {
 
 		it('wraps a level drawn as a dropdown, so it can wear the chevron', () => {
 			// Table's wrapper, for its reason (`docs/UI.md` §9's one chevron).
-			const select = { ...levelled, columns: [{ ...training, input: 'select' as const }] };
+			// Untrained lengthened, so the face holds a value long enough to clip.
+			const long = 'Untrained in every skill it names';
+			const select = {
+				...levelled,
+				columns: [
+					{
+						...training,
+						input: 'select' as const,
+						levels: [long, ...training.levels.slice(1)],
+					},
+				],
+			};
 			const result = roster.read(levelledBody, select);
 			const { el } = recording(select, result.ok ? result.data : null);
 			const menus = Array.from(el.querySelectorAll('tbody select'));
 			expect(menus).toHaveLength(2);
 			for (const menu of menus) {
-				expect(menu.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+				// In its face's stack, inside the wrapper (`ui/select-face.ts`).
+				expect(menu.parentElement?.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+				// Both rows store 0, the long level, drawn in a face beside it.
+				expect(faceOf(menu)?.textContent).toBe(long);
 			}
 		});
 

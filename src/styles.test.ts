@@ -5027,7 +5027,8 @@ describe('a headline number shrinks with a narrow card, to a floor above its qua
 			[
 				'.sheetsmith-card > .sheetsmith-card-derived',
 				'.sheetsmith-headline-mark',
-				'.sheetsmith-view .sheetsmith-card-select',
+				// The select and its face, one rule (`ui/select-face.ts`).
+				'.sheetsmith-view .sheetsmith-card-select, .sheetsmith-view .sheetsmith-card-dropdown .sheetsmith-select-face',
 				'.sheetsmith-view .sheetsmith-card-value > .sheetsmith-card-input',
 				'.sheetsmith-view .sheetsmith-pool-current',
 			].sort(),

@@ -9,6 +9,7 @@ import {
 import { definitionView, outcomeView } from '../test/modifier-views';
 import { ModifierChangeView } from '../types';
 import { acceptingTargets } from '../formula/modifier-targets';
+import { faceOf } from '../test/select-face';
 
 /*
  * What the form authors itself, as opposed to what it draws for somebody else
@@ -162,6 +163,46 @@ describe('a note-only effect typed on a row', () => {
 		amount.value = '2';
 		amount.dispatchEvent(new Event('input'));
 		expect(controls.map((one) => one.disabled)).toEqual([false, false, false]);
+		body.remove();
+	});
+
+	it('draws a long Value in a face beside the select (docs/features/select-long-value.md)', () => {
+		// The label `published-name-labels.md` gives the picker is full width, so
+		// the face, not a short label, is what ellipsises it (`ui/select-face.ts`).
+		const long = 'Saves and Perception · Perception · Rank';
+		const body = document.createElement('div');
+		document.body.appendChild(body);
+		const state = modifierFormState(['perception += 1 as item']);
+		state.open = 0;
+		const accepting = [...ACCEPTING, { name: 'perception', label: long }];
+		renderModifierForm(body, state, {
+			label: 'Ring',
+			parts: ['perception += 1 as item'],
+			outcomes: () => [
+				outcomeView({
+					typed: { target: 'perception', operator: 'add', amount: '1', bonusType: 'item' },
+					target: 'perception',
+					targetLabel: long,
+					applies: true,
+				}),
+			],
+			definitions: [],
+			targets: accepting,
+			published: accepting,
+			noteTargets: accepting,
+			bonusTypes: ['item'],
+			icon: () => undefined,
+			onCommit: () => undefined,
+			onPromote: () => Promise.resolve({ error: 'No layout here.' }),
+			announce: () => undefined,
+			onResize: () => undefined,
+		});
+		const value = select(body, 'target');
+		expect(value.options[value.selectedIndex]?.text).toBe(long);
+		const face = faceOf(value);
+		expect(value.parentElement?.classList.contains('sheetsmith-select-stack')).toBe(true);
+		expect(face?.textContent).toBe(long);
+		expect(face?.getAttribute('aria-hidden')).toBe('true');
 		body.remove();
 	});
 });

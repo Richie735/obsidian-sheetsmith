@@ -6,6 +6,7 @@ import { renderModifierDefinitions } from './modifier-definitions-field';
 import { ModifierTargetSource } from '../formula/modifier-targets';
 import { Layout } from '../parse/layout';
 import { PromotedField } from '../types';
+import { faceOf } from '../test/select-face';
 
 /*
  * The layout's promoted fields, as a field, driven directly.
@@ -581,6 +582,19 @@ describe('the chosen option’s own words, for a select that clips', () => {
 		expect(value.getAttribute('aria-label')).toBe('heat value');
 	});
 
+	it('draws the chosen option in a face beside the select (docs/features/select-long-value.md)', () => {
+		// The title is the desktop recovery; the face is what ellipsises the value
+		// on every engine (`ui/select-face.ts`).
+		const el = render(layout([{ name: 'clocks.heat.left', property: 'heat' }]));
+		const value = control<HTMLSelectElement>(el, 'promoted-field-0-value');
+		const stack = value.parentElement;
+		expect(stack?.classList.contains('sheetsmith-select-stack')).toBe(true);
+		expect(stack?.parentElement?.classList.contains('sheetsmith-field')).toBe(true);
+		const face = faceOf(value);
+		expect(face?.textContent).toBe('Clocks · heat · remaining');
+		expect(face?.getAttribute('aria-hidden')).toBe('true');
+	});
+
 	it('removes the attribute where nothing is chosen', () => {
 		const el = render(layout([{ property: 'heat' }]));
 		const value = control<HTMLSelectElement>(el, 'promoted-field-0-value');
@@ -623,5 +637,9 @@ describe('the chosen option’s own words, for a select that clips', () => {
 			'[data-sheetsmith-focus="modifier-Ring-0-target"]',
 		) as HTMLSelectElement;
 		expect(changes.title).toBe('Abilities and saving throws · DEX');
+		// And a face beside it, which ellipsises the long label on every engine.
+		expect(
+			faceOf(changes)?.textContent,
+		).toBe('Abilities and saving throws · DEX');
 	});
 });

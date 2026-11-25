@@ -155,6 +155,7 @@ import {
 } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
 import { element } from '../ui/element';
+import { drawSelectFace } from '../ui/select-face';
 import { nounInSentence } from '../ui/noun-in-sentence';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -2030,6 +2031,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				select.addEventListener('change', () => {
 					commit(stateOf(Number(select.value)));
 				});
+				// The value in a face of its own (`ui/select-face.ts`), so a long
+				// level name ends in an ellipsis on every engine rather than
+				// clipping unmarked.
+				drawSelectFace(select);
 				return;
 			}
 
