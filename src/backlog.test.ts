@@ -6,7 +6,7 @@
  * 2100 bytes, a longest of 9264, and not one under 400. **Those figures are
  * bytes**, as a file size is, while the ceiling below counts UTF-16 units, as
  * `String.length` does — measured, 0.5% apart on this prose, since the only
- * non-ASCII in it is the em dash and the curly quote. Every `/ship` run reads
+ * non-ASCII in it is the em dash and the curly quote. Every `/orchestrate` run reads
  * both, twice over: once by the dev and once by each reviewer. So the length is
  * not a tidiness question, it is the cost of the document, and the shape that
  * keeps it down is four cells: what the gap is, where it lives, what the fix is,

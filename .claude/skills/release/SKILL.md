@@ -10,7 +10,7 @@ Release the open version branch. **Version:** $ARGUMENTS
 
 **This runs when the owner says a cycle is done, never because a feature
 landed.** A release is a decision about a set of changes, not about the last one
-in it. `/ship` and `/land-it` know nothing about this skill, and neither of them
+in it. `/orchestrate` and `/land-it` know nothing about this skill, and neither of them
 may invoke it.
 
 Read `docs/WORKFLOW.md` § Branches before doing anything. It defines the branch
@@ -181,7 +181,7 @@ The next number is the argument's second value, or ask. Guessing is fine to
 propose and wrong to assume: whether the next cycle is `0.3.0` or `0.2.1`
 depends on what the owner intends to put in it, which is not in the repository.
 
-There is always exactly one open version branch. That is the invariant `/ship`
+There is always exactly one open version branch. That is the invariant `/orchestrate`
 depends on, and this step is the only thing that maintains it.
 
 ## 9. Report

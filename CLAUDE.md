@@ -60,7 +60,7 @@ Resist building the layout editor and the formula engine early. Both assume a wo
 **Never on `main`.** Main holds released versions and gains commits only through
 one merge per release. Work happens on a `feat/`, `fix/` or `chore/` branch
 opened off the single open `release/<version>` branch, and a version branch
-accumulates several features before it ships. `/ship` opens the work branch,
+accumulates several features before it ships. `/orchestrate` opens the work branch,
 `/land-it` merges it back, and `/release` closes the cycle when the owner says
 so. A landed feature is never a release on its own.
 
