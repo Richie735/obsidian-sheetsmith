@@ -1,5 +1,5 @@
 ---
-name: ship
+name: orchestrate
 description: "Orchestrate one feature end to end: spec, build, review waves, findings, landing. Spawns a persistent dev agent and per-wave reviewers, and stops at the owner's breakpoints. One run is one feature and ends at the land stop. Invoked with a route by the planning handoff."
 argument-hint: "[route: full | standard | short | bug] [feature]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, PushNotification
@@ -56,7 +56,7 @@ re-create it, and derive the phase per § Resume.
 This session ends at the land stop. Nothing that arrives after it re-enters
 here: a design note implying a redesign, a follow-on the spec deferred, a second
 surface the feature revealed. Each is a new route through the planning handoff
-and a new `/ship`.
+and a new `/orchestrate`.
 
 The pull is strongest right after a wave, when the dev is primed and a follow-on
 looks like an amendment. An amendment has no edge, and that is how one feature

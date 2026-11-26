@@ -9,7 +9,7 @@ nobody has to remember which one.
 Picking up once a feature has been chosen and researched, which happens outside
 this repository.
 
-The steps are normally driven end to end by `/ship <route> [feature]`, which
+The steps are normally driven end to end by `/orchestrate <route> [feature]`, which
 runs them as one orchestrated session: a persistent dev agent, fresh reviewer
 agents per wave, and hard stops wherever the owner decides. One run is one
 feature and ends when it lands; follow-on work the feature revealed comes back
@@ -19,7 +19,7 @@ orchestrator misbehaves.
 
 | # | Step | Session | What runs |
 | --- | --- | --- | --- |
-| 0 | Open the work branch off the version branch | build | `/ship`, from the route |
+| 0 | Open the work branch off the version branch | build | `/orchestrate`, from the route |
 | 1 | Settle the model question, then design | design | `/feature-spec` |
 | 2 | Build | build | ordinary work against the spec |
 | 3 | Check the patterns, and check the spec | review | `/patterns-review` and `/spec-review`, in parallel on the same diff |
@@ -35,7 +35,7 @@ nothing in this table may invoke it. The branch model is § Branches.
 Steps 3 and 4 sit before 5 on purpose. Structural drift is expensive to fix
 once polish is built on top of it; appearance is cheap to fix late. Discovering
 that the wrong thing was built is dearer than either, which is why the spec axis
-sits beside the patterns one rather than after the polish. Under `/ship` the
+sits beside the patterns one rather than after the polish. Under `/orchestrate` the
 design reviewer starts looking as soon as the first green screenshots exist, in
 parallel with step 4, and re-checks only the views a structural fix moved;
 structural fixes rarely move pixels, and serializing the waves added the whole
@@ -52,14 +52,14 @@ look wrong; keeping the axes apart is what stops one from masking another.
 **The review session must not be the one that produced the work.** This is the
 boundary that matters. A session that wrote the design is anchored on it and
 will check conformance rather than critique it, and a session that wrote the
-code already believes its own reasoning. Under `/ship` this is structural:
+code already believes its own reasoning. Under `/orchestrate` this is structural:
 reviewers are spawned fresh with no memory of the build. By hand, it is a habit:
 start the reviewer fresh, hand it the spec and the screenshots, and let it
 disagree.
 
 **Design and build do not share a head.** The spec is a committed file, so the
 handoff is a path rather than a conversation, and splitting them keeps the
-builder from inheriting assumptions the spec never wrote down. `/ship` always
+builder from inheriting assumptions the spec never wrote down. `/orchestrate` always
 splits them; by hand, sharing a session is faster on a small feature and stays a
 judgement call.
 
@@ -86,7 +86,7 @@ them or should learn where they are.
 
 ## Routes
 
-The planning handoff names one of four routes; `/ship` runs the steps that route
+The planning handoff names one of four routes; `/orchestrate` runs the steps that route
 keeps and records every skip with its reason. Under-routing is the worse failure
 of the two: a surface built without a spec gets rebuilt.
 
@@ -121,7 +121,7 @@ Three levels, and each one has a single owner:
 | --- | --- | --- | --- |
 | `main` | Released versions | never | never |
 | `release/<version>` | One release cycle, several features | `/release`, when it closes the previous cycle | `/release` |
-| `feat/<slug>`, `fix/<slug>`, `chore/<slug>` | One `/ship` run | `/ship`, at the start | `/land-it`, at the end |
+| `feat/<slug>`, `fix/<slug>`, `chore/<slug>` | One `/orchestrate` run | `/orchestrate`, at the start | `/land-it`, at the end |
 
 **One release is many features.** The version branch accumulates until the owner
 says a cycle is done. A feature landing is not a release, and nothing in the
@@ -139,7 +139,7 @@ The version branch merges into main the same way, and that merge commit is what
 a release looks like in the log. Merge subjects are not Conventional Commits:
 the types describe changes, and a merge is not one.
 
-There is exactly one open version branch at a time. `/ship` reads it rather than
+There is exactly one open version branch at a time. `/orchestrate` reads it rather than
 choosing it, and `/release` maintains the invariant by opening the next one as
 its last act.
 
