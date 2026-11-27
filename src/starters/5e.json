@@ -104,6 +104,50 @@
 			}
 		},
 		{
+			"id": "armour_class",
+			"type": "card",
+			"label": "Armor class",
+			"short": "AC",
+			"derived": "10 + abilities.DEX + mod.self",
+			"signed": false,
+			"hideValue": true,
+			"notePlaceholder": "armor worn",
+			"position": {
+				"col": 7,
+				"row": 1,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "initiative",
+			"type": "card",
+			"label": "Initiative",
+			"derived": "abilities.DEX + mod.self",
+			"hideValue": true,
+			"notePlaceholder": "advantage?",
+			"position": {
+				"col": 9,
+				"row": 1,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "speed",
+			"type": "card",
+			"label": "Speed",
+			"key": "speed",
+			"signed": false,
+			"notePlaceholder": "ft.",
+			"position": {
+				"col": 11,
+				"row": 1,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
 			"id": "hp",
 			"type": "pool",
 			"label": "Hit points",
@@ -119,45 +163,24 @@
 			],
 			"position": {
 				"col": 7,
-				"row": 1,
-				"width": 6,
-				"height": 1
-			}
-		},
-		{
-			"id": "speed",
-			"type": "card",
-			"label": "Speed",
-			"key": "speed",
-			"signed": false,
-			"notePlaceholder": "ft.",
-			"position": {
-				"col": 7,
 				"row": 2,
-				"width": 2,
+				"width": 4,
 				"height": 1
 			}
 		},
 		{
-			"id": "proficiency",
-			"type": "card",
-			"label": "Proficiency",
-			"derived": "prof",
-			"hideValue": true,
-			"hideNote": true,
-			"position": {
-				"col": 9,
-				"row": 2,
-				"width": 2,
-				"height": 1
-			}
-		},
-		{
-			"id": "inspiration",
-			"type": "track",
-			"label": "Inspiration",
-			"count": 1,
-			"sense": "progress",
+			"id": "hit_dice",
+			"type": "pool",
+			"label": "Hit dice",
+			"max": "level",
+			"hideFill": true,
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "formula",
+					"to": "min(level, hit_dice.value + max(1, floor(half(level))))"
+				}
+			],
 			"position": {
 				"col": 11,
 				"row": 2,
@@ -207,389 +230,22 @@
 			"position": {
 				"col": 1,
 				"row": 3,
-				"width": 12,
-				"height": 1
-			}
+				"width": 2,
+				"height": 7
+			},
+			"direction": "vertical"
 		},
 		{
-			"id": "saves",
-			"type": "table",
-			"label": "Saving throws",
-			"short": "Saves",
-			"rowHeader": "Save",
-			"namePosition": 1,
-			"groups": [
-				"save"
-			],
-			"rows": [
-				{
-					"label": "Strength",
-					"short": "STR",
-					"values": {
-						"ability": "abilities.STR"
-					},
-					"key": "STR"
-				},
-				{
-					"label": "Dexterity",
-					"short": "DEX",
-					"values": {
-						"ability": "abilities.DEX"
-					},
-					"key": "DEX"
-				},
-				{
-					"label": "Constitution",
-					"short": "CON",
-					"values": {
-						"ability": "abilities.CON"
-					},
-					"key": "CON"
-				},
-				{
-					"label": "Intelligence",
-					"short": "INT",
-					"values": {
-						"ability": "abilities.INT"
-					},
-					"key": "INT"
-				},
-				{
-					"label": "Wisdom",
-					"short": "WIS",
-					"values": {
-						"ability": "abilities.WIS"
-					},
-					"key": "WIS"
-				},
-				{
-					"label": "Charisma",
-					"short": "CHA",
-					"values": {
-						"ability": "abilities.CHA"
-					},
-					"key": "CHA"
-				}
-			],
-			"columns": [
-				{
-					"key": "Prof",
-					"type": "level",
-					"levels": [
-						"Untrained",
-						"Proficient:"
-					],
-					"hideHeading": true
-				},
-				{
-					"key": "Total",
-					"type": "computed",
-					"formula": "ability + Prof * prof + mod.self",
-					"signed": true,
-					"publish": true
-				}
-			],
+			"id": "proficiency",
+			"type": "card",
+			"label": "Proficiency",
+			"derived": "prof",
+			"hideValue": true,
+			"hideNote": true,
 			"position": {
-				"col": 1,
-				"row": 4,
+				"col": 3,
+				"row": 3,
 				"width": 3,
-				"height": 3
-			}
-		},
-		{
-			"id": "senses",
-			"type": "table",
-			"label": "Senses",
-			"rowHeader": "Sense",
-			"rows": [
-				{
-					"label": "Passive perception",
-					"values": {
-						"skill": "skills.perception"
-					}
-				},
-				{
-					"label": "Passive investigation",
-					"values": {
-						"skill": "skills.investigation"
-					}
-				},
-				{
-					"label": "Passive insight",
-					"values": {
-						"skill": "skills.insight"
-					}
-				}
-			],
-			"namePosition": 1,
-			"columns": [
-				{
-					"key": "Passive",
-					"type": "computed",
-					"formula": "10 + skill"
-				}
-			],
-			"position": {
-				"col": 1,
-				"row": 7,
-				"width": 3,
-				"height": 2
-			}
-		},
-		{
-			"id": "hit_dice",
-			"type": "pool",
-			"label": "Hit dice",
-			"max": "level",
-			"hideFill": true,
-			"reset": [
-				{
-					"trigger": "Long rest",
-					"action": "formula",
-					"to": "min(level, hit_dice.value + max(1, floor(half(level))))"
-				}
-			],
-			"position": {
-				"col": 1,
-				"row": 9,
-				"width": 3,
-				"height": 1
-			}
-		},
-		{
-			"id": "training",
-			"type": "rich-text",
-			"label": "Proficiencies and languages",
-			"position": {
-				"col": 1,
-				"row": 10,
-				"width": 3,
-				"height": 4
-			}
-		},
-		{
-			"id": "skills",
-			"type": "table",
-			"label": "Skills",
-			"rowHeader": "Skill",
-			"namePosition": 2,
-			"rows": [
-				{
-					"label": "Acrobatics",
-					"values": {
-						"ability": "abilities.DEX"
-					},
-					"key": "acrobatics"
-				},
-				{
-					"label": "Animal handling",
-					"values": {
-						"ability": "abilities.WIS"
-					},
-					"key": "animal_handling"
-				},
-				{
-					"label": "Arcana",
-					"values": {
-						"ability": "abilities.INT"
-					},
-					"key": "arcana"
-				},
-				{
-					"label": "Athletics",
-					"values": {
-						"ability": "abilities.STR"
-					},
-					"key": "athletics"
-				},
-				{
-					"label": "Deception",
-					"values": {
-						"ability": "abilities.CHA"
-					},
-					"key": "deception"
-				},
-				{
-					"label": "History",
-					"values": {
-						"ability": "abilities.INT"
-					},
-					"key": "history"
-				},
-				{
-					"label": "Insight",
-					"values": {
-						"ability": "abilities.WIS"
-					},
-					"key": "insight"
-				},
-				{
-					"label": "Intimidation",
-					"values": {
-						"ability": "abilities.CHA"
-					},
-					"key": "intimidation"
-				},
-				{
-					"label": "Investigation",
-					"values": {
-						"ability": "abilities.INT"
-					},
-					"key": "investigation"
-				},
-				{
-					"label": "Medicine",
-					"values": {
-						"ability": "abilities.WIS"
-					},
-					"key": "medicine"
-				},
-				{
-					"label": "Nature",
-					"values": {
-						"ability": "abilities.INT"
-					},
-					"key": "nature"
-				},
-				{
-					"label": "Perception",
-					"values": {
-						"ability": "abilities.WIS"
-					},
-					"key": "perception"
-				},
-				{
-					"label": "Performance",
-					"values": {
-						"ability": "abilities.CHA"
-					},
-					"key": "performance"
-				},
-				{
-					"label": "Persuasion",
-					"values": {
-						"ability": "abilities.CHA"
-					},
-					"key": "persuasion"
-				},
-				{
-					"label": "Religion",
-					"values": {
-						"ability": "abilities.INT"
-					},
-					"key": "religion"
-				},
-				{
-					"label": "Sleight of hand",
-					"values": {
-						"ability": "abilities.DEX"
-					},
-					"key": "sleight_of_hand"
-				},
-				{
-					"label": "Stealth",
-					"values": {
-						"ability": "abilities.DEX"
-					},
-					"key": "stealth"
-				},
-				{
-					"label": "Survival",
-					"values": {
-						"ability": "abilities.WIS"
-					},
-					"key": "survival"
-				}
-			],
-			"columns": [
-				{
-					"key": "Training",
-					"type": "level",
-					"levels": [
-						"Untrained",
-						"Proficient:",
-						"Expertise"
-					],
-					"hideHeading": true
-				},
-				{
-					"key": "Ability",
-					"secondary": true,
-					"hideHeading": true
-				},
-				{
-					"key": "Total",
-					"type": "computed",
-					"formula": "ability + Training * prof + mod.self",
-					"signed": true,
-					"publish": true
-				}
-			],
-			"position": {
-				"col": 4,
-				"row": 4,
-				"width": 4,
-				"height": 8
-			}
-		},
-		{
-			"id": "death_saves",
-			"type": "track",
-			"label": "Death saves",
-			"rows": [
-				{
-					"key": "Successes",
-					"count": 3,
-					"sense": "progress"
-				},
-				{
-					"key": "Failures",
-					"count": 3,
-					"sense": "harm"
-				}
-			],
-			"reset": [
-				{
-					"trigger": "Short rest",
-					"action": "empty"
-				},
-				{
-					"trigger": "Long rest",
-					"action": "empty"
-				}
-			],
-			"position": {
-				"col": 4,
-				"row": 12,
-				"width": 4,
-				"height": 1
-			}
-		},
-		{
-			"id": "exhaustion",
-			"type": "track",
-			"label": "Exhaustion",
-			"levels": [
-				"Rested",
-				"Exhaustion 1",
-				"Exhaustion 2",
-				"Exhaustion 3",
-				"Exhaustion 4",
-				"Exhaustion 5",
-				"Exhaustion 6:☠"
-			],
-			"sense": "harm",
-			"reset": [
-				{
-					"trigger": "Long rest",
-					"action": "formula",
-					"to": "max(0, exhaustion - 1)"
-				}
-			],
-			"position": {
-				"col": 4,
-				"row": 13,
-				"width": 4,
 				"height": 1
 			}
 		},
@@ -599,8 +255,8 @@
 			"label": "Pages",
 			"hideLabel": true,
 			"position": {
-				"col": 8,
-				"row": 4,
+				"col": 6,
+				"row": 3,
 				"width": 5,
 				"height": 10
 			},
@@ -617,42 +273,12 @@
 					},
 					"children": [
 						{
-							"id": "initiative",
-							"type": "card",
-							"label": "Initiative",
-							"derived": "abilities.DEX + mod.self",
-							"hideValue": true,
-							"notePlaceholder": "advantage?",
-							"position": {
-								"col": 1,
-								"row": 1,
-								"width": 2,
-								"height": 1
-							}
-						},
-						{
-							"id": "armour_class",
-							"type": "card",
-							"label": "Armor class",
-							"short": "AC",
-							"derived": "10 + abilities.DEX + mod.self",
-							"signed": false,
-							"hideValue": true,
-							"notePlaceholder": "armor worn",
-							"position": {
-								"col": 3,
-								"row": 1,
-								"width": 3,
-								"height": 1
-							}
-						},
-						{
 							"id": "defences",
 							"type": "rich-text",
 							"label": "Defenses",
 							"position": {
 								"col": 1,
-								"row": 2,
+								"row": 1,
 								"width": 5,
 								"height": 2
 							}
@@ -682,9 +308,9 @@
 							],
 							"position": {
 								"col": 1,
-								"row": 4,
+								"row": 3,
 								"width": 5,
-								"height": 2
+								"height": 3
 							}
 						},
 						{
@@ -713,7 +339,7 @@
 								"col": 1,
 								"row": 6,
 								"width": 5,
-								"height": 3
+								"height": 5
 							}
 						}
 					]
@@ -824,47 +450,47 @@
 								{
 									"key": "L1",
 									"name": "1st",
-									"count": "if(level >= 3, 4, if(level >= 2, 3, 2))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L2",
 									"name": "2nd",
-									"count": "if(level >= 4, 3, if(level >= 3, 2, 0))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L3",
 									"name": "3rd",
-									"count": "if(level >= 6, 3, if(level >= 5, 2, 0))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L4",
 									"name": "4th",
-									"count": "if(level >= 9, 3, if(level >= 8, 2, if(level >= 7, 1, 0)))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L5",
 									"name": "5th",
-									"count": "if(level >= 18, 3, if(level >= 10, 2, if(level >= 9, 1, 0)))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L6",
 									"name": "6th",
-									"count": "if(level >= 19, 2, if(level >= 11, 1, 0))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L7",
 									"name": "7th",
-									"count": "if(level >= 20, 2, if(level >= 13, 1, 0))"
+									"maxSource": "character"
 								},
 								{
 									"key": "L8",
 									"name": "8th",
-									"count": "if(level >= 15, 1, 0)"
+									"maxSource": "character"
 								},
 								{
 									"key": "L9",
 									"name": "9th",
-									"count": "if(level >= 17, 1, 0)"
+									"maxSource": "character"
 								}
 							],
 							"reset": [
@@ -1147,12 +773,387 @@
 			]
 		},
 		{
+			"id": "inspiration",
+			"type": "track",
+			"label": "Inspiration",
+			"count": 1,
+			"sense": "progress",
+			"position": {
+				"col": 11,
+				"row": 3,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "saves",
+			"type": "table",
+			"label": "Saving throws",
+			"short": "Saves",
+			"rowHeader": "Save",
+			"namePosition": 1,
+			"groups": [
+				"save"
+			],
+			"rows": [
+				{
+					"label": "Strength",
+					"short": "STR",
+					"values": {
+						"ability": "abilities.STR"
+					},
+					"key": "STR"
+				},
+				{
+					"label": "Dexterity",
+					"short": "DEX",
+					"values": {
+						"ability": "abilities.DEX"
+					},
+					"key": "DEX"
+				},
+				{
+					"label": "Constitution",
+					"short": "CON",
+					"values": {
+						"ability": "abilities.CON"
+					},
+					"key": "CON"
+				},
+				{
+					"label": "Intelligence",
+					"short": "INT",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "INT"
+				},
+				{
+					"label": "Wisdom",
+					"short": "WIS",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "WIS"
+				},
+				{
+					"label": "Charisma",
+					"short": "CHA",
+					"values": {
+						"ability": "abilities.CHA"
+					},
+					"key": "CHA"
+				}
+			],
+			"columns": [
+				{
+					"key": "Prof",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Proficient:"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "ability + Prof * prof + mod.self",
+					"signed": true,
+					"publish": true
+				}
+			],
+			"position": {
+				"col": 3,
+				"row": 4,
+				"width": 3,
+				"height": 3
+			}
+		},
+		{
+			"id": "death_saves",
+			"type": "track",
+			"label": "Death saves",
+			"rows": [
+				{
+					"key": "Successes",
+					"count": 3,
+					"sense": "progress"
+				},
+				{
+					"key": "Failures",
+					"count": 3,
+					"sense": "harm"
+				}
+			],
+			"reset": [
+				{
+					"trigger": "Short rest",
+					"action": "empty"
+				},
+				{
+					"trigger": "Long rest",
+					"action": "empty"
+				}
+			],
+			"position": {
+				"col": 11,
+				"row": 4,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "exhaustion",
+			"type": "track",
+			"label": "Exhaustion",
+			"levels": [
+				"Rested",
+				"Exhaustion 1",
+				"Exhaustion 2",
+				"Exhaustion 3",
+				"Exhaustion 4",
+				"Exhaustion 5",
+				"Exhaustion 6:☠"
+			],
+			"sense": "harm",
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "formula",
+					"to": "max(0, exhaustion - 1)"
+				}
+			],
+			"position": {
+				"col": 11,
+				"row": 5,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "training",
+			"type": "rich-text",
+			"label": "Proficiencies and languages",
+			"position": {
+				"col": 11,
+				"row": 6,
+				"width": 2,
+				"height": 7
+			}
+		},
+		{
+			"id": "skills",
+			"type": "table",
+			"label": "Skills",
+			"rowHeader": "Skill",
+			"namePosition": 2,
+			"rows": [
+				{
+					"label": "Acrobatics",
+					"values": {
+						"ability": "abilities.DEX"
+					},
+					"key": "acrobatics"
+				},
+				{
+					"label": "Animal handling",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "animal_handling"
+				},
+				{
+					"label": "Arcana",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "arcana"
+				},
+				{
+					"label": "Athletics",
+					"values": {
+						"ability": "abilities.STR"
+					},
+					"key": "athletics"
+				},
+				{
+					"label": "Deception",
+					"values": {
+						"ability": "abilities.CHA"
+					},
+					"key": "deception"
+				},
+				{
+					"label": "History",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "history"
+				},
+				{
+					"label": "Insight",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "insight"
+				},
+				{
+					"label": "Intimidation",
+					"values": {
+						"ability": "abilities.CHA"
+					},
+					"key": "intimidation"
+				},
+				{
+					"label": "Investigation",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "investigation"
+				},
+				{
+					"label": "Medicine",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "medicine"
+				},
+				{
+					"label": "Nature",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "nature"
+				},
+				{
+					"label": "Perception",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "perception"
+				},
+				{
+					"label": "Performance",
+					"values": {
+						"ability": "abilities.CHA"
+					},
+					"key": "performance"
+				},
+				{
+					"label": "Persuasion",
+					"values": {
+						"ability": "abilities.CHA"
+					},
+					"key": "persuasion"
+				},
+				{
+					"label": "Religion",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "religion"
+				},
+				{
+					"label": "Sleight of hand",
+					"values": {
+						"ability": "abilities.DEX"
+					},
+					"key": "sleight_of_hand"
+				},
+				{
+					"label": "Stealth",
+					"values": {
+						"ability": "abilities.DEX"
+					},
+					"key": "stealth"
+				},
+				{
+					"label": "Survival",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "survival"
+				}
+			],
+			"columns": [
+				{
+					"key": "Training",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Proficient:",
+						"Expertise"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Ability",
+					"secondary": true,
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "ability + Training * prof + mod.self",
+					"signed": true,
+					"publish": true
+				}
+			],
+			"position": {
+				"col": 3,
+				"row": 7,
+				"width": 3,
+				"height": 6
+			}
+		},
+		{
+			"id": "senses",
+			"type": "table",
+			"label": "Senses",
+			"rowHeader": "Sense",
+			"rows": [
+				{
+					"label": "Passive perception",
+					"values": {
+						"skill": "skills.perception"
+					}
+				},
+				{
+					"label": "Passive investigation",
+					"values": {
+						"skill": "skills.investigation"
+					}
+				},
+				{
+					"label": "Passive insight",
+					"values": {
+						"skill": "skills.insight"
+					}
+				}
+			],
+			"namePosition": 1,
+			"columns": [
+				{
+					"key": "Passive",
+					"type": "computed",
+					"formula": "10 + skill"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 10,
+				"width": 2,
+				"height": 3
+			}
+		},
+		{
 			"id": "details",
 			"type": "tab-set",
 			"label": "Details",
 			"position": {
 				"col": 1,
-				"row": 14,
+				"row": 13,
 				"width": 12,
 				"height": 6
 			},
