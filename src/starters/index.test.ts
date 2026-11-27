@@ -30,6 +30,7 @@ import {
 	groupIndex,
 	modifierTargetSource,
 	namedGroups,
+	openGroupHolders,
 	publishedTargets,
 } from '../formula/modifier-targets';
 import {
@@ -847,7 +848,14 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 	const byId = (id: string) => {
 		const found = walked.find((config) => config.id === id);
 		if (!found) throw new Error(`No component "${id}" on the PF2e sheet.`);
-		return found as { rows?: unknown[]; entries?: unknown[]; fields?: unknown[]; children?: unknown[] };
+		return found as {
+			rows?: unknown[];
+			entries?: unknown[];
+			fields?: unknown[];
+			children?: unknown[];
+			/** A table's columns, with the members a case below reads by name. */
+			columns?: { key: string; secondary?: boolean; hideHeading?: boolean; [other: string]: unknown }[];
+		};
 	};
 
 	/** A table's declared row labels, in order — the roster it ships. */
@@ -901,13 +909,73 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 			'passport', 'hp', 'speed', 'class_dc', 'hero_points', 'attributes',
 			'saves', 'proficiencies', 'armor', 'armor_rank', 'languages', 'skills',
 			'lore', 'senses', 'pages', 'initiative', 'ac', 'conditions', 'strikes',
-			'combat_notes', 'actions', 'action_notes', 'spell_attack', 'spell_dc',
+			'dex_strikes', 'combat_notes', 'actions', 'action_notes', 'spell_attack', 'spell_dc',
 			'focus', 'slots', 'spellbook', 'coin', 'bulk_carried', 'encumbered',
 			'max_bulk', 'invested', 'inventory', 'equipment_notes', 'details',
 			'feats', 'appearance', 'personality', 'backstory', 'notes',
 		]) {
 			expect(walked.some((config) => config.id === id), id).toBe(true);
 		}
+	});
+
+	it('computes both strikes tables from attribute, rank and potency, one attribute each', () => {
+		/*
+		 * Identical apart from the attribute and the groups, so a later edit to
+		 * one that the other misses fails here. Open with no declared rows, so
+		 * every strike is the character's and is reached by position (ruling 4).
+		 * Traits and Notes qualify the row, so they are secondary; Damage is the
+		 * second number a player reads and stays primary.
+		 */
+		const shapes = (['strikes', 'dex_strikes'] as const).map((id) => {
+			const table = byId(id) as ReturnType<typeof byId> & {
+				openRows?: boolean;
+				namePosition?: number;
+				groups?: string[];
+			};
+			return { id, table };
+		});
+		for (const [{ id, table }, attribute, group] of [
+			[shapes[0]!, 'STR', 'str'],
+			[shapes[1]!, 'DEX', 'dex'],
+		] as const) {
+			expect(table.openRows, id).toBe(true);
+			expect(table.rows, id).toBeUndefined();
+			expect(table.namePosition, id).toBe(1);
+			expect(table.groups, id).toEqual(['check', group]);
+			const columns = table.columns ?? [];
+			expect(columns.map((column) => column.key), id).toEqual([
+				'Rank', 'Attack', 'Item', 'Damage', 'Traits', 'Notes',
+			]);
+			const [rank, attack, item, damage, traits, notes] = columns;
+			expect(rank, id).toMatchObject({ type: 'level', hideHeading: true });
+			expect(attack, id).toMatchObject({
+				type: 'computed',
+				formula: `attributes.${attribute} + prof(Rank) + Item + mod.self`,
+				publish: true,
+			});
+			expect(item, id).toMatchObject({ type: 'number', min: 0, max: 3 });
+			expect(damage?.secondary, id).toBeUndefined();
+			expect(traits?.secondary, id).toBe(true);
+			expect(notes?.secondary, id).toBe(true);
+		}
+		/*
+		 * **And the two whole, so a key the cases above do not name cannot drift
+		 * apart unseen**: a `signed` dropped from one Attack, a `rowHeader`, or a
+		 * column property added to one later. Everything but what is meant to
+		 * differ — identity, label, placement, groups, and the attribute the
+		 * formula reads — is compared as it stands.
+		 */
+		const common = (table: Record<string, unknown>) => {
+			const { id: _id, label: _label, position: _position, groups: _groups, ...rest } = table;
+			return JSON.parse(
+				JSON.stringify(rest).replace(/attributes\.(STR|DEX)\b/g, 'attributes.ATTRIBUTE'),
+			) as unknown;
+		};
+		expect(common(shapes[1]!.table)).toEqual(common(shapes[0]!.table));
+		// The Rank column is the one Skills carries, so the ring reads the same.
+		const skillRank = (byId('skills').columns ?? []).find((column) => column.key === 'Rank');
+		expect(shapes[0]!.table.columns?.[0]).toEqual(skillRank);
+		expect(shapes[1]!.table.columns?.[0]).toEqual(skillRank);
 	});
 
 	it('pins the six definitions by name, on the 5e list’s own guard', () => {
@@ -1344,39 +1412,155 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 			expect(built.sheet('skills.stealth')).toBe(7);
 		});
 
-		it('reaches no strike, and its library says so', () => {
-			/*
-			 * A strike's attack is a typed number (`starter-layouts.md`, ruling 3),
-			 * so it has no formula for a modifier to land in. Asked two ways: no
-			 * group has a strike among its members, and the drawn attack is the
-			 * typed one under all three conditions at once.
-			 */
-			const note = `${pf2eWith(
-				'| Frightened | 2 | yes | Frightened |\n| Fatigued | | yes | Fatigued |\n| Clumsy | 2 | yes | Clumsy |',
-			)}
+		/*
+		 * Amiri's two strikes, one per table: a trained Longsword with a +1
+		 * potency rune in Strikes, which reads Strength, and a trained Shortbow
+		 * with none in Dexterity strikes, which reads Dexterity. So the Longsword
+		 * is 4 + 7 + 1 = +12 and the Shortbow 2 + 7 + 0 = +9 before any condition.
+		 */
+		const STRIKES = `
 ## Strikes
 
+| Strike | Rank | Item | Damage | Traits | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Longsword | 1 | 1 | 1d8+4 | Versatile P |  |
+
+## Dexterity strikes
+
+| Strike | Rank | Item | Damage | Traits | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Shortbow | 1 | 0 | 1d6 | Deadly d10 |  |
+`;
+		/** The sheet with both strikes and the given conditions rows. */
+		const struck = (conditions: string) =>
+			sheetFrom(source, `${pf2eWith(conditions)}${STRIKES}`);
+		/**
+		 * A strikes table's first drawn Attack: each table holds one row, and an
+		 * open row's name is a field rather than a heading, so it is read the way
+		 * the Lore case reads its rows.
+		 */
+		const attack = (built: ReturnType<typeof sheetFrom>, id: string) =>
+			computedCells(built.draw(id))[0]?.textContent;
+
+		it('moves each strike table by the conditions its attribute takes', () => {
+			/*
+			 * Both tables are checks, so Frightened reaches both; Fatigued aims at
+			 * armor class and saves and reaches neither; Clumsy aims at
+			 * Dexterity-based and reaches only the Dexterity strike. Together,
+			 * Frightened 2 and Clumsy 1 on the Shortbow are two Status penalties,
+			 * and only the worse applies.
+			 */
+			const cases: [string, string, string][] = [
+				['', '+12', '+9'],
+				['| Frightened | 2 | yes | Frightened |', '+10', '+7'],
+				['| Fatigued | | yes | Fatigued |', '+12', '+9'],
+				['| Clumsy | 1 | yes | Clumsy |', '+12', '+8'],
+				[
+					'| Frightened | 2 | yes | Frightened |\n| Fatigued | | yes | Fatigued |\n| Clumsy | 1 | yes | Clumsy |',
+					'+10',
+					'+7',
+				],
+			];
+			for (const [conditions, longsword, shortbow] of cases) {
+				const built = struck(conditions);
+				expect(attack(built, 'strikes'), `Longsword: ${conditions}`).toBe(longsword);
+				expect(attack(built, 'dex_strikes'), `Shortbow: ${conditions}`).toBe(shortbow);
+			}
+		});
+
+		it('files each strike under its own attribute, and its library says so', () => {
+			/*
+			 * Membership is fixed per table (§13, "What a group target is", ruling
+			 * 3): a row the character adds joins its table's groups and no other.
+			 *
+			 * **Asked of the layout's reading, the one the editor's counts take**,
+			 * which says which groups a table's added rows would join. The live
+			 * index the sheet builds from a note's rows is `buildSheet`'s own, and
+			 * rebuilding it here would spell a step `sheet.test.ts`'s host scan
+			 * forbids; the case above is that index answering, in the arithmetic.
+			 */
+			const holders = openGroupHolders(
+				sheetFrom(source, PF2E_NOTE).prepared.map((entry) =>
+					modifierTargetSource(entry.config, entry.component),
+				),
+			);
+			const of = (group: string) => holders.get(group) ?? [];
+			expect(of('check')).toEqual(expect.arrayContaining(['Strikes', 'Dexterity strikes']));
+			expect(of('str')).toContain('Strikes');
+			expect(of('str')).not.toContain('Dexterity strikes');
+			expect(of('dex')).toContain('Dexterity strikes');
+			expect(of('dex')).not.toContain('Strikes');
+			// The comment read as prose, so a sentence broken across two lines
+			// still reads as one.
+			const library = (layout.functions ?? [])
+				.filter((line) => line.startsWith('#'))
+				.map((line) => line.replace(/^#\s*/, ''))
+				.join(' ');
+			expect(library).toMatch(/Strikes read Strength/);
+			expect(library).toMatch(/Dexterity strikes read Dexterity/);
+			expect(library).not.toMatch(/typed/);
+		});
+
+		it('reaches Athletics and the Strength strikes from a Strength-based penalty, and no Dexterity strike', () => {
+			/*
+			 * No Enfeebled ships (the six definitions stay pinned), so the penalty
+			 * is a player's own typed cell aimed at the group. Athletics is in it
+			 * by its own row, and Strikes by its table.
+			 */
+			const plain = struck('');
+			const built = struck('| Weakened | | yes | @str += -1 as Status |');
+			expect(drawnTotal(plain, 'skills', 'Athletics')).toBe('+11');
+			expect(drawnTotal(built, 'skills', 'Athletics')).toBe('+10');
+			expect(attack(built, 'strikes')).toBe('+11');
+			expect(attack(built, 'dex_strikes')).toBe('+9');
+			expect(drawnTotal(built, 'skills', 'Acrobatics')).toBe('+2');
+		});
+
+		it('keeps a typed Attack a note wrote before Attack was computed', () => {
+			/*
+			 * Hard constraint 4. A note written against the old starter typed its
+			 * attack into a stored column; the column is now computed, so it is
+			 * no longer stored, drawn or written — and the cell stays in the note.
+			 * An edit on that row, carrying an Attack cell of its own, and an
+			 * added row, must leave it where it was.
+			 *
+			 * **An edit, not a round trip**: the edit appends Rank and Item to
+			 * the header by design (`writeTable`), so no whole-body identity is
+			 * asserted.
+			 */
+			const config = walked.find((one) => one.id === 'strikes');
+			if (!config) throw new Error('No strikes table.');
+			const table = getComponent('table');
+			if (!table) throw new Error('No table component.');
+			const old = `
 | Strike | Attack | Damage | Traits | Notes |
 | --- | --- | --- | --- | --- |
 | Longsword | 11 | 1d8+4 | Versatile P |  |
 `;
-			const built = sheetFrom(source, note);
-			const index = groupIndex(
-				parseModifierGroups(built.layout).groups,
-				built.prepared.map((entry) => modifierTargetSource(entry.config, entry.component)),
+			const written = table.write(
+				{
+					rows: { 0: { cells: { Rank: '1', Item: '1', Attack: '15' } } },
+					added: [{ name: 'Dagger', cells: {} }],
+				},
+				old,
+				config,
 			);
-			const members = [...index.members.values()].flat().map((member) => member.name);
-			// The floor: a group index holding nothing would pass the filter below.
-			expect(members.length).toBeGreaterThan(20);
-			expect(members.filter((name) => name.startsWith('strikes'))).toEqual([]);
-			// Attack is the strikes table's one number column, so its cell is the
-			// one number cell on the row.
-			const attack = Array.from(
-				built.draw('strikes').querySelectorAll<HTMLInputElement>('td.sheetsmith-table-number input'),
-			);
-			expect(attack).toHaveLength(1);
-			expect(attack[0]?.value).toBe('11');
-			expect((layout.functions ?? []).join('\n')).toMatch(/strike.*no condition/s);
+			const longsword = written.split('\n').find((line) => line.startsWith('| Longsword'));
+			expect(longsword).toMatch(/\| 11 \|/);
+			expect(written).not.toContain('15');
+			expect(written).toContain('| Dagger');
+			// Drawn, the row reads the computed number: 4 + 7 + 1, and not the 11;
+			// the added Dagger, untrained and unruned, is Strength alone.
+			const built = sheetFrom(source, `${PF2E_NOTE}\n## Strikes\n${written}`);
+			expect(computedCells(built.draw('strikes')).map((cell) => cell.textContent)).toEqual([
+				'+12',
+				'+4',
+			]);
+			const drawn = built.draw('strikes');
+			expect(drawn.textContent).not.toContain('11');
+			expect(
+				Array.from(drawn.querySelectorAll('input')).some((input) => input.value === '11'),
+			).toBe(false);
 		});
 	});
 });

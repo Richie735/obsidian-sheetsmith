@@ -14,8 +14,9 @@
 		"# The conditions aim at modifier groups: Frightened at Checks and DCs, Fatigued",
 		"# at armor class and Saving throws, Clumsy at Dexterity-based. A value joins a",
 		"# group by listing it. A valued condition reads its own Value column, so",
-		"# Frightened 2 is -2. A strike's attack is typed, not computed, so no condition",
-		"# reaches it."
+		"# Frightened 2 is -2. Strikes read Strength and join Strength-based; Dexterity",
+		"# strikes read Dexterity and join Dexterity-based. Both are checks, and Item is",
+		"# the weapon's potency."
 	],
 	"triggers": [
 		"Daily preparations",
@@ -95,6 +96,10 @@
 		{
 			"name": "dex",
 			"label": "Dexterity-based"
+		},
+		{
+			"name": "str",
+			"label": "Strength-based"
 		}
 	],
 	"components": [
@@ -477,7 +482,10 @@
 					"label": "Athletics",
 					"values": {
 						"attribute": "attributes.STR"
-					}
+					},
+					"groups": [
+						"str"
+					]
 				},
 				{
 					"label": "Crafting",
@@ -731,16 +739,43 @@
 							"label": "Strikes",
 							"rowHeader": "Strike",
 							"openRows": true,
+							"namePosition": 1,
+							"groups": [
+								"check",
+								"str"
+							],
 							"columns": [
 								{
+									"key": "Rank",
+									"type": "level",
+									"levels": [
+										"Untrained",
+										"Trained:T",
+										"Expert:E",
+										"Master:M",
+										"Legendary:L"
+									],
+									"hideHeading": true
+								},
+								{
 									"key": "Attack",
-									"type": "number"
+									"type": "computed",
+									"formula": "attributes.STR + prof(Rank) + Item + mod.self",
+									"signed": true,
+									"publish": true
+								},
+								{
+									"key": "Item",
+									"type": "number",
+									"min": 0,
+									"max": 3
 								},
 								{
 									"key": "Damage"
 								},
 								{
-									"key": "Traits"
+									"key": "Traits",
+									"secondary": true
 								},
 								{
 									"key": "Notes",
@@ -751,7 +786,63 @@
 								"col": 1,
 								"row": 5,
 								"width": 5,
-								"height": 4
+								"height": 3
+							}
+						},
+						{
+							"id": "dex_strikes",
+							"type": "table",
+							"label": "Dexterity strikes",
+							"rowHeader": "Strike",
+							"openRows": true,
+							"namePosition": 1,
+							"groups": [
+								"check",
+								"dex"
+							],
+							"columns": [
+								{
+									"key": "Rank",
+									"type": "level",
+									"levels": [
+										"Untrained",
+										"Trained:T",
+										"Expert:E",
+										"Master:M",
+										"Legendary:L"
+									],
+									"hideHeading": true
+								},
+								{
+									"key": "Attack",
+									"type": "computed",
+									"formula": "attributes.DEX + prof(Rank) + Item + mod.self",
+									"signed": true,
+									"publish": true
+								},
+								{
+									"key": "Item",
+									"type": "number",
+									"min": 0,
+									"max": 3
+								},
+								{
+									"key": "Damage"
+								},
+								{
+									"key": "Traits",
+									"secondary": true
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 8,
+								"width": 5,
+								"height": 3
 							}
 						},
 						{
@@ -760,9 +851,9 @@
 							"label": "Combat notes",
 							"position": {
 								"col": 1,
-								"row": 9,
+								"row": 11,
 								"width": 5,
-								"height": 4
+								"height": 2
 							}
 						}
 					]
