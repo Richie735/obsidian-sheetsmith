@@ -1084,6 +1084,7 @@
 					"type": "stat-block",
 					"label": "Forms",
 					"recordName": "Form",
+					"tintPerRecord": true,
 					"fields": [
 						{
 							"key": "Active",

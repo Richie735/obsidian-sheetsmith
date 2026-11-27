@@ -23,6 +23,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { App as ObsidianApp } from 'obsidian';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
 import {
@@ -47,6 +48,8 @@ import { parseModifierTypes } from '../parse/modifier-types';
 import { parseTriggers } from '../parse/triggers';
 import type { ComponentConfig } from '../types';
 import { isContainer } from '../types';
+import { createLayout } from '../layouts';
+import { App } from '../test/obsidian-stub';
 import { STARTERS } from './index';
 
 /**
@@ -1661,6 +1664,31 @@ describe('the 5e sheet is a complete system sheet', () => {
 		for (const key of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
 			expect(off.sheet(`saves.${key}`), key).toBe(off.sheet(`abilities.${key}`));
 		}
+	});
+
+	it('lets each form choose its own tint, over the accent', async () => {
+		/*
+		 * `form-tint-colour.md`'s Wild Shape case: the block keeps the accent and
+		 * a form may choose. Installed through `createLayout`, which is how a
+		 * reader gets it, then installed again from what the first wrote, so the
+		 * key survives the one writer twice.
+		 */
+		const forms = walked.find((config) => config.id === 'forms') as {
+			tint?: unknown;
+			tintPerRecord?: unknown;
+			fields?: { key: string }[];
+		};
+		expect(forms.tintPerRecord).toBe(true);
+		expect('tint' in forms).toBe(false);
+		// The switch's one constraint: no field of its own is keyed Tint.
+		expect(forms.fields?.some((field) => field.key.toLowerCase() === 'tint')).toBe(false);
+		const app = new App();
+		const vault = app as unknown as ObsidianApp;
+		const first = await createLayout(vault, 'Layouts', layout.name, layout);
+		const written = await vault.vault.read(first);
+		expect(written).toBe(textOf('5e.json'));
+		const again = await createLayout(vault, 'Again', layout.name, parseLayout(written));
+		expect(await vault.vault.read(again)).toBe(written);
 	});
 
 	describe('publishes every save and skill (docs/features/modifier-notes.md B)', () => {
