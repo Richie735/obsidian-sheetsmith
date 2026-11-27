@@ -406,7 +406,9 @@ features' conditional Uses and per-form tint.
 
 The arrangement it carries, which is also the record of what the reference
 learned over three rounds of measurement — and the **architecture precedent
-the PF2e sheet follows**:
+the PF2e sheet follows**. *Superseded for 5e by `starter-5e-paper-layout.md`:*
+the 5e starter now takes the paper sheet's arrangement, and PF2e keeps this
+one.
 
 - **A header band**: the **Passport** beside a **Pool** for hit points, with
   speed, proficiency and an inspiration **Track** on the row beneath them.
