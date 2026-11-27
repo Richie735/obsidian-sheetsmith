@@ -41,6 +41,16 @@ describe('refitHeadline', () => {
 		expect(mark(host)).toBeNull();
 	});
 
+	it('leaves a number uncut when it passes its box by one pixel, and cuts it at two', () => {
+		const { host, el } = headline('3', 70, 69);
+		refitHeadline(el);
+		expect(el.classList.contains('sheetsmith-headline-cut')).toBe(false);
+		expect(mark(host)).toBeNull();
+		setClip(el, 71, 69);
+		refitHeadline(el);
+		expect(el.classList.contains('sheetsmith-headline-cut')).toBe(true);
+	});
+
 	it('takes the mark away when the number comes to fit', () => {
 		const { host, el } = headline('355000', 200, 50);
 		refitHeadline(el);
