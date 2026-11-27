@@ -27,6 +27,7 @@ import { cellParts, parseModifierPart } from '../parse/modifier-cell';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { sampleOf } from '../test/sample';
 import { hoverClip, setClip } from '../test/clipped';
+import { faceOf } from '../test/select-face';
 
 /** The slot lookup of one walk, which is what these cases ask about. */
 const slotsOf = (...args: Parameters<typeof buildModifierTables>) => buildModifierTables(...args).slots;
@@ -974,15 +975,22 @@ describe('table.render', () => {
 					key: 'Training',
 					type: 'level' as const,
 					input: 'select' as const,
-					levels: ['Untrained', 'Proficient'],
+					levels: ['Untrained in every skill it names', 'Proficient'],
 				},
 			],
 		});
 		const selects = Array.from(el.querySelectorAll('tbody select'));
 		expect(selects.length).toBeGreaterThan(0);
 		for (const select of selects) {
-			expect(select.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
-			expect(select.parentElement?.parentElement?.tagName).toBe('TD');
+			// In its face's stack, inside the wrapper (`ui/select-face.ts`).
+			const stack = select.parentElement;
+			expect(stack?.classList.contains('sheetsmith-select-stack')).toBe(true);
+			expect(stack?.parentElement?.classList.contains('sheetsmith-table-menu')).toBe(true);
+			expect(stack?.parentElement?.parentElement?.tagName).toBe('TD');
+			// The long level drawn in a face, which ellipsises on every engine.
+			expect(faceOf(select)?.textContent).toBe(
+				'Untrained in every skill it names',
+			);
 		}
 	});
 

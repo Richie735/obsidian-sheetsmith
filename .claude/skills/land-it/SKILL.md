@@ -20,7 +20,7 @@ git branch --show-current
 ```
 
 The work must be on its own `feat/`, `fix/` or `chore/` branch, opened off the
-open `release/*` branch by `/ship`. **On `main` or on a version branch, stop.**
+open `release/*` branch by `/orchestrate`. **On `main` or on a version branch, stop.**
 Committing here is what the branch model exists to prevent, and moving the work
 yourself would commit it under a decision nobody made. Say what is on the tree
 and let the owner place it.

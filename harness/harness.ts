@@ -90,6 +90,8 @@ import {
 	GROUP_TARGET_GROUPS,
 	groupTargetSamples,
 	GroupTargetVariant,
+	LONG_VALUE_DEFINITIONS,
+	longValueSamples,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { installStandInRenderer } from './stand-in-markdown';
@@ -106,6 +108,7 @@ type StateName =
 	| 'text-groups'
 	| 'notes'
 	| 'three-parts'
+	| 'long-values'
 	| 'forms'
 	| 'forms-none'
 	| 'forms-none-one'
@@ -197,6 +200,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'text-groups') return textGroupSamples();
 	if (name === 'notes') return notesSamples();
 	if (name === 'three-parts') return threePartSamples();
+	if (name === 'long-values') return longValueSamples();
 	if (name === 'forms') return formsSamples('active');
 	if (name === 'forms-none') return formsSamples('none');
 	if (name === 'forms-none-one') return formsSamples('none-one');
@@ -291,6 +295,20 @@ function layoutFor(name: StateName): Layout {
 	// The ring-mark sheet's form in play raises Nature in both components.
 	if (name === 'modifier-set-ring-mark') {
 		return enrol(RING_MARK_DEFINITIONS);
+	}
+	// The long-values sheet's layout enrols a definition whose **Changes**
+	// holds the longest label, and promotes the Perception row's stored value,
+	// the longest name its **Value** picker offers: published names only, so
+	// the label's `· stored` stands where the level's `· Rank` cannot
+	// (`docs/features/select-long-value.md`).
+	if (name === 'long-values') {
+		return {
+			...enrol(LONG_VALUE_DEFINITIONS),
+			promotedFields: [
+				{ name: 'skills.perception.value', property: 'perception' },
+				...(built.promotedFields ?? []),
+			],
+		};
 	}
 	if (name in ROSTER_CARD_FORM_ROWS) {
 		const rows = ROSTER_CARD_FORM_ROWS[name as keyof typeof ROSTER_CARD_FORM_ROWS];
@@ -1178,6 +1196,7 @@ function applyQuery(): void {
 			wanted === 'text-groups' ||
 			wanted === 'notes' ||
 			wanted === 'three-parts' ||
+			wanted === 'long-values' ||
 			wanted === 'forms' ||
 			wanted === 'forms-none' ||
 			wanted === 'forms-none-one' ||

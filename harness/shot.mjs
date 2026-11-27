@@ -4460,7 +4460,73 @@ export const DEFAULTS = [
 			'surface=sheet&theme=light&state=pool-grant-form-active&bar=off&type=.sheetsmith-pool-temp-input%7C2',
 		size: '1400,700',
 	},
+	...selectLongValueViews(),
 ];
+
+/**
+ * A select's long chosen value, drawn in its face (`docs/features/select-long-value.md`):
+ * the `long-values` sheet's *Saves and Perception · Perception · Rank*, the
+ * longest label a bundled starter puts in a select, on the three families
+ * staged to hold it. Each at a phone's 380 under phone staging and at 1400, in
+ * both themes; what to look at is every staged select ending its value in `…`
+ * short of its chevron, no glyph cut and no text doubled.
+ *
+ * - `form`: the modifier form open on the `Circlet of the sage` row's typed
+ *   part, whose **Value** holds the label;
+ * - `card`: Heritage, whose dropdown has it chosen;
+ * - `editor`: the layout's own panel, whose promoted field's **Value** and the
+ *   `Circlet of the sage` definition's **Changes** hold the longest names their
+ *   pickers offer. At 1400 the pane gives both room, so the clip is the 380's.
+ *
+ * And the form under forced colors, where the face goes and the select's own
+ * text returns. Heights measured off `document.body` through each view's own
+ * query, harness built first: 20839 for the sheet at 380, 8555 at 1400, 43131
+ * for the editor at 380 and 20401 at 1400.
+ */
+function selectLongValueViews() {
+	const OPEN =
+		"press=.sheetsmith-table-modifier-button%5Baria-label%5E%3D'Circlet%20of%20the%20sage'%5D&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D";
+	const subjects = [
+		{
+			id: 'form',
+			query: `surface=sheet&state=long-values&bar=off&${OPEN}`,
+			frame: '.sheetsmith-panel',
+			sizes: { 380: '380,21000', 1400: SHEET_FRAME },
+		},
+		{
+			id: 'card',
+			query: 'surface=sheet&state=long-values&bar=off',
+			frame: '[data-sheetsmith-component="heritage"]',
+			sizes: { 380: '380,21000', 1400: SHEET_FRAME },
+		},
+		{
+			id: 'editor',
+			query: 'surface=editor&state=long-values&open=::sheet::',
+			frame: '.sheetsmith-editor-panel',
+			sizes: { 380: '380,43400', 1400: '1400,20600' },
+		},
+	];
+	return [
+		...subjects.flatMap((subject) =>
+			[380, 1400].flatMap((width) =>
+				['light', 'dark'].map((theme) => ({
+					name: `select-long-value-${subject.id}-${width}-${theme}`,
+					query: `${subject.query}&theme=${theme}`,
+					size: subject.sizes[width],
+					frame: subject.frame,
+					...(width === 380 ? { platform: 'phone' } : {}),
+				})),
+			),
+		),
+		{
+			name: 'select-long-value-form-forced-colors',
+			query: `surface=sheet&state=long-values&bar=off&${OPEN}&theme=light`,
+			size: SHEET_FRAME,
+			frame: '.sheetsmith-panel',
+			flags: ['--force-high-contrast'],
+		},
+	];
+}
 
 /**
  * `&type=` for a view builder: the selector and the text in one encoded

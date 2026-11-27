@@ -22,6 +22,7 @@ import {
 } from '../ui/headline-fit';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
+import { drawSelectFace } from '../ui/select-face';
 import { sameNumber } from './effective-value';
 import { ModifierAccount, stampChoiceHost, stampModifiedHost } from './modifier-breakdown';
 import { renderAccountDoor } from './account-door';
@@ -353,6 +354,8 @@ function renderDropdown(
 	};
 	describe();
 	select.value = choice === undefined ? current : choice.drawn(current);
+	/** Redraws the select's face; set once the face exists, at the end. */
+	let refreshFace = (): void => {};
 	if (choice !== undefined) {
 		select.classList.add('sheetsmith-card-select-chosen');
 		/*
@@ -367,11 +370,15 @@ function renderDropdown(
 		 * chosen option back, so a picker that closes on the choice shows what the
 		 * modifier holds again.
 		 */
+		// Each swap redraws the face, since a value set in code fires no
+		// `change` (`ui/select-face.ts`).
 		const toOwn = () => {
 			select.value = stored;
+			refreshFace();
 		};
 		const toDrawn = () => {
 			select.value = choice.drawn(stored);
+			refreshFace();
 		};
 		select.addEventListener('pointerdown', toOwn);
 		select.addEventListener('keydown', toOwn);
@@ -400,6 +407,13 @@ function renderDropdown(
 		const unshown = choice?.unshown(stored) ?? null;
 		if (unshown !== null) on.say(unshown);
 	});
+
+	/*
+	 * **The chosen value in a face of its own** (`ui/select-face.ts`), so a label
+	 * longer than the card ends in an ellipsis on every engine rather than cut
+	 * mid-letter in WebKit.
+	 */
+	refreshFace = drawSelectFace(select);
 
 	return select;
 }

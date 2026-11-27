@@ -3394,6 +3394,123 @@ export function threePartSamples(): Sample[] {
 	return samples;
 }
 
+/**
+ * The longest label any bundled starter puts in a select, *Saves and Perception
+ * · Perception · Rank* (Starter PF2e's), staged on every family that draws one
+ * (`docs/features/select-long-value.md`). It is too long for its box at a
+ * phone's 380 and at 1400, so every select below ends it in its face's `…`.
+ */
+export const LONG_VALUE_LABEL = 'Saves and Perception · Perception · Rank';
+
+/**
+ * The definition the `long-values` sheet's layout enrols ahead of its own, so
+ * the editor's Modifiers list opens on a **Changes** select holding the long
+ * label (the detail-field family).
+ */
+export const LONG_VALUE_DEFINITIONS = [
+	{
+		name: 'Circlet of the sage',
+		changes: [{ target: 'skills.perception', column: 'Rank', operator: 'upgrade', amount: '1' }],
+	},
+];
+
+/** The menu levels `longValueSamples` lengthens, by their populated name. */
+const LONG_LEVELS: Readonly<Record<string, string>> = {
+	'Long rest': 'Long rest, or a full day of downtime',
+	Understands: 'Understands, but cannot speak or write it',
+};
+
+/**
+ * The populated sheet with one published name whose full label is
+ * `LONG_VALUE_LABEL`, and three selects choosing it.
+ *
+ * - **The skills Table is respelled** as PF2e's *Saves and Perception*, its
+ *   level column *Rank*, so the Perception row's level answers to that label.
+ *   The column's formula and the body's heading follow the key, so the sheet
+ *   reads exactly as the populated one does otherwise.
+ * - **A Table row carries a modifier typed at it**, `Circlet of the sage`, the
+ *   last row of the magic items, whose one typed part the form opens on.
+ * - **A Card's dropdown has it as the chosen option**: Heritage, one option
+ *   longer.
+ * - **The two menu families on this sheet take one long level each**: the
+ *   Recharging features' *Long rest* and the Languages table's *Understands*.
+ *   Both menus size to their content, so the longer level still fits and no
+ *   picture shows it clipped; what it stages is a long face for
+ *   `measure-select-face.mjs` to squeeze. Stored by position, so no note
+ *   changes with the name.
+ *
+ * The promoted field (whose picker offers published names, never a level) is
+ * the layout's, in `harness.ts`' `layoutFor`. **A state of its own**, so every
+ * other shot is unchanged.
+ */
+export function longValueSamples(): Sample[] {
+	let reached = 0;
+	const samples = SAMPLES.map((sample) => {
+		if (sample.config.id === 'skills' && sample.body !== null) {
+			reached += 1;
+			const config = sample.config as ComponentConfig & {
+				columns: { key: string; formula?: string }[];
+			};
+			return {
+				config: {
+					...config,
+					label: 'Saves and Perception',
+					columns: config.columns.map((column) =>
+						column.key === 'Training'
+							? { ...column, key: 'Rank' }
+							: column.formula === undefined
+								? column
+								: { ...column, formula: column.formula.replace('Training', 'Rank') },
+					),
+				} as ComponentConfig,
+				body: sample.body.replace('| Skill | Training |', '| Skill | Rank |'),
+			};
+		}
+		if (sample.config.id === 'magic_items' && sample.body !== null) {
+			reached += 1;
+			const row = '| Circlet of the sage | skills.perception >= 1 in Rank | yes | a level, at the longest label |';
+			return { ...sample, body: `${sample.body}\n${row}` };
+		}
+		if (sample.config.id === 'recharging' || sample.config.id === 'languages') {
+			reached += 1;
+			const config = sample.config as ComponentConfig & {
+				fields?: { levels?: string[] }[];
+				columns?: { levels?: string[] }[];
+			};
+			// Only an entry that has levels gains the key, so nothing else changes.
+			const longer = <T extends { levels?: string[] }>(entry: T): T =>
+				entry.levels === undefined
+					? entry
+					: { ...entry, levels: entry.levels.map((level) => LONG_LEVELS[level] ?? level) };
+			return {
+				...sample,
+				config: {
+					...config,
+					...(config.fields === undefined
+						? {}
+						: { fields: config.fields.map(longer) }),
+					...(config.columns === undefined
+						? {}
+						: { columns: config.columns.map(longer) }),
+				},
+			};
+		}
+		if (sample.config.id === 'heritage') {
+			reached += 1;
+			const config = sample.config as ComponentConfig & { options: { value: string }[] };
+			return {
+				config: { ...config, options: [...config.options, { value: LONG_VALUE_LABEL }] } as ComponentConfig,
+				body: '```sheet\nvalue: ' + LONG_VALUE_LABEL + '\nnote: ore miners, now war refugees\n```',
+			};
+		}
+		return sample;
+	});
+	// `effectiveSamples`' guard: a renamed sample must not leave this state
+	// silently drawing the populated sheet under its own name.
+	if (reached !== 5) throw new Error(`longValueSamples: reached ${reached} of 5 samples`);
+	return samples;
+}
+
 export function unmodifiedSamples(): Sample[] {
 	return SAMPLES.map((sample) => {
 		const columns = (sample.config as { columns?: { type?: string }[] }).columns;

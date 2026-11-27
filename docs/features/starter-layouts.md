@@ -319,10 +319,11 @@ measured against the real sheets, and lived in — and one is **built from
 scratch** to a specification below, because no vault layout exists for it.
 For a replica, exact positions, copy and arithmetic are the source's, and the
 only changes are its `name` and a `description` written fresh for the
-suggester; the spec fixes what each demonstrates and what its rename leaves
-behind. For the built one, the spec fixes the component list, the arithmetic
-and the arrangement precedent in enough detail that the build is not designing
-a system from memory, and grid positions are the build's to settle against the
+suggester (*superseded for the 5e replica by `starter-layouts-refresh.md`*);
+the spec fixes what each demonstrates and what its rename leaves behind. For
+the built one, the spec fixes the component list, the arithmetic and the
+arrangement precedent in enough detail that the build is not designing a
+system from memory, and grid positions are the build's to settle against the
 real schema.
 
 **Why real systems, given that the first two starters were not.** A
@@ -398,11 +399,16 @@ the four bonus types and the five modifier definitions. **Nothing is cut**,
 because every candidate cut damages the one thing this starter is for: a 5e
 sheet missing its skills roster, its rest triggers or its equipment tab is not
 a sheet a reader can check against their own. The only changes from the source
-are its `name` and the description.
+are its `name` and the description. *Superseded by
+`starter-layouts-refresh.md`:* the starter now also departs from the vault's
+reference in its modifier group, Ring of Protection, grouped lists, the
+features' conditional Uses and per-form tint.
 
 The arrangement it carries, which is also the record of what the reference
 learned over three rounds of measurement — and the **architecture precedent
-the PF2e sheet follows**:
+the PF2e sheet follows**. *Superseded for 5e by `starter-5e-paper-layout.md`:*
+the 5e starter now takes the paper sheet's arrangement, and PF2e keeps this
+one.
 
 - **A header band**: the **Passport** beside a **Pool** for hit points, with
   speed, proficiency and an inspiration **Track** on the row beneath them.
@@ -622,9 +628,15 @@ item.
    as the record of what the character is trained in; AC simply does not read
    them.
 3. **Strikes are stored, not computed**, mirroring the 5e attacks table.
+   *Superseded by `starter-layouts-follow-up.md`, case 1:* a strike computes its
+   attack from attribute, rank and potency, filed in one open table per
+   attribute (Strikes, Dexterity strikes), so conditions reach it by attribute.
+   The 5e attacks table stays stored.
 4. **The six conditions target AC alone.** The function library carries the
    comment stating Frightened's real scope — every check and DC — and that a
    fuller Frightened is one more definition per target.
+   *Superseded by `starter-layouts-refresh.md`, case 1:* Frightened, Fatigued
+   and Clumsy now aim at modifier groups, and the library comment says which.
 5. **Spell slots follow the full-caster table**, with the library comment
    saying so and naming the one-line-per-row change for a bounded caster.
 6. **Max HP is character-owned**, as on the 5e sheet.

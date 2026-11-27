@@ -114,6 +114,7 @@ import { parseModifierTypes } from '../parse/modifier-types';
 import { reasonMessage } from './field-reason';
 import { showFieldError } from './field-error';
 import { titleChosen } from './select-title';
+import { drawSelectFace } from '../ui/select-face';
 
 /** A definition as the editor handles one: every member free to be absent. */
 type DefinitionEntry = Partial<ModifierDefinition> & Record<string, unknown>;
@@ -709,6 +710,10 @@ export function renderModifierDefinitions(
 				commit();
 				context.redraw();
 			});
+			// Each select's value in a face of its own (`ui/select-face.ts`): a
+			// long label ends in an ellipsis on every engine rather than cut
+			// mid-letter in WebKit.
+			drawSelectFace(value);
 
 			/*
 			 * **The whole group list, beside Value, once a group is chosen** (D11):
@@ -815,6 +820,7 @@ export function renderModifierDefinitions(
 				);
 				context.redraw();
 			});
+			drawSelectFace(operator);
 
 			const amount = labelled(detail, 'Amount').createEl('input', {
 				type: 'text',
@@ -847,6 +853,7 @@ export function renderModifierDefinitions(
 					commit();
 					context.redraw();
 				});
+				drawSelectFace(picker);
 				amount.parentElement?.after(optionField);
 				amount.parentElement?.remove();
 			}
@@ -980,6 +987,7 @@ export function renderModifierDefinitions(
 					phaseField.addClass('sheetsmith-detail-field-reserved');
 					phaseField.setAttribute('aria-hidden', 'true');
 				}
+				drawSelectFace(phase);
 
 				// The same, and it is the field the clip was first seen on:
 				// `circumstance` rendered as `circu…`.
@@ -1041,6 +1049,7 @@ export function renderModifierDefinitions(
 					typeField.addClass('sheetsmith-detail-field-reserved');
 					typeField.setAttribute('aria-hidden', 'true');
 				}
+				drawSelectFace(type);
 
 				/*
 				 * **The note, last on the detail line and on a row of its own.** A

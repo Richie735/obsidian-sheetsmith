@@ -32,6 +32,7 @@ import { headingRename } from '../component-rename-migration';
 import { columnKeyFault, sameZoneKey, zoneHeadingFault, zoneKeyFault } from '../components/zone-rules';
 import { isBuiltInZone, ZONE_TYPES, ZoneColumnType, ZoneType, zoneHeadingKey } from '../parse/zones';
 import { showFieldError } from './field-error';
+import { drawSelectFace } from '../ui/select-face';
 import { addControls, checkField, labelled, ListContext, setOptional } from './list-fields';
 import { nestedList } from './nested-list-field';
 import { refusedRename } from './rename-refusal';
@@ -210,6 +211,7 @@ export function renderZonesField(
 				context.persist();
 				context.redraw();
 			});
+			drawSelectFace(type);
 		}
 
 		addControls(
@@ -349,6 +351,7 @@ export function renderZonesField(
 					else delete column.type;
 					context.persist();
 				});
+				drawSelectFace(type);
 				const name = labelled(row, 'Display name').createEl('input', {
 					type: 'text',
 					attr: { placeholder: 'Same as key', 'aria-label': `${named} column ${at + 1} display name` },

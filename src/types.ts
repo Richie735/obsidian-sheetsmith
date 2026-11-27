@@ -3209,8 +3209,14 @@ export interface ComponentDefinition<
 	 * reads as one system rather than as six authors' idea of a placeholder. A
 	 * config that names nothing to fill returns the empty body, which is exactly
 	 * what the canvas drew before this existed.
+	 *
+	 * `reads` is every dotted name the layout's formulas read
+	 * (`editor/formula-reads.ts`), for a component whose filler's kind its config
+	 * cannot settle: a Passport field samples its own name unless a formula reads
+	 * it, and then a number. Absent where there is no layout to ask: the component
+	 * picker's preview and the contract tests.
 	 */
-	sample?(config: TConfig): string;
+	sample?(config: TConfig, reads?: ReadonlySet<string>): string;
 	/** Parse this component's section body into data. */
 	read(body: string, config: TConfig): ReadResult<TData>;
 	/**

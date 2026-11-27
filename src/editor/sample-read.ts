@@ -23,6 +23,7 @@
 import { ReadComponent } from '../formula/sheet';
 import { ComponentConfig, isContainer } from '../types';
 import { getComponent } from '../components';
+import { NO_READS } from './formula-reads';
 
 /**
  * Read one component the way a drawing with no note behind it does: the body
@@ -39,12 +40,16 @@ import { getComponent } from '../components';
  * with no sample of its own (Image) reads identically either way, which is the
  * honest reading of a component that needs a vault.
  */
-export function readSample(config: ComponentConfig, filled: boolean): ReadComponent {
+export function readSample(
+	config: ComponentConfig,
+	filled: boolean,
+	reads: ReadonlySet<string> = NO_READS,
+): ReadComponent {
 	const component = getComponent(config.type);
 	if (!component || isContainer(component)) {
 		return { config, component, data: null, error: null };
 	}
-	const body = filled ? (component.sample?.(config) ?? '') : '';
+	const body = filled ? (component.sample?.(config, reads) ?? '') : '';
 	const result = component.read(body, config);
 	return {
 		config,

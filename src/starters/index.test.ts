@@ -23,10 +23,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { App as ObsidianApp } from 'obsidian';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
 import {
+	groupIndex,
 	modifierTargetSource,
+	namedGroups,
+	openGroupHolders,
 	publishedTargets,
 } from '../formula/modifier-targets';
 import {
@@ -40,10 +44,13 @@ import type { Layout } from '../parse/layout';
 import { DEFAULT_COLUMNS, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkLayout } from '../view/grid-cells';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
+import { parseModifierGroups } from '../parse/modifier-groups';
 import { parseModifierTypes } from '../parse/modifier-types';
 import { parseTriggers } from '../parse/triggers';
 import type { ComponentConfig } from '../types';
 import { isContainer } from '../types';
+import { createLayout } from '../layouts';
+import { App } from '../test/obsidian-stub';
 import { STARTERS } from './index';
 
 /**
@@ -184,8 +191,14 @@ function sheetFrom(layoutSource: string, noteSource: string) {
 const emptyNote = (name: string): string =>
 	`---\nsheet-layout: ${name}\n---\n`;
 
-/** The rows a twelve-column sheet spends on its header band before the columns. */
-const HEADER_ROWS = 3;
+/**
+ * The rows a twelve-column sheet spends on its header band before the columns.
+ * Per sheet, since the 5e sheet's paper-shaped header is two rows (identity
+ * beside armor class, initiative, speed, hit points and hit dice) and the PF2e
+ * sheet's is three.
+ */
+const HEADER_ROWS: Record<string, number> = { 'Starter 5e': 2, 'Starter PF2e': 3 };
+const headerRowsOf = (layout: Layout): number => HEADER_ROWS[layout.name] ?? 3;
 
 /**
  * The column bands of a twelve-column sheet: the stacks sharing one column and
@@ -201,16 +214,18 @@ const HEADER_ROWS = 3;
  * to maintain as either sheet moves.
  */
 const bandsOf = (layout: Layout) => {
-	const found = new Map<string, { width: number; last: number; foot: string }>();
+	const found = new Map<string, { col: number; width: number; last: number; foot: string }>();
+	const header = headerRowsOf(layout);
 	for (const config of layout.components) {
 		const { col, row, width, height } = config.position;
-		if (row <= HEADER_ROWS || width === (layout.columns ?? DEFAULT_COLUMNS)) {
+		if (row <= header || width === (layout.columns ?? DEFAULT_COLUMNS)) {
 			continue;
 		}
 		const key = `${col}:${width}`;
 		const seen = found.get(key);
 		const last = row + height - 1;
 		found.set(key, {
+			col,
 			width,
 			last: Math.max(seen?.last ?? 0, last),
 			// The foot is whatever ends lowest, so a band read out of grid order
@@ -222,10 +237,12 @@ const bandsOf = (layout: Layout) => {
 };
 
 /**
- * The two twelve-column sheets, which are one architecture over two arithmetics
- * — header band, full-width strip, three columns ending together, a full-width
- * tab set below — so the claims about that architecture are asked once, over
- * both, rather than copied into each sheet's own describe and left to drift.
+ * The two twelve-column sheets, which share an architecture over two arithmetics
+ * — header band, columns ending together, a full-width tab set below — so the
+ * claims about that architecture are asked once, over both, rather than copied
+ * into each sheet's own describe and left to drift. Between header and columns
+ * the PF2e sheet keeps a full-width attribute strip; the 5e sheet stacks its
+ * abilities down the left edge instead, as the paper sheet does.
  */
 const TWELVE_COLUMN = (['Starter 5e', 'Starter PF2e'] as const).map(
 	(name) =>
@@ -237,15 +254,39 @@ const TWELVE_COLUMN = (['Starter 5e', 'Starter PF2e'] as const).map(
 		] as const,
 );
 
-describe.each(TWELVE_COLUMN)('%s shares the twelve-column architecture', (_name, layout) => {
+describe.each(TWELVE_COLUMN)('%s shares the twelve-column architecture', (name, layout) => {
 	const walked = walkLayout(layout.components).map(({ config }) => config);
+
+	it('gives every modifier group a member, and joins no group it does not declare', () => {
+		/*
+		 * Both directions of D7, which the editor reports and nothing else would:
+		 * a group nothing joins is one a definition aims at and reaches nothing
+		 * through, and a value naming an undeclared group is in no group at all.
+		 * Read cold, so membership is the layout's alone.
+		 */
+		const built = sheetFrom(JSON.stringify(layout), emptyNote(name));
+		const { groups, problems } = parseModifierGroups(built.layout);
+		expect(problems).toEqual([]);
+		// The floor: a sheet declaring no groups passes both loops below.
+		expect(groups.length).toBeGreaterThan(0);
+		const sources = built.prepared.map((entry) =>
+			modifierTargetSource(entry.config, entry.component),
+		);
+		const index = groupIndex(groups, sources);
+		for (const group of groups) {
+			expect(index.members.get(group.name)?.length ?? 0, group.name).toBeGreaterThan(0);
+		}
+		const declared = new Set(groups.map((group) => group.name));
+		const named = sources.flatMap((source) => [...namedGroups(source)]);
+		expect(named.filter((group) => !declared.has(group))).toEqual([]);
+	});
 
 	it('puts a full-width tab set below the three columns', () => {
 		const width = layout.columns ?? DEFAULT_COLUMNS;
 		const below = layout.components.filter(
 			(config) =>
 				config.position.width === width &&
-				config.position.row > HEADER_ROWS,
+				config.position.row > headerRowsOf(layout),
 		);
 		expect(below).toHaveLength(1);
 		expect(below[0]?.type).toBe('tab-set');
@@ -777,6 +818,14 @@ PP: 0
 | Backpack | 1 | 0.1 | yes | no |  |  |
 `;
 
+/**
+ * A drawn table's computed cells, in row order: where a row that publishes no
+ * name keeps its number. `td`, because the column heading carries the same
+ * type class.
+ */
+const computedCells = (el: HTMLElement): HTMLElement[] =>
+	Array.from(el.querySelectorAll<HTMLElement>('td.sheetsmith-table-computed'));
+
 /** The same fighter with a conditions row per case, which is where the typed
  * stacking shows. */
 const pf2eWith = (conditions: string): string =>
@@ -809,7 +858,14 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 	const byId = (id: string) => {
 		const found = walked.find((config) => config.id === id);
 		if (!found) throw new Error(`No component "${id}" on the PF2e sheet.`);
-		return found as { rows?: unknown[]; entries?: unknown[]; fields?: unknown[]; children?: unknown[] };
+		return found as {
+			rows?: unknown[];
+			entries?: unknown[];
+			fields?: unknown[];
+			children?: unknown[];
+			/** A table's columns, with the members a case below reads by name. */
+			columns?: { key: string; secondary?: boolean; hideHeading?: boolean; [other: string]: unknown }[];
+		};
 	};
 
 	/** A table's declared row labels, in order — the roster it ships. */
@@ -863,13 +919,87 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 			'passport', 'hp', 'speed', 'class_dc', 'hero_points', 'attributes',
 			'saves', 'proficiencies', 'armor', 'armor_rank', 'languages', 'skills',
 			'lore', 'senses', 'pages', 'initiative', 'ac', 'conditions', 'strikes',
-			'combat_notes', 'actions', 'action_notes', 'spell_attack', 'spell_dc',
+			'dex_strikes', 'combat_notes', 'actions', 'action_notes', 'spell_attack', 'spell_dc',
 			'focus', 'slots', 'spellbook', 'coin', 'bulk_carried', 'encumbered',
 			'max_bulk', 'invested', 'inventory', 'equipment_notes', 'details',
 			'feats', 'appearance', 'personality', 'backstory', 'notes',
 		]) {
 			expect(walked.some((config) => config.id === id), id).toBe(true);
 		}
+	});
+
+	it('computes both strikes tables from attribute, rank and potency, one attribute each', () => {
+		/*
+		 * Identical apart from the attribute and the groups, so a later edit to
+		 * one that the other misses fails here. Open with no declared rows, so
+		 * every strike is the character's and is reached by position (ruling 4).
+		 * Traits and Notes qualify the row, so they are secondary; Damage is the
+		 * second number a player reads and stays primary.
+		 */
+		const shapes = (['strikes', 'dex_strikes'] as const).map((id) => {
+			const table = byId(id) as ReturnType<typeof byId> & {
+				openRows?: boolean;
+				namePosition?: number;
+				groups?: string[];
+			};
+			return { id, table };
+		});
+		for (const [{ id, table }, attribute, group] of [
+			[shapes[0]!, 'STR', 'str'],
+			[shapes[1]!, 'DEX', 'dex'],
+		] as const) {
+			expect(table.openRows, id).toBe(true);
+			expect(table.rows, id).toBeUndefined();
+			expect(table.namePosition, id).toBe(1);
+			expect(table.groups, id).toEqual(['check', group]);
+			const columns = table.columns ?? [];
+			expect(columns.map((column) => column.key), id).toEqual([
+				'Rank', 'Attack', 'Item', 'Damage', 'Traits', 'Notes',
+			]);
+			const [rank, attack, item, damage, traits, notes] = columns;
+			expect(rank, id).toMatchObject({ type: 'level', hideHeading: true });
+			expect(attack, id).toMatchObject({
+				type: 'computed',
+				formula: `attributes.${attribute} + prof(Rank) + Item + mod.self`,
+				publish: true,
+			});
+			expect(item, id).toMatchObject({ type: 'number', min: 0, max: 3 });
+			expect(damage?.secondary, id).toBeUndefined();
+			expect(traits?.secondary, id).toBe(true);
+			expect(notes?.secondary, id).toBe(true);
+		}
+		/*
+		 * **And the two whole, so a key the cases above do not name cannot drift
+		 * apart unseen**: a `signed` dropped from one Attack, a `rowHeader`, or a
+		 * column property added to one later. Everything but what is meant to
+		 * differ — identity, label, placement, groups, and the attribute the
+		 * formula reads — is compared as it stands.
+		 */
+		const common = (table: Record<string, unknown>) => {
+			const { id: _id, label: _label, position: _position, groups: _groups, ...rest } = table;
+			return JSON.parse(
+				JSON.stringify(rest).replace(/attributes\.(STR|DEX)\b/g, 'attributes.ATTRIBUTE'),
+			) as unknown;
+		};
+		expect(common(shapes[1]!.table)).toEqual(common(shapes[0]!.table));
+		// The Rank column is the one Skills carries, so the ring reads the same.
+		const skillRank = (byId('skills').columns ?? []).find((column) => column.key === 'Rank');
+		expect(shapes[0]!.table.columns?.[0]).toEqual(skillRank);
+		expect(shapes[1]!.table.columns?.[0]).toEqual(skillRank);
+	});
+
+	it('hides the Conditions modifier heading so the table fits a phone', () => {
+		/*
+		 * The glyph names itself, which is the Conditions palette entry's own
+		 * configuration. `secondary` would not do it: it is a text column's type
+		 * style and a modifier column may not take it (SPEC §4.2).
+		 */
+		const columns = byId('conditions').columns ?? [];
+		const modifiers = columns.find((column) => column.key === 'Modifiers');
+		expect(modifiers?.hideHeading).toBe(true);
+		expect(modifiers && 'secondary' in modifiers).toBe(false);
+		// Value and Active keep theirs: Active is the word a definition's `when` names.
+		expect(columns.filter((column) => column.hideHeading === true).map((column) => column.key)).toEqual(['Modifiers']);
 	});
 
 	it('pins the six definitions by name, on the 5e list’s own guard', () => {
@@ -881,12 +1011,30 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 			'Armor potency rune',
 			'Clumsy',
 		]);
-		// Every one targets the armor class card, which is the one place the
-		// stacking rule is shown; Frightened's real scope is wider, and the
-		// library's comment says so.
-		expect(new Set((layout.modifiers ?? []).map((one) => one.target))).toEqual(
-			new Set(['ac']),
-		);
+		/*
+		 * **Each definition's exact targets, change by change.** The three
+		 * conditions whose rules reach wider than armor class aim at groups
+		 * (`docs/features/starter-layouts-refresh.md`, case 1); Fatigued is two
+		 * changes because a list of targets holds groups only, and it reaches armor
+		 * class and the saves. The other three stay on `ac`, which is where the
+		 * stacking cases below are read.
+		 *
+		 * Read through the parser's own view of each definition, so this asks
+		 * what the sheet makes of the two spellings rather than reducing them a
+		 * second time here (`changesOf`).
+		 */
+		const targets = sheetFrom(source, PF2E_NOTE).definitions.definitions.map((one) => [
+			one.name,
+			one.changes.map((change) => change.target),
+		]);
+		expect(targets).toEqual([
+			['Off-Guard', ['ac']],
+			['Raise a Shield', ['ac']],
+			['Frightened', ['@check, @dc']],
+			['Fatigued', ['ac', '@save']],
+			['Armor potency rune', ['ac']],
+			['Clumsy', ['@dex']],
+		]);
 	});
 
 	it('binds every reset to a declared trigger, including the literal one', () => {
@@ -1113,17 +1261,14 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 		 * inside a row scope. If that did not resolve, every Lore a character adds
 		 * would read "?" and the split would have bought nothing.
 		 *
-		 * Read off the drawn cells, because a Lore total is not published: nothing
-		 * elsewhere reads one row's Lore, so there is no name to ask `sheet` for
-		 * and the rendered column is where the number actually is.
+		 * Read off the drawn cells, because a Lore row has no name to ask `sheet`
+		 * for. The Total column publishes, so the Checks group has a value on each
+		 * row to land in (`table-row-modifier-target.md` D4), but a row the
+		 * character adds publishes no name (ruling 4) and is reached by position
+		 * (D5). So the rendered column is still where the number is.
 		 */
 		const built = sheetFrom(source, PF2E_NOTE);
-		// `td`, because the column heading carries the same type class.
-		const cells = Array.from(
-			built
-				.draw('lore')
-				.querySelectorAll<HTMLElement>('td.sheetsmith-table-computed'),
-		);
+		const cells = computedCells(built.draw('lore'));
 		expect(cells).toHaveLength(2);
 		expect(cells.map((cell) => cell.textContent)).toEqual(['+9', '+2']);
 		// And neither is the unresolved face: "+2" for an untrained Lore is the
@@ -1193,6 +1338,255 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 		const off = sheetFrom(source, pf2eWith('| Frightened | 2 | no | Frightened |'));
 		expect(off.derivedFor('ac')).toBe(22);
 	});
+
+	describe('reaches what each condition reaches, through its groups', () => {
+		/*
+		 * Amiri's unconditioned numbers, from the arithmetic at the top of this
+		 * describe: Perception +10, Fortitude +12, Reflex +11, Will +8, Athletics
+		 * +11, Stealth +9, Acrobatics and Thievery +2 (untrained), Warfare Lore
+		 * +9, spell attack 11, spell DC 21, class DC 23, AC 22.
+		 *
+		 * **Fortitude, Reflex, Will, Athletics, Acrobatics and Thievery publish no
+		 * name** (their rows carry no key, and keying them is out of scope), so
+		 * they are read off the drawn Total cell, the way the Lore case reads its
+		 * rows. A group reaches them by position (D5), which is exactly what a
+		 * drawn cell shows and a published name could not.
+		 */
+		/** The drawn Total of a declared row, by its label. */
+		const drawnTotal = (
+			built: ReturnType<typeof sheetFrom>,
+			id: string,
+			label: string,
+		): string | null => {
+			const row = Array.from(built.draw(id).querySelectorAll('tr')).find(
+				(tr) => tr.querySelector('th')?.textContent?.trim() === label,
+			);
+			if (!row) throw new Error(`No row "${label}" drawn in ${id}.`);
+			return computedCells(row)[0]?.textContent ?? null;
+		};
+		/** The first Lore row's drawn Total: Warfare, in the note's order. */
+		const warfare = (built: ReturnType<typeof sheetFrom>) =>
+			computedCells(built.draw('lore'))[0]?.textContent;
+
+		it('reads the unconditioned numbers the cases below move from', () => {
+			// The floor: every case below asserts a difference from these, so they
+			// are pinned on the drawn path the cases read.
+			const plain = sheetFrom(source, PF2E_NOTE);
+			expect(drawnTotal(plain, 'saves', 'Fortitude')).toBe('+12');
+			expect(drawnTotal(plain, 'saves', 'Reflex')).toBe('+11');
+			expect(drawnTotal(plain, 'saves', 'Will')).toBe('+8');
+			expect(drawnTotal(plain, 'skills', 'Athletics')).toBe('+11');
+			expect(drawnTotal(plain, 'skills', 'Acrobatics')).toBe('+2');
+			expect(drawnTotal(plain, 'skills', 'Thievery')).toBe('+2');
+			expect(warfare(plain)).toBe('+9');
+		});
+
+		it('moves every check and DC by Frightened 2, and initiative once', () => {
+			const built = sheetFrom(source, pf2eWith('| Frightened | 2 | yes | Frightened |'));
+			expect(built.sheet('saves.perception')).toBe(8);
+			// Initiative reads Perception and joins no group, so the penalty
+			// arrives once through Perception: 8, not 6.
+			expect(built.derivedFor('initiative')).toBe(8);
+			expect(drawnTotal(built, 'saves', 'Fortitude')).toBe('+10');
+			expect(drawnTotal(built, 'saves', 'Reflex')).toBe('+9');
+			expect(drawnTotal(built, 'saves', 'Will')).toBe('+6');
+			expect(built.sheet('skills.stealth')).toBe(7);
+			expect(drawnTotal(built, 'skills', 'Athletics')).toBe('+9');
+			expect(warfare(built)).toBe('+7');
+			expect(built.derivedFor('spell_attack')).toBe(9);
+			expect(built.derivedFor('spell_dc')).toBe(19);
+			expect(built.derivedFor('class_dc')).toBe(21);
+			expect(built.derivedFor('ac')).toBe(20);
+			// The proficiency the DCs are built on stays put, or every DC would
+			// take the penalty twice.
+			expect(built.sheet('proficiencies.class_dc')).toBe(9);
+		});
+
+		it('moves armor class and the three saves by Fatigued, and nothing else', () => {
+			const built = sheetFrom(source, pf2eWith('| Fatigued | | yes | Fatigued |'));
+			expect(built.derivedFor('ac')).toBe(21);
+			expect(drawnTotal(built, 'saves', 'Fortitude')).toBe('+11');
+			expect(drawnTotal(built, 'saves', 'Reflex')).toBe('+10');
+			expect(drawnTotal(built, 'saves', 'Will')).toBe('+7');
+			expect(built.sheet('saves.perception')).toBe(10);
+			expect(built.sheet('skills.stealth')).toBe(9);
+			expect(built.derivedFor('spell_dc')).toBe(21);
+		});
+
+		it('moves what Dexterity drives by Clumsy 1, and nothing else', () => {
+			const built = sheetFrom(source, pf2eWith('| Clumsy | 1 | yes | Clumsy |'));
+			expect(built.derivedFor('ac')).toBe(21);
+			expect(drawnTotal(built, 'saves', 'Reflex')).toBe('+10');
+			expect(built.sheet('skills.stealth')).toBe(8);
+			expect(drawnTotal(built, 'skills', 'Acrobatics')).toBe('+1');
+			expect(drawnTotal(built, 'skills', 'Thievery')).toBe('+1');
+			expect(drawnTotal(built, 'saves', 'Fortitude')).toBe('+12');
+			expect(built.sheet('saves.perception')).toBe(10);
+			expect(drawnTotal(built, 'skills', 'Athletics')).toBe('+11');
+		});
+
+		it('takes the worst Status penalty where two groups meet, not the sum', () => {
+			// Reflex and Stealth are in both Checks and Dexterity-based: Frightened 1
+			// and Clumsy 2 contest as Status penalties, and only the −2 applies.
+			const built = sheetFrom(
+				source,
+				pf2eWith('| Frightened | 1 | yes | Frightened |\n| Clumsy | 2 | yes | Clumsy |'),
+			);
+			expect(drawnTotal(built, 'saves', 'Reflex')).toBe('+9');
+			expect(built.sheet('skills.stealth')).toBe(7);
+		});
+
+		/*
+		 * Amiri's two strikes, one per table: a trained Longsword with a +1
+		 * potency rune in Strikes, which reads Strength, and a trained Shortbow
+		 * with none in Dexterity strikes, which reads Dexterity. So the Longsword
+		 * is 4 + 7 + 1 = +12 and the Shortbow 2 + 7 + 0 = +9 before any condition.
+		 */
+		const STRIKES = `
+## Strikes
+
+| Strike | Rank | Item | Damage | Traits | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Longsword | 1 | 1 | 1d8+4 | Versatile P |  |
+
+## Dexterity strikes
+
+| Strike | Rank | Item | Damage | Traits | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Shortbow | 1 | 0 | 1d6 | Deadly d10 |  |
+`;
+		/** The sheet with both strikes and the given conditions rows. */
+		const struck = (conditions: string) =>
+			sheetFrom(source, `${pf2eWith(conditions)}${STRIKES}`);
+		/**
+		 * A strikes table's first drawn Attack: each table holds one row, and an
+		 * open row's name is a field rather than a heading, so it is read the way
+		 * the Lore case reads its rows.
+		 */
+		const attack = (built: ReturnType<typeof sheetFrom>, id: string) =>
+			computedCells(built.draw(id))[0]?.textContent;
+
+		it('moves each strike table by the conditions its attribute takes', () => {
+			/*
+			 * Both tables are checks, so Frightened reaches both; Fatigued aims at
+			 * armor class and saves and reaches neither; Clumsy aims at
+			 * Dexterity-based and reaches only the Dexterity strike. Together,
+			 * Frightened 2 and Clumsy 1 on the Shortbow are two Status penalties,
+			 * and only the worse applies.
+			 */
+			const cases: [string, string, string][] = [
+				['', '+12', '+9'],
+				['| Frightened | 2 | yes | Frightened |', '+10', '+7'],
+				['| Fatigued | | yes | Fatigued |', '+12', '+9'],
+				['| Clumsy | 1 | yes | Clumsy |', '+12', '+8'],
+				[
+					'| Frightened | 2 | yes | Frightened |\n| Fatigued | | yes | Fatigued |\n| Clumsy | 1 | yes | Clumsy |',
+					'+10',
+					'+7',
+				],
+			];
+			for (const [conditions, longsword, shortbow] of cases) {
+				const built = struck(conditions);
+				expect(attack(built, 'strikes'), `Longsword: ${conditions}`).toBe(longsword);
+				expect(attack(built, 'dex_strikes'), `Shortbow: ${conditions}`).toBe(shortbow);
+			}
+		});
+
+		it('files each strike under its own attribute, and its library says so', () => {
+			/*
+			 * Membership is fixed per table (§13, "What a group target is", ruling
+			 * 3): a row the character adds joins its table's groups and no other.
+			 *
+			 * **Asked of the layout's reading, the one the editor's counts take**,
+			 * which says which groups a table's added rows would join. The live
+			 * index the sheet builds from a note's rows is `buildSheet`'s own, and
+			 * rebuilding it here would spell a step `sheet.test.ts`'s host scan
+			 * forbids; the case above is that index answering, in the arithmetic.
+			 */
+			const holders = openGroupHolders(
+				sheetFrom(source, PF2E_NOTE).prepared.map((entry) =>
+					modifierTargetSource(entry.config, entry.component),
+				),
+			);
+			const of = (group: string) => holders.get(group) ?? [];
+			expect(of('check')).toEqual(expect.arrayContaining(['Strikes', 'Dexterity strikes']));
+			expect(of('str')).toContain('Strikes');
+			expect(of('str')).not.toContain('Dexterity strikes');
+			expect(of('dex')).toContain('Dexterity strikes');
+			expect(of('dex')).not.toContain('Strikes');
+			// The comment read as prose, so a sentence broken across two lines
+			// still reads as one.
+			const library = (layout.functions ?? [])
+				.filter((line) => line.startsWith('#'))
+				.map((line) => line.replace(/^#\s*/, ''))
+				.join(' ');
+			expect(library).toMatch(/Strikes read Strength/);
+			expect(library).toMatch(/Dexterity strikes read Dexterity/);
+			expect(library).not.toMatch(/typed/);
+		});
+
+		it('reaches Athletics and the Strength strikes from a Strength-based penalty, and no Dexterity strike', () => {
+			/*
+			 * No Enfeebled ships (the six definitions stay pinned), so the penalty
+			 * is a player's own typed cell aimed at the group. Athletics is in it
+			 * by its own row, and Strikes by its table.
+			 */
+			const plain = struck('');
+			const built = struck('| Weakened | | yes | @str += -1 as Status |');
+			expect(drawnTotal(plain, 'skills', 'Athletics')).toBe('+11');
+			expect(drawnTotal(built, 'skills', 'Athletics')).toBe('+10');
+			expect(attack(built, 'strikes')).toBe('+11');
+			expect(attack(built, 'dex_strikes')).toBe('+9');
+			expect(drawnTotal(built, 'skills', 'Acrobatics')).toBe('+2');
+		});
+
+		it('keeps a typed Attack a note wrote before Attack was computed', () => {
+			/*
+			 * Hard constraint 4. A note written against the old starter typed its
+			 * attack into a stored column; the column is now computed, so it is
+			 * no longer stored, drawn or written — and the cell stays in the note.
+			 * An edit on that row, carrying an Attack cell of its own, and an
+			 * added row, must leave it where it was.
+			 *
+			 * **An edit, not a round trip**: the edit appends Rank and Item to
+			 * the header by design (`writeTable`), so no whole-body identity is
+			 * asserted.
+			 */
+			const config = walked.find((one) => one.id === 'strikes');
+			if (!config) throw new Error('No strikes table.');
+			const table = getComponent('table');
+			if (!table) throw new Error('No table component.');
+			const old = `
+| Strike | Attack | Damage | Traits | Notes |
+| --- | --- | --- | --- | --- |
+| Longsword | 11 | 1d8+4 | Versatile P |  |
+`;
+			const written = table.write(
+				{
+					rows: { 0: { cells: { Rank: '1', Item: '1', Attack: '15' } } },
+					added: [{ name: 'Dagger', cells: {} }],
+				},
+				old,
+				config,
+			);
+			const longsword = written.split('\n').find((line) => line.startsWith('| Longsword'));
+			expect(longsword).toMatch(/\| 11 \|/);
+			expect(written).not.toContain('15');
+			expect(written).toContain('| Dagger');
+			// Drawn, the row reads the computed number: 4 + 7 + 1, and not the 11;
+			// the added Dagger, untrained and unruned, is Strength alone.
+			const built = sheetFrom(source, `${PF2E_NOTE}\n## Strikes\n${written}`);
+			expect(computedCells(built.draw('strikes')).map((cell) => cell.textContent)).toEqual([
+				'+12',
+				'+4',
+			]);
+			const drawn = built.draw('strikes');
+			expect(drawn.textContent).not.toContain('11');
+			expect(
+				Array.from(drawn.querySelectorAll('input')).some((input) => input.value === '11'),
+			).toBe(false);
+		});
+	});
 });
 
 /**
@@ -1260,29 +1654,27 @@ describe('the 5e sheet is a complete system sheet', () => {
 	 */
 	const PINNED = [
 		'passport passport 1,1,6,2',
-		'hp pool 7,1,6,1',
-		'speed card 7,2,2,1',
-		'proficiency card 9,2,2,1',
-		'inspiration track 11,2,2,1',
-		'abilities card-set 1,3,12,1',
-		'saves table 1,4,3,3',
-		'skills table 4,4,4,8',
-		'pages tab-set 8,4,5,10',
+		'armour_class card 7,1,2,1',
+		'initiative card 9,1,2,1',
+		'speed card 11,1,2,1',
+		'hp pool 7,2,4,1',
+		'hit_dice pool 11,2,2,1',
+		'abilities card-set 1,3,2,7',
+		'proficiency card 3,3,3,1',
+		'pages tab-set 6,3,5,10',
 		'tab_combat group 1,1,5,10',
-		'initiative card 1,1,2,1',
-		'armour_class card 3,1,3,1',
-		'defences rich-text 1,2,5,2',
-		'conditions table 1,4,5,2',
-		'attacks table 1,6,5,3',
+		'defences rich-text 1,1,5,2',
+		'conditions table 1,3,5,3',
+		'attacks table 1,6,5,5',
 		'tab_actions group 1,1,5,10',
 		'other_actions table 1,1,5,8',
 		'tab_spells group 1,1,5,10',
 		'spell_dc card 1,1,2,1',
-		'spell_attack card 3,1,3,1',
-		'prepared card 1,2,5,1',
-		'slots track 1,3,5,2',
-		'spellbook record-set 1,5,5,3',
-		'spell_notes rich-text 1,8,5,1',
+		'spell_attack card 3,1,2,1',
+		'prepared card 5,1,1,1',
+		'slots track 1,2,5,2',
+		'spellbook record-set 1,4,5,6',
+		'spell_notes rich-text 1,10,5,1',
 		'tab_inventory group 1,1,5,10',
 		'coin card-set 1,1,5,1',
 		'carried card 1,2,2,1',
@@ -1290,12 +1682,14 @@ describe('the 5e sheet is a complete system sheet', () => {
 		'attuned card 1,3,5,1',
 		'inventory table 1,4,5,5',
 		'forms stat-block 1,1,5,10',
-		'senses table 1,7,3,2',
-		'hit_dice pool 1,9,3,1',
-		'training rich-text 1,10,3,4',
-		'death_saves track 4,12,4,1',
-		'exhaustion track 4,13,4,1',
-		'details tab-set 1,14,12,6',
+		'inspiration track 11,3,2,1',
+		'saves table 3,4,3,3',
+		'death_saves track 11,4,2,1',
+		'exhaustion track 11,5,2,1',
+		'training rich-text 11,6,2,7',
+		'skills table 3,7,3,6',
+		'senses table 1,10,2,3',
+		'details tab-set 1,13,12,6',
 		'tab_features group 1,1,12,6',
 		'features record-set 1,1,8,6',
 		'class_resource pool 9,1,4,2',
@@ -1318,7 +1712,7 @@ describe('the 5e sheet is a complete system sheet', () => {
 
 	it('replicates every component, its type and its placement', () => {
 		expect(walked).toHaveLength(55);
-		expect(layout.components).toHaveLength(15);
+		expect(layout.components).toHaveLength(17);
 		expect(
 			walked.map((config) => {
 				const { col, row, width, height } = config.position;
@@ -1333,7 +1727,8 @@ describe('the 5e sheet is a complete system sheet', () => {
 		// a reader can hold against their own.
 		expect(layout.functions).toHaveLength(11);
 		expect(layout.triggers).toEqual(['Short rest', 'Long rest']);
-		expect(layout.modifierTypes).toHaveLength(4);
+		// No bonus types, because 5e has none: different effects stack.
+		expect(layout.modifierTypes).toBeUndefined();
 		expect(layout.modifiers).toHaveLength(5);
 		// The skills roster in full, which is the most cuttable-looking thing here
 		// and the one whose loss would be least visible in a screenshot.
@@ -1401,13 +1796,16 @@ describe('the 5e sheet is a complete system sheet', () => {
 		).toEqual([]);
 	});
 
-	it('stacks its middle into three columns of unequal width', () => {
-		const widths = bandsOf(layout).map((band) => band.width);
-		expect(widths).toHaveLength(3);
-		// Equal thirds are the obvious arrangement and are not what a real sheet
-		// wants — this is the arrangement the reference took three rounds of
-		// measurement to settle.
-		expect(new Set(widths).size).toBe(3);
+	it('stacks its middle as the paper sheet does, in four columns', () => {
+		/*
+		 * Abilities down the left edge; saving throws and skills beside them, topped
+		 * by proficiency; the play tabs in the middle; and a narrow right column for
+		 * inspiration, death saves, exhaustion and proficiencies. Read left to
+		 * right, which is the order a player who knows the paper sheet looks in.
+		 */
+		const bands = bandsOf(layout).sort((a, b) => a.col - b.col);
+		expect(bands.map((band) => band.width)).toEqual([2, 3, 5, 2]);
+		expect(bands.map((band) => band.foot)).toEqual(['table', 'table', 'tab-set', 'rich-text']);
 	});
 
 	it('ends all three columns on the same grid row', () => {
@@ -1422,10 +1820,10 @@ describe('the 5e sheet is a complete system sheet', () => {
 		 * **The names, not only the count**, because the rule they are held to is
 		 * about *which* content ships rather than how much: a later editor could
 		 * swap one for another, keep five, and nothing here would notice. The list
-		 * demonstrates mechanisms — four bonus types contesting one target, a
-		 * conditional `when`, an expression amount rather than a literal, and an
-		 * override — and growth towards coverage is the SPEC §11 breach, not
-		 * presence. Pinned so that growth has to be deliberate.
+		 * demonstrates mechanisms — a conditional `when`, an expression amount
+		 * rather than a literal, and an override — and growth towards coverage is
+		 * the SPEC §11 breach, not presence. Pinned so that growth has to be
+		 * deliberate.
 		 */
 		expect((built.layout.modifiers ?? []).map((one) => one.name)).toEqual([
 			'Shield of Faith',
@@ -1434,13 +1832,124 @@ describe('the 5e sheet is a complete system sheet', () => {
 			'Alert',
 			'Bark Skin',
 		]);
-		expect(built.layout.modifierTypes).toEqual([
-			'Armour',
-			'Item',
-			'Spell',
-			'Class feature',
-		]);
+		/*
+		 * **No bonus types, on the layout or on any definition**, because 5e has
+		 * none: different effects stack, and an untyped amount stacks in full
+		 * (SPEC §5). Its one rule, that two effects of the same name do not, is
+		 * not expressible, so a definition enrolled twice applies twice. Bark
+		 * Skin needs no type to floor armor class: an at least applies after the
+		 * value phase whatever the additions are. Its `upgrade` is held above, in
+		 * "gives its abilities, saves and skills a slot a form can push at".
+		 */
+		expect(built.layout.modifierTypes).toBeUndefined();
+		const typed = (built.layout.modifiers ?? []).filter(
+			(one) =>
+				one.bonusType !== undefined ||
+				(one.changes ?? []).some((change) => change.bonusType !== undefined),
+		);
+		expect(typed.map((one) => one.name)).toEqual([]);
 		expect(parseModifierTypes(built.layout).problems).toEqual([]);
+		// One group, the saves, which Ring of Protection's second change aims at.
+		expect(parseModifierGroups(built.layout)).toEqual({
+			groups: [{ name: 'save', label: 'Saving throws' }],
+			problems: [],
+		});
+	});
+
+	it('adds Ring of Protection to armor class and every save, while attuned', () => {
+		/*
+		 * Sildar's armor class is 10 + DEX 2 = 12 and each save is its ability's
+		 * modifier with nothing marked. The ring is two changes under one `when`
+		 * (`multi-change-definitions.md`), so attuning it moves all seven numbers
+		 * together and unattuning it moves none.
+		 */
+		const ringed = (attuned: string) =>
+			sheetFrom(
+				source,
+				`${FIFTH_NOTE}
+## Items
+
+| Item | Qty | Weight | Worn | Attuned | Modifiers | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ring of protection | 1 | 0 | yes | ${attuned} | Ring of Protection |  |
+`,
+			);
+		const on = ringed('yes');
+		expect(on.derivedFor('armour_class')).toBe(13);
+		expect(on.sheet('saves.STR')).toBe(4);
+		expect(on.sheet('saves.DEX')).toBe(3);
+		for (const key of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
+			expect(on.sheet(`saves.${key}`), key).toBe((on.sheet(`abilities.${key}`) as number) + 1);
+		}
+		const off = ringed('no');
+		expect(off.derivedFor('armour_class')).toBe(12);
+		for (const key of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
+			expect(off.sheet(`saves.${key}`), key).toBe(off.sheet(`abilities.${key}`));
+		}
+	});
+
+	it('stacks Ring and Cloak of Protection, two different items', () => {
+		/*
+		 * 5e stacks different effects, so the starter declares no bonus types and
+		 * every amount is untyped, which stacks in full (SPEC §5). The cloak is a
+		 * player's own typed cell rather than a definition, the way a reader adds
+		 * an item the starter does not ship: armor class is 12 + 1 + 1 and each
+		 * save its ability's modifier + 2, neither item suppressed.
+		 *
+		 * Asked twice. The second cloak says `as Item`, a type a note written
+		 * against the old starter could name, and the case the removal changes:
+		 * while the ring carried `Item` the two contested and one was dropped.
+		 * Now the ring is untyped, the note's type is its own kind, and both apply.
+		 */
+		const cloaked = (cell: string) =>
+			sheetFrom(
+				source,
+				`${FIFTH_NOTE}
+## Items
+
+| Item | Qty | Weight | Worn | Attuned | Modifiers | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ring of protection | 1 | 0 | yes | yes | Ring of Protection |  |
+| Cloak of protection | 1 | 1 | yes | yes | ${cell} |  |
+`,
+			);
+		for (const cell of [
+			'armour_class += 1; @save += 1',
+			'armour_class += 1 as Item; @save += 1 as Item',
+		]) {
+			const built = cloaked(cell);
+			expect(built.derivedFor('armour_class'), cell).toBe(14);
+			for (const key of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
+				expect(built.sheet(`saves.${key}`), `${cell}: ${key}`).toBe(
+					(built.sheet(`abilities.${key}`) as number) + 2,
+				);
+			}
+		}
+	});
+
+	it('lets each form choose its own tint, over the accent', async () => {
+		/*
+		 * `form-tint-colour.md`'s Wild Shape case: the block keeps the accent and
+		 * a form may choose. Installed through `createLayout`, which is how a
+		 * reader gets it, then installed again from what the first wrote, so the
+		 * key survives the one writer twice.
+		 */
+		const forms = walked.find((config) => config.id === 'forms') as {
+			tint?: unknown;
+			tintPerRecord?: unknown;
+			fields?: { key: string }[];
+		};
+		expect(forms.tintPerRecord).toBe(true);
+		expect('tint' in forms).toBe(false);
+		// The switch's one constraint: no field of its own is keyed Tint.
+		expect(forms.fields?.some((field) => field.key.toLowerCase() === 'tint')).toBe(false);
+		const app = new App();
+		const vault = app as unknown as ObsidianApp;
+		const first = await createLayout(vault, 'Layouts', layout.name, layout);
+		const written = await vault.vault.read(first);
+		expect(written).toBe(textOf('5e.json'));
+		const again = await createLayout(vault, 'Again', layout.name, parseLayout(written));
+		expect(await vault.vault.read(again)).toBe(written);
 	});
 
 	describe('publishes every save and skill (docs/features/modifier-notes.md B)', () => {
@@ -1577,3 +2086,126 @@ describe('the 5e sheet is a complete system sheet', () => {
 	});
 });
 
+
+/*
+ * The lists drawn under collapsible headers, and the field drawn only where it
+ * has a use (`docs/features/starter-layouts-refresh.md`, cases 2 and 3).
+ *
+ * A starter ships no records, so every case writes the records it reads. The
+ * headers are drawn, never stored (`record-set-groups.md`), which is why each
+ * case reads the drawn list and none reads the note back.
+ */
+describe('the starters group their lists, and draw Uses only where a feature recharges', () => {
+	const sourceOf = (name: string) =>
+		JSON.stringify(STARTERS.find((one) => one.name === name)?.source);
+
+	/** A Record set section: one `###` block per record, its fence holding `lines`. */
+	const section = (label: string, records: [string, string[]][]): string =>
+		`\n## ${label}\n\n${records
+			.map(([name, lines]) =>
+				lines.length === 0
+					? `### ${name}\n`
+					: `### ${name}\n\`\`\`sheet\n${lines.join('\n')}\n\`\`\`\n`,
+			)
+			.join('\n')}`;
+
+	/** The group headers a list draws, in order. */
+	const headers = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-record-group-name')).map(
+			(one) => one.textContent,
+		);
+
+	/**
+	 * Where the field a list is grouped by draws. Inside the opened record for
+	 * all four lists, since the header already names the value: so each case
+	 * below is also the proof that grouping reads a field placed in the body.
+	 */
+	const placementOf = (name: string, id: string, key: string) =>
+		(
+			walkLayout(parseLayout(sourceOf(name)).components)
+				.map(({ config }) => config)
+				.find((config) => config.id === id) as { fields?: { key: string; placement?: string }[] }
+		).fields?.find((field) => field.key === key)?.placement;
+
+	it('heads the 5e spellbook by level, lowest first', () => {
+		expect(placementOf('Starter 5e', 'spellbook', 'Level')).toBe('body');
+		const built = sheetFrom(
+			sourceOf('Starter 5e'),
+			FIFTH_NOTE +
+				section('Spellbook', [
+					['Fireball', ['Level: 3']],
+					['Fire Bolt', ['Level: 0']],
+				]),
+		);
+		const drawn = built.draw('spellbook');
+		expect(headers(drawn)).toEqual(['Level 0', 'Level 3']);
+		expect(drawn.querySelector('.sheetsmith-error')).toBeNull();
+	});
+
+	it('heads the PF2e known spells by rank', () => {
+		expect(placementOf('Starter PF2e', 'spellbook', 'Rank')).toBe('body');
+		const built = sheetFrom(
+			sourceOf('Starter PF2e'),
+			PF2E_NOTE +
+				section('Known spells', [
+					['Fear', ['Rank: 1']],
+					['Haste', ['Rank: 3']],
+				]),
+		);
+		expect(headers(built.draw('spellbook'))).toEqual(['Rank 1', 'Rank 3']);
+	});
+
+	it('files a PF2e feat with no Type under Unassigned', () => {
+		expect(placementOf('Starter PF2e', 'feats', 'Type')).toBe('body');
+		// A blank Type reads as level 0, whose name was "—" and is now a word.
+		const built = sheetFrom(
+			sourceOf('Starter PF2e'),
+			PF2E_NOTE +
+				section('Feats', [
+					['Sudden Charge', ['Level: 1', 'Type: 2']],
+					['Toughness', ['Level: 3']],
+				]),
+		);
+		const drawn = built.draw('feats');
+		expect(headers(drawn)).toEqual(['Unassigned', 'Class']);
+		expect(drawn.querySelector('.sheetsmith-error')).toBeNull();
+	});
+
+	/** Three 5e features: two classes and none, at short rest, at will and unset. */
+	const FEATURES = section('Features', [
+		['Second Wind', ['Uses: 1', 'Recharges: 1', 'Class: Fighter']],
+		['Arcane Recovery', ['Uses: 1', 'Recharges: 0', 'Class: Wizard']],
+		['Lucky', ['Uses: 3']],
+	]);
+
+	it('heads the 5e features by the class the player typed, then Other', () => {
+		expect(placementOf('Starter 5e', 'features', 'Class')).toBe('body');
+		const built = sheetFrom(sourceOf('Starter 5e'), FIFTH_NOTE + FEATURES);
+		expect(headers(built.draw('features'))).toEqual(['Fighter', 'Wizard', 'Other']);
+	});
+
+	it('draws Uses on a feature that recharges, and hides it at will or unset', () => {
+		/*
+		 * `Recharges > 0`, so At will (0) hides it and a record with no Recharges
+		 * entry reads level 0 and hides it too, **without a problem line**: the
+		 * condition resolved, it just came out false. A hidden field keeps its
+		 * value, so Lucky's 3 still counts and still resets.
+		 */
+		const built = sheetFrom(sourceOf('Starter 5e'), FIFTH_NOTE + FEATURES);
+		const drawn = built.draw('features');
+		const uses = (name: string) => {
+			const record = Array.from(drawn.querySelectorAll<HTMLElement>('.sheetsmith-record')).find(
+				(one) =>
+					one.querySelector<HTMLInputElement>('.sheetsmith-record-name-input')?.value === name,
+			);
+			if (!record) throw new Error(`No record "${name}" drawn.`);
+			const field = record.querySelector('.sheetsmith-record-field-number');
+			if (!field) throw new Error(`"${name}" drew no Uses field.`);
+			return field.hasAttribute('hidden');
+		};
+		expect(uses('Second Wind')).toBe(false);
+		expect(uses('Arcane Recovery')).toBe(true);
+		expect(uses('Lucky')).toBe(true);
+		expect(drawn.querySelector('.sheetsmith-error')).toBeNull();
+	});
+});

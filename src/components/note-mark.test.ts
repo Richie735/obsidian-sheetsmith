@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import { NOTE_COLUMN_CLASS, NOTE_HEADING_CLASS, NOTE_MARK_CLASS, reserveNoteSlots } from './note-mark';
+import { NOTE_COLUMN_CLASS, NOTE_HEADING_CLASS, NOTE_MARK_CLASS, NOTE_TABLE_CLASS, reserveNoteSlots } from './note-mark';
 
 /*
  * Which cells keep the note mark's slot (`reserveNoteSlots`), driven on a table
@@ -87,5 +87,26 @@ describe('reserveNoteSlots', () => {
 		expect(grid.querySelector(`.${NOTE_COLUMN_CLASS}, .${NOTE_HEADING_CLASS}`)).toBeNull();
 		reserveNoteSlots(grid, ['sheetsmith-state-door']);
 		expect(cellsAt(grid, 'thead', 1)[0]?.classList.contains(NOTE_HEADING_CLASS)).toBe(true);
+	});
+
+	it('stamps the table while it holds a mark anywhere, a band head\'s included, and a door is not one', () => {
+		// The class stands in for `:has(.sheetsmith-note-mark)` (`docs/PATTERNS.md`
+		// §5), so it is held to exactly what that selector matched.
+		const grid = table();
+		reserveNoteSlots(grid, ['sheetsmith-state-door']);
+		expect(grid.classList.contains(NOTE_TABLE_CLASS)).toBe(true);
+		grid.remove();
+
+		const doors = table();
+		doors.querySelector(`.${NOTE_MARK_CLASS}`)?.setAttribute('class', 'sheetsmith-state-door');
+		reserveNoteSlots(doors, ['sheetsmith-state-door']);
+		expect(doors.classList.contains(NOTE_TABLE_CLASS)).toBe(false);
+
+		// A mark in a band head, which no column walk reaches.
+		const band = doors.createEl('tbody').createEl('tr').createEl('td');
+		band.colSpan = 3;
+		band.createDiv({ cls: 'sheetsmith-roster-band-inner' }).createEl('button', { cls: NOTE_MARK_CLASS });
+		reserveNoteSlots(doors, ['sheetsmith-state-door']);
+		expect(doors.classList.contains(NOTE_TABLE_CLASS)).toBe(true);
 	});
 });

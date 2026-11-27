@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { bindDisclosure, drawRecordName, drawRecordNumber, shiftOpenRecords } from './record-controls';
+import { bindDisclosure, DISCLOSURE_OPEN, drawRecordName, drawRecordNumber, shiftOpenRecords } from './record-controls';
 
 /*
  * The record controls Record set and Stat block share. Each consumer's suite
@@ -48,6 +48,25 @@ describe('bindDisclosure', () => {
 		expect(button.getAttribute('aria-expanded')).toBe('true');
 		region.dispatchEvent(new Event('beforematch'));
 		expect(said).toEqual([true]);
+	});
+
+	it('stamps its host open exactly while aria-expanded says so, from the first paint', () => {
+		// The class stands in for a `:has()` on the attribute (`docs/PATTERNS.md`
+		// §5), so the two are held to one answer through every route that moves it.
+		const button = document.createElement('button');
+		const region = document.createElement('div');
+		const host = document.createElement('div');
+		region.id = 'body';
+		const agrees = () =>
+			host.classList.contains(DISCLOSURE_OPEN) === (button.getAttribute('aria-expanded') === 'true');
+		bindDisclosure({ button, region, open: true, host, onToggle: () => undefined });
+		expect(host.classList.contains(DISCLOSURE_OPEN)).toBe(true);
+		button.click();
+		expect(host.classList.contains(DISCLOSURE_OPEN)).toBe(false);
+		expect(agrees()).toBe(true);
+		region.dispatchEvent(new Event('beforematch'));
+		expect(host.classList.contains(DISCLOSURE_OPEN)).toBe(true);
+		expect(agrees()).toBe(true);
 	});
 });
 

@@ -72,6 +72,15 @@ interface Stamped {
 	releaseOnBlur: boolean;
 }
 
+/**
+ * How far `scrollWidth` may pass `clientWidth` before a number counts as cut.
+ * Chromium reports a centered input one pixel wider than its box for some
+ * values, from the caret and the subpixel offset of the centering, with every
+ * digit in view: a Pool's "3" in a 69px field read 70 against 69 and drew `⋯`.
+ * A real overflow of one pixel clips nothing a reader would miss.
+ */
+const OVERFLOW_SLACK = 1;
+
 /** Per number, so a refit finds its host and its mark again. */
 const stamped = new WeakMap<HTMLElement, Stamped>();
 
@@ -112,7 +121,7 @@ export function isHeadlineCut(el: HTMLElement): boolean {
 export function refitHeadline(el: HTMLElement): void {
 	const entry = stamped.get(el);
 	if (entry === undefined) return;
-	const cut = headlineValue(el) !== '' && el.scrollWidth > el.clientWidth;
+	const cut = headlineValue(el) !== '' && el.scrollWidth - el.clientWidth > OVERFLOW_SLACK;
 	el.classList.toggle(HEADLINE_CUT_CLASS, cut);
 	entry.host.classList.toggle(HEADLINE_CUT_CLASS, cut);
 	if (cut) {

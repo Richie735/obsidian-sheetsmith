@@ -1111,7 +1111,9 @@ describe('a change carrying a note (docs/features/modifier-notes.md)', () => {
 			control<HTMLSelectElement>(el, `modifier-Boots-0-${key}`),
 		);
 		expect(selects.map((one) => one.disabled)).toEqual([true, true, true]);
-		expect(selects.map((one) => one.parentElement?.classList.contains('sheetsmith-detail-field-disabled'))).toEqual([true, true, true]);
+		// The field is the stack's parent: each select sits in its face's stack
+		// (`ui/select-face.ts`).
+		expect(selects.map((one) => one.closest('.sheetsmith-detail-field')?.classList.contains('sheetsmith-detail-field-disabled'))).toEqual([true, true, true]);
 		// The hand-written bonus type keeps its bytes and is still reported.
 		expect(selects[2]?.value).toBe('item');
 		expect(recorded.persists).toBe(0);

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	GROUP_COLLAPSED_CLASS,
 	groupReading,
 	MAX_TABULATED_FIELDS,
 	recordSet,
@@ -36,6 +37,7 @@ import { hold, pressToFocus } from '../test/pointer';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
 import { hoverClip, setClip } from '../test/clipped';
+import { faceOf } from '../test/select-face';
 
 /*
  * Record set, and with it `parse/records.ts`.
@@ -3716,8 +3718,6 @@ describe('a strip of field names over the list', () => {
 			Array.from(block(el).classList).filter((one) =>
 				one.startsWith('sheetsmith-record-set-fit-'),
 			);
-		const narrow = (el: HTMLElement) =>
-			block(el).classList.contains('sheetsmith-record-set-fits-narrow');
 
 		it('stamps an unheaded list from its fields, which before this pass carried no width', () => {
 			// Traits' own line: a typed-ceiling `Uses`, a toggle, a ring, a computed
@@ -3727,7 +3727,6 @@ describe('a strip of field names over the list', () => {
 			expect(block(el).classList.contains('sheetsmith-record-set-headed')).toBe(false);
 			expect(block(el).className).not.toContain('sheetsmith-record-set-fields-');
 			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-29']);
-			expect(narrow(el)).toBe(false);
 		});
 
 		it('stamps a headed list too, beside its strip count', () => {
@@ -3773,17 +3772,15 @@ describe('a strip of field names over the list', () => {
 			expect(tiers(hidden)).toEqual(['sheetsmith-record-set-fit-29']);
 		});
 
-		it('marks a line that fits by 320px, which the fallback rule passes by', () => {
+		it('tiers a line that fits by 320px from its own fit, and one with no fields at the lowest', () => {
 			const one = render(
 				{ ...HEADED, fieldHeadings: false, fields: [{ key: 'Seen', type: 'toggle' }] },
 				HEADED_BODY,
 			);
 			// 96 + 20.8 + 96 = 212.8px, so 14 steps, stacked up to 224px.
 			expect(tiers(one)).toEqual(['sheetsmith-record-set-fit-14']);
-			expect(narrow(one)).toBe(true);
 			const none = render({ ...HEADED, fieldHeadings: false, fields: [] }, HEADED_BODY);
 			expect(tiers(none)).toEqual(['sheetsmith-record-set-fit-12']);
-			expect(narrow(none)).toBe(true);
 		});
 
 		it('clamps to the last tier the stylesheet tabulates', () => {
@@ -3849,18 +3846,16 @@ describe('a strip of field names over the list', () => {
 			expect(tiers(ring)).toEqual(['sheetsmith-record-set-fit-24']);
 		});
 
-		it('sizes a declared ceiling by its digits, which is where the fallback cut falls', () => {
+		it('sizes a declared ceiling by its digits', () => {
 			const level = (max: number) =>
 				render(
 					{ ...HEADED, fieldHeadings: false, fields: [{ key: 'Level', type: 'number', max }] },
 					HEADED_BODY,
 				);
-			// `Level / 9`: 96 + 97.3 + 96 = 289.3px, 19 steps, under the fallback's 20.
+			// `Level / 9`: 96 + 97.3 + 96 = 289.3px, 19 steps.
 			expect(tiers(level(9))).toEqual(['sheetsmith-record-set-fit-19']);
-			expect(narrow(level(9))).toBe(true);
-			// `Level / 100`: 96 + 113.5 + 96 = 305.5px, 20 steps, the fallback's own.
+			// `Level / 100`: 96 + 113.5 + 96 = 305.5px, 20 steps.
 			expect(tiers(level(100))).toEqual(['sheetsmith-record-set-fit-20']);
-			expect(narrow(level(100))).toBe(false);
 		});
 	});
 
@@ -4359,21 +4354,30 @@ describe('a field inside the opened record', () => {
 					key: 'Recharge',
 					type: 'level',
 					input: 'select',
-					levels: ['None', 'Short rest', 'Long rest'],
+					levels: ['None', 'Short rest', 'Long rest, or a full day of downtime'],
 				},
 			],
-			body,
+			// Stored at the long level, so its face is drawn before the change.
+			body.replace('Recharge: 0', 'Recharge: 2'),
 			(record) => record.querySelector('.sheetsmith-record-select') as HTMLElement,
 			(control) => {
 				const select = control as HTMLSelectElement;
 				// The wrapper is what carries the chevron, which a select cannot
-				// (`docs/UI.md` §9): without it the menu reads as typed text.
-				expect(select.parentElement?.classList.contains('sheetsmith-record-menu')).toBe(true);
-				select.value = '2';
+				// (`docs/UI.md` §9): without it the menu reads as typed text. The
+				// select sits in its face's stack inside it (`ui/select-face.ts`).
+				expect(select.parentElement?.classList.contains('sheetsmith-select-stack')).toBe(true);
+				expect(
+					select.parentElement?.parentElement?.classList.contains('sheetsmith-record-menu'),
+				).toBe(true);
+				// The long level in a face beside it, which ellipsises on every engine.
+				expect(
+					faceOf(select)?.textContent,
+				).toBe('Long rest, or a full day of downtime');
+				select.value = '1';
 				select.dispatchEvent(new Event('change'));
 			},
 		);
-		expect(selected.note).toContain('Recharge: 2');
+		expect(selected.note).toContain('Recharge: 1');
 	});
 
 	it('commits a modifier through the same shared form the same way', () => {
@@ -4419,7 +4423,7 @@ describe('a field inside the opened record', () => {
 		expect(none.querySelector('.sheetsmith-record-set-records')).toBeNull();
 		// No headed classes: only the fit tier of a line with no fields on it.
 		expect(noneBlock.className).toBe(
-			'sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-fit-12 sheetsmith-record-set-fits-narrow',
+			'sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-fit-12',
 		);
 		expect(noneBlock.style.getPropertyValue('--sheetsmith-record-fields')).toBe('');
 	});
@@ -6597,6 +6601,24 @@ describe('groups', () => {
 			press(toggles(host)[1] as HTMLElement);
 			expect(body.hasAttribute('hidden')).toBe(false);
 			expect(state.toggled.at(-1)).toEqual(['1', false]);
+		});
+
+		it('stamps the group collapsed exactly while its body is hidden, a beforematch included', () => {
+			// The class stands in for `:has(> .sheetsmith-record-group-body[hidden])`
+			// (`docs/PATTERNS.md` §5), so every route that moves the attribute moves it.
+			const { host } = live();
+			const agree = () =>
+				groupBodies(host).every(
+					(body) =>
+						body.parentElement?.classList.contains(GROUP_COLLAPSED_CLASS) === body.hasAttribute('hidden'),
+				);
+			expect(agree()).toBe(true);
+			press(toggles(host)[1] as HTMLElement);
+			expect(groupBodies(host)[1]?.parentElement?.classList.contains(GROUP_COLLAPSED_CLASS)).toBe(true);
+			expect(agree()).toBe(true);
+			groupBodies(host)[1]?.dispatchEvent(new Event('beforematch'));
+			expect(groupBodies(host)[1]?.parentElement?.classList.contains(GROUP_COLLAPSED_CLASS)).toBe(false);
+			expect(agree()).toBe(true);
 		});
 
 		it('keeps the focus on the header it pressed', () => {

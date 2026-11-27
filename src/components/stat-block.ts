@@ -165,6 +165,7 @@ import {
 	tintColourOf,
 } from '../types';
 import { element } from '../ui/element';
+import { drawSelectFace } from '../ui/select-face';
 import { nounInSentence } from '../ui/noun-in-sentence';
 
 /** The key a stored uses count sits under in the preamble's fence. */
@@ -1563,6 +1564,10 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				if (select.value === SEVERAL_VALUE) return;
 				choose(select.value === '' ? null : Number(select.value));
 			});
+			// The form in a face of its own (`ui/select-face.ts`), so a long
+			// name, or the several active, ends in an ellipsis on every engine
+			// rather than clipping unmarked.
+			drawSelectFace(select);
 			if (active.length > 0) {
 				const revert = element('button', 'sheetsmith-stat-block-revert', pick);
 				revert.type = 'button';
@@ -1616,6 +1621,12 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				const named = recordLabel(record.name, noun);
 				const panel = element('div', 'sheetsmith-stat-block-form', content);
 				if (active.length > 1) {
+					// **Stamped with the name row it says was drawn**, which the
+					// stylesheet reads to space the first form under the report. This
+					// was `:has(> .sheetsmith-stat-block-form-name)`, which Obsidian's
+					// plugin review flags (`docs/PATTERNS.md` §5); a class on the
+					// statement that draws the row cannot be stale without the row.
+					panel.classList.add('sheetsmith-stat-block-form-named');
 					const row = element('div', 'sheetsmith-stat-block-form-name', panel);
 					drawThumb(row, record, named, failures, true);
 					// Each form's own rule takes its colour; the head names both, so
@@ -1689,6 +1700,8 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 					region: detail,
 					open: startsOpen,
 					named,
+					// The line is ruled off as the block's head while its record is open.
+					host: summary,
 					onToggle: (open) => {
 						summaryLine?.toggleAttribute('hidden', open);
 						thumb?.toggleAttribute('hidden', !open);
@@ -2186,8 +2199,15 @@ export const statBlock: ComponentDefinition<StatBlockConfig, StatBlockData> = {
 				// Read in play and on a brief; a field under **Every form**, which is
 				// the form's editor.
 				const said = raw.trim() === '' ? '—' : raw;
-				if (face === 'edit') drawText(value, row, raw, `${named} ${name}`, commit);
-				else element('span', 'sheetsmith-stat-block-vital-text', value, said);
+				if (face === 'edit') {
+					// **The vital says it holds a field**, which the stylesheet reads for
+					// its floor and its stretch. This was `:has(.sheetsmith-stat-block-text)`,
+					// which Obsidian's plugin review flags (`docs/PATTERNS.md` §5); the
+					// class is written by the branch that draws the field, so the two
+					// cannot part.
+					item.classList.add('sheetsmith-stat-block-vital-field');
+					drawText(value, row, raw, `${named} ${name}`, commit);
+				} else element('span', 'sheetsmith-stat-block-vital-text', value, said);
 				return `${name} ${said}`;
 			}
 			if (face === 'brief') return `${name} ${readVital(value, type, field, raw)}`;

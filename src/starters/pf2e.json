@@ -11,10 +11,12 @@
 		"# Spell slots follow the full-caster table: a rank opens at level 2R - 1 with",
 		"# two slots and grows to three at level 2R, and rank 10 has one from level 19.",
 		"# A bounded caster changes the slot rows, one line each.",
-		"# The conditions all target armor class, so the stacking rule shows on one",
-		"# number. A valued condition reads its own Value column, so Frightened 2 is",
-		"# -2. Frightened really reaches every check and DC; a definition has one",
-		"# target, so a fuller Frightened is one more definition per target."
+		"# The conditions aim at modifier groups: Frightened at Checks and DCs, Fatigued",
+		"# at armor class and Saving throws, Clumsy at Dexterity-based. A value joins a",
+		"# group by listing it. A valued condition reads its own Value column, so",
+		"# Frightened 2 is -2. Strikes read Strength and join Strength-based; Dexterity",
+		"# strikes read Dexterity and join Dexterity-based. Both are checks, and Item is",
+		"# the weapon's potency."
 	],
 	"triggers": [
 		"Daily preparations",
@@ -42,16 +44,25 @@
 		},
 		{
 			"name": "Frightened",
-			"target": "ac",
+			"target": "@check, @dc",
 			"amount": "-Value",
 			"bonusType": "Status",
 			"when": "Active"
 		},
 		{
 			"name": "Fatigued",
-			"target": "ac",
-			"amount": "-1",
-			"bonusType": "Status",
+			"changes": [
+				{
+					"target": "ac",
+					"amount": "-1",
+					"bonusType": "Status"
+				},
+				{
+					"target": "@save",
+					"amount": "-1",
+					"bonusType": "Status"
+				}
+			],
 			"when": "Active"
 		},
 		{
@@ -63,10 +74,32 @@
 		},
 		{
 			"name": "Clumsy",
-			"target": "ac",
+			"target": "@dex",
 			"amount": "-Value",
 			"bonusType": "Status",
 			"when": "Active"
+		}
+	],
+	"modifierGroups": [
+		{
+			"name": "check",
+			"label": "Checks"
+		},
+		{
+			"name": "dc",
+			"label": "DCs"
+		},
+		{
+			"name": "save",
+			"label": "Saving throws"
+		},
+		{
+			"name": "dex",
+			"label": "Dexterity-based"
+		},
+		{
+			"name": "str",
+			"label": "Strength-based"
 		}
 	],
 	"components": [
@@ -138,7 +171,10 @@
 			"id": "class_dc",
 			"type": "card",
 			"label": "Class DC",
-			"derived": "10 + key + proficiencies.class_dc",
+			"derived": "10 + key + proficiencies.class_dc + mod.self",
+			"groups": [
+				"dc"
+			],
 			"signed": false,
 			"hideValue": true,
 			"hideNote": true,
@@ -214,6 +250,9 @@
 			"label": "Saves and Perception",
 			"rowHeader": "Check",
 			"namePosition": 1,
+			"groups": [
+				"check"
+			],
 			"rows": [
 				{
 					"label": "Perception",
@@ -226,19 +265,29 @@
 					"label": "Fortitude",
 					"values": {
 						"attribute": "attributes.CON"
-					}
+					},
+					"groups": [
+						"save"
+					]
 				},
 				{
 					"label": "Reflex",
 					"values": {
 						"attribute": "attributes.DEX"
-					}
+					},
+					"groups": [
+						"save",
+						"dex"
+					]
 				},
 				{
 					"label": "Will",
 					"values": {
 						"attribute": "attributes.WIS"
-					}
+					},
+					"groups": [
+						"save"
+					]
 				}
 			],
 			"columns": [
@@ -257,7 +306,7 @@
 				{
 					"key": "Total",
 					"type": "computed",
-					"formula": "attribute + prof(Rank)",
+					"formula": "attribute + prof(Rank) + mod.self",
 					"signed": true,
 					"publish": true
 				}
@@ -410,12 +459,18 @@
 			"label": "Skills",
 			"rowHeader": "Skill",
 			"namePosition": 1,
+			"groups": [
+				"check"
+			],
 			"rows": [
 				{
 					"label": "Acrobatics",
 					"values": {
 						"attribute": "attributes.DEX"
-					}
+					},
+					"groups": [
+						"dex"
+					]
 				},
 				{
 					"label": "Arcana",
@@ -427,7 +482,10 @@
 					"label": "Athletics",
 					"values": {
 						"attribute": "attributes.STR"
-					}
+					},
+					"groups": [
+						"str"
+					]
 				},
 				{
 					"label": "Crafting",
@@ -494,7 +552,10 @@
 					"values": {
 						"attribute": "attributes.DEX"
 					},
-					"key": "stealth"
+					"key": "stealth",
+					"groups": [
+						"dex"
+					]
 				},
 				{
 					"label": "Survival",
@@ -506,7 +567,10 @@
 					"label": "Thievery",
 					"values": {
 						"attribute": "attributes.DEX"
-					}
+					},
+					"groups": [
+						"dex"
+					]
 				}
 			],
 			"columns": [
@@ -525,7 +589,7 @@
 				{
 					"key": "Total",
 					"type": "computed",
-					"formula": "attribute + prof(Rank)",
+					"formula": "attribute + prof(Rank) + mod.self",
 					"signed": true,
 					"publish": true
 				}
@@ -544,6 +608,9 @@
 			"rowHeader": "Lore",
 			"namePosition": 1,
 			"openRows": true,
+			"groups": [
+				"check"
+			],
 			"columns": [
 				{
 					"key": "Rank",
@@ -560,8 +627,9 @@
 				{
 					"key": "Total",
 					"type": "computed",
-					"formula": "attributes.INT + prof(Rank)",
-					"signed": true
+					"formula": "attributes.INT + prof(Rank) + mod.self",
+					"signed": true,
+					"publish": true
 				}
 			],
 			"position": {
@@ -623,6 +691,10 @@
 							"type": "card",
 							"label": "Armor class",
 							"derived": "10 + min(attributes.DEX, armor.cap) + prof(armor_rank) + armor.bonus + mod.self",
+							"groups": [
+								"dc",
+								"dex"
+							],
 							"signed": false,
 							"hideValue": true,
 							"notePlaceholder": "what you are wearing",
@@ -651,7 +723,8 @@
 								},
 								{
 									"key": "Modifiers",
-									"type": "modifier"
+									"type": "modifier",
+									"hideHeading": true
 								}
 							],
 							"position": {
@@ -667,16 +740,43 @@
 							"label": "Strikes",
 							"rowHeader": "Strike",
 							"openRows": true,
+							"namePosition": 1,
+							"groups": [
+								"check",
+								"str"
+							],
 							"columns": [
 								{
+									"key": "Rank",
+									"type": "level",
+									"levels": [
+										"Untrained",
+										"Trained:T",
+										"Expert:E",
+										"Master:M",
+										"Legendary:L"
+									],
+									"hideHeading": true
+								},
+								{
 									"key": "Attack",
-									"type": "number"
+									"type": "computed",
+									"formula": "attributes.STR + prof(Rank) + Item + mod.self",
+									"signed": true,
+									"publish": true
+								},
+								{
+									"key": "Item",
+									"type": "number",
+									"min": 0,
+									"max": 3
 								},
 								{
 									"key": "Damage"
 								},
 								{
-									"key": "Traits"
+									"key": "Traits",
+									"secondary": true
 								},
 								{
 									"key": "Notes",
@@ -687,7 +787,63 @@
 								"col": 1,
 								"row": 5,
 								"width": 5,
-								"height": 4
+								"height": 3
+							}
+						},
+						{
+							"id": "dex_strikes",
+							"type": "table",
+							"label": "Dexterity strikes",
+							"rowHeader": "Strike",
+							"openRows": true,
+							"namePosition": 1,
+							"groups": [
+								"check",
+								"dex"
+							],
+							"columns": [
+								{
+									"key": "Rank",
+									"type": "level",
+									"levels": [
+										"Untrained",
+										"Trained:T",
+										"Expert:E",
+										"Master:M",
+										"Legendary:L"
+									],
+									"hideHeading": true
+								},
+								{
+									"key": "Attack",
+									"type": "computed",
+									"formula": "attributes.DEX + prof(Rank) + Item + mod.self",
+									"signed": true,
+									"publish": true
+								},
+								{
+									"key": "Item",
+									"type": "number",
+									"min": 0,
+									"max": 3
+								},
+								{
+									"key": "Damage"
+								},
+								{
+									"key": "Traits",
+									"secondary": true
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 8,
+								"width": 5,
+								"height": 3
 							}
 						},
 						{
@@ -696,9 +852,9 @@
 							"label": "Combat notes",
 							"position": {
 								"col": 1,
-								"row": 9,
+								"row": 11,
 								"width": 5,
-								"height": 4
+								"height": 2
 							}
 						}
 					]
@@ -774,7 +930,10 @@
 							"id": "spell_attack",
 							"type": "card",
 							"label": "Spell attack",
-							"derived": "key + proficiencies.spellcasting",
+							"derived": "key + proficiencies.spellcasting + mod.self",
+							"groups": [
+								"check"
+							],
 							"hideValue": true,
 							"hideNote": true,
 							"position": {
@@ -788,7 +947,10 @@
 							"id": "spell_dc",
 							"type": "card",
 							"label": "Spell DC",
-							"derived": "10 + key + proficiencies.spellcasting",
+							"derived": "10 + key + proficiencies.spellcasting + mod.self",
+							"groups": [
+								"dc"
+							],
 							"signed": false,
 							"hideValue": true,
 							"hideNote": true,
@@ -895,13 +1057,16 @@
 								{
 									"key": "Rank",
 									"type": "number",
-									"max": 10
+									"max": 10,
+									"placement": "body"
 								},
 								{
 									"key": "Prepared",
 									"type": "toggle"
 								}
 							],
+							"groupBy": "Rank",
+							"fieldHeadings": true,
 							"position": {
 								"col": 1,
 								"row": 6,
@@ -1106,19 +1271,21 @@
 									"key": "Type",
 									"type": "level",
 									"levels": [
-										"—",
+										"Unassigned",
 										"Ancestry:A",
 										"Class:C",
 										"Skill:S",
 										"General:G"
 									],
-									"input": "select"
+									"input": "select",
+									"placement": "body"
 								},
 								{
 									"key": "Modifiers",
 									"type": "modifier"
 								}
 							],
+							"groupBy": "Type",
 							"position": {
 								"col": 1,
 								"row": 1,

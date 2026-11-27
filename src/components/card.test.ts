@@ -22,6 +22,7 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { Layout } from '../parse/layout';
+import { faceOf } from '../test/select-face';
 
 const config: CardConfig = {
 	id: 'armour-class',
@@ -776,9 +777,30 @@ describe('card.render: a value chosen from a list', () => {
 		expect(inputs(el).value).toBeNull();
 		// The slot is the same one, so the card's typography and the pill
 		// treatment reach the menu without a second layout.
-		expect(menu(el)?.parentElement?.classList.contains('sheetsmith-card-value')).toBe(
-			true,
+		// One element in: the select sits in its face's stack (`ui/select-face.ts`).
+		expect(menu(el)?.parentElement?.classList.contains('sheetsmith-select-stack')).toBe(true);
+		expect(
+			menu(el)?.parentElement?.parentElement?.classList.contains('sheetsmith-card-value'),
+		).toBe(true);
+	});
+
+	it('draws a long chosen option in a face beside the select', async () => {
+		// `ui/select-face.ts`: the plugin ellipsises the value, since WebKit does
+		// not ellipsise a select's own text.
+		const long = 'Sleight of hand expertise (double proficiency)';
+		const el = render(
+			{ ...races, options: [...(races.options ?? []), { value: long }] },
+			{ value: long },
 		);
+		const face = faceOf(menu(el));
+		expect(face?.textContent).toBe(long);
+		expect(face?.getAttribute('aria-hidden')).toBe('true');
+		const select = menu(el) as HTMLSelectElement;
+		select.value = 'Dwarf';
+		select.dispatchEvent(new Event('change'));
+		// The face reads a microtask after the change (`ui/select-face.ts`).
+		await Promise.resolve();
+		expect(face?.textContent).toBe('Dwarf');
 	});
 
 	it('offers the em dash first, then the layout\'s options in its order', () => {
@@ -2124,6 +2146,8 @@ describe('card.render: a dropdown a modifier chose', () => {
 		expect(edits).toEqual([{ value: 'Small' }]);
 		await Promise.resolve();
 		expect(menu.value).toBe('Large');
+		// The face follows the swap back, which fires no \`change\`.
+		expect(faceOf(menu)?.textContent).toBe('Large');
 		expect(el.querySelector('[aria-live]')?.textContent).toBe('Your own is now Small');
 		expect(menu.getAttribute('aria-description')).toBe('Set by a modifier; your own: Small');
 	});
@@ -2177,7 +2201,8 @@ describe('card.render: a dropdown a modifier chose', () => {
 		const el = drawn([]);
 		expect(door(el)).toBeNull();
 		expect(select(el).value).toBe('Medium');
-		expect(select(el).className).toBe('sheetsmith-card-select');
+		// The face's class aside, which every dropdown takes (`ui/select-face.ts`).
+		expect(select(el).className).toBe('sheetsmith-card-select sheetsmith-select-faced');
 		expect(select(el).hasAttribute('title')).toBe(false);
 		expect(select(el).hasAttribute('aria-description')).toBe(false);
 	});

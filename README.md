@@ -1,37 +1,26 @@
-# Sheetsmith
+# Sheetsmith: a character sheet builder for Obsidian
 
-Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build a layout on a grid, define your own formulas, and keep every character as a plain markdown note.
+Build interactive character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Lay out a sheet on a grid, write the formulas that connect its fields, and keep every character as a plain markdown note.
 
-> **Status: in the Obsidian community plugin list.** See [Install](#install). This page describes the code in this repository, which can run ahead of the version the list serves. The file model and the sheet view are in place, and so is the following.
->
-> - **Components.** Twelve: Card, Card set, Group, Image, Passport, Pool, Record set, Rich text, Roster, Table, Tab set and Track. A Record set field can sit **Inside the opened record** rather than on its summary line, and can be **Shown when** a condition on another field holds. A Record set can **Group by** one of its fields, drawing its records under headers that collapse. The field is a level, a number or a word the player types, and typing one offers the group names already in the list. Rich text closes brackets and continues lists as you type. Faint text is lifted to a readable contrast, and Track and Table stay legible with forced colors on. A scrolled Table or Roster keeps its place across an edit, and a control focused behind its pinned name is scrolled clear of it. In a Table row or a Roster table row, a breakdown button or note mark sits in the same place in its column whatever the value before it, and a form's tag sits at the row's end rather than over its name. On a phone a number field that takes a sign or a sum asks for the full keyboard, and focusing a number by touch or keyboard selects it, so typing replaces it. On a tablet the sheet's buttons keep their own padding.
-> - **Formulas.** The formula engine, a per-layout function library, row aggregates and reset triggers. A Record set reset can apply **Only where** a condition holds and name the one field it **Acts on**, and the confirmation says how many records it reaches. Where a field's **Maximum from** is **Each record**, that ceiling can be a formula such as `prof`, with names suggested as you type. **Computed**, a read-only value fed entirely by a formula, is in the component picker. **Promoted fields** mirror chosen values into a character's frontmatter, so Bases and Dataview can query them.
-> - **Modifiers.** Typed modifiers with definitions and provenance. A modifier can carry a **Note**, with or without an amount, shown at the Card, Table or Roster value it targets. A Pool maximum that a modifier moved is marked and opens its breakdown. Besides moving a number, a modifier can set a proficiency level or a flag with **Sets** or **At least**, aimed at a checkbox Track, a Track checklist row, or a published Table or Roster row's level or flag column. The sheet draws the state a modifier set while pressing the control still edits the player's own choice, and the breakdown mark on its row or Track names that choice wherever the two differ. A form in play tints a level or flag it set. A modifier can grant a Pool's **Temporary points** with **At least** while it is active: damage drains them first, the highest grant applies, and ending the grant takes back only what is left of it. The **Temp** pill marks a grant in effect, its breakdown names each grant and what remains of it, and a form whose grant is in effect tints the Pool. A grant whose amount is a fraction, text or a yes/no is refused on its own, while one that does not resolve refuses them all: the pill keeps the Pool's own points, its breakdown says why, and a formula reading the temporary points shows "?". With **Sets**, a modifier can choose the option of a Card dropdown that shows its value, so a form can make Size read Large while it is in play and leave the player's own choice in the character's note.
-> - **Layout editor.** A pane of its own, with its tree, configuration panel, undo, live grid canvas, sample-value preview, layout import and export, and three ways to start a new layout. The tree nests like the layout, folds a container shut, and moves a component by drag, by its row menu or by Alt+arrow keys; a move it refuses, such as a reorder on a placed grid, says why. **Copy**, **Paste** and **Paste configuration** work within a layout and across layouts. A misconfigured field reports itself inline, both there and on the sheet; a broken formula does the same in the pane, and leaves the value it fed reading "?" with the reason on hover. On a phone the pane keeps working: where the canvas draws the sheet as one column a touch on it scrolls and a placement is set through the position fields, the setting rows stack below 584px of pane, and a selection made far from the panel brings the panel to it, with **Back to the selection** to return. Reorder arrows are disabled at a list's ends, and on a tablet the pane's buttons keep their own padding. On a touch screen a finger on the canvas scrolls the pane, a tap selects a block, and only the selected block drags. A component's **ID** can be changed in its form, and every formula, function, modifier definition and promoted field that read the old one is rewritten with it, as one undo step.
-> - **Characters and settings.** The **Create a character** command offers the vault's layouts by name, as does a note whose layout is missing, so no character needs its frontmatter typed by hand. A sheet carries **Open as Markdown** in its header and its **More options** menu, and a markdown view of a note naming a layout carries **Open as sheet** in the same two places. A note becomes a sheet when it is opened, never because its tab gained focus, so a note given the property in place stays markdown, with **Open as sheet** on offer, until it is next opened. The character folder is configurable, and on Obsidian 1.13 and later the settings tab's preferences turn up in settings search.
-> - **Data safety.** Reordering or shortening a level list says how many character notes on the layout hold that component's section, since each may now read its stored level differently, and offers **Undo**. The pane never silently drops an edit it could not save: it keeps the layout, says so, and offers **Try again** and **Copy layout**. Changing a component's **ID** rewrites no character note: a notice says how many notes have modifier cells still reading the old one, names up to five to change by hand, and offers **Undo**.
+Sheetsmith knows arithmetic and nothing about any game. Every rule lives in the layout you build, so one plugin serves D&D 5e, Pathfinder 2e, Forged in the Dark games, Call of Cthulhu, or a system you wrote yourself. It ships with starter layouts for 5e, PF2e and Forged in the Dark.
 
-## What it is
+![A 5e character sheet built with Sheetsmith, in Obsidian's dark theme](https://raw.githubusercontent.com/Richie735/obsidian-sheetsmith/main/images/character-sheet.png)
 
-Sheetsmith is not a D&D character sheet. It is a character sheet **builder**.
+## Features
 
-You place components on a grid, define the formulas that connect them, and save the result as a reusable layout. A character is an ordinary markdown note that names a layout and holds only values. One layout serves many characters.
+- **Layout editor.** Place components on a grid and see the sheet with sample values as you build. Undo, copy and paste between layouts, and import or export a layout to share it.
+- **Twelve components.** Cards, tables, trackers, resource pools, tabs, images, rich text and repeating records such as spells, inventory or class features.
+- **Your own formulas.** Define functions per layout, such as `mod(score) = floor((score - 10) / 2)`, and let totals, rests and resets compute themselves.
+- **Modifiers with sources.** Items, conditions and forms apply typed modifiers, and every value can show a breakdown of where it came from.
+- **Plain markdown characters.** A character note holds one property and readable values. Wikilinks in a sheet are real links, so backlinks, graph view and renames work.
+- **Queryable with Bases and Dataview.** Promote chosen values, such as level or AC, into a character's frontmatter.
+- **Works on mobile.** Sheets and the layout editor run on phones and tablets.
 
-The plugin knows arithmetic and nothing about any game. Every rule specific to a system lives in the layout you build, so the same plugin serves D&D, Pathfinder, Call of Cthulhu, or something you wrote yourself.
-
-## Why
-
-Every existing option fails on one of three axes:
-
-- **Static templates** look like a sheet but do nothing.
-- **System-specific renderers** work well for one game and do not transfer.
-- **Flexible tools** make you hand-author YAML to get anything on screen.
-
-Nothing combines a layout builder with a formula engine, and nothing is system-agnostic by design.
+![The layout editor, with the sheet canvas on the left and the selected component's settings on the right](https://raw.githubusercontent.com/Richie735/obsidian-sheetsmith/main/images/layout-editor.png)
 
 ## How it works
 
-A character is a normal note. One property names its layout, and the values live in the body as readable markdown:
+A character is a normal note. One property names its layout, and the values live in the body:
 
 ````markdown
 ---
@@ -45,12 +34,6 @@ DEX: 16
 WIS: 12
 ```
 
-## HP
-```sheet
-current: 22
-temp: 0
-```
-
 ## Inventory
 
 | Item | Qty | Weight | Equipped |
@@ -58,50 +41,40 @@ temp: 0
 | [[Bag of Holding]] | 1 | 15 | yes |
 ````
 
-Two consequences worth stating:
+![A character note opened as plain Markdown](https://raw.githubusercontent.com/Richie735/obsidian-sheetsmith/main/images/markdown-note.png)
 
-- **Your frontmatter stays clean.** One property, not thirty. Character data does not leak into the vault's property namespace or turn up in autocomplete on unrelated notes.
-- **Wikilinks work properly.** `[[Bag of Holding]]` is real markdown, so backlinks resolve, graph view sees it, hover preview works, and renaming the linked note updates the sheet. Clicking it in the rendered sheet navigates there.
-
-Formulas are defined per layout, so nothing about any game system is built into the plugin:
-
-```
-mod(score) = floor((score - 10) / 2)
-prof       = ceil(level / 4) + 1
-```
-
-A skill's computed total then reads:
+One layout serves many characters. A skill list needs one formula, not eighteen:
 
 ```
 ability + Training * prof + Bonus
 ```
 
-One formula serves the whole skill list. `Training` is a graded column holding untrained, proficient or expertise, and each row says which ability it means, so the layout describes the system instead of repeating it eighteen times.
+`Training` is a graded column (untrained, proficient, expertise), and each row names its ability, so the layout describes the system once.
+
+![The same character as a sheet, in Obsidian's light theme](https://raw.githubusercontent.com/Richie735/obsidian-sheetsmith/main/images/character-sheet-light.png)
 
 ## Install
 
-Sheetsmith is in the [Obsidian community plugin list](https://community.obsidian.md/plugins/sheetsmith), so it installs from inside Obsidian. It needs Obsidian 1.9.0 or newer.
+Sheetsmith is in the [Obsidian community plugin list](https://community.obsidian.md/plugins/sheetsmith). It needs Obsidian 1.9.0 or newer.
 
 1. In **Settings → Community plugins**, select **Browse**, search for **Sheetsmith**, and install it.
 2. Select **Enable**.
-3. Open the command palette and run **Sheetsmith: Add a starter layout**. It writes one of the bundled layouts into your layout folder; nothing renders yet.
-4. To see it as a sheet, create a note whose `sheet-layout` property names the layout, as in [How it works](#how-it-works) above, and select **Open as sheet**, or run **Sheetsmith: Open layout editor** to see the layout filled with sample values.
+3. Run **Sheetsmith: Add a starter layout** from the command palette.
+4. Run **Sheetsmith: Create a character** and pick the layout.
 
-Do this in a new vault made for the purpose, not in one you care about. The plugin rewrites note bodies, and the parser has little mileage outside the author's own vaults.
+Try it in a new vault first. The plugin rewrites note bodies, and the parser has little mileage outside the author's own vaults.
 
-### Layout files
+## Layout files
 
-A layout is a file ending in `.sheetsmith`, kept in the layout folder (**Sheetsmith layouts** unless you change it in the plugin's settings). Layout files show in the file explorer and in Notebook Navigator, and selecting one opens it in the layout editor. Inside, it is plain JSON, so any text editor can open it too.
+A layout is a `.sheetsmith` file in the layout folder (**Sheetsmith layouts** by default). It is plain JSON, and selecting it opens the layout editor. Layouts from earlier versions end in `.json`. Sheetsmith offers to convert them, so update the plugin on every device before converting.
 
-Layouts made by earlier versions end in `.json`. They keep working. While any are left, Sheetsmith offers to convert them each time it loads, and the command **Sheetsmith: Convert JSON layout files** does the same. Update Sheetsmith on your other devices first: an older version reads only `.json` files, and it shows every layout as missing once the converted files sync.
-
-With the plugin disabled, or on a device that does not have it, layout files are hidden unless **Settings → Files and links → Detect all file extensions** is on. Where they do show, selecting one opens your operating system's app for it, or nothing on mobile. Notebook Navigator's **Documents** mode hides layout files whether or not the plugin is enabled. Its default **Supported** mode and **All** mode show them.
+Without the plugin, layout files stay hidden unless **Settings → Files and links → Detect all file extensions** is on.
 
 <!-- HELD: the sentence on how Obsidian Sync treats .sheetsmith files goes here once the owner has observed it in the app (docs/features/visible-layout-files.md, Documentation). Not written from the docs. -->
 
-### CSS snippets
+## Styling
 
-A [CSS snippet](https://help.obsidian.md/snippets) can tune a sheet through the custom properties Sheetsmith declares on `body`, each prefixed `--sheetsmith-`. To resize the small round controls, such as level rings and the delete and modifier buttons beside them, set `--sheetsmith-inline-control-factor`, a plain number of ems that is `1.6` by default and `2.2` on a touch screen; a value you set applies to both. Set it on `body`, and leave `--sheetsmith-inline-control` alone: that one is derived from the factor, and a table's room beside its row names reads the factor, so overriding the derived value puts the two out of step.
+A [CSS snippet](https://help.obsidian.md/snippets) can tune a sheet through the `--sheetsmith-` custom properties on `body`. For example, `--sheetsmith-inline-control-factor` (default `1.6`, `2.2` on touch screens) resizes the small round controls:
 
 ```css
 body {
@@ -109,36 +82,19 @@ body {
 }
 ```
 
-## Development
+## Privacy
 
-```bash
-npm install
-npm run dev        # watch build
-npm run build      # type-check and production build
-npm run lint
-npm test           # run the test suite once
-npm run test:watch # re-run tests on change
-npm run harness    # build the harness, then open harness/index.html
-```
+Sheetsmith makes no network requests and collects no data. Beyond the note or layout you have open, it reads:
 
-### Test vault
+- **Vault file names**, to suggest images in a picture field.
+- **Notes' `sheet-layout` property**, to find the characters that use a layout when you rename a layout or a component.
+- **The clipboard**, in the layout editor, when you copy or paste a component or a layout.
 
-Develop against a throwaway vault, never a real one. Early builds rewrite note bodies, and the parser will get it wrong before it gets it right.
+Prose fields use the deprecated `execCommand('insertText')` to auto-close brackets and continue lists, because it is the only write that keeps the field's undo history.
 
-```bash
-ln -s /path/to/obsidian-sheetsmith /path/to/test-vault/.obsidian/plugins/sheetsmith
-touch /path/to/obsidian-sheetsmith/.hotreload
-```
+## Release notes
 
-Install [Hot Reload](https://github.com/pjeby/hot-reload) in the test vault. Together with the `.hotreload` marker it reloads the plugin whenever `npm run dev` rewrites `main.js`, so there is no disable/enable cycle between builds.
-
-### Testing
-
-The note parser and the formula engine import nothing from the Obsidian API, so they run under vitest without launching the app. The parser is also the one place where a bug destroys user data, so it is the part that carries the most tests. Round-tripping is the rule that matters most: parse then serialise must return an unchanged file byte for byte, or hand-edited notes drift on every save.
-
-`npm run harness` renders the sheet and the settings tab outside Obsidian against the real `styles.css`, in both themes and at any width. Appearance is reviewed by looking at it rather than by reading CSS.
-
-`main.js` is the compiled bundle and is deliberately not committed. Releases attach it alongside `manifest.json` and `styles.css`.
+See the [releases page](https://github.com/Richie735/obsidian-sheetsmith/releases).
 
 ## License
 
