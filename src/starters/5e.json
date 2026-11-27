@@ -41,9 +41,18 @@
 		},
 		{
 			"name": "Ring of Protection",
-			"target": "armour_class",
-			"amount": "1",
-			"bonusType": "Item",
+			"changes": [
+				{
+					"target": "armour_class",
+					"amount": "1",
+					"bonusType": "Item"
+				},
+				{
+					"target": "@save",
+					"amount": "1",
+					"bonusType": "Item"
+				}
+			],
 			"when": "Attuned"
 		},
 		{
@@ -58,6 +67,12 @@
 			"operator": "upgrade",
 			"amount": "16",
 			"when": "Active"
+		}
+	],
+	"modifierGroups": [
+		{
+			"name": "save",
+			"label": "Saving throws"
 		}
 	],
 	"components": [
@@ -214,6 +229,9 @@
 			"short": "Saves",
 			"rowHeader": "Save",
 			"namePosition": 1,
+			"groups": [
+				"save"
+			],
 			"rows": [
 				{
 					"label": "Strength",
