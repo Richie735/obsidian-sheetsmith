@@ -45,6 +45,7 @@ import { innerPlacement, renderGrid, walkLayout } from '../view/grid-cells';
 import { LinkSource } from '../view/link-resolution';
 import { MarkdownPasses } from '../view/markdown-pass';
 import { focusToken } from './focus-token';
+import { formulaReads, NO_READS } from './formula-reads';
 import { readSample } from './sample-read';
 import { describeCell, findOverlaps } from './preview-grid';
 import { Schematic, SchematicGestures, SchematicHost } from './schematic-gestures';
@@ -171,8 +172,11 @@ export class Canvas {
 		// `sample-read.ts` holds what a component reads with no character behind
 		// it, shared with the component picker's preview so the two cannot draw
 		// one component two ways.
+		// What the formulas read, so a Passport field a formula reads samples a
+		// number rather than its own name (`editor/formula-reads.ts`).
+		const reads = this.host.sampleValues ? formulaReads(layout) : NO_READS;
 		const prepared: ReadComponent[] = walk.map(({ config }) =>
-			readSample(config, this.host.sampleValues),
+			readSample(config, this.host.sampleValues, reads),
 		);
 		const { library } = parseFunctions(layout.functions ?? []);
 		const { env } = buildSheet(layout, prepared, library);
