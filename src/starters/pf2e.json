@@ -723,7 +723,8 @@
 								},
 								{
 									"key": "Modifiers",
-									"type": "modifier"
+									"type": "modifier",
+									"hideHeading": true
 								}
 							],
 							"position": {

@@ -978,6 +978,20 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 		expect(shapes[1]!.table.columns?.[0]).toEqual(skillRank);
 	});
 
+	it('hides the Conditions modifier heading so the table fits a phone', () => {
+		/*
+		 * The glyph names itself, which is the Conditions palette entry's own
+		 * configuration. `secondary` would not do it: it is a text column's type
+		 * style and a modifier column may not take it (SPEC §4.2).
+		 */
+		const columns = byId('conditions').columns ?? [];
+		const modifiers = columns.find((column) => column.key === 'Modifiers');
+		expect(modifiers?.hideHeading).toBe(true);
+		expect(modifiers && 'secondary' in modifiers).toBe(false);
+		// Value and Active keep theirs: Active is the word a definition's `when` names.
+		expect(columns.filter((column) => column.hideHeading === true).map((column) => column.key)).toEqual(['Modifiers']);
+	});
+
 	it('pins the six definitions by name, on the 5e list’s own guard', () => {
 		expect((layout.modifiers ?? []).map((one) => one.name)).toEqual([
 			'Off-Guard',
