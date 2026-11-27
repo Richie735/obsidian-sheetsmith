@@ -1464,8 +1464,8 @@ describe('the 5e sheet is a complete system sheet', () => {
 		'spell_attack card 3,1,3,1',
 		'prepared card 1,2,5,1',
 		'slots track 1,3,5,2',
-		'spellbook record-set 1,5,5,3',
-		'spell_notes rich-text 1,8,5,1',
+		'spellbook record-set 1,5,5,5',
+		'spell_notes rich-text 1,10,5,1',
 		'tab_inventory group 1,1,5,10',
 		'coin card-set 1,1,5,1',
 		'carried card 1,2,2,1',
@@ -1797,3 +1797,126 @@ describe('the 5e sheet is a complete system sheet', () => {
 	});
 });
 
+
+/*
+ * The lists drawn under collapsible headers, and the field drawn only where it
+ * has a use (`docs/features/starter-layouts-refresh.md`, cases 2 and 3).
+ *
+ * A starter ships no records, so every case writes the records it reads. The
+ * headers are drawn, never stored (`record-set-groups.md`), which is why each
+ * case reads the drawn list and none reads the note back.
+ */
+describe('the starters group their lists, and draw Uses only where a feature recharges', () => {
+	const sourceOf = (name: string) =>
+		JSON.stringify(STARTERS.find((one) => one.name === name)?.source);
+
+	/** A Record set section: one `###` block per record, its fence holding `lines`. */
+	const section = (label: string, records: [string, string[]][]): string =>
+		`\n## ${label}\n\n${records
+			.map(([name, lines]) =>
+				lines.length === 0
+					? `### ${name}\n`
+					: `### ${name}\n\`\`\`sheet\n${lines.join('\n')}\n\`\`\`\n`,
+			)
+			.join('\n')}`;
+
+	/** The group headers a list draws, in order. */
+	const headers = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-record-group-name')).map(
+			(one) => one.textContent,
+		);
+
+	/**
+	 * Where the field a list is grouped by draws. Inside the opened record for
+	 * all four lists, since the header already names the value: so each case
+	 * below is also the proof that grouping reads a field placed in the body.
+	 */
+	const placementOf = (name: string, id: string, key: string) =>
+		(
+			walkLayout(parseLayout(sourceOf(name)).components)
+				.map(({ config }) => config)
+				.find((config) => config.id === id) as { fields?: { key: string; placement?: string }[] }
+		).fields?.find((field) => field.key === key)?.placement;
+
+	it('heads the 5e spellbook by level, lowest first', () => {
+		expect(placementOf('Starter 5e', 'spellbook', 'Level')).toBe('body');
+		const built = sheetFrom(
+			sourceOf('Starter 5e'),
+			FIFTH_NOTE +
+				section('Spellbook', [
+					['Fireball', ['Level: 3']],
+					['Fire Bolt', ['Level: 0']],
+				]),
+		);
+		const drawn = built.draw('spellbook');
+		expect(headers(drawn)).toEqual(['Level 0', 'Level 3']);
+		expect(drawn.querySelector('.sheetsmith-error')).toBeNull();
+	});
+
+	it('heads the PF2e known spells by rank', () => {
+		expect(placementOf('Starter PF2e', 'spellbook', 'Rank')).toBe('body');
+		const built = sheetFrom(
+			sourceOf('Starter PF2e'),
+			PF2E_NOTE +
+				section('Known spells', [
+					['Fear', ['Rank: 1']],
+					['Haste', ['Rank: 3']],
+				]),
+		);
+		expect(headers(built.draw('spellbook'))).toEqual(['Rank 1', 'Rank 3']);
+	});
+
+	it('files a PF2e feat with no Type under Unassigned', () => {
+		expect(placementOf('Starter PF2e', 'feats', 'Type')).toBe('body');
+		// A blank Type reads as level 0, whose name was "—" and is now a word.
+		const built = sheetFrom(
+			sourceOf('Starter PF2e'),
+			PF2E_NOTE +
+				section('Feats', [
+					['Sudden Charge', ['Level: 1', 'Type: 2']],
+					['Toughness', ['Level: 3']],
+				]),
+		);
+		const drawn = built.draw('feats');
+		expect(headers(drawn)).toEqual(['Unassigned', 'Class']);
+		expect(drawn.querySelector('.sheetsmith-error')).toBeNull();
+	});
+
+	/** Three 5e features: two classes and none, at short rest, at will and unset. */
+	const FEATURES = section('Features', [
+		['Second Wind', ['Uses: 1', 'Recharges: 1', 'Class: Fighter']],
+		['Arcane Recovery', ['Uses: 1', 'Recharges: 0', 'Class: Wizard']],
+		['Lucky', ['Uses: 3']],
+	]);
+
+	it('heads the 5e features by the class the player typed, then Other', () => {
+		expect(placementOf('Starter 5e', 'features', 'Class')).toBe('body');
+		const built = sheetFrom(sourceOf('Starter 5e'), FIFTH_NOTE + FEATURES);
+		expect(headers(built.draw('features'))).toEqual(['Fighter', 'Wizard', 'Other']);
+	});
+
+	it('draws Uses on a feature that recharges, and hides it at will or unset', () => {
+		/*
+		 * `Recharges > 0`, so At will (0) hides it and a record with no Recharges
+		 * entry reads level 0 and hides it too, **without a problem line**: the
+		 * condition resolved, it just came out false. A hidden field keeps its
+		 * value, so Lucky's 3 still counts and still resets.
+		 */
+		const built = sheetFrom(sourceOf('Starter 5e'), FIFTH_NOTE + FEATURES);
+		const drawn = built.draw('features');
+		const uses = (name: string) => {
+			const record = Array.from(drawn.querySelectorAll<HTMLElement>('.sheetsmith-record')).find(
+				(one) =>
+					one.querySelector<HTMLInputElement>('.sheetsmith-record-name-input')?.value === name,
+			);
+			if (!record) throw new Error(`No record "${name}" drawn.`);
+			const field = record.querySelector('.sheetsmith-record-field-number');
+			if (!field) throw new Error(`"${name}" drew no Uses field.`);
+			return field.hasAttribute('hidden');
+		};
+		expect(uses('Second Wind')).toBe(false);
+		expect(uses('Arcane Recovery')).toBe(true);
+		expect(uses('Lucky')).toBe(true);
+		expect(drawn.querySelector('.sheetsmith-error')).toBeNull();
+	});
+});

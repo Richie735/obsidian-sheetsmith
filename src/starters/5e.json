@@ -900,7 +900,8 @@
 								{
 									"key": "Level",
 									"type": "number",
-									"max": 9
+									"max": 9,
+									"placement": "body"
 								},
 								{
 									"key": "Prepared",
@@ -911,11 +912,13 @@
 									"type": "toggle"
 								}
 							],
+							"groupBy": "Level",
+							"fieldHeadings": true,
 							"position": {
 								"col": 1,
 								"row": 5,
 								"width": 5,
-								"height": 3
+								"height": 5
 							}
 						},
 						{
@@ -924,7 +927,7 @@
 							"label": "Spell notes",
 							"position": {
 								"col": 1,
-								"row": 8,
+								"row": 10,
 								"width": 5,
 								"height": 1
 							}
@@ -1184,7 +1187,8 @@
 								{
 									"key": "Uses",
 									"type": "number",
-									"maxSource": "record"
+									"maxSource": "record",
+									"visibleWhen": "Recharges > 0"
 								},
 								{
 									"key": "Recharges",
@@ -1198,8 +1202,15 @@
 								{
 									"key": "Modifiers",
 									"type": "modifier"
+								},
+								{
+									"key": "Class",
+									"type": "text",
+									"placement": "body"
 								}
 							],
+							"groupBy": "Class",
+							"fieldHeadings": true,
 							"reset": [
 								{
 									"trigger": "Long rest",

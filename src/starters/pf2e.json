@@ -965,13 +965,16 @@
 								{
 									"key": "Rank",
 									"type": "number",
-									"max": 10
+									"max": 10,
+									"placement": "body"
 								},
 								{
 									"key": "Prepared",
 									"type": "toggle"
 								}
 							],
+							"groupBy": "Rank",
+							"fieldHeadings": true,
 							"position": {
 								"col": 1,
 								"row": 6,
@@ -1176,19 +1179,21 @@
 									"key": "Type",
 									"type": "level",
 									"levels": [
-										"—",
+										"Unassigned",
 										"Ancestry:A",
 										"Class:C",
 										"Skill:S",
 										"General:G"
 									],
-									"input": "select"
+									"input": "select",
+									"placement": "body"
 								},
 								{
 									"key": "Modifiers",
 									"type": "modifier"
 								}
 							],
+							"groupBy": "Type",
 							"position": {
 								"col": 1,
 								"row": 1,
