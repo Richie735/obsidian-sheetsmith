@@ -18,25 +18,17 @@
 		"Short rest",
 		"Long rest"
 	],
-	"modifierTypes": [
-		"Armour",
-		"Item",
-		"Spell",
-		"Class feature"
-	],
 	"modifiers": [
 		{
 			"name": "Shield of Faith",
 			"target": "armour_class",
 			"amount": "2",
-			"bonusType": "Spell",
 			"when": "Active"
 		},
 		{
 			"name": "Studded leather",
 			"target": "armour_class",
 			"amount": "2",
-			"bonusType": "Armour",
 			"when": "Worn"
 		},
 		{
@@ -44,13 +36,11 @@
 			"changes": [
 				{
 					"target": "armour_class",
-					"amount": "1",
-					"bonusType": "Item"
+					"amount": "1"
 				},
 				{
 					"target": "@save",
-					"amount": "1",
-					"bonusType": "Item"
+					"amount": "1"
 				}
 			],
 			"when": "Attuned"
@@ -58,8 +48,7 @@
 		{
 			"name": "Alert",
 			"target": "initiative",
-			"amount": "prof",
-			"bonusType": "Class feature"
+			"amount": "prof"
 		},
 		{
 			"name": "Bark Skin",

@@ -1703,7 +1703,8 @@ describe('the 5e sheet is a complete system sheet', () => {
 		// a reader can hold against their own.
 		expect(layout.functions).toHaveLength(11);
 		expect(layout.triggers).toEqual(['Short rest', 'Long rest']);
-		expect(layout.modifierTypes).toHaveLength(4);
+		// No bonus types, because 5e has none: different effects stack.
+		expect(layout.modifierTypes).toBeUndefined();
 		expect(layout.modifiers).toHaveLength(5);
 		// The skills roster in full, which is the most cuttable-looking thing here
 		// and the one whose loss would be least visible in a screenshot.
@@ -1792,10 +1793,10 @@ describe('the 5e sheet is a complete system sheet', () => {
 		 * **The names, not only the count**, because the rule they are held to is
 		 * about *which* content ships rather than how much: a later editor could
 		 * swap one for another, keep five, and nothing here would notice. The list
-		 * demonstrates mechanisms — four bonus types contesting one target, a
-		 * conditional `when`, an expression amount rather than a literal, and an
-		 * override — and growth towards coverage is the SPEC §11 breach, not
-		 * presence. Pinned so that growth has to be deliberate.
+		 * demonstrates mechanisms — a conditional `when`, an expression amount
+		 * rather than a literal, and an override — and growth towards coverage is
+		 * the SPEC §11 breach, not presence. Pinned so that growth has to be
+		 * deliberate.
 		 */
 		expect((built.layout.modifiers ?? []).map((one) => one.name)).toEqual([
 			'Shield of Faith',
@@ -1804,12 +1805,22 @@ describe('the 5e sheet is a complete system sheet', () => {
 			'Alert',
 			'Bark Skin',
 		]);
-		expect(built.layout.modifierTypes).toEqual([
-			'Armour',
-			'Item',
-			'Spell',
-			'Class feature',
-		]);
+		/*
+		 * **No bonus types, on the layout or on any definition**, because 5e has
+		 * none: different effects stack, and an untyped amount stacks in full
+		 * (SPEC §5). Its one rule, that two effects of the same name do not, is
+		 * not expressible, so a definition enrolled twice applies twice. Bark
+		 * Skin needs no type to floor armor class: an at least applies after the
+		 * value phase whatever the additions are. Its `upgrade` is held above, in
+		 * "gives its abilities, saves and skills a slot a form can push at".
+		 */
+		expect(built.layout.modifierTypes).toBeUndefined();
+		const typed = (built.layout.modifiers ?? []).filter(
+			(one) =>
+				one.bonusType !== undefined ||
+				(one.changes ?? []).some((change) => change.bonusType !== undefined),
+		);
+		expect(typed.map((one) => one.name)).toEqual([]);
 		expect(parseModifierTypes(built.layout).problems).toEqual([]);
 		// One group, the saves, which Ring of Protection's second change aims at.
 		expect(parseModifierGroups(built.layout)).toEqual({
@@ -1847,6 +1858,45 @@ describe('the 5e sheet is a complete system sheet', () => {
 		expect(off.derivedFor('armour_class')).toBe(12);
 		for (const key of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
 			expect(off.sheet(`saves.${key}`), key).toBe(off.sheet(`abilities.${key}`));
+		}
+	});
+
+	it('stacks Ring and Cloak of Protection, two different items', () => {
+		/*
+		 * 5e stacks different effects, so the starter declares no bonus types and
+		 * every amount is untyped, which stacks in full (SPEC §5). The cloak is a
+		 * player's own typed cell rather than a definition, the way a reader adds
+		 * an item the starter does not ship: armor class is 12 + 1 + 1 and each
+		 * save its ability's modifier + 2, neither item suppressed.
+		 *
+		 * Asked twice. The second cloak says `as Item`, a type a note written
+		 * against the old starter could name, and the case the removal changes:
+		 * while the ring carried `Item` the two contested and one was dropped.
+		 * Now the ring is untyped, the note's type is its own kind, and both apply.
+		 */
+		const cloaked = (cell: string) =>
+			sheetFrom(
+				source,
+				`${FIFTH_NOTE}
+## Items
+
+| Item | Qty | Weight | Worn | Attuned | Modifiers | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ring of protection | 1 | 0 | yes | yes | Ring of Protection |  |
+| Cloak of protection | 1 | 1 | yes | yes | ${cell} |  |
+`,
+			);
+		for (const cell of [
+			'armour_class += 1; @save += 1',
+			'armour_class += 1 as Item; @save += 1 as Item',
+		]) {
+			const built = cloaked(cell);
+			expect(built.derivedFor('armour_class'), cell).toBe(14);
+			for (const key of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
+				expect(built.sheet(`saves.${key}`), `${cell}: ${key}`).toBe(
+					(built.sheet(`abilities.${key}`) as number) + 2,
+				);
+			}
 		}
 	});
 
