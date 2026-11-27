@@ -373,6 +373,8 @@ loosened:
 - The DM screen starter, sorting within a group, the README, any new component
   or schema key, and any rules text or description in a starter.
 - Strikes reached by conditions (needs a computed strike, which reverses ruling 3).
+  *Closed by `starter-layouts-follow-up.md`, case 1:* strikes are computed, one
+  table per attribute.
 - Named spell levels (Cantrip, 1st…) on the 5e spellbook.
 - A Size card, a briefZone, or a new definition to show a feature off.
 - Keys for the unkeyed PF2e rows (Fortitude, Reflex, Will, most skills). D5
@@ -382,7 +384,8 @@ loosened:
   same-named effects do not. The starter's `Item` type is a modelling choice, and
   it gives a wrong number the moment a player adds a second protective item: the
   two contest and only one applies. Unchanged here, and listed on the land-stop
-  report.
+  report. *Closed by `starter-layouts-follow-up.md`, case 2:* the 5e starter
+  declares no bonus types, so both items apply.
 - Any change to a layout already installed in a vault.
 - **Case 5's B and C, a Roster for the 5e abilities block.** The owner chose A.
   The brief's "cardLayout `stat`" is Roster's `cardLayout: true`

@@ -18,25 +18,17 @@
 		"Short rest",
 		"Long rest"
 	],
-	"modifierTypes": [
-		"Armour",
-		"Item",
-		"Spell",
-		"Class feature"
-	],
 	"modifiers": [
 		{
 			"name": "Shield of Faith",
 			"target": "armour_class",
 			"amount": "2",
-			"bonusType": "Spell",
 			"when": "Active"
 		},
 		{
 			"name": "Studded leather",
 			"target": "armour_class",
 			"amount": "2",
-			"bonusType": "Armour",
 			"when": "Worn"
 		},
 		{
@@ -44,13 +36,11 @@
 			"changes": [
 				{
 					"target": "armour_class",
-					"amount": "1",
-					"bonusType": "Item"
+					"amount": "1"
 				},
 				{
 					"target": "@save",
-					"amount": "1",
-					"bonusType": "Item"
+					"amount": "1"
 				}
 			],
 			"when": "Attuned"
@@ -58,8 +48,7 @@
 		{
 			"name": "Alert",
 			"target": "initiative",
-			"amount": "prof",
-			"bonusType": "Class feature"
+			"amount": "prof"
 		},
 		{
 			"name": "Bark Skin",
@@ -808,7 +797,7 @@
 							"position": {
 								"col": 3,
 								"row": 1,
-								"width": 3,
+								"width": 2,
 								"height": 1
 							}
 						},
@@ -819,11 +808,11 @@
 							"derived": "count(spellbook, Prepared)",
 							"signed": false,
 							"hideValue": true,
-							"notePlaceholder": "of your limit",
+							"hideNote": true,
 							"position": {
-								"col": 1,
-								"row": 2,
-								"width": 5,
+								"col": 5,
+								"row": 1,
+								"width": 1,
 								"height": 1
 							}
 						},
@@ -886,7 +875,7 @@
 							],
 							"position": {
 								"col": 1,
-								"row": 3,
+								"row": 2,
 								"width": 5,
 								"height": 2
 							}
@@ -916,9 +905,9 @@
 							"fieldHeadings": true,
 							"position": {
 								"col": 1,
-								"row": 5,
+								"row": 4,
 								"width": 5,
-								"height": 5
+								"height": 6
 							}
 						},
 						{

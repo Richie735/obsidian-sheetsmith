@@ -626,6 +626,10 @@ item.
    as the record of what the character is trained in; AC simply does not read
    them.
 3. **Strikes are stored, not computed**, mirroring the 5e attacks table.
+   *Superseded by `starter-layouts-follow-up.md`, case 1:* a strike computes its
+   attack from attribute, rank and potency, filed in one open table per
+   attribute (Strikes, Dexterity strikes), so conditions reach it by attribute.
+   The 5e attacks table stays stored.
 4. **The six conditions target AC alone.** The function library carries the
    comment stating Frightened's real scope — every check and DC — and that a
    fuller Frightened is one more definition per target.
