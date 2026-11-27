@@ -41,9 +41,18 @@
 		},
 		{
 			"name": "Ring of Protection",
-			"target": "armour_class",
-			"amount": "1",
-			"bonusType": "Item",
+			"changes": [
+				{
+					"target": "armour_class",
+					"amount": "1",
+					"bonusType": "Item"
+				},
+				{
+					"target": "@save",
+					"amount": "1",
+					"bonusType": "Item"
+				}
+			],
 			"when": "Attuned"
 		},
 		{
@@ -58,6 +67,12 @@
 			"operator": "upgrade",
 			"amount": "16",
 			"when": "Active"
+		}
+	],
+	"modifierGroups": [
+		{
+			"name": "save",
+			"label": "Saving throws"
 		}
 	],
 	"components": [
@@ -214,6 +229,9 @@
 			"short": "Saves",
 			"rowHeader": "Save",
 			"namePosition": 1,
+			"groups": [
+				"save"
+			],
 			"rows": [
 				{
 					"label": "Strength",
@@ -882,7 +900,8 @@
 								{
 									"key": "Level",
 									"type": "number",
-									"max": 9
+									"max": 9,
+									"placement": "body"
 								},
 								{
 									"key": "Prepared",
@@ -893,11 +912,13 @@
 									"type": "toggle"
 								}
 							],
+							"groupBy": "Level",
+							"fieldHeadings": true,
 							"position": {
 								"col": 1,
 								"row": 5,
 								"width": 5,
-								"height": 3
+								"height": 5
 							}
 						},
 						{
@@ -906,7 +927,7 @@
 							"label": "Spell notes",
 							"position": {
 								"col": 1,
-								"row": 8,
+								"row": 10,
 								"width": 5,
 								"height": 1
 							}
@@ -1063,6 +1084,7 @@
 					"type": "stat-block",
 					"label": "Forms",
 					"recordName": "Form",
+					"tintPerRecord": true,
 					"fields": [
 						{
 							"key": "Active",
@@ -1166,7 +1188,8 @@
 								{
 									"key": "Uses",
 									"type": "number",
-									"maxSource": "record"
+									"maxSource": "record",
+									"visibleWhen": "Recharges > 0"
 								},
 								{
 									"key": "Recharges",
@@ -1180,8 +1203,15 @@
 								{
 									"key": "Modifiers",
 									"type": "modifier"
+								},
+								{
+									"key": "Class",
+									"type": "text",
+									"placement": "body"
 								}
 							],
+							"groupBy": "Class",
+							"fieldHeadings": true,
 							"reset": [
 								{
 									"trigger": "Long rest",
