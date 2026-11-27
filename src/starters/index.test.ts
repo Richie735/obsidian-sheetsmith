@@ -191,8 +191,14 @@ function sheetFrom(layoutSource: string, noteSource: string) {
 const emptyNote = (name: string): string =>
 	`---\nsheet-layout: ${name}\n---\n`;
 
-/** The rows a twelve-column sheet spends on its header band before the columns. */
-const HEADER_ROWS = 3;
+/**
+ * The rows a twelve-column sheet spends on its header band before the columns.
+ * Per sheet, since the 5e sheet's paper-shaped header is two rows (identity
+ * beside armor class, initiative, speed, hit points and hit dice) and the PF2e
+ * sheet's is three.
+ */
+const HEADER_ROWS: Record<string, number> = { 'Starter 5e': 2, 'Starter PF2e': 3 };
+const headerRowsOf = (layout: Layout): number => HEADER_ROWS[layout.name] ?? 3;
 
 /**
  * The column bands of a twelve-column sheet: the stacks sharing one column and
@@ -208,16 +214,18 @@ const HEADER_ROWS = 3;
  * to maintain as either sheet moves.
  */
 const bandsOf = (layout: Layout) => {
-	const found = new Map<string, { width: number; last: number; foot: string }>();
+	const found = new Map<string, { col: number; width: number; last: number; foot: string }>();
+	const header = headerRowsOf(layout);
 	for (const config of layout.components) {
 		const { col, row, width, height } = config.position;
-		if (row <= HEADER_ROWS || width === (layout.columns ?? DEFAULT_COLUMNS)) {
+		if (row <= header || width === (layout.columns ?? DEFAULT_COLUMNS)) {
 			continue;
 		}
 		const key = `${col}:${width}`;
 		const seen = found.get(key);
 		const last = row + height - 1;
 		found.set(key, {
+			col,
 			width,
 			last: Math.max(seen?.last ?? 0, last),
 			// The foot is whatever ends lowest, so a band read out of grid order
@@ -229,10 +237,12 @@ const bandsOf = (layout: Layout) => {
 };
 
 /**
- * The two twelve-column sheets, which are one architecture over two arithmetics
- * — header band, full-width strip, three columns ending together, a full-width
- * tab set below — so the claims about that architecture are asked once, over
- * both, rather than copied into each sheet's own describe and left to drift.
+ * The two twelve-column sheets, which share an architecture over two arithmetics
+ * — header band, columns ending together, a full-width tab set below — so the
+ * claims about that architecture are asked once, over both, rather than copied
+ * into each sheet's own describe and left to drift. Between header and columns
+ * the PF2e sheet keeps a full-width attribute strip; the 5e sheet stacks its
+ * abilities down the left edge instead, as the paper sheet does.
  */
 const TWELVE_COLUMN = (['Starter 5e', 'Starter PF2e'] as const).map(
 	(name) =>
@@ -276,7 +286,7 @@ describe.each(TWELVE_COLUMN)('%s shares the twelve-column architecture', (name, 
 		const below = layout.components.filter(
 			(config) =>
 				config.position.width === width &&
-				config.position.row > HEADER_ROWS,
+				config.position.row > headerRowsOf(layout),
 		);
 		expect(below).toHaveLength(1);
 		expect(below[0]?.type).toBe('tab-set');
@@ -1644,20 +1654,18 @@ describe('the 5e sheet is a complete system sheet', () => {
 	 */
 	const PINNED = [
 		'passport passport 1,1,6,2',
-		'hp pool 7,1,6,1',
-		'speed card 7,2,2,1',
-		'proficiency card 9,2,2,1',
-		'inspiration track 11,2,2,1',
-		'abilities card-set 1,3,12,1',
-		'saves table 1,4,3,3',
-		'skills table 4,4,4,8',
-		'pages tab-set 8,4,5,10',
+		'armour_class card 7,1,2,1',
+		'initiative card 9,1,2,1',
+		'speed card 11,1,2,1',
+		'hp pool 7,2,4,1',
+		'hit_dice pool 11,2,2,1',
+		'abilities card-set 1,3,2,7',
+		'proficiency card 3,3,3,1',
+		'pages tab-set 6,3,5,10',
 		'tab_combat group 1,1,5,10',
-		'initiative card 1,1,2,1',
-		'armour_class card 3,1,3,1',
-		'defences rich-text 1,2,5,2',
-		'conditions table 1,4,5,2',
-		'attacks table 1,6,5,3',
+		'defences rich-text 1,1,5,2',
+		'conditions table 1,3,5,3',
+		'attacks table 1,6,5,5',
 		'tab_actions group 1,1,5,10',
 		'other_actions table 1,1,5,8',
 		'tab_spells group 1,1,5,10',
@@ -1674,12 +1682,14 @@ describe('the 5e sheet is a complete system sheet', () => {
 		'attuned card 1,3,5,1',
 		'inventory table 1,4,5,5',
 		'forms stat-block 1,1,5,10',
-		'senses table 1,7,3,2',
-		'hit_dice pool 1,9,3,1',
-		'training rich-text 1,10,3,4',
-		'death_saves track 4,12,4,1',
-		'exhaustion track 4,13,4,1',
-		'details tab-set 1,14,12,6',
+		'inspiration track 11,3,2,1',
+		'saves table 3,4,3,3',
+		'death_saves track 11,4,2,1',
+		'exhaustion track 11,5,2,1',
+		'training rich-text 11,6,2,7',
+		'skills table 3,7,3,6',
+		'senses table 1,10,2,3',
+		'details tab-set 1,13,12,6',
 		'tab_features group 1,1,12,6',
 		'features record-set 1,1,8,6',
 		'class_resource pool 9,1,4,2',
@@ -1702,7 +1712,7 @@ describe('the 5e sheet is a complete system sheet', () => {
 
 	it('replicates every component, its type and its placement', () => {
 		expect(walked).toHaveLength(55);
-		expect(layout.components).toHaveLength(15);
+		expect(layout.components).toHaveLength(17);
 		expect(
 			walked.map((config) => {
 				const { col, row, width, height } = config.position;
@@ -1786,13 +1796,16 @@ describe('the 5e sheet is a complete system sheet', () => {
 		).toEqual([]);
 	});
 
-	it('stacks its middle into three columns of unequal width', () => {
-		const widths = bandsOf(layout).map((band) => band.width);
-		expect(widths).toHaveLength(3);
-		// Equal thirds are the obvious arrangement and are not what a real sheet
-		// wants — this is the arrangement the reference took three rounds of
-		// measurement to settle.
-		expect(new Set(widths).size).toBe(3);
+	it('stacks its middle as the paper sheet does, in four columns', () => {
+		/*
+		 * Abilities down the left edge; saving throws and skills beside them, topped
+		 * by proficiency; the play tabs in the middle; and a narrow right column for
+		 * inspiration, death saves, exhaustion and proficiencies. Read left to
+		 * right, which is the order a player who knows the paper sheet looks in.
+		 */
+		const bands = bandsOf(layout).sort((a, b) => a.col - b.col);
+		expect(bands.map((band) => band.width)).toEqual([2, 3, 5, 2]);
+		expect(bands.map((band) => band.foot)).toEqual(['table', 'table', 'tab-set', 'rich-text']);
 	});
 
 	it('ends all three columns on the same grid row', () => {
