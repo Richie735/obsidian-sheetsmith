@@ -1418,6 +1418,18 @@ describe('passport.sample', () => {
 		);
 	});
 
+	it('fills a field a formula reads with a number, and every other with its word', () => {
+		// The 5e starter's `level = passport.level` read "Level" and drew "?" on
+		// every number built on the level.
+		const body = passport.sample?.(config, new Set([`${config.id}.level`, 'other.class'])) ?? '';
+		const values = readData(body).values ?? {};
+		expect(values.level).toMatch(/^\d+$/);
+		expect(Number(values.level)).toBeGreaterThan(1);
+		// `other.class` is another component's entry, not this one's.
+		expect(values.class).toBe('Class');
+		expect(values.species).toBe('Species');
+	});
+
 	it('writes no embed line, since there is no vault behind the canvas', () => {
 		expect(passport.sample?.(config)).not.toContain('![[');
 	});

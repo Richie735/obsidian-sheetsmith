@@ -112,6 +112,7 @@ import { revealWhenTruncated } from '../ui/truncation';
 import { embedRefusal } from './embed-rule';
 import { fencedLinkRefusal } from './fenced-link';
 import { renderPictureFrame } from './picture-frame';
+import { sampleNumber, sampleSeed } from './sample-values';
 
 /**
  * What the name slot reads while nothing is stored in it.
@@ -1196,7 +1197,7 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 	 * No fields names nothing to fill, so the body is empty and the face draws
 	 * exactly as it does today.
 	 */
-	sample(config): string {
+	sample(config, reads): string {
 		/*
 		 * **The name is filled and the fields are, so the canvas previews a
 		 * populated face rather than an empty one in the slot the component is
@@ -1207,12 +1208,25 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		 * difference is the informative half: it tells the author the name is a
 		 * value the note holds.
 		 */
+		/*
+		 * **A field a formula reads samples a number**, since its name is a word
+		 * no formula can compute with: the 5e starter's `level = passport.level`
+		 * read "Level" and drew "?" on every number built on the level. Still
+		 * nothing invented: the number is the shared filler's, seeded by this
+		 * component's id as every other sampled number is.
+		 */
 		const fields = storableFields(config);
+		const seed = sampleSeed(config.id);
 		return writeFenced(
 			null,
 			new Map([
 				[nameKey(config), NAME_PLACEHOLDER],
-				...fields.map((field): [string, string] => [field.key, fieldName(field)]),
+				...fields.map((field, index): [string, string] => [
+					field.key,
+					reads?.has(`${config.id}.${field.key}`) === true
+						? String(sampleNumber(seed + index))
+						: fieldName(field),
+				]),
 			]),
 		);
 	},
